@@ -51,17 +51,19 @@ nova/
   session/        JSONL tree store, branches, custom entries    ≤ 900
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
-  config/         YAML config, trust, context files, skills     ≤ 900
-  mode/           server core, print, json, rpc                 ≤ 1200
+  config/         YAML config, trust, context files, skills     ≤ 1000
+  mode/           server core, print, json, rpc                 ≤ 1400
     serve/        the protocol over HTTP and SSE                ≤ 400
     action/       the GitHub review action                      ≤ 700
-  ext/            extension host, manifest, install, reload     ≤ 1500
+  ext/            extension host, manifest, install, reload,
+                  in-process API for bundled extensions         ≤ 1700
     sdk/          the Go SDK for extensions                     ≤ 400
   testkit/        fake provider and server, clock, golden       ≤ 1200
   bundled/        in-tree extensions: tasks, ask, plan,
                   subagent, webfetch                            ≤ 2500 total
   tui/            the terminal UI                               ≤ 9000
-  cmd/nova/       main                                          ≤ 300
+  cmd/nova/       main, help, doctor, version                   ≤ 500
+  doctor/         environment checks                            ≤ 300
   scripts/        matrixcheck, linecount, importcheck, accept
   assets/         logo SVGs and the generator
   docs/

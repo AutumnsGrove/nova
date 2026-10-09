@@ -2,7 +2,7 @@
 chunk: C13
 title: The extension host
 packages: [./ext, ./ext/sdk]
-budgets: { ./ext: 1500, ./ext/sdk: 400 }
+budgets: { ./ext: 1700, ./ext/sdk: 400 }
 depends: [C12]
 ---
 
@@ -197,7 +197,8 @@ into error results, and a read loop that exits cleanly on `shutdown` or stdin EO
     the user did not approve) gets an `error` reply with `permission_denied` and is not acted on.
 15. `ui_request` frames are forwarded to the `UIBridge` (answered or, for fire-and-forget methods,
     sent). A client that did not declare the method gets `unsupported` back to the extension.
-16. `append_entry` writes a `custom` entry (`Kind`, `Data`, `Keep`) to the session. On `init` (start
+16. `SessionAPI.Entries(kind)` returns the entries of that kind **on the active branch**, root to leaf.
+    `append_entry` writes a `custom` entry (`Kind`, `Data`, `Keep`) to the session. On `init` (start
     and reload) the host sends the extension its prior entries of the kinds it declared, in order,
     as `replay` frames before it may register tools, so it can rebuild state.
 17. `complete` calls `HostOptions.Complete` with the extension's request; usage is counted by the

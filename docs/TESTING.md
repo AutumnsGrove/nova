@@ -23,7 +23,7 @@ Tests use the standard library only (plus `x/exp/golden` and `catwalk` in `tui/`
 | **L2 scenario** | the **real `nova` binary**, end to end | spawn it in `--mode rpc` against a local fake provider server, script a conversation, assert events and files | tens of milliseconds |
 | **L3 cassette** | fidelity to a real provider | replay recorded HTTP; recorded only on demand | milliseconds |
 | **L4 TUI** | views and key handling | call `Update` with messages; compare `View()` to golden files | milliseconds |
-| **L5 PTY smoke** | the TUI really starts and quits | a pseudo-terminal, three or four tests | seconds; CI only |
+| **L5 PTY smoke** | the TUI really starts and quits | a pseudo-terminal, three or four tests; named `TestPTY…`, skipped unless `NOVA_PTY=1` | seconds; CI only |
 | **L6 live** | a real provider | `-tags live`, needs a key | never in CI |
 
 L2 is the workhorse and replaces Playwright. Because the protocol is the only front
@@ -36,7 +36,7 @@ GitHub Action, and a web backend use. No terminal, no browser, no network.
 go test -short ./...                 # L0 + L1 + L4. Under 30 seconds. Run constantly.
 go test ./...                        # adds L2 and L3. Under 2 minutes.
 go test -race ./...                  # always before finishing a chunk
-go test -tags pty ./tui/...          # L5, CI only
+NOVA_PTY=1 go test ./tui/... -run PTY  # L5 pseudo-terminal smoke tests, CI only
 go test -tags live ./provider/...    # L6, manual
 go test -run X -update ./...         # regenerate golden files
 go test -record ./provider/...       # re-record cassettes

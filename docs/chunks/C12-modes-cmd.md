@@ -2,7 +2,7 @@
 chunk: C12
 title: The server core, modes, and the nova command
 packages: [./mode, ./cmd/nova]
-budgets: { ./mode: 1200, ./cmd/nova: 300 }
+budgets: { ./mode: 1400, ./cmd/nova: 500 }
 depends: [C09, C10, C11]
 ---
 
@@ -69,7 +69,7 @@ func (s *Server) Close() error
 func RunPrint(ctx context.Context, s *Server, prompt string, out, errOut io.Writer) (exitCode int)
 func RunJSON(ctx context.Context, s *Server, prompt string, out io.Writer) (exitCode int)
 func ServeRPC(ctx context.Context, s *Server, in io.Reader, out io.Writer) error
-func NewPipe(s *Server) *Client // an in-process client: Send(cmd) Response, Events() <-chan Event, AnswerUI(...)
+func NewPipe(s *Server, capabilities ...string) *Client // an in-process client; capabilities are sent in its hello
 ```
 
 Exit codes: `0` run ended `done`; `1` error (provider failure, bad configuration);
@@ -133,7 +133,8 @@ in C13, `serve` and `action` in C14.)
 13. **Permissions and UI.** With a policy and a UI handler set, `ask` calls the handler as a
     `confirm` request; without one, `ask` resolves per `Headless`. `AnswerUI` routes responses by
     id; a response for an unknown or expired id is ignored with a log line. A `ui_request` with
-    `timeout_ms` resolves to its default on expiry.
+    `timeout_ms` resolves to its default on expiry and emits a `ui_expired {id}` event so a UI can close
+    the dialog.
 14. `shutdown` aborts any run, flushes, closes the store, and returns `ok` before the connection ends.
     `Close` is idempotent.
 
@@ -224,6 +225,8 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV34 | permission ask with no handler | | `Headless` applies |
 | SRV35 | `ui_request` timeout | | resolves to the default |
 | SRV36 | `ui_response` for an unknown id | | ignored |
+| SRV43 | `ui_request` expiry | `timeout_ms` elapses | resolves to the default; `ui_expired` event with the id |
+| SRV44 | pipe capabilities | `NewPipe(s, "ui.confirm")` | the server sends only methods the client declared |
 | SRV37 | `shutdown` mid-run | | run aborted; store closed; response ok |
 | SRV38 | `Close` twice | | nil |
 | SRV39 | provider error surfaces | server returns 401 | `provider_error`; `run_end(error)` |

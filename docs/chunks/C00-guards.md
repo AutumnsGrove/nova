@@ -96,8 +96,10 @@ accept <CNN> [-from step]          exit 0 all steps pass; exit 1 a step failed; 
       `charm.land/` or `github.com/charmbracelet/`, in non-test **or** test files;
    c. nothing outside `./tui/...` and `./bundled/...` is reachable only through them
       (checked by building with `-tags notui`);
-   d. the core imports no module other than the standard library and `gopkg.in/yaml.v3`.
-   The allowed-imports table is data at the top of the file, one line per package.
+   d. the core imports no module other than the standard library and `gopkg.in/yaml.v3`. `./tui/...` and
+      `./bundled/...` may import the modules listed for them in the allowed-imports table, which is data at
+      the top of the file, one line per package (for example `./bundled/webfetch` may import
+      `golang.org/x/net/html`).
 7. **accept** runs, in order, stopping at the first failure and printing the failing
    command's output: `gofmt -l`, `go vet`, `go build ./...`, `go build -tags notui ./...`,
    `go test -short -race -p 2` on the spec's packages, `go test -race -p 2` on the same,

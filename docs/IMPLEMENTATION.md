@@ -28,20 +28,20 @@ acceptance command.
 | **C08** | `proto` (frames, framing) and `session` (JSONL tree store) | C01 | 600 + 900 | [C08](chunks/C08-proto-session.md) |
 | **C09** | The agent loop: hooks, queues, retry, permissions, events | C01, C04, C08 | 900 | [C09](chunks/C09-agent-loop.md) |
 | **C10** | Compaction, context limit, usage ledger | C08, C09 | 600 + 200 | [C10](chunks/C10-compaction-usage.md) |
-| **C11** | `config`: settings, trust, context files, skills, prompt templates | C04 | 900 | [C11](chunks/C11-config-resources.md) |
-| **C12** | Server core, print / json / rpc modes, `cmd/nova` | C09, C10, C11 | 1200 + 300 | [C12](chunks/C12-modes-cmd.md) |
-| **C13** | Extension host: manifest, supervision, hooks, declarative tools, install, reload, SDK | C12 | 1500 + 400 | [C13](chunks/C13-extension-host.md) |
+| **C11** | `config`: settings, trust, context files, skills, prompt templates | C04 | 1000 | [C11](chunks/C11-config-resources.md) |
+| **C12** | Server core, print / json / rpc modes, `cmd/nova` | C09, C10, C11 | 1400 + 500 | [C12](chunks/C12-modes-cmd.md) |
+| **C13** | Extension host: manifest, supervision, hooks, declarative tools, install, reload, SDK | C12 | 1700 + 400 | [C13](chunks/C13-extension-host.md) |
 | **C14** | `serve` mode and the GitHub Action | C12 | 400 + 700 | [C14](chunks/C14-serve-action.md) |
-| **C15** | TUI foundation: model, layout, editor, transcript, streaming markdown | C12 | 3000 | to write |
-| **C16** | TUI: thinking block, tool cards, diffs, themes, splash | C15 | 2500 | to write |
-| **C17** | TUI: dialogs, widgets, status, extension UI bridge, trust prompt, `/ext` | C15, C13 | 2000 | to write |
-| **C18** | Bundled extensions: tasks, ask, plan, subagent, webfetch | C13, C17 | 2500 | to write |
-| **C19** | Polish: fang help, first run, docs command, examples, release workflow, favicon | all | 800 | to write |
+| **C15** | TUI foundation: model, layout, editor, transcript, streaming markdown | C12 | 3850 | [C15](chunks/C15-tui-foundation.md) |
+| **C16** | TUI: thinking block, tool cards, diffs, themes, splash | C15 | 1350 | [C16](chunks/C16-tui-rendering.md) |
+| **C17** | TUI: dialogs, widgets, status, extension UI bridge, trust prompt, `/ext` | C15, C13 | 1250 | [C17](chunks/C17-tui-dialogs-widgets.md) |
+| **C18** | Bundled extensions: tasks, ask, plan, subagent, webfetch | C13, C17 | 2500 | [C18](chunks/C18-bundled-extensions.md) |
+| **C19** | Polish: styled help, first run, doctor, docs search, examples, favicon, release workflow | C16, C17, C18 | 800 + 300 | [C19](chunks/C19-polish-release.md) |
 
-C00 to C14 are the backend and are specified in full, each with a test matrix. C15 to C19
-are scoped here and are specified in full once the backend lands, because their specs
-depend on the exact events and commands that C09 and C12 produce. The first TUI spec
-(C15) starts by confirming the pinned charm.land versions in `TUI.md` resolve.
+All twenty chunks are specified, each with a test matrix. C00 to C14 are the backend. C15 to C19 were
+written against the protocol (`PROTOCOL.md`), which is their contract; if building the backend changes an
+event or command, update those specs before starting the chunk. C15 starts by confirming the pinned
+charm.land versions in `TUI.md` resolve.
 
 ### Order and parallelism
 

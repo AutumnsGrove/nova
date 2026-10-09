@@ -10,8 +10,8 @@
 > A minimal, pi-and-crush-inspired agent harness in Go — built to be embedded in
 > Go applications (her-go, polaris, ivy) or run standalone as a CLI/TUI.
 
-**Status: planning.** The design is documented and the first fifteen implementation chunks
-are specified in full. No product code is being written yet; the repository also holds an early
+**Status: planning.** The design is documented and all twenty implementation chunks
+are specified in full, each with a test matrix. No product code is being written yet; the repository also holds an early
 M0 prototype at the repository root (see [`docs/SPIKE.md`](docs/SPIKE.md)). The prototype is
 exploratory and its API is not frozen.
 
@@ -79,7 +79,8 @@ wheel.
 | [`docs/TUI.md`](docs/TUI.md) | The terminal UI: stack, layout, components, themes, splash. |
 | [`docs/TESTING.md`](docs/TESTING.md) | Test layers, the failure-mode catalog, the matrix rule, definition of done. |
 | [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) | The chunk plan and how agents build it. |
-| [`docs/chunks/`](docs/chunks/) | One spec per chunk, each with a test matrix. |
+| [`docs/chunks/`](docs/chunks/) | One spec per chunk (C00 to C19), each with a test matrix. |
+| [`AGENTS.md`](AGENTS.md) | Instructions for the agents that implement the chunks. |
 | [`docs/BRAND.md`](docs/BRAND.md) | The two logo marks, the palette, and how to regenerate them. |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | The ecosystem survey and what we borrow from where. |
 | [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | How her-go, polaris, and ivy embed Nova. |

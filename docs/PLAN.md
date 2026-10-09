@@ -4,7 +4,7 @@ The roadmap. Reasons are in [`DECISIONS.md`](DECISIONS.md), structure in
 [`ARCHITECTURE.md`](ARCHITECTURE.md), and the build process in
 [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 
-Status: **planning.** The design is documented; chunks C00 to C14 are specified in full.
+Status: **planning.** The design is documented; all twenty chunks (C00 to C19) are specified in full.
 An M0 prototype exists at the repository root ([`SPIKE.md`](SPIKE.md)) and is the starting
 point for several chunks.
 
@@ -101,3 +101,5 @@ run on Nova with no bespoke loop code".
 3. **Web fetch and search.** Bundled `webfetch` is keyless; search is the suggested `parallel` extension.
 4. **Image and document content parts.** Deferred; the session format reserves room.
 5. **MCP client.** The manifest accepts the `mcp` capability; the client is a later chunk.
+6. **A `bash` sandbox.** Possibly later, Landlock-based, `bash` only (D39). A command classifier is
+   later still (D41). Neither is on the roadmap.

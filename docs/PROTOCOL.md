@@ -69,6 +69,9 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 | `reload` | | restart extensions; re-read config, skills, prompts |
 | `get_messages` | `leaf?` | active branch as messages |
 | `get_commands` | | slash commands, including extension and prompt-template ones |
+| `list_models` | `query?` | the model catalog: id, name, provider, context window, prices |
+| `session.list` | | sessions for the working directory: id, name, modified, entry count |
+| `get_extensions` | | each extension's name, version, state, restarts, last error |
 | `run_command` | `name`, `args` | execute a slash command |
 | `bash` | `command` | run a user shell command and record it in the session |
 | `shutdown` | | graceful close |
@@ -99,6 +102,7 @@ queue_update     { steering, follow_up }
 run_end          { run, reason, turns, usage }      // reason: done | exhausted | aborted | error
 error            { run?, code, message }
 extension_error  { extension, hook?, message }
+ui_expired       { id }                              // a ui_request timed out; close its dialog
 session_changed  { session, leaf }
 state_changed    { ... }                            // model, thinking level, context limit
 ```
@@ -118,10 +122,14 @@ resolves it with the stated `default`. A client that cannot answer a method says
 
 | Method | Fields | Answer |
 |---|---|---|
-| `confirm` | `title`, `message`, `default?`, `timeout_ms?` | `{ok: bool}` |
+| `confirm` | `title`, `message`, `default?`, `timeout_ms?`, `remember?: bool` | `{ok: bool, remember?: "session"}` |
 | `select` | `title`, `options: [{id,label,description?}]`, `multi?` | `{ids: []}` |
 | `input` | `title`, `placeholder?`, `default?` | `{text}` |
 | `form` | `title`, `questions: [...]`, `allow_skip` | `{answers: [...]}` (the `ask` primitive) |
+
+A permission `confirm` sets `remember: true` to offer "allow for this session". If the answer has
+`remember: "session"` and `ok: true`, the server adds a session-scoped allow rule for that tool
+name (never broader, and never for a `deny` decision).
 
 `form` questions are `{id, prompt, kind: single|multi|text, options?, notes?: bool}`.
 Every question may be skipped. Notes attach to an answer and are returned verbatim.

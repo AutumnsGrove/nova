@@ -89,6 +89,15 @@ compile them. That is cosmetic. Nothing UI-related is built into their binary.
 | D32 | Config | YAML. `~/.config/nova/config.yaml` plus project `.nova/config.yaml`, deep-merged, JSON accepted. | `gopkg.in/yaml.v3` is the only non-stdlib dependency in the core | JSON only; a bash config (Crush) |
 | D33 | Context files | `AGENTS.md` and `CLAUDE.md` in the working directory and parents | Matches every other agent | A Nova-only file |
 
+### Safety
+
+| # | Decision | Choice | Rationale |
+|---|---|---|---|
+| D39 | OS sandbox | **None now.** Possibly later, for `bash` only, as a Landlock-based add-on with a "fail if unavailable" option. | Pi ships none and Crush ships none. Claude Code's is off by default and covers shell commands only. Nova's own file tools are covered by path containment and the permission policy. A container or VM is the user's choice (run Nova inside one). |
+| D40 | Approvals | Core: the permission policy and the approval dialog (C04, C09, C17). Unlike Pi, Nova can ask. | Pi is full-auto; for a daily driver that is risky |
+| D41 | Command classifier | **Much later**, as an optional suggested extension, never bundled and never able to grant approval, only to make a call stricter. | A classifier is probabilistic and can itself be a target of prompt injection, so it is a filter, not a boundary |
+| D42 | Bundled extensions' API | An in-process Go API (`ext/inproc`, added in C18) that registers through the same path as subprocess extensions, plus access to the TUI registry in builds that include it | Bundled extensions need rich UI; the registration path stays single |
+
 ### How we build
 
 | # | Decision | Choice | Rationale |
@@ -98,6 +107,9 @@ compile them. That is cosmetic. Nothing UI-related is built into their binary.
 | D36 | Implementing agent | DeepSeek V4.1. Specs are therefore explicit: file lists, signatures, matrices, and acceptance commands. | The user's preferred model. Their Pi extensions were built with it for about $2.50 in total. |
 | D37 | Size | A line budget per package, enforced in CI | The Pi lesson: an agent can only extend what fits in its context |
 | D38 | Go version | The version in `go.mod`, currently 1.26 | Crush uses 1.27. Move when needed. |
+| D44 | One extra dependency | `golang.org/x/net/html`, allowed in `bundled/webfetch` only | The standard library has no HTML parser; the converter needs one | A hand-written parser |
+| D45 | Styled help | Hand-built with lipgloss in the full build; no `fang` | `fang` wraps cobra, which the core avoids | Add cobra and fang |
+| D43 | Protocol additions for the TUI | `list_models`, `session.list`, `get_extensions`, and a `remember` field on confirm answers | The model picker, session list, `/ext` view, and "allow for this session" need them; added in C17 |
 
 ## Superseded decisions at a glance
 

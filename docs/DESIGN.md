@@ -18,6 +18,9 @@ them. It is the "why" companion to [`ARCHITECTURE.md`](ARCHITECTURE.md) (the
 | D8 | Name | **Nova** | Astral, short, in the family with `polaris`; only the N capitalized | Aster, Canopy, Cirrus, Loom |
 | D9 | North star | A full pi-class coding harness, our own, same principles | The library and the standalone agent are the same artifact | Keep it a pure library |
 | D10 | Frontend stack | `charm.land` libraries (Bubble Tea, Lipgloss, Bubbles, Glamour, Log), designed after crush | Best-in-class terminal UX, proven at scale by crush; we get the craft without writing a renderer | Hand-rolled ANSI; a web UI; a different TUI toolkit |
+| D11 | Backend/frontend split | Two separate programs: a UI-free backend (library + headless CLI) and a frontend coding agent that imports it | Programs that embed an agent loop pay for nothing UI-related; the frontend can evolve fast without destabilizing the backend | One binary; UI inside the core; `tui/` as a backend subpackage |
+| D12 | Repo layout | Monorepo, two Go modules (`github.com/AutumnsGrove/nova` at root, `github.com/AutumnsGrove/nova-tui` under `tui/`), tied with `go.work` | Backend consumers never see charm deps in their module graph; one repo keeps the pair in lockstep | One module with `cmd/` binaries; two repos |
+| D13 | Transport | In-process library now, with an RPC-ready seam; backend also ships a headless CLI | Simplest and fastest today; a daemon/RPC mode (remote or multiple frontends) can be added later without touching the frontend | Build RPC first; library-only with no seam |
 
 ## Ecosystem survey
 
@@ -106,6 +109,47 @@ crush's *taste* and the libraries that express it, applied to a much smaller cor
 - **Feature gating by name** (`llm.Gate`'s `features` table) as a pattern for
   what must be impossible to forget.
 - **Read-only tools with hard caps** as the default posture for a first agent.
+
+## Backend/frontend split
+
+Nova is two programs, not one, and the split is load-bearing.
+
+**Why two programs:**
+
+- **Dependency isolation.** The backend is embedded by her-go, polaris, and ivy.
+  If the TUI lived in the backend module, every embedder's module graph would
+  carry Bubble Tea, Lipgloss, and friends even though they never render a frame.
+  Two modules means a backend consumer's `go.mod` never mentions a UI library.
+- **Independent cadence.** The frontend is where visual iteration happens fast;
+  the backend is where the stable primitives live. Separate modules keep a TUI
+  redesign from touching the loop.
+- **A clean contract.** The frontend can only use the backend's exported API, so
+  the API stays honest. That same constraint is what makes an RPC mode feasible
+  later.
+- **Two audiences.** Embedders want a library; users want an app. One artifact
+  serving both tends to serve neither well.
+
+**What lives where:**
+
+| Concern | Backend (`nova`) | Frontend (`nova-tui`) |
+|---|---|---|
+| Agent loop, hooks, events | ✓ | consumes |
+| Providers, tools, sessions, compaction | ✓ | consumes |
+| Headless CLI, JSON/print output | ✓ | |
+| Events → UI state | | ✓ |
+| TUI, renderers, themes, commands | | ✓ |
+| `charm.land` dependencies | | ✓ |
+
+**The seam:** the frontend depends on a small `Session` interface (see
+[`ARCHITECTURE.md`](ARCHITECTURE.md#11-the-seam-between-them)) and a stream of
+serializable `Event`s — not on the loop or its internals. In-process today; the
+same interface can be backed by an RPC client later.
+
+**Layout:** a monorepo with two modules tied by `go.work`. The backend module is
+`github.com/AutumnsGrove/nova`; the frontend is
+`github.com/AutumnsGrove/nova-tui` under `tui/`. A `replace`/`go.work` entry
+points the frontend at the local backend during development; release tags make it
+a normal dependency.
 
 ## Provider design
 

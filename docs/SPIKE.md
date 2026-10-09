@@ -1,9 +1,12 @@
 # Nova — M0 Spike
 
-An early prototype of the Nova spine was built at the repository root to
-de-risk the loop, provider, and tool interfaces before writing the real plan.
+An early prototype of the Nova **backend** spine was built at the repository root
+to de-risk the loop, provider, and tool interfaces before writing the real plan.
 It is **exploratory**: its API is not frozen, and it does not implement the full
 target architecture. Treat it as executable documentation.
+
+The prototype is backend-only. The `cmd/nova-run` in it is a throwaway line REPL, not
+the real frontend, which will live in a separate `nova-tui` module (M3).
 
 ## What is present
 
@@ -16,8 +19,11 @@ tool/                    Tool interface, registry, annotations
 tools/fs/                read, write, edit, list
 tools/bash/              bash (timeout, output cap)
 agent/                   loop, Config, hooks, typed events
-cmd/nova/                minimal CLI (single prompt or REPL)
+cmd/nova-run/                throwaway headless CLI (single prompt or REPL)
 ```
+
+(No frontend module is present yet; the real coding agent lands in M3 as a
+separate `nova-tui` module.)
 
 ~2,300 lines including tests. `go vet ./...`, `go build ./...`, and
 `go test ./...` are clean.
@@ -35,7 +41,7 @@ cmd/nova/                minimal CLI (single prompt or REPL)
 - **Hooks absorb domain behavior.** `BeforeToolCall`, `AfterToolCall`,
   `FinishTurn`, `TransformContext`, and `OnEvent` are enough to express the
   behaviors her-go and polaris need, without core changes.
-- **A CLI is cheap.** `cmd/nova` wires OpenRouter + core tools into a working
+- **A CLI is cheap.** `cmd/nova-run` wires OpenRouter + core tools into a working
   coding agent in ~200 lines.
 - **It is testable.** A scriptable fake provider drives deterministic loop tests.
 
@@ -44,7 +50,7 @@ cmd/nova/                minimal CLI (single prompt or REPL)
 ```sh
 cd nova
 export OPENROUTER_API_KEY=sk-or-...
-go run ./cmd/nova -p "what's in this directory?"
+go run ./cmd/nova-run -p "what's in this directory?"
 go test ./...
 ```
 

@@ -5,6 +5,11 @@ each. Integration begins at M5; this document is the target, not current work.
 
 ## Strategy
 
+These programs embed the **backend**. None of them import the frontend
+(`nova-tui`) or its `charm.land` dependencies; the frontend is only Nova's own
+coding agent. Concretely: a consumer depends on `github.com/AutumnsGrove/nova`
+and nothing in its module graph is a UI library.
+
 - **Adapter-first, no big bang.** Each project keeps its existing types and adds
   a thin Nova layer. Port one loop, prove it, then switch.
 - **Nova is a versioned module.** Consumers use a local `replace` while it is

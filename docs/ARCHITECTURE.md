@@ -4,39 +4,72 @@ This document describes the intended architecture. The M0 prototype at the
 repository root implements a subset (see [`SPIKE.md`](SPIKE.md)); the package
 layout and interfaces below are the target.
 
-## 1. Layers
+## 1. Two programs
 
-Nova is layered so that each layer depends only on the ones below it.
+Nova is two artifacts with one dependency direction: the frontend imports the
+backend; the backend never imports a UI library.
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ cmd/nova, tui/            CLI and terminal frontend          │
-├──────────────────────────────────────────────────────────────┤
-│ extension/                in-process registry, MCP, skills   │
-├──────────────────────────────────────────────────────────────┤
-│ agent/                    the loop, hooks, events, queues    │
-│ session/ compaction/      transcript tree, context management │
-├──────────────────────────────────────────────────────────────┤
-│ tool/  tools/*            tool contract, registry, core tools │
-├──────────────────────────────────────────────────────────────┤
-│ provider/                 Provider interface + registry       │
-│   openaicompat/ openrouter/ ollama/ ...                       │
-├──────────────────────────────────────────────────────────────┤
-│ message/                  canonical transcript types          │
-└──────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│ nova agent (frontend)   module github.com/AutumnsGrove/nova-tui │
+│   cmd/nova, tui/        charm.land TUI, renderers, commands    │
+└──────────────────────────────┬────────────────────────────────┘
+                               │ backend API (in-process now,
+                               │ RPC-ready seam later)
+┌──────────────────────────────▼────────────────────────────────┐
+│ nova (backend)          module github.com/AutumnsGrove/nova     │
+│                                                                │
+│   extension/            registry, MCP, skills (M4)             │
+│   agent/                loop, hooks, events, queues            │
+│   session/ compaction/  transcript tree, context management    │
+│   tool/  tools/*        contract, registry, core tools          │
+│   provider/             Provider interface + registry           │
+│     openaicompat/ openrouter/ ollama/ ...                       │
+│   message/              canonical transcript types             │
+│   cmd/nova-run/         headless CLI (print/JSON)               │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-Rules:
+Backend layer rules:
 
 - `message` depends on nothing.
 - `provider` depends on `message`.
-- `tool` depends on `message` and `provider` (to emit tool definitions).
+- `tool` depends on `message` and `provider`.
 - `agent` depends on `message`, `provider`, and `tool`.
 - `tools/*` depend on `tool` only.
 - `session`, `compaction`, and `extension` sit beside `agent`.
 - No lower layer imports an upper layer.
+- **No backend package imports a UI library.** The backend's only non-stdlib
+  dependency is YAML parsing (M1); everything else is standard library.
 
-## 2. Package layout
+### 1.1 The seam between them
+
+The frontend consumes a small, transport-agnostic interface rather than reaching
+into the loop. In-process today, RPC-ready by construction:
+
+```go
+// Backend-owned; the frontend's only entry point.
+type Session interface {
+    Prompt(ctx context.Context, input Input) (<-chan Event, error)
+    Abort() error
+    Close() error
+}
+```
+
+- **Boundary types are serializable.** `message.Message`, `agent.Event`,
+  `provider.ToolDef`, `provider.Usage`, and `provider.Model` are plain structs
+  with JSON tags, so they can cross a socket unchanged.
+- **App-only hooks stay in-process.** `tool.Context.Data`, `BeforeToolCall`,
+  `AfterToolCall`, and app providers are server-side concerns; an RPC frontend
+  drives a backend process that owns them.
+- **A future `rpc` package implements the same `Session` interface** over JSONL,
+  so the frontend is unchanged when daemon mode arrives (pi's RPC model).
+
+## 2. Module layout
+
+Monorepo, two modules, tied with `go.work`.
+
+### 2.1 Backend — `github.com/AutumnsGrove/nova`
 
 ```
 nova/
@@ -72,9 +105,23 @@ nova/
     mcp/              (M4) MCP client
   config/
     config.go         config file, model selection, provider wiring
-  tui/                (M3) terminal frontend on the charm.land stack
-  cmd/nova/           runnable binary
+  cmd/nova-run/       headless CLI (one prompt, print/JSON)
+  rpc/                (post-M4) same Session interface over JSONL
 ```
+
+### 2.2 Frontend — `github.com/AutumnsGrove/nova-tui`
+
+```
+tui/
+  cmd/nova/           interactive coding agent (binary: nova)
+  transcript/         transcript model + streaming rendering
+  renderers/          per-tool rendering (edit diff, bash output, ...)
+  components/         editor, model picker, session list, footer
+  theme/              Lipgloss themes as data
+```
+
+The frontend imports the backend module. Nothing in `tui/` is imported by the
+backend.
 
 ## 3. Core interfaces
 
@@ -453,8 +500,9 @@ is designed so it can be added without changing extension authors' code.
 
 ## 11. Frontend stack
 
-The core is deliberately dependency-light; the frontend is where the `charm.land`
-stack lives. Nova's terminal experience is modeled on
+The backend is deliberately dependency-light; the frontend — a separate module,
+`github.com/AutumnsGrove/nova-tui` — is where the `charm.land` stack lives.
+Nova's terminal experience is modeled on
 [crush](https://github.com/charmbracelet/crush), which is built on the same
 libraries.
 

@@ -11,7 +11,13 @@ frozen.
 
 ## What Nova is
 
-Nova is a reusable agentic-loop library for Go. It provides:
+Nova is **two Go programs in one repo**, with a strict dependency direction:
+the frontend imports the backend, and the backend never imports a UI library.
+
+### Nova — the backend (library + headless CLI)
+
+The reusable primitive layer. Imported by programs that need an agent loop
+(her-go, polaris, ivy) and by the frontend. **Zero UI dependencies.**
 
 - a small **agent loop** (`request → tool calls → results → repeat`) with hooks;
 - a **tool registry** you extend without modifying the core, using both Go code
@@ -21,19 +27,54 @@ Nova is a reusable agentic-loop library for Go. It provides:
 - built-in **core tools** (`read`, `write`, `edit`, `list`, `glob`, `grep`,
   `bash`);
 - **sessions** (a JSONL message tree) and **compaction**;
-- a **CLI/TUI** frontend, and an in-process extension API.
+- an in-process **extension API**;
+- a **headless CLI** for scripting and CI (`nova-run`: one prompt, print/JSON).
 
-The design is modeled on [pi](https://github.com/earendil-works/pi): minimal to
-start, easy to extend, and useful out of the box. The look, feel, and terminal
-craft are modeled on [crush](https://github.com/charmbracelet/crush), built on
-the [`charm.land`](https://charm.sh) library stack.
+### Nova agent — the frontend (coding agent)
+
+The standalone coding agent. A separate program that consumes the backend
+primitives and adds the terminal experience, built on the
+[`charm.land`](https://charm.sh) stack and modeled on
+[crush](https://github.com/charmbracelet/crush).
+
+- an interactive **Bubble Tea TUI**: streaming transcript, tool-call cards,
+  diff views, slash commands, model picker, session list;
+- per-tool renderers and a themeable, keyboard-first design;
+- the flagship binary (`nova`).
+
+The two communicate through a small, transport-agnostic interface. Today that
+interface is an in-process Go call; it is designed so an RPC/daemon mode can be
+added later without changing the frontend.
+
+The architecture is modeled on [pi](https://github.com/earendil-works/pi):
+minimal to start, easy to extend, and useful out of the box.
+
+## Layout
+
+Monorepo, two Go modules, tied together with `go.work`:
+
+```
+nova/                          repo root
+  go.mod                       module github.com/AutumnsGrove/nova   (backend)
+  go.work                      use . and ./tui
+  message/ provider/ tool/     backend packages
+  tools/ agent/ session/       backend packages
+  compaction/ extension/ config/
+  cmd/nova-run/                headless CLI (print/JSON)
+  docs/
+  tui/                         module github.com/AutumnsGrove/nova-tui (frontend)
+    go.mod
+    cmd/nova/                  interactive coding agent (binary: nova)
+    ...                        charm.land TUI code
+```
 
 ## North star
 
-One day, a **full coding harness on par with pi** — our own, same principles. The
-library and the standalone agent are the same thing viewed from two sides: the
-package other Go programs import is the package that powers Nova's own terminal
-coding agent.
+One day, a **full coding harness on par with pi** — our own, same principles. It
+is reached in two pieces: the **backend** grows into a complete primitive layer
+(loop, tools, sessions, compaction, extensions), and the **frontend** grows into
+a polished daily coding agent on the charm.land stack. Any Go program can embed
+the backend; only the frontend pays for the UI.
 
 ## Why
 
@@ -49,10 +90,10 @@ wheel.
 
 | Document | Contents |
 |---|---|
-| [`docs/PLAN.md`](docs/PLAN.md) | Vision, principles, milestones M0–M5, open questions. |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Package layout, core interfaces, data flow, concurrency, error model. |
+| [`docs/PLAN.md`](docs/PLAN.md) | Vision, principles, milestones (backend and frontend), open questions. |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The two programs, module layout, core interfaces, data flow, concurrency, error model. |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Decision log, the ecosystem survey, and what we borrow from where. |
-| [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | How her-go, polaris, and ivy adopt Nova. |
+| [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | How her-go, polaris, and ivy embed the backend. |
 | [`docs/SPIKE.md`](docs/SPIKE.md) | What the M0 prototype proves, and its known limitations. |
 
 ## Name

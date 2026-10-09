@@ -1,4 +1,4 @@
-// Command nova is a minimal standalone frontend for the harness: it wires the
+// Command nova-run is a minimal headless frontend for the backend library: it wires the
 // OpenRouter provider and the core tools into an agent and runs either one
 // prompt or an interactive REPL.
 package main

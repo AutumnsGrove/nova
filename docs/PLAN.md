@@ -44,8 +44,12 @@ standalone agent are the same thing viewed from two sides.
 - **Hookable.** Every meaningful loop stage is a nil-safe hook, so domain
   behavior (research nudges, PII redaction, permission gates, traces) lives
   outside the core.
-- **Embeddable and standalone.** The same package powers a library import and a
-  runnable CLI/TUI.
+- **Two programs, one repo.** A backend library + headless CLI with zero UI
+  dependencies, and a separate frontend coding agent that imports it. Other
+  programs embed the backend and pay for nothing else.
+- **RPC-ready by construction.** The frontend talks to the backend through a
+  transport-agnostic interface, so a daemon/RPC mode can be added later without
+  changing the frontend.
 - **Pi-class as a coding agent.** The standalone harness should eventually match
   pi as a daily coding agent: core tools, sessions, compaction, a real TUI, and
   easy extension.
@@ -76,18 +80,23 @@ standalone agent are the same thing viewed from two sides.
    panics are recovered; provider errors abort one run, not the process.
 5. **Add, don't modify.** New tools and providers are registered from the
    outside.
-6. **Zero required dependencies for the core.** The loop, registry, and
-   OpenAI-compatible provider use only the standard library. YAML and the TUI
-   are opt-in packages.
+6. **Zero required dependencies for the backend.** The loop, registry, and
+   OpenAI-compatible provider use only the standard library. YAML and every UI
+   library are opt-in (YAML in the backend, the TUI in the frontend module).
 7. **Polish is part of the product.** The frontend is built on the `charm.land`
    libraries; visual quality and terminal craft are held to the crush standard,
    not treated as decoration.
+8. **The backend is UI-free.** No backend package imports a rendering library;
+   the frontend is a separate module with its own `go.mod`.
+9. **The frontend is a client.** It consumes the backend's exported API — and,
+   later, the same API over RPC — never backend internals.
 
 ## 5. Milestones
 
-Each milestone lists deliverables and an exit criterion.
+Milestones are tagged by track: **[backend]**, **[frontend]**, or **[both]**. The
+backend reaches usefulness first; the frontend is a client of it throughout.
 
-### M0 — Spine (prototype complete; see `SPIKE.md`)
+### M0 — Backend spine [backend] (prototype complete; see `SPIKE.md`)
 
 Deliverables: `message`, `provider` + `openaicompat` + `openrouter`, `tool`
 interface + registry, core `fs`/`bash` tools, `agent` loop with hooks and
@@ -96,7 +105,7 @@ events, minimal CLI.
 Exit criterion: an OpenRouter prompt can call tools and produce a final answer;
 unit tests cover the loop, registry, provider SSE parsing, and the fs tools.
 
-### M1 — Tool authoring and permissions
+### M1 — Tool authoring and permissions [backend]
 
 Deliverables:
 - YAML manifest loader: `tools/<name>/tool.yaml` with `name`, `agent`,
@@ -110,7 +119,7 @@ Deliverables:
 Exit criterion: adding a tool is creating a directory with a manifest and a
 handler, or calling `Register`; no central list to edit.
 
-### M2 — Sessions and compaction
+### M2 — Sessions and compaction [backend]
 
 Deliverables:
 - JSONL session store with tree entries (`id`, `parentId`), active branch,
@@ -124,7 +133,7 @@ Deliverables:
 Exit criterion: a multi-turn session survives process restart, branches cleanly,
 and compacts without losing tool-call/tool-result pairing.
 
-### M3 — TUI
+### M3 — TUI [frontend]
 
 Deliverables, built on the **`charm.land` stack** (Bubble Tea v2, Lipgloss v2,
 Bubbles v2, Glamour v2, Log v2) to match crush's quality bar:
@@ -138,7 +147,7 @@ Bubbles v2, Glamour v2, Log v2) to match crush's quality bar:
 Exit criterion: Nova can be used as a daily coding agent from the terminal —
 the first point at which it is comparable to pi as a coding harness.
 
-### M3.5 — Coding-harness parity
+### M3.5 — Coding-harness parity [frontend]
 
 Deliverables: the remaining pi-class affordances that make it a *good* coding
 agent rather than a demo — `grep`/`glob` search tools, patch/diff editing,
@@ -148,7 +157,7 @@ permission confirmation UI, and cost/usage dashboards.
 Exit criterion: a feature checklist against pi passes for everyday coding work,
 with our own architecture throughout.
 
-### M4 — Extensions and interop
+### M4 — Extensions and interop [backend + frontend]
 
 Deliverables:
 - `extension` package: an in-process `Extension` interface plus a registry
@@ -160,13 +169,13 @@ Deliverables:
 Exit criterion: a third party can add tools/commands via a Go package or an MCP
 server without modifying Nova.
 
-### M4.5 — Frontend polish
+### M4.5 — Frontend polish [frontend]
 
 Deliverables: the details that make a charm-built tool feel finished — a
 first-run experience, `fang`-style help output, themed components, golden tests
 via `catwalk`, and performance budgets for large transcripts.
 
-### M5 — Integrations
+### M5 — Integrations [backend]
 
 Deliverables: wire ivy's "Ask Ivy" through Nova behind its `llm.Gate`; migrate
 her-go's `agent_engine`; port polaris's research loop with nudges as hooks.

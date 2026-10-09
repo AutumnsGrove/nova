@@ -6,7 +6,8 @@ It is **exploratory**: its API is not frozen, and it does not implement the full
 target architecture. Treat it as executable documentation.
 
 The prototype is backend-only. The `cmd/nova-run` in it is a throwaway line REPL, not
-the real frontend, which will live in a separate `nova-tui` module (M3).
+the real frontend, which will live in the nested `github.com/AutumnsGrove/nova/tui`
+module (M3).
 
 ## What is present
 
@@ -23,7 +24,7 @@ cmd/nova-run/                throwaway headless CLI (single prompt or REPL)
 ```
 
 (No frontend module is present yet; the real coding agent lands in M3 as a
-separate `nova-tui` module.)
+nested `github.com/AutumnsGrove/nova/tui` module.)
 
 ~2,300 lines including tests. `go vet ./...`, `go build ./...`, and
 `go test ./...` are clean.

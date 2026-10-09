@@ -19,7 +19,7 @@ them. It is the "why" companion to [`ARCHITECTURE.md`](ARCHITECTURE.md) (the
 | D9 | North star | A full pi-class coding harness, our own, same principles | The library and the standalone agent are the same artifact | Keep it a pure library |
 | D10 | Frontend stack | `charm.land` libraries (Bubble Tea, Lipgloss, Bubbles, Glamour, Log), designed after crush | Best-in-class terminal UX, proven at scale by crush; we get the craft without writing a renderer | Hand-rolled ANSI; a web UI; a different TUI toolkit |
 | D11 | Backend/frontend split | Two separate programs: a UI-free backend (library + headless CLI) and a frontend coding agent that imports it | Programs that embed an agent loop pay for nothing UI-related; the frontend can evolve fast without destabilizing the backend | One binary; UI inside the core; `tui/` as a backend subpackage |
-| D12 | Repo layout | Monorepo, two Go modules (`github.com/AutumnsGrove/nova` at root, `github.com/AutumnsGrove/nova-tui` under `tui/`), tied with `go.work` | Backend consumers never see charm deps in their module graph; one repo keeps the pair in lockstep | One module with `cmd/` binaries; two repos |
+| D12 | Repo layout | Monorepo, two Go modules (`github.com/AutumnsGrove/nova` at root, `github.com/AutumnsGrove/nova/tui` under `tui/`), tied with `go.work` | Backend consumers never see charm deps in their module graph; one repo keeps the pair in lockstep | One module with `cmd/` binaries; two repos |
 | D13 | Transport | In-process library now, with an RPC-ready seam; backend also ships a headless CLI | Simplest and fastest today; a daemon/RPC mode (remote or multiple frontends) can be added later without touching the frontend | Build RPC first; library-only with no seam |
 
 ## Ecosystem survey
@@ -131,7 +131,7 @@ Nova is two programs, not one, and the split is load-bearing.
 
 **What lives where:**
 
-| Concern | Backend (`nova`) | Frontend (`nova-tui`) |
+| Concern | Backend (`nova`) | Frontend (`nova/tui`) |
 |---|---|---|
 | Agent loop, hooks, events | ✓ | consumes |
 | Providers, tools, sessions, compaction | ✓ | consumes |
@@ -145,11 +145,16 @@ Nova is two programs, not one, and the split is load-bearing.
 serializable `Event`s — not on the loop or its internals. In-process today; the
 same interface can be backed by an RPC client later.
 
-**Layout:** a monorepo with two modules tied by `go.work`. The backend module is
-`github.com/AutumnsGrove/nova`; the frontend is
-`github.com/AutumnsGrove/nova-tui` under `tui/`. A `replace`/`go.work` entry
-points the frontend at the local backend during development; release tags make it
-a normal dependency.
+**Layout:** a monorepo with two modules tied by `go.work`. The repo is
+`github.com/AutumnsGrove/nova`. The backend module is the repo root,
+`github.com/AutumnsGrove/nova`; the frontend is the nested module
+`github.com/AutumnsGrove/nova/tui`, living in the `tui/` subdirectory. A
+`replace`/`go.work` entry points the frontend at the local backend during
+development; once tagged, it is a normal dependency.
+
+Because the frontend is a nested module, its release tags are prefixed by the
+subdirectory: `tui/v0.1.0`, not `v0.1.0`. The backend keeps unprefixed tags
+(`v0.1.0`). Each module versions independently.
 
 ## Provider design
 

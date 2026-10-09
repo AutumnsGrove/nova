@@ -11,7 +11,7 @@ backend; the backend never imports a UI library.
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│ nova agent (frontend)   module github.com/AutumnsGrove/nova-tui │
+│ nova agent (frontend)   module github.com/AutumnsGrove/nova/tui │
 │   cmd/nova, tui/        charm.land TUI, renderers, commands    │
 └──────────────────────────────┬────────────────────────────────┘
                                │ backend API (in-process now,
@@ -109,7 +109,7 @@ nova/
   rpc/                (post-M4) same Session interface over JSONL
 ```
 
-### 2.2 Frontend — `github.com/AutumnsGrove/nova-tui`
+### 2.2 Frontend — `github.com/AutumnsGrove/nova/tui`
 
 ```
 tui/
@@ -501,7 +501,7 @@ is designed so it can be added without changing extension authors' code.
 ## 11. Frontend stack
 
 The backend is deliberately dependency-light; the frontend — a separate module,
-`github.com/AutumnsGrove/nova-tui` — is where the `charm.land` stack lives.
+`github.com/AutumnsGrove/nova/tui` — is where the `charm.land` stack lives.
 Nova's terminal experience is modeled on
 [crush](https://github.com/charmbracelet/crush), which is built on the same
 libraries.

@@ -51,18 +51,21 @@ minimal to start, easy to extend, and useful out of the box.
 
 ## Layout
 
-Monorepo, two Go modules, tied together with `go.work`:
+One GitHub repo — `github.com/AutumnsGrove/nova` — containing two Go modules
+tied together with `go.work`. The backend is the repo root; the frontend is a
+nested module in `tui/` (its release tags are subdirectory-prefixed:
+`tui/vX.Y.Z`).
 
 ```
-nova/                          repo root
-  go.mod                       module github.com/AutumnsGrove/nova   (backend)
+nova/                          repo root, module github.com/AutumnsGrove/nova
+  go.mod                       backend module
   go.work                      use . and ./tui
   message/ provider/ tool/     backend packages
   tools/ agent/ session/       backend packages
   compaction/ extension/ config/
   cmd/nova-run/                headless CLI (print/JSON)
   docs/
-  tui/                         module github.com/AutumnsGrove/nova-tui (frontend)
+  tui/                         nested module github.com/AutumnsGrove/nova/tui
     go.mod
     cmd/nova/                  interactive coding agent (binary: nova)
     ...                        charm.land TUI code

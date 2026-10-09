@@ -1,535 +1,325 @@
 # Nova — Architecture
 
-This document describes the intended architecture. The M0 prototype at the
-repository root implements a subset (see [`SPIKE.md`](SPIKE.md)); the package
-layout and interfaces below are the target.
+This is the target architecture. The M0 prototype at the repository root implements
+a subset of it ([`SPIKE.md`](SPIKE.md)). Where the prototype differs, the section
+says so. Why each choice was made is in [`DECISIONS.md`](DECISIONS.md).
 
-## 1. Two programs
-
-Nova is two artifacts with one dependency direction: the frontend imports the
-backend; the backend never imports a UI library.
+## 1. One binary, many front doors
 
 ```
-┌───────────────────────────────────────────────────────────────┐
-│ nova agent (frontend)   module github.com/AutumnsGrove/nova/tui │
-│   cmd/nova, tui/        charm.land TUI, renderers, commands    │
-└──────────────────────────────┬────────────────────────────────┘
-                               │ backend API (in-process now,
-                               │ RPC-ready seam later)
-┌──────────────────────────────▼────────────────────────────────┐
-│ nova (backend)          module github.com/AutumnsGrove/nova     │
-│                                                                │
-│   extension/            registry, MCP, skills (M4)             │
-│   agent/                loop, hooks, events, queues            │
-│   session/ compaction/  transcript tree, context management    │
-│   tool/  tools/*        contract, registry, core tools          │
-│   provider/             Provider interface + registry           │
-│     openaicompat/ openrouter/ ollama/ ...                       │
-│   message/              canonical transcript types             │
-│   cmd/nova-run/         headless CLI (print/JSON)               │
-└───────────────────────────────────────────────────────────────┘
+   you at a terminal      CI / GitHub Action     a website or another program
+          │                       │                          │
+     ┌────▼────┐            ┌─────▼─────┐             ┌──────▼───────┐
+     │   TUI   │            │print/json │             │ rpc / serve  │
+     └────┬────┘            └─────┬─────┘             └──────┬───────┘
+          └───────────┬───────────┴───────────────────────────┘
+                      │   one JSONL protocol  (docs/PROTOCOL.md)
+              ┌───────▼────────┐        ┌─────────────────────────┐
+              │  Session API   │◀──────▶│  extension processes    │
+              │ (agent + store)│  same  │  (any language)         │
+              └───────┬────────┘ framing└─────────────────────────┘
+                      │
+     tools   providers   sessions   compaction   permissions   config
 ```
 
-Backend layer rules:
+Every front door talks to the same session API through the same protocol. The TUI
+is a client that happens to run in the same process, connected by an in-memory
+pipe. A web backend is a client that happens to talk over stdio or HTTP. Because
+there is one path, one set of tests covers all of them.
 
-- `message` depends on nothing.
-- `provider` depends on `message`.
-- `tool` depends on `message` and `provider`.
-- `agent` depends on `message`, `provider`, and `tool`.
-- `tools/*` depend on `tool` only.
-- `session`, `compaction`, and `extension` sit beside `agent`.
-- No lower layer imports an upper layer.
-- **No backend package imports a UI library.** The backend's only non-stdlib
-  dependency is YAML parsing (M1); everything else is standard library.
+Go programs can also import the packages directly and skip the protocol. That is
+the "library" use, and it is how Ivy, her-go, and polaris will embed Nova.
 
-### 1.1 The seam between them
+## 2. Layout
 
-The frontend consumes a small, transport-agnostic interface rather than reaching
-into the loop. In-process today, RPC-ready by construction:
-
-```go
-// Backend-owned; the frontend's only entry point.
-type Session interface {
-    Prompt(ctx context.Context, input Input) (<-chan Event, error)
-    Abort() error
-    Close() error
-}
-```
-
-- **Boundary types are serializable.** `message.Message`, `agent.Event`,
-  `provider.ToolDef`, `provider.Usage`, and `provider.Model` are plain structs
-  with JSON tags, so they can cross a socket unchanged.
-- **App-only hooks stay in-process.** `tool.Context.Data`, `BeforeToolCall`,
-  `AfterToolCall`, and app providers are server-side concerns; an RPC frontend
-  drives a backend process that owns them.
-- **A future `rpc` package implements the same `Session` interface** over JSONL,
-  so the frontend is unchanged when daemon mode arrives (pi's RPC model).
-
-## 2. Module layout
-
-Monorepo, two modules, tied with `go.work`.
-
-### 2.1 Backend — `github.com/AutumnsGrove/nova`
+One module: `github.com/AutumnsGrove/nova`.
 
 ```
 nova/
-  message/            Message, ToolCall, FunctionCall, roles
-  provider/
-    provider.go       Provider interface, Request, Response, StreamEvent, Usage
-    registry.go       Register/Get/Names
-    model.go          code-defined model catalog (id, slug, context, pricing)
-    openaicompat/     chat completions + SSE + tool calls
-    openrouter/       preset over OpenAI-compatible
-    ollama/           (M4) local preset
-  tool/
-    tool.go           Tool interface, Info, Result, Context
-    registry.go       Register/Get/Defs/Execute
-    manifest.go       (M1) YAML manifest loader
-  tools/
-    fs/               read, write, edit, list
-    search/           (M1) glob, grep
-    bash/             bash (timeout, output cap, optional exec policy)
-  agent/
-    agent.go          Config, hooks, Result, Turn
-    loop.go           the run loop
-    events.go         typed Event stream
-    queues.go         (M2) steering and follow-up queues
-  session/
-    session.go        tree entries, active branch
-    store.go          JSONL persistence
-    manager.go        context reconstruction, compaction application
-  compaction/
-    compaction.go     summarize-and-splice
-  extension/
-    extension.go      Extension interface + host registry
-    mcp/              (M4) MCP client
-  config/
-    config.go         config file, model selection, provider wiring
-  cmd/nova-run/       headless CLI (one prompt, print/JSON)
-  rpc/                (post-M4) same Session interface over JSONL
+  message/        transcript types                              ≤ 250 lines
+  provider/       Provider interface, registry, model catalog   ≤ 500
+    openaicompat/ chat-completions + SSE                        ≤ 600
+    openrouter/   preset: routing options, headers, usage       ≤ 300
+  auth/           OAuth PKCE login, key store                   ≤ 500
+  tool/           Tool contract, registry, schema validation    ≤ 400
+  tools/          fs (read write edit list)                     ≤ 900
+                  search (glob grep)                            ≤ 700
+                  bash                                          ≤ 400
+  permission/     allow/ask/deny policy                         ≤ 300
+  proto/          wire types and JSONL framing                  ≤ 600
+  agent/          the loop, hooks, queues, retry                ≤ 900
+  session/        JSONL tree store, branches, custom entries    ≤ 900
+  compaction/     summarise-and-splice, context limit           ≤ 600
+  usage/          usage ledger and cost fallback                ≤ 200
+  config/         YAML config, trust, context files, skills     ≤ 900
+  mode/           server core, print, json, rpc                 ≤ 1200
+    serve/        the protocol over HTTP and SSE                ≤ 400
+    action/       the GitHub review action                      ≤ 700
+  ext/            extension host, manifest, install, reload     ≤ 1500
+    sdk/          the Go SDK for extensions                     ≤ 400
+  testkit/        fake provider and server, clock, golden       ≤ 1200
+  bundled/        in-tree extensions: tasks, ask, plan,
+                  subagent, webfetch                            ≤ 2500 total
+  tui/            the terminal UI                               ≤ 9000
+  cmd/nova/       main                                          ≤ 300
+  scripts/        matrixcheck, linecount, importcheck, accept
+  assets/         logo SVGs and the generator
+  docs/
 ```
 
-### 2.2 Frontend — `github.com/AutumnsGrove/nova/tui`
+Budgets are line counts of non-test Go and are enforced by a CI check (D37). They
+are a design constraint: if a package outgrows its budget, split it or cut scope.
+The core (everything except `tui/`, `bundled/`, and `testkit/`) should stay near 11,000 lines.
+Pi's agent core is about 2,500 lines; Crush's UI alone is about 44,000.
+
+### Layer rules
 
 ```
-tui/
-  cmd/nova/           interactive coding agent (binary: nova)
-  transcript/         transcript model + streaming rendering
-  renderers/          per-tool rendering (edit diff, bash output, ...)
-  components/         editor, model picker, session list, footer
-  theme/              Lipgloss themes as data
+message ← provider ← tool ← proto ← agent ← mode ← cmd
+   ▲         ▲         ▲              ▲
+   │         │         │              └─ permission, usage, compaction, session
+   └─────────┴─────────┴──── auth, config, ext (beside agent; never import tui)
 ```
 
-The frontend imports the backend module. Nothing in `tui/` is imported by the
-backend.
+- `message` imports nothing.
+- `provider` imports `message`. `tool` imports `message` and `provider`.
+- `proto` imports `message` and `provider` and nothing above them.
+- `permission` imports `tool`. `usage` imports `provider` and `session`.
+- `agent` imports `message`, `provider`, `tool`, `permission`, `proto`.
+- `session` imports `message`, `provider`, `proto`. `compaction` imports `session`, `provider`, `message`.
+- `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.
+- `mode` wires everything (including `serve` and `action`). `cmd/nova` only parses flags and calls `mode` and `ext`.
+- **`tui/` and `bundled/*` are the only packages allowed to import `charm.land/*`.**
+  `scripts/importcheck` (C00) walks the import graph and fails if any other package does
+  (D15), and also enforces the layer rules above.
+- The core's only non-stdlib dependency is `gopkg.in/yaml.v3`.
 
-## 3. Core interfaces
+### Build flavours
 
-### 3.1 Transcript
+| Build | Command | Contains |
+|---|---|---|
+| Full | `go build ./cmd/nova` | everything, TUI included |
+| Minimal | `go build -tags notui ./cmd/nova` | no `tui/`, no bundled UI; print, json, rpc, serve |
 
-The canonical message type maps 1:1 onto the OpenAI wire format. System prompts
-are carried as the leading system message, exactly as the model sees them, so
-`convertToLlm` is unnecessary for the common case. `TransformContext` is the
-seam for anything richer.
+`tui/` and the UI half of `bundled/*` carry `//go:build !notui`.
+
+## 3. Core types
+
+The prototype's types are the starting point. These are the changes needed.
+
+### Message
+
+The transcript stays OpenAI-shaped so the provider layer is thin. Additions:
 
 ```go
-package message
-
-type Role string
-const (
-    RoleSystem    Role = "system"
-    RoleUser      Role = "user"
-    RoleAssistant Role = "assistant"
-    RoleTool      Role = "tool"
-)
-
 type Message struct {
     Role       Role       `json:"role"`
     Content    string     `json:"content,omitempty"`
+    Reasoning  string     `json:"reasoning,omitempty"`   // assistant only; display and session, not re-sent unless the provider needs it
     ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
     ToolCallID string     `json:"tool_call_id,omitempty"`
-}
-
-type ToolCall struct {
-    ID       string       `json:"id"`
-    Type     string       `json:"type,omitempty"`
-    Function FunctionCall `json:"function"`
-}
-
-type FunctionCall struct {
-    Name      string `json:"name"`
-    Arguments string `json:"arguments"` // raw JSON
+    Name       string     `json:"name,omitempty"`         // tool name on a tool result
 }
 ```
 
-**Open question:** rich content parts (images, documents, cache markers) may
-require a `[]ContentPart` model before M4. Until then, tool results that carry
-images are a known limitation.
+Content parts (images, documents) are deferred. The session entry format leaves a
+`parts` field free so they can be added without a migration.
 
-### 3.2 Provider
+### Provider
 
-```go
-package provider
+`Request` gains `ProviderOptions map[string]any` (merged into the wire body),
+`ReasoningEffort string`, and a `Stop []string`. `Usage` gains `ReasoningTokens`.
+`StreamEvent` gains `StreamUsage` (a mid-stream usage chunk) and stays otherwise
+the same. `Response.FinishReason` is normalised to `stop`, `length`, `tool_calls`,
+`content_filter`, or `error`.
 
-type Provider interface {
-    Name() string
-    Stream(ctx context.Context, req Request, onEvent func(StreamEvent)) (*Response, error)
-}
+### Events
 
-type Request struct {
-    Model        string
-    Messages     []message.Message
-    Tools        []ToolDef
-    ToolChoice   any
-    Temperature  *float64
-    MaxTokens    int
-    ExtraHeaders map[string]string
-}
+The prototype's `agent.Event` holds an `error` value, which cannot cross a process
+boundary. The target event type is plain data. It is defined in `proto` and
+`agent` emits it directly. See [`PROTOCOL.md`](PROTOCOL.md) for the list.
 
-type Response struct {
-    Message      message.Message
-    FinishReason string
-    Usage        Usage
-    Model        string
-}
+### Tool
 
-type StreamEventType string
-const (
-    StreamTextDelta      StreamEventType = "text_delta"
-    StreamReasoningDelta StreamEventType = "reasoning_delta"
-    StreamToolCall       StreamEventType = "tool_call"
-    StreamError          StreamEventType = "error"
-)
-```
+`tool.Result` gains `Details json.RawMessage` (structured data for renderers, not
+sent to the model) and `Truncated bool`. `tool.Context` gains `Emit func(Update)`
+so a long-running tool can stream progress, `SessionID`, and `Complete` for nested
+model calls (D29). Annotations (`ReadOnly`, `Destructive`, `OpenWorld`,
+`Parallel`) stay and feed the permission policy.
 
-Contract: `Stream` must honor `ctx`, call `onEvent` for each chunk (nil is
-allowed), return a finalized `Response`, and return a non-nil error on failure.
+## 4. The agent loop
 
-Providers are registered in a process-wide registry, mirroring pi's
-`registerProvider`:
-
-```go
-provider.Register(p)                 // panics on duplicate/unnamed
-p, ok := provider.Get("openrouter")
-```
-
-The first implementation is `openaicompat` (standard library only). `openrouter`
-is a preset. A model catalog (`provider.RegisterModel`) holds stable ids, wire
-slugs, context windows, and pricing.
-
-#### Provider decorators
-
-Because a `Provider` is just an interface, cross-cutting concerns wrap it. This
-is how ivy's `llm.Gate` (policy, caps, ledger, vetting) attaches without Nova
-knowing about it:
-
-```go
-type gatedProvider struct {
-    gate *llm.Gate
-    inner provider.Provider
-}
-
-func (g *gatedProvider) Name() string { return g.inner.Name() }
-func (g *gatedProvider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
-    // enforce account policy, monthly cap, vetting; write the ledger row
-    return g.inner.Stream(ctx, req, onEvent)
-}
-```
-
-### 3.3 Tool
-
-```go
-package tool
-
-type Info struct {
-    Name        string
-    Description string
-    Parameters  map[string]any // JSON Schema
-
-    Parallel    bool // may run concurrently with sibling calls
-    ReadOnly    bool // does not mutate state
-    Destructive bool // may destroy data
-    OpenWorld   bool // reaches beyond the local machine
-}
-
-type Context struct {
-    WorkDir string
-    Data    any // opaque application state (her-go tools.Context analogue)
-}
-
-type Result struct {
-    Content string
-    IsError bool
-}
-
-type Tool interface {
-    Info() Info
-    Run(ctx context.Context, args json.RawMessage, tctx *Context) (Result, error)
-}
-```
-
-`Context.Data` is the escape hatch: her-go, polaris, and ivy hang their own
-dependency bundles off it (stores, clients, callbacks) without Nova importing
-any of them.
-
-The registry:
-
-```go
-reg := tool.NewRegistry()
-reg.MustRegister(fs.Read())
-reg.MustRegister(bash.Bash())
-defs := reg.Defs()          // offered to the model
-res  := reg.Execute(ctx, name, args, tctx) // never returns a fatal error
-```
-
-Unknown tools and handler errors become `IsError` results, so the model can
-self-correct.
-
-### 3.4 Agent loop
-
-```go
-type Config struct {
-    Provider provider.Provider
-    Model    string
-    System   string
-    Tools    *tool.Registry
-    WorkDir  string
-    ToolData any
-
-    MaxTurns      int                // default 25
-    ToolExecution ToolExecutionMode  // Sequential | Parallel
-    Temperature   *float64
-    MaxTokens     int
-
-    TransformContext func([]message.Message) []message.Message
-    BeforeToolCall   func(ToolCall) *Block
-    AfterToolCall    func(ToolCall, tool.Result) tool.Result
-    FinishTurn       func(Turn) TurnDecision
-    OnEvent          func(Event)
-    OnTextDelta      func(string)
-    OnReasoningDelta func(string)
-}
-```
-
-One run:
+One run is synchronous. A caller that wants concurrency runs it in a goroutine and
+reads events.
 
 ```
-system + history
+prompt in
   │
-  ├─▶ provider.Stream ──▶ text/reasoning deltas ──▶ OnEvent / OnTextDelta
-  │        │
-  │        └─▶ assistant message (+ tool calls?)
+  ▼
+build request: system + active branch + tools + provider options
+  │   hooks: transform_context, before_provider_request
+  ▼
+provider.Stream ──▶ text / reasoning / tool-call deltas ──▶ events
   │
-  ├─ no tool calls ─────────────▶ final answer, done
-  │
-  └─ tool calls ──▶ BeforeToolCall ──▶ execute ──▶ AfterToolCall
-                        │                              │
-                        └── blocked? error result ─────┘
-                                       │
-                              append tool results
-                                       │
-                                FinishTurn hook
-                                       │
-                                  next turn ──┐
-                                              │
-  ◀───────────────────────────────────────────┘
+  ├── no tool calls ───────────────────────────────▶ end of run
+  │                                                    (follow-up queue? start next)
+  └── tool calls
+        │  for each call, in parallel unless declared otherwise:
+        │    permission policy ─▶ before_tool_call hook ─▶ run ─▶ after_tool_call hook
+        ▼
+      append results in call order ─▶ turn_end hook ─▶ steering queue? ─▶ next turn
 ```
 
-Hooks are nil-safe. This is the mechanism that absorbs each project's domain
-behavior:
+Rules the loop must keep, each of which has tests in [`TESTING.md`](TESTING.md):
 
-| Project behavior | Hook |
+- **Cancellation.** `ctx` cancel aborts the provider call and is passed to every tool.
+  A cancelled run returns the partial transcript and `ctx.Err()`.
+- **Panics.** A panic in a tool becomes an error result, in sequential mode as well
+  as parallel. (The prototype recovers only in parallel mode. That is a known bug.)
+- **Order.** Results are appended in call order regardless of completion order.
+- **Spend is never lost.** If the provider fails, the usage already accrued is
+  returned with the error.
+- **Steering and follow-up.** Two queues, as in Pi. A *steering* message is injected
+  after the current assistant turn finishes its tool calls. A *follow-up* message is
+  run after the agent has finished all pending work. Abort returns queued messages
+  to the caller.
+- **Retry.** A transient provider failure (network error, 429, 5xx) retries with
+  exponential backoff, up to a configured count, and emits `retry` events.
+- **Turn budget.** `MaxTurns` ends the run with `Exhausted=true`. It never errors.
+- **Hooks never crash the loop.** A hook that panics or exceeds its deadline is
+  skipped, logged, and reported as an `extension_error` event.
+
+### Hook points
+
+These names are shared by Go callbacks, bundled extensions, and the protocol.
+
+| Hook | Can do |
 |---|---|
-| her-go trace lines, continuation windows | `OnEvent`, `FinishTurn` |
-| her-go PII redaction of tool output | `AfterToolCall` |
-| polaris research nudges | `FinishTurn` |
-| polaris pseudo tool-call recovery | `TransformContext` + `AfterToolCall` |
-| permission gating | `BeforeToolCall` |
-| ivy spend caps / policy | provider decorator (below the loop) |
-| context pruning / injection | `TransformContext` |
+| `input` | rewrite or swallow a user prompt before it is recorded |
+| `before_agent_start` | add to the system prompt or active tools |
+| `transform_context` | rewrite the message list for one request |
+| `before_provider_request` | mutate the wire payload (pinning, headers) |
+| `provider_stream_event` | observe raw stream events |
+| `message_end` | replace a finalised assistant message |
+| `tool_call` | block, or rewrite arguments |
+| `tool_result` | replace a result; handlers compose in order |
+| `turn_end` | request one more turn |
+| `agent_end` | observe the end of a run |
+| `session_start`, `session_shutdown` | start or release resources |
+| `compaction_before` | cancel or supply a summary |
 
-### 3.5 Events
+## 5. Sessions
 
-```go
-type EventType string
-const (
-    EventTurnStart      EventType = "turn_start"
-    EventTextDelta      EventType = "text_delta"
-    EventReasoningDelta EventType = "reasoning_delta"
-    EventToolCall       EventType = "tool_call"
-    EventToolResult     EventType = "tool_result"
-    EventTurnEnd        EventType = "turn_end"
-    EventError          EventType = "error"
-    EventDone           EventType = "done"
-)
-```
+A session is a JSONL file. Each line is one entry with an `id` and a `parentId`.
+The active leaf selects the branch that supplies model context. Continuing from an
+older entry makes a new branch without deleting the old one.
 
-The same stream feeds the CLI, the TUI, tests, and any embedding application.
+Entry types: `message`, `model_change`, `compaction`, `branch_summary`, `custom`
+(an extension's data), `custom_message` (an extension's visible message),
+`label`, and `session_info`. A `custom` entry marked `keep: true` survives
+compaction. `session.Manager` is the only authority for the model-facing context;
+assigning an in-memory slice never replaces the persisted one.
 
-## 4. Concurrency model
+## 6. Compaction and the context limit
 
-- One agent run is synchronous (`Run` blocks). Callers that want concurrency run
-  it in a goroutine and consume events.
-- Tool calls within one assistant message run in parallel by default. Results
-  are stored by index so the transcript is deterministic even though completion
-  order is not.
-- Parallel dispatch recovers panics per call and converts them to error results;
-  a panic in one tool never takes down the run.
-- Tools declare `Parallel`; a future dispatch policy can force non-parallel
-  tools to run alone or serialize a mutable resource.
-- `ctx` cancellation aborts in-flight provider requests and is threaded into
-  every tool.
+`context_limit` is a per-session setting, not a model property (D25). Compaction
+triggers when estimated context exceeds `context_limit - reserve`.
 
-## 5. Sessions (M2)
+1. Estimate tokens (provider usage when present, otherwise a character heuristic).
+2. Find a cut point at a user-message boundary. **Never inside a tool call and its
+   result.**
+3. Summarise the older span with the session model.
+4. Insert a `compaction` entry that records what it replaced. Keep recent turns whole.
+5. Prune stale tool output at request time without dropping the summary.
 
-Following pi, a session is a tree of entries in a JSONL file. Each entry has an
-`id` and optional `parentId`; the active leaf selects the branch that supplies
-model context. Continuing from an older entry creates a new branch without
-deleting the old one. Compaction inserts a summary entry that later requests
-honor.
+If summarisation fails, the run continues without compaction and an event reports
+it. A failed compaction never loses entries.
 
-```
-session.jsonl
-  e1 user "hi"
-  e2 assistant "hello"
-  e3 user "summarize"
-  e4 assistant ...
-  e5 compaction summary ──▶ replaces e1..e4 in model context for this branch
-  e6 user "now do X"       (parent e5)
-```
+## 7. Permissions
 
-`session.Manager` is authoritative for the model-facing context; assigning an
-in-memory message slice does not replace persisted context. This is what makes
-resume, fork, and branch navigation consistent.
-
-## 6. Compaction (M2)
-
-Summarize-and-splice, matching the approach already proven in her-go and
-polaris:
-
-1. Estimate context tokens.
-2. When over the threshold, find a cut point at a user-message boundary (never
-   inside a tool-call/tool-result pair).
-3. Summarize the older span into a structured summary.
-4. Replace the span with a summary entry; keep recent turns in full fidelity.
-5. Prune stale tool results at request time without dropping the summary.
-
-## 7. Tool authoring
-
-Two paths, one registry.
-
-**Go:**
-
-```go
-tool.Register(tool.New(tool.Info{
-    Name: "weather", Description: "Current weather for a city.",
-    ReadOnly: true, Parallel: true,
-    Parameters: map[string]any{ /* JSON Schema */ },
-}, handler))
-```
-
-**YAML manifest (her-go shape):**
+A declarative policy decides what happens to each tool call before it runs.
 
 ```yaml
-# tools/reply/tool.yaml
-name: reply
-agent: [main]
-hot: true
-description: >-
-  Send the final user-facing reply. Call exactly once per turn.
-parameters:
-  type: object
-  properties:
-    text: { type: string, description: "The reply text" }
-  required: [text]
-trace:
-  emoji: "💬"
-  format: "{{.text | escape}}"
+permissions:
+  default: ask            # allow | ask | deny
+  headless: deny          # what "ask" becomes when there is no one to ask
+  rules:
+    - tool: read          # tool name or glob
+      action: allow
+    - tool: bash
+      match: { command: "git status*" }
+      action: allow
+    - tool: write
+      paths: ["**/.env*", ".git/**"]
+      action: deny
 ```
 
-`manifest.go` parses the file into a `tool.Info` and binds it to a Go handler
-registered under the same name. Manifests add things code-only tools don't need
-declaratively: which agents may use the tool (`agent`), whether it is always
-loaded or deferred (`hot`), category grouping, and trace formatting.
+`ask` becomes a `ui.confirm` request to the client. With no client attached (print
+mode, the GitHub Action), `ask` resolves to `headless`. Annotations on the tool give
+the defaults: read-only tools are allowed, destructive ones ask.
 
-## 8. Extensions (M4)
+## 8. Providers and auth
 
-v1 commitment: **compile-time in-process registration**, plus MCP for external
-tools. No `.so` plugins (brittle, toolchain-locked) and no scripting host yet.
+`openaicompat` implements chat completions with SSE and tool calls. `openrouter` is
+a preset that adds routing options, the attribution headers, and OpenRouter's
+`cost` field. Later, `openaicompat` gains a `/responses` mode (needed for some
+OpenCode Go models).
 
-```go
-type Extension interface {
-    Init(h *Host) error
-}
+`auth` owns login. `nova login` runs OpenRouter's OAuth PKCE flow with a loopback
+redirect (or prints a URL with `--no-browser`) and stores the key in the user's
+config directory with mode 0600. Resolution order: explicit config, `OPENROUTER_API_KEY`,
+stored key. Credentials resolve per request so a refreshed token takes effect mid-run.
 
-type Host struct { /* registries, config, event bus */ }
+Models are a code-defined catalog (stable id, wire slug, context window, pricing)
+so a stored choice keeps resolving when a provider renames a slug, and cost has a
+fallback when a response reports none.
 
-func (h *Host) RegisterTool(t tool.Tool)
-func (h *Host) RegisterProvider(p provider.Provider)
-func (h *Host) RegisterCommand(c Command)
-func (h *Host) On(event EventType, fn Handler)
-```
+## 9. Configuration and resources
 
-An extension is a Go package whose `init` registers it. MCP covers the case
-where the tool lives in another language or process, and gives us the ecosystem
-standard for free.
+| Resource | Where | Loaded |
+|---|---|---|
+| Config | `~/.config/nova/config.yaml`, `.nova/config.yaml` | at start and on `/reload` |
+| Context files | `AGENTS.md`, `CLAUDE.md` up the directory tree | into the system prompt |
+| Skills | `~/.config/nova/skills`, `.nova/skills`: `SKILL.md` per directory | description in the prompt; body on demand |
+| Prompt templates | `.nova/prompts/*.md` | expanded from `/name args` |
+| Themes | `~/.config/nova/themes/*.yaml` | the TUI only |
+| Extensions | `~/.config/nova/extensions`, `.nova/extensions` | at start and on `/reload` |
 
-A scripting host (Starlark or JS) is an explicit post-v1 option; the `Host` API
-is designed so it can be added without changing extension authors' code.
+Project resources load only after the project is **trusted**. The first run in a new
+directory asks; headless modes treat an untrusted project as having no project
+extensions or hooks.
 
-## 9. Error model
+## 10. Modes
 
-- **Provider failure** during a run: return the partial `Result` (with the cost
-  already accrued) plus the error. Never discard spend.
-- **Tool failure**: a `Result{IsError: true}`; the model sees it and may retry.
-- **Unknown tool / bad JSON args**: error result before dispatch, so the model
-  can self-correct.
-- **Panic in a tool**: recovered, converted to an error result, logged.
-- **Context cancellation**: returns promptly with `ctx.Err()`.
+| Mode | Flag | Behaviour |
+|---|---|---|
+| TUI | default when stdin is a terminal | interactive |
+| Print | `-p "prompt"` | one run, final answer on stdout |
+| JSON | `--mode json` | one run, events as JSONL on stdout |
+| RPC | `--mode rpc` | long-lived; commands in, events and responses out, on stdio |
+| Serve | `nova serve --listen :8080` | the protocol over HTTP: `POST /v1/commands`, SSE `GET /v1/events` |
+| Action | `nova action review` | print mode with a CI preset; reads the PR, posts review comments |
 
-## 10. Security and cost
+The GitHub Action is a thin `action.yml` that installs the binary and runs
+`nova action review`. It uses the minimal build and the headless permission default.
 
-- Tool annotations (`ReadOnly`, `Destructive`, `OpenWorld`) drive a
-  user-supplied permission hook; Nova does not prompt on its own.
-- Path containment is opt-in per `tool.Context` (a future `Roots` field), since
-  some agents legitimately roam the filesystem.
-- Provider credentials resolve per request (so OAuth/short-lived tokens can
-  refresh mid-run).
-- Usage and cost are accumulated on every run; ivy's cap/ledger logic attaches
-  as a provider decorator.
+## 11. Concurrency
 
-## 11. Frontend stack
+- Tool calls in one assistant message run in parallel unless a tool declares
+  otherwise. Results are stored by index.
+- File-mutating tools serialise per path.
+- `session.Manager` is safe for concurrent readers and serialises writers.
+- Each extension process has one reader and one writer goroutine per connection.
+  A slow extension never blocks the loop past its hook deadline.
 
-The backend is deliberately dependency-light; the frontend — a separate module,
-`github.com/AutumnsGrove/nova/tui` — is where the `charm.land` stack lives.
-Nova's terminal experience is modeled on
-[crush](https://github.com/charmbracelet/crush), which is built on the same
-libraries.
+## 12. Error model
 
-| Library | Role |
+| Failure | Result |
 |---|---|
-| `charm.land/bubbletea/v2` | TUI event loop and rendering |
-| `charm.land/lipgloss/v2` | Layout, styling, color |
-| `charm.land/bubbles/v2` | Editor, viewport, list, spinner, key bindings |
-| `charm.land/glamour/v2` | Markdown rendering in the transcript |
-| `charm.land/log/v2` | Structured logging |
-| `charm.land/fang` (later) | Polished CLI help/output |
-| `charm.land/catwalk` (later) | Golden-file TUI tests |
-
-Principles for the frontend:
-
-- **Events drive the UI.** The TUI consumes the same `agent.Event` stream as
-  every other consumer; it never reimplements loop logic.
-- **Rendering is a pure function of state.** Transcript entries, tool cards, and
-  status are rendered from a state model, which keeps golden tests possible and
-  the UI testable without a loop.
-- **Themes are data.** A theme is a set of Lipgloss styles; light/dark and user
-  themes are configuration, not code branches.
-- **Graceful degradation by mode.** The same binary runs interactive (TUI),
-  plain/print, and JSON modes; terminal-only behavior is guarded by mode.
-- **Performance budget.** Streaming and large transcripts must stay responsive;
-  rendering work is bounded and off the hot path where possible.
-
-Tool-specific rendering (a diff for `edit`, command/output for `bash`, a
-spinner while a tool runs) lives in the frontend as renderers keyed by tool
-name, so new tools get a sane default without frontend changes.
+| Provider error | partial result with usage so far, plus the error |
+| Tool error | `IsError` result; the model sees it and may retry |
+| Unknown tool or bad JSON arguments | error result before dispatch |
+| Panic in a tool or hook | recovered; error result or `extension_error` event |
+| Cancellation | prompt return with `ctx.Err()` |
+| Extension crash | its tools unregister, an event is emitted, restart per policy |
+| Corrupt session line | the loader skips it, reports it, and loads the rest |

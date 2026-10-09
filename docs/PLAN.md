@@ -1,211 +1,103 @@
 # Nova — Plan
 
-This is the working plan for Nova, a reusable agentic-loop harness in Go. It is
-inspired by [pi](https://github.com/earendil-works/pi) and by the agent loops
-already living in `her-go`, `polaris`, and `ivy`.
+The roadmap. Reasons are in [`DECISIONS.md`](DECISIONS.md), structure in
+[`ARCHITECTURE.md`](ARCHITECTURE.md), and the build process in
+[`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 
-Status: **planning.** Milestone 0 was prototyped to de-risk the design (see
-[`SPIKE.md`](SPIKE.md)); the plan below is what we intend to build for real.
+Status: **planning.** The design is documented; chunks C00 to C14 are specified in full.
+An M0 prototype exists at the repository root ([`SPIKE.md`](SPIKE.md)) and is the starting
+point for several chunks.
 
 ## 1. Vision
 
-A Go program should be able to add a capable agent loop with one import:
+One Go binary that is an agent harness, usable as a terminal coding agent, a headless
+script and CI tool, a GitHub Action that reviews pull requests, a backend for a website or
+another program, and an importable Go library. All of them are front doors onto one JSONL
+protocol, so there is one implementation and one set of tests.
+
+A Go program embeds it with one import:
 
 ```go
-agt := nova.New(nova.Config{
-    Provider: nova.OpenRouter(apiKey),
-    Model:    "openai/gpt-4o-mini",
-    Tools:    nova.CoreTools(),   // read, write, edit, list, glob, grep, bash
+a := agent.New(agent.Config{
+    Provider: openrouter.New(openrouter.Config{APIKeyFunc: keys}),
+    Model:    "deepseek/deepseek-v4.1",
+    Tools:    tools.Core(),
 })
-answer, err := agt.Prompt(ctx, "summarize this repo")
+res, err := a.Run(ctx, nil, message.User("summarize this repo"))
 ```
 
-and extend it the way pi extensions feel: register a tool, a provider, a
-command, or an event handler without forking the core.
-
-### 1.1 North star
-
-The end state is a **full coding harness on par with pi** — our own, but built
-on the same principles: a small core, a rich core toolset, sessions and
-compaction, a first-class terminal UI, and extensions that are trivial to add.
-Everything in M0–M4 is a step toward a harness we would choose to use daily as a
-coding agent, not just a library other programs embed. The library and the
-standalone agent are the same thing viewed from two sides.
+A user extends it the way Pi is extended: tell Nova what you want, and it can read its own
+documentation, write an extension, and load it with `/reload`.
 
 ## 2. Goals
 
-- **Minimal core, useful out of the box.** The loop, the registry, core tools,
-  sessions, and compaction ship together.
-- **Provider-agnostic.** A small `Provider` interface; OpenRouter first, then any
-  OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, LiteLLM).
-- **Two tool-authoring paths.** Go registration for logic-heavy tools; YAML +
-  Markdown manifests for descriptions, schemas, agent scoping, and trace
-  formatting.
-- **Hookable.** Every meaningful loop stage is a nil-safe hook, so domain
-  behavior (research nudges, PII redaction, permission gates, traces) lives
-  outside the core.
-- **Two programs, one repo.** A backend library + headless CLI with zero UI
-  dependencies, and a separate frontend coding agent that imports it. Other
-  programs embed the backend and pay for nothing else.
-- **RPC-ready by construction.** The frontend talks to the backend through a
-  transport-agnostic interface, so a daemon/RPC mode can be added later without
-  changing the frontend.
-- **Pi-class as a coding agent.** The standalone harness should eventually match
-  pi as a daily coding agent: core tools, sessions, compaction, a real TUI, and
-  easy extension.
-- **Beautiful by default.** The terminal experience should be as crafted as
-  crush: a fast, responsive, keyboard-driven TUI with clean typography, purposeful
-  color, and delightful details, built on the `charm.land` stack.
-- **Observable and cost-aware.** A typed event stream and accumulated usage/cost
-  from day one.
+- **A small core that grows by extension.** The core stays near 11,000 lines; the agent core
+  near Pi's 2,500. Documentation is written so an agent can read all it needs in under
+  40,000 tokens.
+- **Strong primitives.** The loop, tools, sessions, compaction, permissions, and the protocol
+  are small, exact, and tested hardest.
+- **Flexible deployment.** TUI, print, JSON, RPC, HTTP, Action, library: one mechanism.
+- **Extensions in any language**, installed from git with no registry server.
+- **Native versions of what Pi needed extensions for**: a thinking block, a context limit, a
+  usage ledger, provider routing options, session entries, permission rules.
+- **Beautiful by default.** A crush-class TUI on the `charm.land` stack.
+- **Correct on the first pass.** Edge cases are specified in advance as test matrices and
+  enforced by a script (D35).
+- **Cheap to test.** No browser; the real binary is driven over stdio against a fake provider.
 
-## 3. Non-goals (v1)
+## 3. Non-goals (first version)
 
-- A web UI, hosted service, or multi-tenant control plane.
-- Every provider wire protocol. OpenAI-compatible first; others via the provider
-  interface.
-- A visual/declarative workflow engine. Nova runs loops, not DAGs.
-- Sub-agents as a first-class v1 feature (planned after the core is stable).
-- Replacing each project's domain logic. Nova is the substrate, not the product.
+- A web UI or a hosted multi-tenant service. (`serve` is one trusted agent behind a bearer token.)
+- Every provider. OpenRouter is the core provider; others are extensions.
+- A workflow or DAG engine.
+- Sandboxing extensions. They run with the user's permissions; run Nova in a container for isolation.
+- An embedded scripting runtime (Yaegi, goja, wasm): decided against, D16.
 
 ## 4. Principles
 
-1. **The loop is small; behavior is hooks.** Anything domain-specific is a hook
-   or an extension, never core.
-2. **The transcript is the wire.** Messages map 1:1 onto the OpenAI
-   chat-completions format so the provider layer stays thin.
-3. **Tools are data plus a function.** A definition the model can read, plus
-   code that runs.
-4. **Failures are results, not crashes.** Tool errors go back to the model; tool
-   panics are recovered; provider errors abort one run, not the process.
-5. **Add, don't modify.** New tools and providers are registered from the
-   outside.
-6. **Zero required dependencies for the backend.** The loop, registry, and
-   OpenAI-compatible provider use only the standard library. YAML and every UI
-   library are opt-in (YAML in the backend, the TUI in the frontend module).
-7. **Polish is part of the product.** The frontend is built on the `charm.land`
-   libraries; visual quality and terminal craft are held to the crush standard,
-   not treated as decoration.
-8. **The backend is UI-free.** No backend package imports a rendering library;
-   the frontend is a separate module with its own `go.mod`.
-9. **The frontend is a client.** It consumes the backend's exported API — and,
-   later, the same API over RPC — never backend internals.
+1. **The loop is small; behaviour is hooks and extensions.**
+2. **The transcript is the wire.** Messages map onto the OpenAI chat format.
+3. **One protocol.** Anything a UI can do, a script can do.
+4. **Failures are results, not crashes.** Tool errors go to the model; panics are recovered;
+   provider errors end one run, not the process; a bad extension never takes down the loop.
+5. **Add, don't modify.** New tools, providers, and commands are registered from outside.
+6. **Spend is never lost, and every run ends cleanly.** One `run_start`, one `run_end`.
+7. **The core is UI-free**, enforced by a check, and has one non-stdlib dependency (`yaml.v3`).
+8. **Everything has a budget**, in lines, in time, and in context.
+9. **Specs carry the edge cases.** An agent fills in a matrix; it does not invent one.
 
-## 5. Milestones
+## 5. Roadmap
 
-Milestones are tagged by track: **[backend]**, **[frontend]**, or **[both]**. The
-backend reaches usefulness first; the frontend is a client of it throughout.
+Each milestone is a set of chunks from [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 
-### M0 — Backend spine [backend] (prototype complete; see `SPIKE.md`)
+| Milestone | Chunks | Result |
+|---|---|---|
+| **M1 Foundations** | C00, C01 | the guards run; the fake provider and server exist |
+| **M2 Providers and tools** | C02, C03, C04, C05, C06, C07 | a tested OpenRouter provider and the core tools |
+| **M3 The engine** | C08, C09, C10, C11 | protocol, sessions, the loop, compaction, config |
+| **M4 It runs** | C12 | `nova -p "…"` and `--mode rpc` work end to end |
+| **M5 Extensible** | C13, C14 | the extension host, `nova serve`, the GitHub Action |
+| **M6 The terminal** | C15, C16, C17 | the TUI: thinking block, tool cards, dialogs, widgets |
+| **M7 Batteries** | C18, C19 | bundled extensions, polish, release |
+| **M8 Adoption** | | Ivy, then her-go, then polaris embed the library ([`INTEGRATION.md`](INTEGRATION.md)) |
 
-Deliverables: `message`, `provider` + `openaicompat` + `openrouter`, `tool`
-interface + registry, core `fs`/`bash` tools, `agent` loop with hooks and
-events, minimal CLI.
+Exit criteria: M4 is "the backend is complete and tested before any UI exists". M6 is the
+first point Nova is comparable to Pi as a daily coding agent. M8 is "two production projects
+run on Nova with no bespoke loop code".
 
-Exit criterion: an OpenRouter prompt can call tools and produce a final answer;
-unit tests cover the loop, registry, provider SSE parsing, and the fs tools.
+## 6. Cross-cutting
 
-### M1 — Tool authoring and permissions [backend]
-
-Deliverables:
-- YAML manifest loader: `tools/<name>/tool.yaml` with `name`, `agent`,
-  `description`, `hot`, `category`, `parameters`, `trace` (her-go shape).
-- A Go handler binding by name, plus pure-Go `tool.New` tools.
-- Tool annotations surfaced to a permission hook (`ReadOnly`, `Destructive`,
-  `OpenWorld`, `Parallel`).
-- Context files (project instructions) loaded into the system prompt.
-- A `use_tools`-style deferred-tool loader for large tool sets.
-
-Exit criterion: adding a tool is creating a directory with a manifest and a
-handler, or calling `Register`; no central list to edit.
-
-### M2 — Sessions and compaction [backend]
-
-Deliverables:
-- JSONL session store with tree entries (`id`, `parentId`), active branch,
-  resume, branch, and fork.
-- `SessionManager` as the authority for model context (pi semantics).
-- Summarize-and-splice compaction at a user-message boundary; tool-result
-  pruning at request time.
-- Context-window accounting and a compaction trigger.
-- Session cost/token stats.
-
-Exit criterion: a multi-turn session survives process restart, branches cleanly,
-and compacts without losing tool-call/tool-result pairing.
-
-### M3 — TUI [frontend]
-
-Deliverables, built on the **`charm.land` stack** (Bubble Tea v2, Lipgloss v2,
-Bubbles v2, Glamour v2, Log v2) to match crush's quality bar:
-- Streaming transcript with text, reasoning, tool calls, and tool results.
-- Input editor, slash commands, model picker, thinking level.
-- Session list/switch; compaction indicator; token/cost footer.
-- Tool-call rendering per tool (diff view for edits, command/output for bash),
-  syntax-highlighted code, and an expandable transcript.
-- Thoughtful theme, spacing, and motion; graceful narrow-terminal behavior.
-
-Exit criterion: Nova can be used as a daily coding agent from the terminal —
-the first point at which it is comparable to pi as a coding harness.
-
-### M3.5 — Coding-harness parity [frontend]
-
-Deliverables: the remaining pi-class affordances that make it a *good* coding
-agent rather than a demo — `grep`/`glob` search tools, patch/diff editing,
-project context files (`AGENTS.md`/`CLAUDE.md`-style), prompt templates,
-permission confirmation UI, and cost/usage dashboards.
-
-Exit criterion: a feature checklist against pi passes for everyday coding work,
-with our own architecture throughout.
-
-### M4 — Extensions and interop [backend + frontend]
-
-Deliverables:
-- `extension` package: an in-process `Extension` interface plus a registry
-  (`RegisterTool`, `RegisterProvider`, `RegisterCommand`, `On(event, handler)`).
-- MCP client so external servers' tools appear in the registry.
-- Skills and prompt templates loaded from disk.
-- Structured output and image inputs.
-
-Exit criterion: a third party can add tools/commands via a Go package or an MCP
-server without modifying Nova.
-
-### M4.5 — Frontend polish [frontend]
-
-Deliverables: the details that make a charm-built tool feel finished — a
-first-run experience, `fang`-style help output, themed components, golden tests
-via `catwalk`, and performance budgets for large transcripts.
-
-### M5 — Integrations [backend]
-
-Deliverables: wire ivy's "Ask Ivy" through Nova behind its `llm.Gate`; migrate
-her-go's `agent_engine`; port polaris's research loop with nudges as hooks.
-
-Exit criterion: at least two production projects run on Nova with no bespoke
-loop code.
-
-## 6. Cross-cutting concerns
-
-- **Security.** Tool annotations + a permission hook; path containment options;
-  no secrets in logs; provider credentials resolved at request time.
-- **Cost.** Every provider call reports tokens and, when available, cost; a cap
-  hook can refuse calls (this is where ivy's gate attaches).
-- **Caching.** Keep the system prefix stable and provider-agnostic; leave
-  provider-specific prompt-cache hints to the provider implementation.
-- **Testing.** A scriptable fake provider (already in the M0 spike) for
-  deterministic loop tests; golden tests for the TUI; a live smoke test behind a
-  build tag.
+- **Security.** Permission policy; path containment (`Roots`); extension env scrubbing; no secrets
+  in logs; the Action is read-only and treats pull-request content as untrusted.
+- **Cost.** A usage ledger from day one; cost caps; provider cost when reported, catalog otherwise.
+- **Caching.** A stable system prefix; provider-specific hints belong to the provider; routing options
+  keep OpenRouter prompt caches warm.
+- **Testing.** See [`TESTING.md`](TESTING.md).
 
 ## 7. Open questions
 
-- Is the canonical transcript `message.Message` sufficient for Anthropic-style
-  content blocks, or do we need a richer content-part model before M4?
-- Do steering/follow-up message queues (pi's model) belong in v1, or after M2?
-- Should the TUI be a separate module from the library to keep the core tiny?
-- How much of polaris's "research" vocabulary (citations, cards, charts) should
-  be generic tools versus app-level hooks?
-- Do we want a Starlark/JS scripting host once the extension API stabilizes?
-
-## 8. Decision log
-
-See [`DESIGN.md`](DESIGN.md#decision-log) for the locked decisions and the
-alternatives considered.
+1. **Ori and OpenRouter OAuth specifics** are read from their documentation in C03, not assumed.
+2. **Multi-user `serve`.** Out of scope now. Needed only if a website wants one Nova serving many users.
+3. **Web fetch and search.** Bundled `webfetch` is keyless; search is the suggested `parallel` extension.
+4. **Image and document content parts.** Deferred; the session format reserves room.
+5. **MCP client.** The manifest accepts the `mcp` capability; the client is a later chunk.

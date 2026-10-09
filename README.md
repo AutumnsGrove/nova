@@ -1,7 +1,7 @@
 # Nova
 
-> A minimal, pi-inspired agent harness in Go — built to be embedded in Go
-> applications (her-go, polaris, ivy) or run standalone as a CLI/TUI.
+> A minimal, pi-and-crush-inspired agent harness in Go — built to be embedded in
+> Go applications (her-go, polaris, ivy) or run standalone as a CLI/TUI.
 
 **Status: planning.** No library code is being written yet. The repository
 contains the plan and design documents, plus an early M0 prototype at the
@@ -24,7 +24,9 @@ Nova is a reusable agentic-loop library for Go. It provides:
 - a **CLI/TUI** frontend, and an in-process extension API.
 
 The design is modeled on [pi](https://github.com/earendil-works/pi): minimal to
-start, easy to extend, and useful out of the box.
+start, easy to extend, and useful out of the box. The look, feel, and terminal
+craft are modeled on [crush](https://github.com/charmbracelet/crush), built on
+the [`charm.land`](https://charm.sh) library stack.
 
 ## North star
 
@@ -59,12 +61,26 @@ wheel.
 as `polaris`, `her-go`, and `ivy`. The module path is
 `github.com/AutumnsGrove/nova`.
 
+## Inspirations
+
+Two projects shape Nova:
+
+- **[pi](https://github.com/earendil-works/pi)** — the *architecture*. A small
+  agent loop, hooks at every stage, a tool/provider extension model, a session
+  tree, and a minimal core that grows rich through extension.
+- **[crush](https://github.com/charmbracelet/crush)** — the *experience*. A
+  gorgeous, fast, keyboard-driven terminal agent built on the `charm.land`
+  libraries. Nova uses the same stack for its frontend so the result feels as
+  good as it works.
+
 ## Lineage
 
 Nova borrows deliberately:
 
 - from **pi** — the agent loop and hooks, the tool/provider extension model, the
   session tree, and the minimal-core philosophy;
+- from **crush / charm.land** — the terminal design language and the frontend
+  stack (Bubble Tea, Lipgloss, Bubbles, Glamour, Log);
 - from **her-go** — the shared loop with lifecycle hooks, YAML tool manifests,
   continuation windows, and the OpenAI-compatible client shape;
 - from **polaris** — concurrent tool dispatch with panic isolation, pseudo

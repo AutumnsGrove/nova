@@ -49,6 +49,9 @@ standalone agent are the same thing viewed from two sides.
 - **Pi-class as a coding agent.** The standalone harness should eventually match
   pi as a daily coding agent: core tools, sessions, compaction, a real TUI, and
   easy extension.
+- **Beautiful by default.** The terminal experience should be as crafted as
+  crush: a fast, responsive, keyboard-driven TUI with clean typography, purposeful
+  color, and delightful details, built on the `charm.land` stack.
 - **Observable and cost-aware.** A typed event stream and accumulated usage/cost
   from day one.
 
@@ -76,6 +79,9 @@ standalone agent are the same thing viewed from two sides.
 6. **Zero required dependencies for the core.** The loop, registry, and
    OpenAI-compatible provider use only the standard library. YAML and the TUI
    are opt-in packages.
+7. **Polish is part of the product.** The frontend is built on the `charm.land`
+   libraries; visual quality and terminal craft are held to the crush standard,
+   not treated as decoration.
 
 ## 5. Milestones
 
@@ -120,12 +126,14 @@ and compacts without losing tool-call/tool-result pairing.
 
 ### M3 — TUI
 
-Deliverables (Bubble Tea v2):
+Deliverables, built on the **`charm.land` stack** (Bubble Tea v2, Lipgloss v2,
+Bubbles v2, Glamour v2, Log v2) to match crush's quality bar:
 - Streaming transcript with text, reasoning, tool calls, and tool results.
 - Input editor, slash commands, model picker, thinking level.
 - Session list/switch; compaction indicator; token/cost footer.
 - Tool-call rendering per tool (diff view for edits, command/output for bash),
-  and an expandable transcript.
+  syntax-highlighted code, and an expandable transcript.
+- Thoughtful theme, spacing, and motion; graceful narrow-terminal behavior.
 
 Exit criterion: Nova can be used as a daily coding agent from the terminal —
 the first point at which it is comparable to pi as a coding harness.
@@ -151,6 +159,12 @@ Deliverables:
 
 Exit criterion: a third party can add tools/commands via a Go package or an MCP
 server without modifying Nova.
+
+### M4.5 — Frontend polish
+
+Deliverables: the details that make a charm-built tool feel finished — a
+first-run experience, `fang`-style help output, themed components, golden tests
+via `catwalk`, and performance budgets for large transcripts.
 
 ### M5 — Integrations
 

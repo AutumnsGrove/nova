@@ -60,7 +60,7 @@ The prototype is intentionally narrower than [`ARCHITECTURE.md`](ARCHITECTURE.md
 | Sessions | none | JSONL tree + `session.Manager` (M2) |
 | Compaction | none | summarize-and-splice (M2) |
 | Context files | none | project instructions in the system prompt (M1) |
-| TUI | line-oriented REPL | Bubble Tea transcript, commands, model picker (M3) |
+| TUI | line-oriented REPL | `charm.land` TUI (Bubble Tea, Lipgloss, Bubbles, Glamour) (M3) |
 | Extensions | none | `Extension` + `Host`, MCP (M4) |
 | Message content | text only | images/content parts (M4) |
 | Steering queues | none | pi-style steer/follow-up (M2) |
@@ -75,6 +75,8 @@ The prototype is intentionally narrower than [`ARCHITECTURE.md`](ARCHITECTURE.md
   fallback.
 - No token estimation or context accounting, so no compaction trigger.
 - The CLI keeps a single in-memory history; nothing persists between processes.
+- The CLI is a plain line REPL, not the crafted `charm.land` TUI planned for M3;
+  the real frontend will follow crush's design language.
 - Provider behavior is only exercised against a fake SSE server (and optionally
   a live OpenRouter call), not against a compatibility matrix.
 

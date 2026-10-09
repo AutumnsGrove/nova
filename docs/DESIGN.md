@@ -17,6 +17,7 @@ them. It is the "why" companion to [`ARCHITECTURE.md`](ARCHITECTURE.md) (the
 | D7 | First adopter | Nova standalone first | Prove the harness as a coding agent before touching production loops | Integrate ivy/her-go first |
 | D8 | Name | **Nova** | Astral, short, in the family with `polaris`; only the N capitalized | Aster, Canopy, Cirrus, Loom |
 | D9 | North star | A full pi-class coding harness, our own, same principles | The library and the standalone agent are the same artifact | Keep it a pure library |
+| D10 | Frontend stack | `charm.land` libraries (Bubble Tea, Lipgloss, Bubbles, Glamour, Log), designed after crush | Best-in-class terminal UX, proven at scale by crush; we get the craft without writing a renderer | Hand-rolled ANSI; a web UI; a different TUI toolkit |
 
 ## Ecosystem survey
 
@@ -27,7 +28,7 @@ table.
 | Project | What it is | Strengths | Why we didn't adopt |
 |---|---|---|---|
 | [pi](https://github.com/earendil-works/pi) | TypeScript coding agent + `pi-agent-core` + `pi-ai` | The design we're modeling: small loop, hooks, session tree, extensions, great UX | Not Go; a Node process |
-| [crush](https://github.com/charmbracelet/crush) | Full Go TUI coding agent | Battle-tested, polished, rich tools | An *application*: SQLite, LSP, Bubble Tea UI, pub/sub — not an embeddable core |
+| [crush](https://github.com/charmbracelet/crush) | Full Go TUI coding agent | Battle-tested, polished, rich tools, best-in-class terminal UX | An *application*: SQLite, LSP, TUI, pub/sub — not an embeddable core. We adopt its **design language and frontend stack**, not its code |
 | [charm.land/fantasy](https://pkg.go.dev/charm.land/fantasy) | The agent/provider library behind crush | Real-world hardened, good provider coverage, streaming callbacks | Only the LLM/loop layer — no tools, sessions, or compaction; we'd build the whole harness on top anyway, inheriting its types |
 | [sausheong/harness](https://github.com/sausheong/harness) | Reusable Go agentic platform | Closest to pi out of the box: registry, file/bash tools, sessions, compaction, sub-agents, MCP, 6 providers, MIT | Young (v0.6.x, ~12 stars), API still shifting; adopting means rewriting our tools and LLM clients to its interfaces |
 | [looprig/harness](https://pkg.go.dev/github.com/looprig/harness) | Typed, durable agent runtime | Sophisticated: actors, journal, gates, restore, events | Pre-v1, heavy multi-module ecosystem; overkill for our scope |
@@ -59,6 +60,21 @@ and could replace parts of our provider/session layers later.
 - The **session tree** (JSONL entries with parent links) and compaction that
   inserts a summary entry without destroying history.
 - The **minimal-core philosophy**: small to start, rich when extended.
+
+### From crush and charm.land
+
+- The **terminal design language**: a calm, information-dense transcript; clear
+  tool-call cards; streaming that feels alive; restrained color; consistent
+  spacing; keyboard-first navigation.
+- The **frontend stack**: `charm.land/bubbletea/v2` (event loop and rendering),
+  `charm.land/lipgloss/v2` (layout and style), `charm.land/bubbles/v2`
+  (editor, viewport, list, spinner), `charm.land/glamour/v2` (markdown),
+  `charm.land/log/v2` (logging). Later: `charm.land/fang` for CLI help and
+  `charm.land/catwalk` for golden tests, matching crush's tooling.
+- The **quality bar**: polish and performance are features, not afterthoughts.
+
+Nova does **not** take crush's architecture (SQLite/SQLC/LSP/pub-sub). It takes
+crush's *taste* and the libraries that express it, applied to a much smaller core.
 
 ### From her-go
 

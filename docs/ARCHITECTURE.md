@@ -72,7 +72,7 @@ nova/
     mcp/              (M4) MCP client
   config/
     config.go         config file, model selection, provider wiring
-  tui/                (M3) Bubble Tea frontend
+  tui/                (M3) terminal frontend on the charm.land stack
   cmd/nova/           runnable binary
 ```
 
@@ -450,3 +450,38 @@ is designed so it can be added without changing extension authors' code.
   refresh mid-run).
 - Usage and cost are accumulated on every run; ivy's cap/ledger logic attaches
   as a provider decorator.
+
+## 11. Frontend stack
+
+The core is deliberately dependency-light; the frontend is where the `charm.land`
+stack lives. Nova's terminal experience is modeled on
+[crush](https://github.com/charmbracelet/crush), which is built on the same
+libraries.
+
+| Library | Role |
+|---|---|
+| `charm.land/bubbletea/v2` | TUI event loop and rendering |
+| `charm.land/lipgloss/v2` | Layout, styling, color |
+| `charm.land/bubbles/v2` | Editor, viewport, list, spinner, key bindings |
+| `charm.land/glamour/v2` | Markdown rendering in the transcript |
+| `charm.land/log/v2` | Structured logging |
+| `charm.land/fang` (later) | Polished CLI help/output |
+| `charm.land/catwalk` (later) | Golden-file TUI tests |
+
+Principles for the frontend:
+
+- **Events drive the UI.** The TUI consumes the same `agent.Event` stream as
+  every other consumer; it never reimplements loop logic.
+- **Rendering is a pure function of state.** Transcript entries, tool cards, and
+  status are rendered from a state model, which keeps golden tests possible and
+  the UI testable without a loop.
+- **Themes are data.** A theme is a set of Lipgloss styles; light/dark and user
+  themes are configuration, not code branches.
+- **Graceful degradation by mode.** The same binary runs interactive (TUI),
+  plain/print, and JSON modes; terminal-only behavior is guarded by mode.
+- **Performance budget.** Streaming and large transcripts must stay responsive;
+  rendering work is bounded and off the hot path where possible.
+
+Tool-specific rendering (a diff for `edit`, command/output for `bash`, a
+spinner while a tool runs) lives in the frontend as renderers keyed by tool
+name, so new tools get a sane default without frontend changes.

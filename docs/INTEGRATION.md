@@ -90,8 +90,9 @@ closest migration.
 - **Model clients.** `llm.Client` wraps as a Nova `Provider` (thin adapter), or
   is replaced by `openaicompat` reading the same config. The former is safer
   first.
-- **Events.** Map `tui.Event` types from Nova's `Event` stream; the TUI can stay
-  her-go's until Nova's TUI matures.
+- **Events.** Map `tui.Event` types from Nova's `Event` stream. her-go already
+  builds its TUI on the `charm.land` stack (Bubble Tea, Lipgloss, Bubbles, Huh),
+  so it can keep its frontend and later adopt Nova's when it matures.
 - **Deferred loading.** her-go's `use_tools` becomes Nova's deferred-tool loader
   (M1).
 

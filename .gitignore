@@ -1,0 +1,25 @@
+# Binaries
+/nova
+/nova-*
+*.exe
+
+# Test / coverage output
+*.test
+*.out
+coverage.*
+/tmp/
+
+# Go workspace and vendor
+go.work
+go.work.sum
+/vendor/
+
+# Local environment / secrets
+.env
+.env.local
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/logo/nova-mark-dark.svg">
-    <img alt="Nova" src="assets/logo/nova-mark-light.svg" width="160">
+    <img alt="Nova" src="assets/logo/nova-mark-light.svg" width="280">
   </picture>
 </p>
 
@@ -105,7 +105,7 @@ wheel.
 | [`docs/DESIGN.md`](docs/DESIGN.md) | Decision log, the ecosystem survey, and what we borrow from where. |
 | [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | How her-go, polaris, and ivy embed the backend. |
 | [`docs/SPIKE.md`](docs/SPIKE.md) | What the M0 prototype proves, and its known limitations. |
-| [`docs/BRAND.md`](docs/BRAND.md) | The logo, its palette, and how to regenerate it. |
+| [`docs/BRAND.md`](docs/BRAND.md) | The two logo marks, the palette, and how to regenerate them. |
 
 ## Name
 

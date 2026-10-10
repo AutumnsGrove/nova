@@ -201,7 +201,7 @@ func Test_CUT11_NeverInsideToolGroup(t *testing.T) {
 func messagesFromScript(script string) []message.Message {
 	var msgs []message.Message
 	calls := 0
-	for _, r := range script {
+	for i, r := range script {
 		switch r {
 		case 'u':
 			msgs = append(msgs, message.User("u"))
@@ -211,7 +211,10 @@ func messagesFromScript(script string) []message.Message {
 			calls++
 			msgs = append(msgs, toolGroup(fmt.Sprintf("c%d", calls))...)
 		case 's':
-			msgs = append(msgs, message.System("s"))
+			// A system message is only valid at the very start.
+			if i == 0 {
+				msgs = append(msgs, message.System("s"))
+			}
 		case 'l':
 			msgs = append(msgs, msgRunes(message.RoleAssistant, 400))
 		}

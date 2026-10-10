@@ -350,7 +350,9 @@ func (h *Host) handleUI(inst *instance, line []byte) {
 	}
 	resp.Type = proto.FrameUIResponse
 	resp.ID = req.ID
-	_ = inst.conn.notify(resp)
+	if inst.conn != nil {
+		_ = inst.conn.notify(resp)
+	}
 }
 
 // fireAndForget reports whether a UI method needs no answer.
@@ -426,7 +428,9 @@ func (h *Host) handleComplete(inst *instance, line []byte) {
 		frame.Message = resp.Message
 		frame.Usage = resp.Usage
 	}
-	_ = inst.conn.notify(frame)
+	if inst.conn != nil {
+		_ = inst.conn.notify(frame)
+	}
 }
 
 // Commands returns every running extension's slash commands in load order.

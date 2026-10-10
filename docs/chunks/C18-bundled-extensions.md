@@ -1,6 +1,6 @@
 ---
 chunk: C18
-title: Bundled extensions
+title: "Bundled extensions"
 packages: [./ext, ./bundled, ./bundled/tasks, ./bundled/ask, ./bundled/plan, ./bundled/subagent, ./bundled/webfetch]
 budgets: { ./ext: 1700, ./bundled: 150, ./bundled/tasks: 450, ./bundled/ask: 350, ./bundled/plan: 400, ./bundled/subagent: 500, ./bundled/webfetch: 650 }
 depends: [C13, C17]

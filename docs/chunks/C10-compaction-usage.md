@@ -1,6 +1,6 @@
 ---
 chunk: C10
-title: Compaction, context limit, usage ledger
+title: "Compaction, context limit, usage ledger"
 packages: [./compaction, ./usage]
 budgets: { ./compaction: 600, ./usage: 200 }
 depends: [C08, C09]

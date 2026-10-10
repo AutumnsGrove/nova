@@ -3,10 +3,19 @@
 You are working on Nova, a Go agent harness: one binary that is a terminal coding agent, a
 headless tool, a GitHub Action, a backend, and a library. Read `README.md` for the overview.
 
+## Start here
+
+Every session starts the same way: **read `NEXTSTEPS.md`, then this file, then do the first item under "Start here"
+in `NEXTSTEPS.md`** (or the chunk you were told to take). `NEXTSTEPS.md` is generated from the handoff notes the
+previous agents wrote, so it always says what is done, what is ready, what is blocked, and what the last agent
+learned. Text inside its `human` block is instructions from the person running the project; follow it.
+
 ## How work is assigned
 
 Work arrives as **one chunk** (`docs/chunks/CNN-*.md`). Your spec is the source of truth.
 
+0. **Claim it.** Before anything else, create `docs/chunks/CNN.done.md` from `docs/chunks/DONE-TEMPLATE.md` with
+   `status: in-progress`. If that file already exists with another agent's work in it, stop and say so.
 1. Read your chunk spec, then `docs/TESTING.md` sections 3 to 6, then only the files the spec lists
    under "Read first". Do not read the rest of the repository.
 2. Write the tests first, from the spec's **Matrix**. Every row has an ID, and the test's name must contain
@@ -14,8 +23,14 @@ Work arrives as **one chunk** (`docs/chunks/CNN-*.md`). Your spec is the source 
 3. Implement until they pass. Add rows and tests if you find a gap; never delete or weaken a row.
 4. Touch only the files the spec lists. If you must go outside, stop and say why.
 5. Run `go run ./scripts/accept CNN` until it passes. That is the definition of done.
-6. Write `docs/chunks/CNN.done.md`: what you built and every row or acceptance item you could not
-   satisfy, with the reason. An empty list is fine. A silent gap is not.
+6. **Finish the handoff note** `docs/chunks/CNN.done.md`: set `status` (`done`, `partial`, or `blocked`), the date, your
+   name, the branch, the cost if you can see it, every row or acceptance item you could not satisfy under `unmet`,
+   corrections the specs need under `spec_changes`, decisions that belong in `docs/DECISIONS.md` under `decisions`,
+   and fill in `## Built`, `## Deviations`, `## Surprises`, and `## Notes for the next agent`. Write for the next
+   agent, who has not seen your session. Replace every `TODO:`. An empty `unmet` list is fine; a silent gap is not.
+   `accept` fails until the note is complete.
+7. Run `go run ./scripts/nextsteps build` so `NEXTSTEPS.md` reflects your note, and commit it with your work. If
+   merging produces a conflict in `NEXTSTEPS.md`, resolve it by running `build` again; never hand-merge it.
 
 ## Rules
 
@@ -43,6 +58,8 @@ go test -race ./...                        before finishing
 go run ./scripts/accept CNN                the gate for chunk CNN
 go run ./scripts/matrixcheck <spec> <pkg>  every matrix row has a test
 go run ./scripts/importcheck               layer rules and the UI import boundary
+go run ./scripts/nextsteps build           regenerate NEXTSTEPS.md from the handoff notes
+go run ./scripts/nextsteps check CNN       validate your handoff note
 ```
 
 The M0 prototype at the repository root is the starting point for some chunks. Your spec says what to

@@ -65,7 +65,7 @@ nova/
     cli/          fang-styled help and errors (full build only) ≤ 150
   cmd/nova/       main, cobra commands, doctor, version         ≤ 500
   doctor/         environment checks                            ≤ 300
-  scripts/        matrixcheck, linecount, importcheck, accept
+  scripts/        matrixcheck, linecount, importcheck, accept, nextsteps
   assets/         logo SVGs and the generator
   docs/
 ```

@@ -1,6 +1,6 @@
 ---
 chunk: CNN
-title: Short title
+title: "Short title"
 packages: [./path/to/pkg]
 budgets: { ./path/to/pkg: 500 }
 depends: [C00]

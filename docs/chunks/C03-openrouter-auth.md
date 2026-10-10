@@ -1,6 +1,6 @@
 ---
 chunk: C03
-title: OpenRouter preset, login, model catalog
+title: "OpenRouter preset, login, model catalog"
 packages: [./provider/openrouter, ./auth]
 budgets: { ./provider/openrouter: 300, ./auth: 500 }
 depends: [C02]

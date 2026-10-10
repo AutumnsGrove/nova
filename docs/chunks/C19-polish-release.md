@@ -1,6 +1,6 @@
 ---
 chunk: C19
-title: Polish, first run, doctor, examples, release
+title: "Polish, first run, doctor, examples, release"
 packages: [./cmd/nova, ./doctor, ./config, ./tui/firstrun, ./tui/cli]
 budgets: { ./cmd/nova: 500, ./doctor: 300, ./config: 1000, ./tui/firstrun: 250, ./tui/cli: 150 }
 depends: [C16, C17, C18]

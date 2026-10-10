@@ -1,6 +1,6 @@
 ---
 chunk: C06
-title: Search tools
+title: "Search tools"
 packages: [./tools/search]
 budgets: { ./tools/search: 700 }
 depends: [C04]

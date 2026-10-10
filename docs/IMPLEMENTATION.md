@@ -69,8 +69,12 @@ C11, and C09 in parallel, then C10 and C03, then C12. That produces a working
 One prompt per chunk, built from this template. The agent reads only the files it
 names, not the whole repository.
 
+The everyday prompt is one line: *read `NEXTSTEPS.md` and `AGENTS.md`, then do the first item under Start here.*
+When you want a specific chunk, use this longer form:
+
 ```
-You are implementing chunk <CNN> of Nova, a Go agent harness.
+You are implementing chunk <CNN> of Nova, a Go agent harness. Read NEXTSTEPS.md and AGENTS.md first.
+Claim the chunk before anything else by creating docs/chunks/<CNN>.done.md from DONE-TEMPLATE.md.
 
 Read these, in this order, and nothing else unless a spec says to:
   1. docs/chunks/<CNN>-<name>.md        (your spec: follow it exactly)
@@ -84,16 +88,35 @@ Rules:
   - Do not change files outside the list in your spec. If you must, stop and say why.
   - Match the surrounding code's style. No new dependencies unless the spec allows them.
   - Run `scripts/accept <CNN>` and make it pass before you finish.
-  - When done, write docs/chunks/<CNN>.done.md: what you built, and any matrix row or
-    acceptance item you could NOT satisfy, with the reason. An empty list is fine.
+  - When done, finish the handoff note docs/chunks/<CNN>.done.md and run
+    `go run ./scripts/nextsteps build`. List any matrix row or acceptance item you could NOT
+    satisfy under `unmet`, with the reason. An empty list is fine.
 ```
+
+## Handoff: one file to start every session from
+
+`NEXTSTEPS.md` at the repository root is the single place to start. It is **generated** by `scripts/nextsteps`
+(chunk C00) from the per-chunk handoff notes `docs/chunks/CNN.done.md` and the chunk specs, so it is always current
+and parallel agents never conflict (each writes only its own note).
+
+- An agent **claims** a chunk by creating its note from `docs/chunks/DONE-TEMPLATE.md` (`status: in-progress`), and
+  **finishes** it by completing the note. `accept` fails until the note is complete, so the handoff cannot be skipped.
+- `nextsteps build` turns the notes into: what is in progress, what needs attention (partial or blocked), what is
+  ready to run in parallel, what the last chunks did, the notes the next agents need, spec corrections to apply,
+  decisions to record, unmet rows, and cost.
+- A **human block** in the file is yours: leave instructions for the next session there; it survives regeneration.
+- CI regenerates the file on every push to `main`.
+
+Before C00 exists, `NEXTSTEPS.md` is maintained by hand in the same format.
 
 ## The human's job
 
-1. Start an agent on a chunk.
-2. Come back; read `<CNN>.done.md`.
-3. Run `scripts/accept <CNN>`. If it passes and the `.done.md` list is empty, merge.
+1. Start an agent with the one-line prompt (or name a chunk from the **Ready now** list).
+2. Come back; read `NEXTSTEPS.md` or the agent's note `docs/chunks/<CNN>.done.md`.
+3. Run `scripts/accept <CNN>`. If it passes and `unmet` is empty, merge.
 4. If not, send the failing output back to the same agent.
+5. After merging, apply any **Spec corrections** and **Decisions to record** the notes list, and clear them from the
+   note. Leave instructions for the next session in the human block of `NEXTSTEPS.md`.
 
 That is the whole review for a chunk. A second pass by a larger model is an exception,
 used when a `.done.md` lists a gap or when a chunk touches security. Chunks flagged for review of

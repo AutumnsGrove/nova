@@ -1,6 +1,6 @@
 ---
 chunk: C04
-title: Tool contract, registry, permission policy
+title: "Tool contract, registry, permission policy"
 packages: [./tool, ./permission]
 budgets: { ./tool: 400, ./permission: 300 }
 depends: [C01]

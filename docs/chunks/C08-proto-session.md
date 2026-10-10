@@ -1,6 +1,6 @@
 ---
 chunk: C08
-title: Protocol types and the session store
+title: "Protocol types and the session store"
 packages: [./proto, ./session]
 budgets: { ./proto: 600, ./session: 900 }
 depends: [C01]

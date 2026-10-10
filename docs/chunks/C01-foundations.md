@@ -1,6 +1,6 @@
 ---
 chunk: C01
-title: Message, provider contract, testkit
+title: "Message, provider contract, testkit"
 packages: [./message, ./provider, ./testkit]
 budgets: { ./message: 250, ./provider: 500, ./testkit: 1200 }
 depends: [C00]

@@ -1,6 +1,6 @@
 ---
 chunk: C14
-title: The serve mode and the GitHub Action
+title: "The serve mode and the GitHub Action"
 packages: [./mode/serve, ./mode/action]
 budgets: { ./mode/serve: 400, ./mode/action: 700 }
 depends: [C12]

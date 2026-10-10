@@ -1,6 +1,6 @@
 ---
 chunk: C07
-title: The bash tool
+title: "The bash tool"
 packages: [./tools/bash]
 budgets: { ./tools/bash: 400 }
 depends: [C04]

@@ -1,6 +1,6 @@
 ---
 chunk: C17
-title: TUI dialogs, widgets, status, extension UI bridge
+title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/trust]
 budgets: { ./tui/dialog: 800, ./tui/widget: 300, ./tui/trust: 150 }
 depends: [C15, C13]

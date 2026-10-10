@@ -1,6 +1,6 @@
 ---
 chunk: C02
-title: openaicompat streaming provider
+title: "openaicompat streaming provider"
 packages: [./provider/openaicompat]
 budgets: { ./provider/openaicompat: 600 }
 depends: [C01]

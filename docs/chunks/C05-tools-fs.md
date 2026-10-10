@@ -1,6 +1,6 @@
 ---
 chunk: C05
-title: Filesystem tools
+title: "Filesystem tools"
 packages: [./tools/fs]
 budgets: { ./tools/fs: 900 }
 depends: [C04]

@@ -1,6 +1,6 @@
 ---
 chunk: C11
-title: Config, context files, skills, prompt templates, trust
+title: "Config, context files, skills, prompt templates, trust"
 packages: [./config]
 budgets: { ./config: 1000 }
 depends: [C04]

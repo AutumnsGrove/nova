@@ -5,13 +5,14 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C03 are done. `accept C03` and `make ci` pass. `message`, the `provider`
-contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, and `auth`
-(PKCE login, key store, credential resolution) exist.
+**State:** C00 through C04 are done. `accept C04` and `make ci` pass. `message`, the `provider`
+contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, `auth`
+(PKCE login, key store, credential resolution), the hardened `tool` registry with JSON-schema argument
+validation, and the `permission` allow/ask/deny policy exist.
 
-**Next:** run **C04** (`docs/chunks/C04-tool-permission.md`): the tool contract, registry, and permission
-policy. C04 and C08 are independent, one at a time. Then C05, C06, C07, C11, C09, C10, C12. C04 does
-not need `testkit` yet, but remember D48: any package's `_test.go` may import it.
+**Next:** run **C05** (`docs/chunks/C05-tools-fs.md`): the filesystem tools. C04 and C08 were
+independent, one at a time. Then C06, C07, C11, C09, C10, C12. Remember D48: any package's `_test.go`
+may import `testkit`.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -26,7 +27,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C01 | Message, provider contract, testkit | done | C00 | 2026-10-09 | |
 | C02 | openaicompat streaming provider | done | C01 | 2026-10-09 | |
 | C03 | OpenRouter preset, login, model catalog | done | C02 | 2026-10-09 | |
-| C04 | Tool contract, registry, permission policy | todo | C01 | | |
+| C04 | Tool contract, registry, permission policy | done | C01 | 2026-10-09 | |
 | C05 | Filesystem tools | todo | C04 | | |
 | C06 | Search tools | todo | C04 | | |
 | C07 | The bash tool | todo | C04 | | |
@@ -46,6 +47,52 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C04 — Tool contract, registry, permission policy — 2026-10-09 — pi — main — cost not visible
+
+Hardened the tool contract and added the permission policy, in small green commits: schema validator,
+registry/Execute, globs, then policy.
+
+- `tool/schema.go` — `ValidateArgs`, a JSON Schema subset validator. Keywords: `type`, `properties`,
+  `required`, `additionalProperties`, `enum`, `items`, `minimum`/`maximum`, `minLength`/`maxLength`,
+  `minItems`/`maxItems`; malformed keywords are ignored and log one debug line per call.
+- `tool/tool.go` — `Result.Details`/`Truncated`, `Update`, and `Context.Roots`/`SessionID`/`Emit`/
+  `Complete` with a nil-safe `Progress`.
+- `tool/registry.go` — `Execute` validates before running, treats empty/null args as `{}`, rejects a
+  non-object, returns `cancelled` on a cancelled context, recovers panics to `internal error in <tool>`, and
+  lists up to ten known tools for an unknown one. Added `Replace`, `Unregister`, `View`, and `Info`.
+- `permission/glob.go` — `MatchPath` (with `**`) and `MatchString`.
+- `permission/shell.go` — `HasShellControlOperator` for the allow-rule guard.
+- `permission/policy.go` — `Policy`, `Rule`, `Call`, `Decision`, `Validate`, and `Decide` with
+  annotation defaults, most-restrictive-wins, path globs, and the headless resolution.
+- Tests `SCH01`–`SCH20`, `REG01`–`REG22`, `GLB01`–`GLB14`, `PRM01`–`PRM30`, plus `FuzzValidateArgs`,
+  `FuzzMatchPath`, `FuzzMatchString`, `FuzzDecide`, and `TestProperty_PRM_MostRestrictive`.
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C04` passes all nine steps; `make ci` and
+`go test -race ./...` are green. Budgets: `tool` 516/550, `permission` 298/300.
+
+**Differed from spec:**
+- The `tool` budget was raised from 400 to 550 (human-approved 2026-10-09) in the C04 spec and
+  `docs/ARCHITECTURE.md`; the SCH matrix plus the hardened registry need 516 lines.
+- "First problem in schema order": a Go `map[string]any` has no order, so `properties` and unknown keys are
+  walked in sorted-key order, and the check order is type, enum, required, properties,
+  additionalProperties, then type-specific bounds.
+- An unknown type name (not just a non-string `type`) is treated as malformed: ignored and logged.
+- Annotation default is `allow` only for a read-only, non-destructive, non-open-world tool; the spec said
+  "read-only and not open-world", and `!Destructive` only makes a contradictory tool stricter.
+- `additionalProperties` with a non-bool value is ignored; if it is the only malformed keyword, no debug
+  line is written, because the log is once per call for the first malformed keyword.
+- `Context.Progress` also guards a nil receiver, not only a nil `Emit`.
+
+**Gotchas:**
+- `gofmt` expands one-line `if`/`for` bodies, so trimming lines is mostly about fewer functions, not denser
+  syntax. `permission` has only two lines of headroom; `tool` has thirty-four.
+- Line budgets are code lines only (comments and blanks do not count). `make ci` skips chunks whose
+  Status is not `done`, so run `accept C04` while working on it.
+- The glob to regexp translation keeps `**/` as `(?:.*/)?`, so `src/**/x.go` matches `src/x.go`; a single
+  `*` becomes `[^/]*` in path mode.
+
+**One command:** `go run ./scripts/accept C04`.
 
 ### C03 — OpenRouter preset, login, model catalog — 2026-10-09 — pi — main — cost not visible
 
@@ -192,6 +239,13 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
+- C04 budgets: `./tool: 400` is too small for the SCH matrix plus the hardened registry (516 lines).
+  Applied: raised to 550 in the C04 spec and `docs/ARCHITECTURE.md` (human-approved 2026-10-09).
+- C04 Behaviour 12: "first problem found, in schema order" cannot mean map order, because `properties` is a
+  Go map. Implemented as sorted-key order over `properties` and unknown keys, with a fixed check order
+  (type, enum, required, properties, additionalProperties, then type-specific bounds).
+- C04 Behaviour 10/14: an unknown `type` name (not just a non-string `type`) is treated as malformed and
+  logged like the other malformed keywords; later drafts should say so.
 - C03 Behaviour 3 / Matrix ORT12: there is no OpenRouter slug `deepseek/deepseek-v4.1`; the model list has
   only `deepseek/deepseek-v4.1-flash` (fetched 2026-10-09). Implemented as stable id
   `deepseek/deepseek-v4.1` with wire slug `deepseek/deepseek-v4.1-flash`; later drafts should print the
@@ -231,6 +285,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   paths. Belongs in `docs/DECISIONS.md`.
 - `auth.Resolve` treats a `*PermissionWarning` as non-fatal: a stored key returns even when the file is more
   permissive than 0600, and the warning is left to direct `Store.Load` callers. Belongs in `docs/DECISIONS.md`.
+- `permission.Policy.Decide` reports the first rule with the winning action and walks map keys in sorted order,
+  so the decision and its `Reason` are deterministic across runs. Belongs in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
@@ -242,4 +298,4 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Cost
 
-Total: $0.00 recorded; the C00, C01, C02, and C03 session costs were not visible.
+Total: $0.00 recorded; the C00, C01, C02, C03, and C04 session costs were not visible.

@@ -2,7 +2,7 @@
 chunk: C05
 title: "Filesystem tools"
 packages: [./tools/fs]
-budgets: { ./tools/fs: 900 }
+budgets: { ./tools/fs: 1000 }
 depends: [C04]
 ---
 

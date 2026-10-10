@@ -5,14 +5,14 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C05 are done. `accept C05` and `make ci` pass. `message`, the `provider`
+**State:** C00 through C06 are done. `accept C06` and `make ci` pass. `message`, the `provider`
 contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, `auth`
 (PKCE login, key store, credential resolution), the hardened `tool` registry with JSON-schema argument
-validation, the `permission` allow/ask/deny policy, and the filesystem tools (`read`, `write`, `edit`,
-`list`) exist.
+validation, the `permission` allow/ask/deny policy, the filesystem tools (`read`, `write`, `edit`,
+`list`), and the search tools (`glob`, `grep`) exist.
 
-**Next:** run **C06** (`docs/chunks/C06-tools-search.md`): the search tools (`glob`, `grep`). Then C07, C11,
-C09, C10, C12. Remember D48: any package's `_test.go` may import `testkit`.
+**Next:** run **C07** (`docs/chunks/C07-tool-bash.md`): the bash tool. Then C11, C09, C10, C12. Remember
+D48: any package's `_test.go` may import `testkit`.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -29,7 +29,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C03 | OpenRouter preset, login, model catalog | done | C02 | 2026-10-09 | |
 | C04 | Tool contract, registry, permission policy | done | C01 | 2026-10-09 | |
 | C05 | Filesystem tools | done | C04 | 2026-10-09 | |
-| C06 | Search tools | todo | C04 | | |
+| C06 | Search tools | done | C04 | 2026-10-09 | |
 | C07 | The bash tool | todo | C04 | | |
 | C08 | Protocol types and the session store | todo | C01 | | |
 | C09 | The agent loop | todo | C01, C04, C08 | | |
@@ -47,6 +47,60 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C06 — Search tools — 2026-10-09 — pi — main — cost not visible
+
+Built `tools/search` in small green commits: path resolution, gitignore, walker, then glob and grep.
+
+- `tools/search/path.go` — `resolve` with the same containment rules as `tools/fs` (length/NUL checks,
+  WorkDir, `Roots` via `evalExisting`, which follows symlinks in the existing part of a path).
+- `tools/search/ignore.go` — `parseIgnore`/`ignoreSet`/`matchStack`. Reuses `permission.MatchPath` for an
+  anchored pattern and for the base name of an unanchored one; the subset is comments, blanks, `!`,
+  anchoring, a trailing `/`, `*`/`?`/`**`, classes, `\#`/`\!`, trailing spaces, BOM, and CRLF.
+- `tools/search/walk.go` — DFS in `os.ReadDir` order (already bytewise), `.git` always skipped, hidden
+  entries unless `Hidden`, a `.gitignore` stack per level, symlinks off by default with a real-path
+  visited set for loops, `MaxDepth`, ctx between entries, and a `walkStats` unreadable-directory count.
+- `tools/search/glob.go` — `glob` with `permission.MatchPath` semantics (`**/*.go`, `src/*.go`, `*.go`
+  at any depth) and `permission.ValidPath` for the invalid-pattern case; sorted, capped at 1000 with an
+  exact omitted count.
+- `tools/search/grep.go` — `grep` with RE2/fixed/`(?i)`, context groups merged with `--` separators,
+  binary sniff, 2 MiB file cap, 1 MiB line cap, 500-char display cut, invalid-UTF-8 replacement, match cap.
+- Tests `WLK01`–`WLK13`, `IGN01`–`IGN22`, `GLT01`–`GLT14`, `GRP01`–`GRP32`, `FuzzParseIgnore`,
+  `FuzzGlobPattern`, and `TestProperty_IGN_Subset`.
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C06` passes all nine steps; `make ci` exits 0;
+`go test -race ./...` is green; both fuzzers ran 5 s clean. Budgets: `tools/search` 699/700,
+`permission` 297/300.
+
+**Differed from spec:**
+- The layer rule now lets `tools/*` import `permission` (human-approved 2026-10-09), so `glob`/`grep` reuse
+  `MatchPath` instead of copying the engine. `scripts/importcheck` and `docs/ARCHITECTURE.md` were updated.
+- `permission/glob.go` gained a one-line `ValidPath` so invalid-pattern handling (GLT07 and the invalid
+  `glob` filter) has one implementation; this file is outside C06's Files table.
+- `walkOptions` gained an unexported `stats *walkStats` field, because the specified `walk(...) error`
+  signature has nowhere to return the unreadable-directory count (behaviour 5).
+- The walker reports directories as well as files (`walkEntry.IsDir`), so GLT05 can list directories only.
+  WLK01 asserts the file order `a,b,c/d`; the full pre-order is `a,b,c,c/d`.
+- `grep` `Details.files` is the number of files with at least one match, not files searched. `skipped`
+  counts skipped files plus over-long lines and is surfaced in `Details`, not a visible trailer.
+- `grep` sets `Truncated` when the match cap is reached, so a search with exactly `max_results` matches
+  and no more still reports truncation.
+- `grep` stops the walk at the cap, so `files` and `skipped` stop counting past it.
+- `glob` collects every match to print an exact omitted count, so memory is proportional to the matches.
+- Directory results from `glob` are plain relative paths, with no trailing `/`.
+
+**Gotchas:**
+- `tools/search` has one line of budget headroom; `permission` has three. Comments and blanks do not count,
+  but new code will need something removed.
+- `os.ReadDir` already sorts by name, so the walker does not re-sort.
+- For an unanchored ignore pattern the matcher runs `permission.MatchPath` against `path.Base(rel)`; `*`
+  never crosses `/`, which is exactly the basename rule.
+- IGN07 works because an ignored directory is never descended into, so its nested `.gitignore` is never
+  read; a child set only overrides a parent because `matchStack` visits deeper sets later.
+- `permission.MatchPath` treats an unbalanced `[` as "matches nothing", so an invalid ignore line is
+  skipped without a separate validity check.
+
+**One command:** `go run ./scripts/accept C06`.
 
 ### C05 — Filesystem tools — 2026-10-09 — pi — main — cost not visible
 
@@ -333,6 +387,17 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   `^[A-Z]{2,4}[0-9]{2,3}$` ID shape; later drafts should use two-to-four letter IDs.
 - C01 Matrix: TKL01/TKL02 say "run inside a sub-test harness", but `testing.TB` cannot be implemented outside
   `testing`, so `NoLeaks` is tested through its core `checkLeaks`. Later drafts should say "test the check core".
+- C06 Read first / layer rules: `tools/search` reuses `permission.MatchPath`, but `scripts/importcheck` let
+  `tools` import only `message`, `provider`, `tool`. Applied: `tools` may import `permission`
+  (human-approved 2026-10-09); ARCHITECTURE updated. Later drafts should name the allowance.
+- C06 Files table: it omits `permission/glob.go`, which needed a small exported `ValidPath` for GLT07 and the
+  invalid `glob` filter; later drafts should list it or say validity is reused.
+- C06 interfaces: `walk(...) error` has nowhere to return the unreadable-directory count; implemented with an
+  unexported `walkOptions.stats`. Later drafts should name the channel.
+- C06 Behaviour 19: "counted in a skipped note" is read as the `Details.skipped` field, not a visible trailer;
+  later drafts should say which.
+- C06 Behaviour 19: `grep` `Details.files` is not defined (searched files vs files with matches); implemented
+  as files with matches. Later drafts should say.
 
 ## Decisions to record
 
@@ -343,6 +408,10 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   permissive than 0600, and the warning is left to direct `Store.Load` callers. Belongs in `docs/DECISIONS.md`.
 - `permission.Policy.Decide` reports the first rule with the winning action and walks map keys in sorted order,
   so the decision and its `Reason` are deterministic across runs. Belongs in `docs/DECISIONS.md`.
+- `tools/*` may import `permission` so the path-glob engine has one implementation (C06); `permission` never
+  imports `tools`, so the graph stays acyclic. Belongs in `docs/DECISIONS.md`.
+- `grep` summarizes `files` as files-with-matches and folds skipped lines into `Details.skipped`; both are
+  display summaries, not part of the tool contract. Belongs in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
@@ -351,7 +420,9 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - Ori's harness documentation does not document environment variables for credentials or model handoff, so
   reading Ori's environment is out of scope (as C03 allowed).
 - Multi-user `serve` is assumed out of scope (one trusted agent behind a bearer token).
+- C06: is `grep` truncation expected to be exact (true only when a further match exists), or is "the cap was
+  reached" acceptable? Currently the latter.
 
 ## Cost
 
-Total: $0.00 recorded; the C00, C01, C02, C03, C04, and C05 session costs were not visible.
+Total: $0.00 recorded; the C00 through C06 session costs were not visible.

@@ -5,21 +5,16 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C11 are done. `accept C11` and `make ci` pass. `message`, the `provider`
-contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, `auth`
-(PKCE login, key store, credential resolution), the hardened `tool` registry with JSON-schema argument
-validation, the `permission` allow/ask/deny policy, the filesystem tools (`read`, `write`, `edit`,
-`list`), the search tools (`glob`, `grep`), the `bash` tool, the `proto` and `session` packages
-(the wire types, JSONL framing, and the session tree store), the `agent` loop (hooks, queues,
-retry, permissions, cancellation, and a typed `proto.Event` stream), `compaction` + `usage`
-(token estimation, cut points, summarisation, pruning, and the cost ledger), and `config`
-(defaults, merge order, env and flags, the trust store, AGENTS.md/CLAUDE.md discovery, skills,
-prompt templates, and system-prompt assembly) exist.
+**State:** C00 through C11 are done. C12 is **in progress**: `mode/` now has wiring, the server core
+(events, run control, state, auth gate), print/JSON/RPC transports, and `cmd/nova` with cobra; `nova
+version`, `--help`, `--mode json`, and the no-key error path work. Everything still passes `make ci`.
+The C11 `config` package is complete. C12 remains: `mode/builtin.go`, `mode/pipe.go`, permissions and
+UI requests, the session/reload/command/bash handlers, and the L2 matrix tests (which build the binary
+once in `TestMain`).
 
-**Next:** run **C12** (`docs/chunks/C12-modes-cmd.md`): the server core, modes, and the `nova`
-command. C12 depends on C09, C10, and C11. Remember D48: any package's `_test.go` may import
-`testkit`. C11 added `config.ContextOptions.Trusted` and `config.BuildSystemPrompt`; see
-**Spec corrections to apply** for the details C12 should know.
+**Next:** continue **C12** (`docs/chunks/C12-modes-cmd.md`) from the "Last session" entry below. Read
+`docs/PROTOCOL.md` and the C12 entry first; the remaining work and every deviation are listed there.
+Remember D48: any package's `_test.go` may import `testkit`.
 
 **Watch out:** `proto.Event` has no `Turns` field, so C09 put the `run_end` turn count in `Turn *int`;
 see **Spec corrections to apply** before C12 renders `run_end`.
@@ -45,7 +40,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C09 | The agent loop | done | C01, C04, C08 | 2026-10-10 | |
 | C10 | Compaction, context limit, usage ledger | done | C08, C09 | 2026-10-10 | |
 | C11 | Config, context files, skills, prompt templates, trust | done | C04 | 2026-10-10 | |
-| C12 | The server core, modes, and the nova command | todo | C09, C10, C11 | | |
+| C12 | The server core, modes, and the nova command | in-progress | C09, C10, C11 | | |
 | C13 | The extension host | todo | C12 | | |
 | C14 | The serve mode and the GitHub Action | todo | C12 | | |
 | C15 | TUI foundation | todo | C12 | | |
@@ -57,6 +52,57 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C12 (in progress) — Modes and `cmd/nova` — 2026-10-10 — pi — main — cost not visible
+
+Started C12 and left the tree green in three commits. `make ci` exits 0; `accept C12` does **not**
+pass yet (the matrix is mostly untested and two files are missing).
+
+**Built so far:**
+- `mode/wire.go` — `buildProvider` (lazy OpenRouter key via `auth.Resolve`), `buildTools`/`registerTools`,
+  `registryInfos`, `buildSystemPrompt`, `modelSlug`/`modelWindow`, `compactionSettings`, `findRoot`,
+  `defaultSessionPath`, `randomID`.
+- `mode/server.go` — `Options`, `Server`, `New`, `Subscribe`/`emit` (per-subscriber `seq`, slow
+  subscriber dropped with a final `error`), `onMessage` persistence, `history`, `beforeProviderRequest`
+  (live model/thinking), `beforeTurn` (compaction), `run`, `Close`, `SetUIHandler`.
+- `mode/commands.go` — `Handle` with panic recovery, `dispatch`, and handlers for `prompt`, `steer`,
+  `follow_up`, `abort`, `get_state`, `set_model`, `set_thinking`, `set_context_limit`, `set_tools`,
+  `shutdown`; the auth gate returns `provider_error` with the login hint.
+- `mode/print.go`, `mode/json.go`, `mode/rpc.go`, `mode/prompt.go` + `prompt.md`.
+- `cmd/nova/main.go` — cobra root (all documented flags) plus `version`, `models`, `sessions`,
+  `login`, `logout`; `--continue` finds the newest session; print/JSON/RPC selection; exit codes.
+- Tests: `PRI01`, `PRI02`, `SRV02`, `SRV03` (busy), unknown-command, and `get_state` field coverage.
+- `go.mod` gained `github.com/spf13/cobra v1.10.2` (D45, cached).
+
+**Not yet done (C12):** `mode/builtin.go` and `mode/pipe.go`; permissions/UI (`Ask`, `AnswerUI`,
+`ui_request`/`ui_expired`); the session.*/reload/get_messages/get_commands/list_models/session.list/
+run_command/bash/compact handlers; `docs` and `completion`; and almost all matrix rows (SRV04–SRV44,
+JSN*, RPC*, CLI*, FUL*, `FuzzRPCLoop`, `TestProperty_SRV_EventOrder`).
+
+**Unsatisfied matrix rows:** all except PRI01, PRI02, SRV02, SRV03, SRV20 (partial).
+
+**Differed from spec:**
+- `mode.Options` gained `Tools []string` and `NoTools bool`, because `Config.Tools.Active` cannot say
+  "no tools" (empty means the default set).
+- `New` defaults an empty `Config.Model` to `openrouter.DefaultModel`. Without this, `agent.Run`
+  returns a config error before emitting any event, and print mode waits for a `run_end` that never
+  comes. The agent should arguably emit `run_end(error)` for a config error; left as a C09 follow-up.
+- The missing-key check is synchronous in `handlePrompt` (provider_error + login hint, per behaviour 1)
+  rather than a failed first turn.
+- RPC currently handles commands sequentially in the read loop and writes responses/events under one
+  writer mutex; ordering and concurrency rules are only partly satisfied. `pipe.go` is not written.
+- `cmd/nova docs` is not implemented (embedding `docs/*.md` needs a package at the repo root or an
+  embed path inside the module); `completion` comes free from cobra.
+
+**Gotchas:**
+- `go run ./cmd/nova -p hi` with no key now exits 1 and prints the login hint on stderr. With a
+  reachable-but-refused base URL it retries with backoff for up to ~90 s; that is the agent retry
+  policy, not a hang (found while debugging the empty-model bug).
+- `config.Load` returns `*Config`; do not take its address.
+- Build the binary with `go build -o /tmp/nova ./cmd/nova` when testing flags; `go run` obscures the
+  exit code.
+
+**One command:** `go run ./scripts/accept C11` still passes; C12 is not ready for its acceptance run.
 
 ### C11 — Configuration and resources — 2026-10-10 — pi — main — cost not visible
 
@@ -746,6 +792,19 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   reaches the filesystem root. Later drafts should say which boundary applies.
 - C11 behaviour 13: the 256 KiB total cap counts the appended truncation marker, so a cut file can
   push the total over the per-file limit.
+- C12 interfaces: `mode.Options` needs `Tools`/`NoTools` (or a sentinel) because `Config.Tools.Active`
+  uses an empty list for "the default set", so it cannot express "no tools".
+- C12 behaviour 1: `New` must default an empty `Config.Model` to `openrouter.DefaultModel`; with an empty
+  model `agent.Run` returns before emitting any event and print/RPC wait forever for `run_end`.
+  C09 should probably emit `run_end(error)` for a pre-run config error; flagged below.
+- C12 Files: a `docs` subcommand that embeds `docs/*.md` needs an embed target inside the module (the
+  docs live outside `cmd/nova`), so either a small root-level package or a generated copy is required.
+- C12 behaviour 4/5: "the response is sent before `run_start`" is not guaranteed by `Handle` starting the
+  run immediately; a transport must either serialize responses before events or the server needs a
+  release handshake. The current `ServeRPC` writes responses and events under one mutex, which is close
+  but not the stated ordering.
+- C12 mode line budget `./mode: 1400`: currently 890 with roughly half the handlers and no `builtin.go`/
+  `pipe.go`; expect it to be tight, but no raise is requested yet.
 
 ## Decisions to record
 
@@ -780,6 +839,14 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   paths; belongs in `docs/DECISIONS.md`.
 - Context trust is passed through `config.ContextOptions.Trusted`, not a parameter of `LoadContext`;
   belongs in `docs/DECISIONS.md`.
+- An empty `Config.Model` defaults to `openrouter.DefaultModel` in `mode.New`; belongs in
+  `docs/DECISIONS.md`.
+- The OpenRouter key is resolved per request and the snapshot of resolution is that a missing key at
+  `prompt` time returns `provider_error` with the login hint instead of starting a run; belongs in
+  `docs/DECISIONS.md`.
+- The server overwrites the agent's `Event.Seq` with a per-subscriber sequence, and a subscriber that
+  fills its buffer is dropped with a final `error` event; belongs in `docs/DECISIONS.md`.
+- `mode.Options.Tools`/`NoTools` override `Config.Tools.Active`; belongs in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
@@ -806,7 +873,13 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   render one?
 - C11: `Trust` derives the home directory from `os.UserHomeDir` when `NewTrustStore` is called; is that
   acceptable, or should the home directory be a parameter?
+- C12: should `agent.Run` emit `run_end(error)` when a config error (empty model, nil provider) prevents
+  the run from starting? The current behaviour leaves a caller waiting for `run_end`.
+- C12: should the server own the single `run_end` guarantee instead of relying on the agent, so a future
+  transport cannot miss it?
+- C12: `pipe.go` is unspecified beyond `NewPipe(s, capabilities...)`; confirm the client shape (command
+  send + event read, capabilities in its hello) before building it for the TUI.
 
 ## Cost
 
-Total: $0.00 recorded; the C00 through C11 session costs were not visible.
+Total: $0.00 recorded; the C00 through C12 session costs were not visible.

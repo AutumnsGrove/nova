@@ -2,7 +2,7 @@
 chunk: C13
 title: "The extension host"
 packages: [./ext, ./ext/sdk]
-budgets: { ./ext: 3200, ./ext/sdk: 400 }
+budgets: { ./ext: 3200, ./ext/sdk: 700 }
 depends: [C12]
 ---
 

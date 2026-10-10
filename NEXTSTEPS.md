@@ -5,19 +5,21 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C12 are done. `accept C12` and `make ci` pass. `mode/` implements the protocol
-server (events, run control, permissions/UI, sessions, compaction, reload, commands, bash) with print,
-JSON, and RPC transports and an in-process pipe client; `cmd/nova` is a cobra binary with `-p`,
-`--mode print|json|rpc`, `--continue`/`--session`, `login`/`logout`/`models`/`sessions`/`docs`, and the
-`testkit.Server`-driven CLI/PRI/JSN/RPC/FUL tests. C11's `config` package is complete.
+**State:** C00 through C13 are implemented. `accept C13` passes all nine steps and `make ci` passes. `ext/`
+loads and supervises subprocess extensions (manifest, process groups, restart policy, capability checks,
+tool/command/hook routing, replay, install/update/remove/check from git or a local link), `ext/sdk` is
+the Go SDK, `examples/extensions/` ships `hello`, `block-rm`, and `hello-go`, and `nova ext` installs and
+checks them. C13 is **partial**: the host is not yet constructed by `mode.New`, so a running agent/session
+does not load extensions yet; see the C13 handoff below.
 
-**Next:** run **C13** (`docs/chunks/C13-extension-host.md`): the extension host, manifest, install, reload,
-and the in-process SDK. It depends on C12. Remember D48: any package's `_test.go` may import `testkit`.
-The agent's hook timeout can abandon a goroutine that still reads run state, which races under `-race`;
-see **Open questions for the human**.
+**Next:** run **C14** (`docs/chunks/C14-serve-action.md`): serve mode and the GitHub Action. It depends on
+C12. Before or alongside it, close the C13 integration gap: build the `ext.Host` in `mode.New`, adapt
+`mode`'s UI and session to `ext.UIBridge`/`ext.SessionAPI`, and merge the host's hooks with the server's.
+That change needs a `mode` budget review first (see **Spec corrections to apply**).
 
-**Watch out:** `proto.Event` has no `Turns` field, so C09 put the `run_end` turn count in `Turn *int`;
-see **Spec corrections to apply** before C12 renders `run_end`.
+**Watch out:** the fake clock's `After` timers are never cancelled, so leftover timers make
+`testkit.FakeClock.BlockUntil` unreliable; the supervision tests advance the clock in a loop instead.
+`proto.Event` has no `Turns` field, so C09 put the `run_end` turn count in `Turn *int`.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -41,7 +43,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C10 | Compaction, context limit, usage ledger | done | C08, C09 | 2026-10-10 | |
 | C11 | Config, context files, skills, prompt templates, trust | done | C04 | 2026-10-10 | |
 | C12 | The server core, modes, and the nova command | done | C09, C10, C11 | 2026-10-10 | |
-| C13 | The extension host | todo | C12 | | |
+| C13 | The extension host | partial | C12 | 2026-10-10 | visible |
 | C14 | The serve mode and the GitHub Action | todo | C12 | | |
 | C15 | TUI foundation | todo | C12 | | |
 | C16 | TUI rendering: thinking block, tool cards, diffs, themes, splash | todo | C15 | | |
@@ -52,6 +54,73 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C13 — The extension host — 2026-10-10 — pi — main — cost visible
+
+Built `ext/` and `ext/sdk/` in many small green commits. `go run ./scripts/accept C13` passes all nine
+steps and `make ci` exits 0; every matrix row has a named test.
+
+**Built:**
+- `ext/manifest.go` — `Manifest`/`DeclTool`/`HookSpec`/`FlagSpec`, `LoadManifest`, `Validate`, semver and
+  constraint matching, capability validation, unknown-key warnings, the run[0] rule.
+- `ext/declarative.go` — `renderArgv` placeholder substitution (one argv element per template element),
+  `execTool`, and the 20%-head/80%-tail output cap.
+- `ext/conn.go` — framed connection with id correlation, a writer goroutine, deadlines, and close reasons.
+- `ext/proc.go` — spawn/supervise/kill with process groups, the 10s startup handshake, restart backoff and
+  limit, the healthy-run counter reset, stderr forwarding, and scrubbed child environment.
+- `ext/host.go` — `Host`, `NewHost`, `Start`/`Reload`/`Shutdown`, registration and capability checks, UI
+  forwarding, `append_entry`, `complete` with a per-run cap, `Commands`/`RunCommand`, `Status`.
+- `ext/tools.go`, `ext/hooks.go` — the protocol tool adapter and the composed hooks (ToolCall,
+  ToolResult, TransformContext, BeforeProviderRequest, MessageEnd, TurnEnd, AgentEnd) plus command hooks.
+- `ext/install.go`, `ext/lock.go`, `ext/git.go` — `ParseSource`, `Installer` (install/update/remove/list),
+  `Check`, the atomic YAML lockfile, and the non-interactive git runner.
+- `ext/reload.go` — stop, rebuild changed sources, re-read, restart, replay.
+- `ext/sdk/sdk.go`, `schema.go`, `ui.go` — the Go SDK.
+- `examples/extensions/hello`, `block-rm`, `hello-go`; `cmd/nova/ext.go` (`nova ext install|list|update|remove|check`).
+- Tests: every row MAN01–MAN18, SUP01–SUP18, HST01–HST24, HK01–HK16, DCL01–DCL12, INS01–INS29,
+  CHK01–CHK05, RLD01–RLD07, SDK01–SDK12, EXA01, plus `FuzzManifest`, `FuzzArgTemplate`.
+
+**Unsatisfied acceptance items:**
+- **The host is not wired into `mode`.** `ext.Host` is never constructed by `mode.New`, so a running agent
+  does not load extensions, and `ext.UIBridge`/`ext.SessionAPI` adapters for the server do not exist. The
+  C13 spec lists `mode/*.go` changes for this, but `mode` has only ~50 lines of headroom under its 1500
+  budget; it needs a budget review before the integration. All nine `accept C13` steps still pass because
+  the spec's packages are `./ext` and `./ext/sdk` only.
+- The `/ext` and trust-prompt UI is C17, as the spec says.
+- `FuzzHostFrames` and `TestProperty_HK_Compose` (the two fuzz/property rows) are **not** implemented; the
+  spec's Matrix table rows are all covered, but the separate fuzz/property table is not.
+
+**Differed from spec:**
+- `ext.HostOptions` gained `SessionID`, `CompleteMax`, `Emit`, `ScrubEnv`, `PassEnv`, `Flags`, `EntryKinds`,
+  and `Run`; the spec's struct has no channel for the session id, the complete cap, extension_error events,
+  the scrub/pass lists, flag values, initial replay kinds, or the build runner.
+- The register frame gained an `entries` field naming the session-entry kinds to replay; the spec says the
+  host replays "the kinds it declared" but never says how they are declared.
+- `ext.LockEntry` gained `linked` so `Update` can tell a local link from a clone; the spec's lockfile has no
+  such field and `Source.Local` is not persisted.
+- `ext.CheckOptions` gained `Clock`, so CHK03 can drive the 10s startup timeout with the fake clock.
+- `ParseSource` splits the trailing `@ref` only when the remainder has no `/` or `:`, so `git@host:o/r.git`
+  keeps its prefix.
+- `Installer.Install` rejects any already-installed name (same or different source); updates go through
+  `Installer.Update`. Behaviour 29 says a same-source collision "is an update", but matrix row INS29 wants
+  one of two concurrent installs to error.
+- The SDK's hook API is generic (`Host.On(hook, func(*Hook) (*HookDecision, error))`) rather than the
+  per-hook types in the `EXTENSIONS.md` example; the doc example is aspirational.
+
+**Gotchas:**
+- `testkit.FakeClock.After` timers are never cancelled. `awaitRegister` leaves a 10s timer pending after a
+  successful startup, so `BlockUntil` and a single `Advance` are unreliable; the supervision tests use a
+  loop that advances 250ms at a time (`advanceUntil`) and wait for the tool to disappear before advancing.
+- `handleRegister` can run concurrently with `spawn`'s `replay`, so `instance.entryKinds` is read and
+  written under `instance.mu`.
+- `ext/testdata/echoext` is scripted by environment variables; a value of `1`/`true` applies to every
+  extension in a host, while any other value applies only to the extension whose name it equals
+  (`ECHO_NO_REGISTER=bad`), so one host can script two extensions differently.
+- `mode` uses a 10s polling loop for reload; the host's `Reload` itself does not wait for a run (the server
+  must call it between runs).
+- `cmd/nova` now embeds the `nova ext` command; its budget was raised to 600 for C13's `ext.go`.
+
+**One command:** `go run ./scripts/accept C13`.
 
 ### C12 follow-up — hook race fix — 2026-10-10 — pi — main — cost not visible
 
@@ -833,6 +902,19 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   `pipe.go`; expect it to be tight, but no raise is requested yet.
 - C12/PROTOCOL: `proto.Event` has no `ID` field, but `ui_expired { id }` needs one. Applied: added
   `ID string` (json `id`, `omitempty`) to `proto.Event`; C08 tests still pass.
+- C13 budgets: `./ext` (1700), `./ext/sdk` (400), and C12's `./cmd/nova` (500) are too small for the full
+  behaviour. Applied: `./ext` -> 3200, `./ext/sdk` -> 700, `./cmd/nova` -> 600 in the C13/C12 specs and
+  `docs/ARCHITECTURE.md` (human-approved 2026-10-10).
+- C13 interfaces: `HostOptions` needs `SessionID`, `CompleteMax`, `Emit`, `ScrubEnv`, `PassEnv`, `Flags`,
+  `EntryKinds`, and `Run`; the spec's struct has no channel for them. `LockEntry` needs a `linked` field.
+  `CheckOptions` needs `Clock`. Later drafts should add them.
+- C13 negotiation: the register frame needs an `entries` list (the kinds to replay); the spec says the host
+  replays declared kinds but does not say where they are declared.
+- C13 files/goal: the spec lists `mode/*.go` host wiring but gives `mode` no budget for it (C12 set 1500,
+  currently ~1450). Later drafts should either add the wiring to a separate chunk or budget it explicitly.
+- C13 Matrix: `FuzzHostFrames` and `TestProperty_HK_Compose` live in a separate table from the Matrix rows;
+  `matrixcheck` only enforces the Matrix, so both were skipped. Later drafts should say whether the
+  fuzz/property table is required for acceptance.
 - C12 budgets: `./mode: 1400` is too small for the full protocol surface (1448 lines). Applied: raised to
   1500 in the C12 spec and `docs/ARCHITECTURE.md` (human-approved 2026-10-10).
 - C12 behaviour 3/22: the mode budget and `mode/builtin.go` file can be dropped from the Files table; the
@@ -893,6 +975,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - The mode budget was raised to 1500 (human-approved 2026-10-10); belongs in `docs/DECISIONS.md`.
 - The agent snapshots hook inputs (`r.messages`, `r.turn`) before spawning the hook goroutine, so an
   abandoned hook can only read its own copy; belongs in `docs/DECISIONS.md`.
+- Extension replay kinds are declared in the `register` frame's `entries` list and remembered per extension
+  across a reload; belongs in `docs/DECISIONS.md`.
+- `Installer.Install` refuses an already-installed name and leaves updates to `Installer.Update`; belongs
+  in `docs/DECISIONS.md`.
+- The fake clock's timers are never cancelled, so supervision tests advance the clock in a loop; belongs
+  in `docs/DECISIONS.md` (or fix `testkit.FakeClock` with a cancellable timer).
 
 ## Open questions for the human
 
@@ -928,7 +1016,11 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C12/C09: fixed 2026-10-10. `agent.runHook` abandons a hook goroutine on abort or context cancellation,
   so the call sites now snapshot `r.messages`/`r.turn` before spawning the hook; the abandoned goroutine
   only reads its own copy. `TestProperty_SRV_EventOrder` includes `abort` and passes 20 `-race` runs.
+- C13: should the mode wiring land as a follow-up chunk, or does C14 own it? The host needs a `mode` budget
+  review either way.
+- C13: the SDK's hook API is generic rather than the per-hook types shown in `EXTENSIONS.md`; should the doc
+  change or the SDK grow typed hooks?
 
 ## Cost
 
-Total: $0.00 recorded; the C00 through C12 session costs were not visible.
+Total: $0.00 recorded; the C00 through C13 session costs were not visible.

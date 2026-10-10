@@ -56,6 +56,22 @@ func waitFor(t *testing.T, cond func() bool, msg string) {
 	t.Fatalf("condition never held: %s", msg)
 }
 
+// advanceUntil advances a fake clock in small steps until cond holds.
+func advanceUntil(t *testing.T, clk *testkit.FakeClock, cond func() bool, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		clk.Advance(250 * time.Millisecond)
+		time.Sleep(2 * time.Millisecond)
+	}
+	if !cond() {
+		t.Fatalf("condition never held after advancing the clock")
+	}
+}
+
 // stateOf returns one instance's state.
 func stateOf(h *Host, name string) string {
 	for _, s := range h.Status() {
@@ -180,16 +196,14 @@ func TestSupervise_SUP09_CrashRestarted(t *testing.T) {
 	h.Start(context.Background())
 	_ = reg.Execute(context.Background(), "echo", nil, &tool.Context{})
 	waitFor(t, func() bool { _, ok := reg.Get("echo"); return !ok }, "crash removed the tool")
-	clk.BlockUntil(t, 2)
-	clk.Advance(2 * time.Second)
-	waitFor(t, func() bool {
+	advanceUntil(t, clk, func() bool {
 		for _, s := range h.Status() {
 			if s.Name == "echo" && s.Restarts >= 1 && s.State == stateRunning {
 				return true
 			}
 		}
 		return false
-	}, "restarted")
+	}, 5*time.Second)
 	if _, ok := reg.Get("echo"); !ok {
 		t.Fatal("tool not re-registered after restart")
 	}
@@ -235,20 +249,12 @@ func TestSupervise_SUP11_RestartCounterResets(t *testing.T) {
 	h := rawHost(t, HostOptions{Dirs: []string{dir}, Registry: reg, Clock: clk, Env: envWith("ECHO_EXIT_AFTER=1")})
 	h.Start(context.Background())
 	_ = reg.Execute(context.Background(), "echo", nil, &tool.Context{})
-	clk.BlockUntil(t, 2)
-	clk.Advance(2 * time.Second)
-	waitFor(t, func() bool { return stateOf(h, "echo") == stateRunning }, "restarted once")
+	waitFor(t, func() bool { _, ok := reg.Get("echo"); return !ok }, "crash removed the tool")
+	advanceUntil(t, clk, func() bool { return stateOf(h, "echo") == stateRunning }, 5*time.Second)
 	clk.Advance(61 * time.Second)
 	_ = reg.Execute(context.Background(), "echo", nil, &tool.Context{})
-	clk.Advance(2 * time.Second)
-	waitFor(t, func() bool {
-		for _, s := range h.Status() {
-			if s.Name == "echo" && s.State == stateRunning {
-				return true
-			}
-		}
-		return false
-	}, "running after healthy restart")
+	waitFor(t, func() bool { _, ok := reg.Get("echo"); return !ok }, "second crash removed the tool")
+	advanceUntil(t, clk, func() bool { return stateOf(h, "echo") == stateRunning }, 5*time.Second)
 	if stateOf(h, "echo") == stateDisabled {
 		t.Fatal("extension was disabled despite a healthy run")
 	}
@@ -262,13 +268,12 @@ func TestSupervise_SUP12_BackoffDelays(t *testing.T) {
 	h := rawHost(t, HostOptions{Dirs: []string{dir}, Registry: reg, Clock: clk, Env: envWith("ECHO_CRASH_ONCE=1", "ECHO_CRASH_MARKER="+marker)})
 	h.Start(context.Background())
 	waitFor(t, func() bool { _, ok := reg.Get("echo"); return !ok }, "crash removed the tool")
-	clk.BlockUntil(t, 2)
+	time.Sleep(50 * time.Millisecond) // let the backoff timer register
 	clk.Advance(500 * time.Millisecond)
 	if _, ok := reg.Get("echo"); ok {
 		t.Fatal("restarted before the 1s backoff elapsed")
 	}
-	clk.Advance(600 * time.Millisecond)
-	waitFor(t, func() bool { _, ok := reg.Get("echo"); return ok }, "restarted after 1s")
+	advanceUntil(t, clk, func() bool { _, ok := reg.Get("echo"); return ok }, 5*time.Second)
 }
 
 func TestSupervise_SUP13_CleanShutdown(t *testing.T) {

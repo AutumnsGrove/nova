@@ -62,6 +62,16 @@ func (s *Server) dispatch(ctx context.Context, cmd proto.Command) proto.Response
 		return s.handleSessionNavigate(cmd)
 	case proto.CmdSessionName:
 		return s.handleSessionName(cmd)
+	case proto.CmdSessionNew:
+		return s.handleSessionNew(cmd)
+	case proto.CmdSessionResume:
+		return s.handleSessionResume(cmd)
+	case proto.CmdSessionFork:
+		return s.handleSessionFork(cmd)
+	case proto.CmdBash:
+		return s.handleBash(cmd)
+	case proto.CmdReload:
+		return s.handleReload(ctx, cmd)
 	case proto.CmdRunCommand:
 		return s.handleRunCommand(cmd)
 	case proto.CmdShutdown:

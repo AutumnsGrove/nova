@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/session"
 	"github.com/AutumnsGrove/nova/testkit"
 )
 
@@ -84,6 +85,53 @@ func TestHandlers_SessionNavigateAndName(t *testing.T) {
 	}
 	if resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdSessionName, Name: "my session"}); !resp.OK {
 		t.Fatalf("session.name = %+v", resp)
+	}
+}
+
+func TestHandlers_SessionNew(t *testing.T) {
+	s, _ := testServer(t)
+	before := s.path
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdSessionNew})
+	if !resp.OK || s.path == before {
+		t.Fatalf("session.new = %+v, path %q -> %q", resp, before, s.path)
+	}
+}
+
+func TestHandlers_SRV29_BashRecorded(t *testing.T) {
+	s, _ := testServer(t)
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdBash, Command: "echo hello-bash"})
+	if !resp.OK || !bytesContain(resp.Data, "hello-bash") {
+		t.Fatalf("bash = %+v data=%s", resp, resp.Data)
+	}
+	found := false
+	for _, e := range s.store.Entries() {
+		if e.Type == session.TypeCustomMessage && strings.Contains(e.Content, "hello-bash") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("bash should append a custom_message entry")
+	}
+	msgs, err := s.store.Messages("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range msgs {
+		if strings.Contains(m.Content, "hello-bash") {
+			t.Fatal("the bash command must not enter the context")
+		}
+	}
+}
+
+func TestHandlers_SRV30_BashQuiet(t *testing.T) {
+	s, _ := testServer(t)
+	if resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdBash, Command: "!!echo quiet-bash"}); !resp.OK {
+		t.Fatalf("bash = %+v", resp)
+	}
+	for _, e := range s.store.Entries() {
+		if strings.Contains(e.Content, "quiet-bash") {
+			t.Fatal("a !! command must not be recorded")
+		}
 	}
 }
 

@@ -2,9 +2,12 @@ package mode
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
@@ -12,6 +15,7 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
+	"github.com/AutumnsGrove/nova/tool"
 )
 
 // builtinCommands are the slash commands handled in-process.
@@ -216,4 +220,149 @@ func (s *Server) emitSession() {
 	leaf := s.leafID()
 	s.mu.Unlock()
 	s.emit(proto.Event{Type: proto.EventSessionChanged, Session: id, Leaf: leaf})
+}
+
+// handleSessionNew starts a fresh session file.
+func (s *Server) handleSessionNew(cmd proto.Command) proto.Response {
+	if s.agent.Running() {
+		return failResponse(cmd, proto.CodeBusy, "a run is in progress")
+	}
+	path := defaultSessionPath(s.cwd)
+	if err := s.openSession(path); err != nil {
+		return failResponse(cmd, proto.CodeInternal, err.Error())
+	}
+	s.emitSession()
+	return okResponse(cmd, map[string]any{"id": s.sessionID(), "path": path})
+}
+
+// handleSessionResume opens an existing session by path or id.
+func (s *Server) handleSessionResume(cmd proto.Command) proto.Response {
+	if s.agent.Running() {
+		return failResponse(cmd, proto.CodeBusy, "a run is in progress")
+	}
+	target := strings.TrimSpace(cmd.Session)
+	if target == "" {
+		return failResponse(cmd, proto.CodeBadRequest, "session.resume: id or path is required")
+	}
+	if _, err := os.Stat(target); err != nil {
+		resolved, err := findSession(s.cwd, target)
+		if err != nil {
+			return failResponse(cmd, proto.CodeNotFound, err.Error())
+		}
+		target = resolved
+	}
+	if err := s.openSession(target); err != nil {
+		return failResponse(cmd, proto.CodeInternal, err.Error())
+	}
+	s.emitSession()
+	return okResponse(cmd, map[string]any{"id": s.sessionID(), "path": target})
+}
+
+// handleSessionFork copies the branch up to an entry into a new session.
+func (s *Server) handleSessionFork(cmd proto.Command) proto.Response {
+	if s.agent.Running() {
+		return failResponse(cmd, proto.CodeBusy, "a run is in progress")
+	}
+	if s.store == nil {
+		return failResponse(cmd, proto.CodeBadRequest, "no session")
+	}
+	dst := defaultSessionPath(s.cwd)
+	forked, err := session.Fork(s.store, cmd.Entry, dst, session.Options{})
+	if err != nil {
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	s.mu.Lock()
+	old := s.store
+	s.store = forked
+	s.path = dst
+	s.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	s.emitSession()
+	return okResponse(cmd, map[string]any{"id": s.sessionID(), "path": dst})
+}
+
+// openSession closes the current store and opens path.
+func (s *Server) openSession(path string) error {
+	store, err := session.Open(path, session.Options{})
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	old := s.store
+	s.store = store
+	s.path = path
+	s.mem = nil
+	s.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	return nil
+}
+
+// findSession resolves a session id to a path in cwd's session directory.
+func findSession(cwd, id string) (string, error) {
+	infos, err := session.List(session.DefaultDir(cwd))
+	if err != nil {
+		return "", err
+	}
+	for _, info := range infos {
+		if info.ID == id {
+			return info.Path, nil
+		}
+	}
+	return "", fmt.Errorf("session %q not found", id)
+}
+
+// handleBash runs a user shell command and records it as a custom message.
+func (s *Server) handleBash(cmd proto.Command) proto.Response {
+	command := cmd.Command
+	if strings.TrimSpace(command) == "" {
+		return failResponse(cmd, proto.CodeBadRequest, "bash: command is required")
+	}
+	quiet := strings.HasPrefix(strings.TrimSpace(command), "!!")
+	if quiet {
+		command = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(command), "!!"))
+	}
+	shell, ok := s.pool["bash"]
+	if !ok {
+		return failResponse(cmd, proto.CodeBadRequest, "the bash tool is not active")
+	}
+	args, _ := json.Marshal(map[string]string{"command": command})
+	res, err := shell.Run(context.Background(), args, &tool.Context{WorkDir: s.cwd, Roots: []string{s.cwd}})
+	if err != nil {
+		res = tool.Errorf("%v", err)
+	}
+	if !quiet && s.store != nil {
+		_, _ = s.store.Append(session.Entry{Type: session.TypeCustomMessage, Content: res.Content, Display: true, InContext: false})
+	}
+	return okResponse(cmd, map[string]any{"content": res.Content, "is_error": res.IsError})
+}
+
+// handleReload rebuilds the system prompt after the active run finishes.
+func (s *Server) handleReload(ctx context.Context, cmd proto.Command) proto.Response {
+	for s.agent.Running() {
+		if err := s.clock.Sleep(ctx, 10*time.Millisecond); err != nil {
+			return failResponse(cmd, proto.CodeBadRequest, err.Error())
+		}
+	}
+	s.mu.Lock()
+	s.system = buildSystemPrompt(s.cfg, s.cwd, s.home, s.tools, s.clock.Now())
+	s.mu.Unlock()
+	s.emitState()
+	return okResponse(cmd, map[string]any{"reloaded": []string{"config", "skills", "templates"}})
+}
+
+// transformContext keeps the leading system message current after a reload.
+func (s *Server) transformContext(_ context.Context, msgs []message.Message) []message.Message {
+	s.mu.Lock()
+	system := s.system
+	s.mu.Unlock()
+	if system == "" || len(msgs) == 0 || msgs[0].Role != message.RoleSystem {
+		return msgs
+	}
+	out := append([]message.Message(nil), msgs...)
+	out[0] = message.System(system)
+	return out
 }

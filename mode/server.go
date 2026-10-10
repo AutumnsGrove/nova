@@ -211,6 +211,7 @@ func New(opt Options) (*Server, error) {
 		Emit:      s.emit,
 		OnMessage: s.onMessage,
 		Hooks: agent.Hooks{
+			TransformContext:      s.transformContext,
 			BeforeProviderRequest: s.beforeProviderRequest,
 			BeforeTurn:            s.beforeTurn,
 		},

@@ -22,7 +22,7 @@ func NewRegistry() *Registry {
 	return &Registry{tools: map[string]Tool{}}
 }
 
-// validateTool rejects the two wiring mistakes Register and Replace share.
+// validateTool rejects the wiring mistakes Register and Replace share.
 func validateTool(t Tool) error {
 	if t == nil {
 		return fmt.Errorf("tool: cannot register nil tool")
@@ -66,12 +66,10 @@ func (r *Registry) Replace(t Tool) error {
 	name := t.Info().Name
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, exists := r.tools[name]; exists {
-		r.tools[name] = t
-		return nil
+	if _, exists := r.tools[name]; !exists {
+		r.order = append(r.order, name)
 	}
 	r.tools[name] = t
-	r.order = append(r.order, name)
 	return nil
 }
 
@@ -97,11 +95,11 @@ func (r *Registry) Unregister(name string) bool {
 // values but has its own registration state, so changing one does not change
 // the other.
 func (r *Registry) View(names ...string) *Registry {
-	view := NewRegistry()
 	wanted := make(map[string]bool, len(names))
 	for _, name := range names {
 		wanted[name] = true
 	}
+	view := NewRegistry()
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, name := range r.order {
@@ -161,29 +159,18 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 	if err := ctx.Err(); err != nil {
 		return Errorf("cancelled")
 	}
-	t, info, ok := r.lookup(name)
+	t, ok := r.Get(name)
 	if !ok {
 		return r.unknownTool(name)
 	}
-	norm, err := normalizeArgs(args)
+	norm, err := argsObject(args)
 	if err != nil {
 		return Errorf("invalid arguments: %v", err)
 	}
-	if err := ValidateArgs(info.Parameters, norm); err != nil {
+	if err := ValidateArgs(t.Info().Parameters, norm); err != nil {
 		return Errorf("invalid arguments: %v", err)
 	}
 	return runGuarded(ctx, name, t, norm, tctx)
-}
-
-// lookup returns a tool and its Info under one read lock.
-func (r *Registry) lookup(name string) (Tool, Info, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	t, ok := r.tools[name]
-	if !ok {
-		return nil, Info{}, false
-	}
-	return t, t.Info(), true
 }
 
 // unknownTool builds the error result for a missing tool, naming up to ten

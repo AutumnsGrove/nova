@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"math/big"
 	"reflect"
 	"sort"
@@ -13,8 +12,7 @@ import (
 	"unicode/utf8"
 )
 
-// maxSchemaDepth bounds recursion into nested schemas so a pathological schema
-// cannot overflow the stack.
+// maxSchemaDepth bounds recursion into nested schemas.
 const maxSchemaDepth = 64
 
 // ValidateArgs checks args (raw JSON) against a JSON Schema subset. The error
@@ -35,11 +33,11 @@ func ValidateArgs(schema map[string]any, args json.RawMessage) error {
 		return nil
 	}
 	v := &argValidator{}
-	return v.validate(schema, value, "", 0)
+	return v.check(schema, value, "", 0)
 }
 
-// parseArgs decodes raw tool arguments with numbers kept exact. Empty and null
-// become an empty object, matching the tool contract.
+// parseArgs decodes raw arguments with numbers kept exact. Empty args become an
+// empty object; a literal null stays nil, so a null type can still match it.
 func parseArgs(args json.RawMessage) (any, error) {
 	trimmed := bytes.TrimSpace(args)
 	if len(trimmed) == 0 {
@@ -57,9 +55,9 @@ func parseArgs(args json.RawMessage) (any, error) {
 	return value, nil
 }
 
-// normalizeArgs returns args as a JSON object: empty or null becomes {}, and
+// argsObject returns args as a JSON object: empty or null becomes {}, and
 // anything that is not a JSON object is an error.
-func normalizeArgs(args json.RawMessage) (json.RawMessage, error) {
+func argsObject(args json.RawMessage) (json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(args)
 	if len(trimmed) == 0 || string(trimmed) == "null" {
 		return json.RawMessage(`{}`), nil
@@ -74,14 +72,10 @@ func normalizeArgs(args json.RawMessage) (json.RawMessage, error) {
 	return json.RawMessage(trimmed), nil
 }
 
-// argValidator validates one call and remembers whether a malformed keyword has
-// already been reported.
-type argValidator struct {
-	logged bool
-}
+// argValidator validates one call and reports the first malformed keyword once.
+type argValidator struct{ logged bool }
 
-// logMalformed writes one debug line per validation, not one per bad keyword.
-func (v *argValidator) logMalformed(schema map[string]any) {
+func (v *argValidator) bad(schema map[string]any) {
 	if v.logged {
 		return
 	}
@@ -89,16 +83,20 @@ func (v *argValidator) logMalformed(schema map[string]any) {
 	slog.Debug("tool: ignoring malformed schema", "schema", schema)
 }
 
-// validate checks a value against a schema, reporting the first problem.
-func (v *argValidator) validate(schema map[string]any, value any, path string, depth int) error {
+// check validates a value, reporting the first problem in check order.
+func (v *argValidator) check(schema map[string]any, value any, path string, depth int) error {
 	if depth > maxSchemaDepth {
 		return fmt.Errorf("%s: schema is nested too deeply", at(path))
 	}
-	if err := v.checkType(schema, value, path); err != nil {
-		return err
+	if raw, ok := schema["type"]; ok {
+		if err := v.checkType(raw, value, path, schema); err != nil {
+			return err
+		}
 	}
-	if err := v.checkEnum(schema, value, path); err != nil {
-		return err
+	if raw, ok := schema["enum"]; ok {
+		if err := v.checkEnum(raw, value, path, schema); err != nil {
+			return err
+		}
 	}
 	switch val := value.(type) {
 	case map[string]any:
@@ -106,46 +104,47 @@ func (v *argValidator) validate(schema map[string]any, value any, path string, d
 	case []any:
 		return v.checkArray(schema, val, path, depth)
 	case string:
-		return v.checkString(schema, val, path)
+		return v.checkBounds(schema, "minLength", "maxLength", big.NewRat(int64(utf8.RuneCountInString(val)), 1), path)
 	case json.Number:
-		return v.checkNumber(schema, val, path)
+		rat, ok := ratOf(val)
+		if !ok {
+			return fmt.Errorf("%s: invalid number %q", at(path), val.String())
+		}
+		return v.checkBounds(schema, "minimum", "maximum", rat, path)
 	}
 	return nil
 }
 
 // checkType enforces the type keyword, which may be one name or a list.
-func (v *argValidator) checkType(schema map[string]any, value any, path string) error {
-	raw, ok := schema["type"]
+func (v *argValidator) checkType(raw, value any, path string, schema map[string]any) error {
+	names, ok := typeNames(raw)
 	if !ok {
+		v.bad(schema)
 		return nil
 	}
 	var known []string
-	for _, name := range typeNames(raw) {
-		if isKnownType(name) {
-			known = append(known, name)
+	for _, name := range names {
+		matched, knownType := typeMatch(name, value)
+		if !knownType {
+			continue
 		}
-	}
-	if len(known) == 0 {
-		v.logMalformed(schema)
-		return nil
-	}
-	for _, name := range known {
-		if typeMatches(name, value) {
+		if matched {
 			return nil
 		}
+		known = append(known, name)
+	}
+	if len(known) == 0 {
+		v.bad(schema)
+		return nil
 	}
 	return fmt.Errorf("%s: expected %s", at(path), strings.Join(known, " or "))
 }
 
 // checkEnum enforces membership in the enum list.
-func (v *argValidator) checkEnum(schema map[string]any, value any, path string) error {
-	raw, ok := schema["enum"]
-	if !ok {
-		return nil
-	}
+func (v *argValidator) checkEnum(raw, value any, path string, schema map[string]any) error {
 	list, ok := raw.([]any)
 	if !ok {
-		v.logMalformed(schema)
+		v.bad(schema)
 		return nil
 	}
 	for _, allowed := range list {
@@ -158,51 +157,45 @@ func (v *argValidator) checkEnum(schema map[string]any, value any, path string) 
 
 // checkObject enforces required, properties, and additionalProperties.
 func (v *argValidator) checkObject(schema map[string]any, value map[string]any, path string, depth int) error {
+	props, _ := schema["properties"].(map[string]any)
+	if _, ok := schema["properties"]; ok && props == nil {
+		v.bad(schema)
+	}
 	if raw, ok := schema["required"]; ok {
 		list, ok := raw.([]any)
 		if !ok {
-			v.logMalformed(schema)
-		} else {
-			for _, item := range list {
-				name, ok := item.(string)
-				if !ok {
-					v.logMalformed(schema)
-					continue
-				}
-				if _, present := value[name]; !present {
-					return fmt.Errorf("%s: required property is missing", at(joinPath(path, name)))
-				}
+			v.bad(schema)
+		}
+		for _, item := range list {
+			name, ok := item.(string)
+			if !ok || name == "" {
+				v.bad(schema)
+				continue
+			}
+			if _, present := value[name]; !present {
+				return fmt.Errorf("%s: required property is missing", at(joinPath(path, name)))
 			}
 		}
 	}
-	props, _ := schema["properties"].(map[string]any)
-	if _, ok := schema["properties"]; ok && props == nil {
-		v.logMalformed(schema)
-	}
-	keys := sortedKeys(value)
-	for _, key := range keys {
-		sub, ok := props[key].(map[string]any)
-		if !ok {
-			if _, declared := props[key]; declared {
-				v.logMalformed(schema)
-			}
+	for _, key := range sortedKeys(value) {
+		sub, declared := props[key].(map[string]any)
+		if !declared {
 			continue
 		}
-		if err := v.validate(sub, value[key], joinPath(path, key), depth+1); err != nil {
+		if err := v.check(sub, value[key], joinPath(path, key), depth+1); err != nil {
 			return err
 		}
 	}
-	if raw, ok := schema["additionalProperties"]; ok {
+	if raw, present := schema["additionalProperties"]; present {
 		allow, isBool := raw.(bool)
-		switch {
-		case isBool && !allow:
-			for _, key := range keys {
+		if !isBool {
+			v.bad(schema)
+		} else if !allow {
+			for _, key := range sortedKeys(value) {
 				if _, declared := props[key]; !declared {
 					return fmt.Errorf("%s: unknown property %q", at(path), key)
 				}
 			}
-		case !isBool:
-			v.logMalformed(schema)
 		}
 	}
 	return nil
@@ -213,10 +206,10 @@ func (v *argValidator) checkArray(schema map[string]any, value []any, path strin
 	if raw, ok := schema["items"]; ok {
 		sub, isMap := raw.(map[string]any)
 		if !isMap {
-			v.logMalformed(schema)
+			v.bad(schema)
 		} else {
 			for i, item := range value {
-				if err := v.validate(sub, item, fmt.Sprintf("%s[%d]", path, i), depth+1); err != nil {
+				if err := v.check(sub, item, fmt.Sprintf("%s[%d]", path, i), depth+1); err != nil {
 					return err
 				}
 			}
@@ -225,27 +218,13 @@ func (v *argValidator) checkArray(schema map[string]any, value []any, path strin
 	return v.checkBounds(schema, "minItems", "maxItems", big.NewRat(int64(len(value)), 1), path)
 }
 
-// checkString enforces the rune-count bounds.
-func (v *argValidator) checkString(schema map[string]any, value string, path string) error {
-	return v.checkBounds(schema, "minLength", "maxLength", big.NewRat(int64(utf8.RuneCountInString(value)), 1), path)
-}
-
-// checkNumber enforces minimum and maximum.
-func (v *argValidator) checkNumber(schema map[string]any, value json.Number, path string) error {
-	rat, ok := ratOf(value)
-	if !ok {
-		return fmt.Errorf("%s: invalid number %q", at(path), value.String())
-	}
-	return v.checkBounds(schema, "minimum", "maximum", rat, path)
-}
-
 // checkBounds enforces an inclusive minimum and maximum if present. It serves
 // both numeric ranges and integer counts.
 func (v *argValidator) checkBounds(schema map[string]any, minKey, maxKey string, value *big.Rat, path string) error {
 	if raw, ok := schema[minKey]; ok {
 		want, ok := ratFromAny(raw)
 		if !ok {
-			v.logMalformed(schema)
+			v.bad(schema)
 		} else if value.Cmp(want) < 0 {
 			return fmt.Errorf("%s: must be >= %s", at(path), want.RatString())
 		}
@@ -253,7 +232,7 @@ func (v *argValidator) checkBounds(schema map[string]any, minKey, maxKey string,
 	if raw, ok := schema[maxKey]; ok {
 		want, ok := ratFromAny(raw)
 		if !ok {
-			v.logMalformed(schema)
+			v.bad(schema)
 		} else if value.Cmp(want) > 0 {
 			return fmt.Errorf("%s: must be <= %s", at(path), want.RatString())
 		}
@@ -262,10 +241,10 @@ func (v *argValidator) checkBounds(schema map[string]any, minKey, maxKey string,
 }
 
 // typeNames extracts the names from a string or array-of-string type keyword.
-func typeNames(raw any) []string {
+func typeNames(raw any) ([]string, bool) {
 	switch t := raw.(type) {
 	case string:
-		return []string{t}
+		return []string{t}, true
 	case []any:
 		var out []string
 		for _, item := range t {
@@ -273,52 +252,39 @@ func typeNames(raw any) []string {
 				out = append(out, name)
 			}
 		}
-		return out
+		return out, len(out) > 0
 	}
-	return nil
+	return nil, false
 }
 
-// isKnownType reports whether name is one of the supported JSON types.
-func isKnownType(name string) bool {
-	switch name {
-	case "object", "array", "string", "integer", "number", "boolean", "null":
-		return true
+// typeMatch reports whether a value satisfies one type name, and whether the
+// name is one this validator understands. An unknown name is ignored.
+func typeMatch(name string, value any) (matched, known bool) {
+	if fn, ok := scalarTypes[name]; ok {
+		return fn(value), true
 	}
-	return false
+	if name != "integer" {
+		return false, false
+	}
+	n, ok := value.(json.Number)
+	if !ok {
+		return false, true
+	}
+	rat, ok := ratOf(n)
+	return ok && rat.IsInt(), true
 }
 
-// typeMatches reports whether a decoded JSON value satisfies one type name.
-func typeMatches(name string, value any) bool {
-	switch name {
-	case "object":
-		_, ok := value.(map[string]any)
-		return ok
-	case "array":
-		_, ok := value.([]any)
-		return ok
-	case "string":
-		_, ok := value.(string)
-		return ok
-	case "boolean":
-		_, ok := value.(bool)
-		return ok
-	case "null":
-		return value == nil
-	case "integer":
-		n, ok := value.(json.Number)
-		if !ok {
-			return false
-		}
-		rat, ok := ratOf(n)
-		return ok && rat.IsInt()
-	case "number":
-		_, ok := value.(json.Number)
-		return ok
-	}
-	return false
+// scalarTypes are the one-value type checks, excluding integer, which needs to
+// inspect the number.
+var scalarTypes = map[string]func(any) bool{
+	"object":  func(v any) bool { _, ok := v.(map[string]any); return ok },
+	"array":   func(v any) bool { _, ok := v.([]any); return ok },
+	"string":  func(v any) bool { _, ok := v.(string); return ok },
+	"boolean": func(v any) bool { _, ok := v.(bool); return ok },
+	"null":    func(v any) bool { return v == nil },
+	"number":  func(v any) bool { _, ok := v.(json.Number); return ok },
 }
 
-// ratOf parses a JSON number exactly.
 func ratOf(n json.Number) (*big.Rat, bool) {
 	rat, ok := new(big.Rat).SetString(n.String())
 	return rat, ok
@@ -331,22 +297,11 @@ func ratFromAny(v any) (*big.Rat, bool) {
 	case json.Number:
 		return ratOf(n)
 	case float64:
-		if math.IsNaN(n) || math.IsInf(n, 0) {
-			return nil, false
-		}
 		return new(big.Rat).SetFloat64(n), true
-	case float32:
-		return new(big.Rat).SetFloat64(float64(n)), true
 	case int:
 		return big.NewRat(int64(n), 1), true
 	case int64:
 		return big.NewRat(n, 1), true
-	case int32:
-		return big.NewRat(int64(n), 1), true
-	case uint:
-		return new(big.Rat).SetInt(new(big.Int).SetUint64(uint64(n))), true
-	case uint64:
-		return new(big.Rat).SetInt(new(big.Int).SetUint64(n)), true
 	}
 	return nil, false
 }

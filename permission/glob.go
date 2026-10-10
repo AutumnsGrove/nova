@@ -126,10 +126,4 @@ func compileGlob(pattern string, pathMode bool) (*regexp.Regexp, bool) {
 }
 
 // isRegexMeta reports whether a byte must be escaped outside a class.
-func isRegexMeta(c byte) bool {
-	switch c {
-	case '.', '+', '(', ')', '|', '^', '$', '{', '}', '\\':
-		return true
-	}
-	return false
-}
+func isRegexMeta(c byte) bool { return strings.ContainsRune(`.+()|^${}\`, rune(c)) }

@@ -22,6 +22,11 @@ func toolTurn() testkit.Turn {
 	return testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}}
 }
 
+// namedToolTurn is toolTurn for a tool that is not "echo".
+func namedToolTurn(name string) testkit.Turn {
+	return testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", name, `{}`)}}
+}
+
 func TestLPH01_ToolCallHookBlocks(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false

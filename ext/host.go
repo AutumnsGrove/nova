@@ -66,6 +66,7 @@ type HostOptions struct {
 	ScrubEnv    []string
 	PassEnv     []string
 	Flags       map[string]string
+	Run         CommandRunner
 	Clock       Clock
 	Log         func(level, msg string)
 }
@@ -106,12 +107,14 @@ type Host struct {
 	logf  func(level, msg string)
 	reg   *tool.Registry
 
-	mu        sync.Mutex
-	insts     []*instance
-	byName    map[string]*instance
-	complete  map[string]int
-	hookErrAt map[string]time.Time
-	started   bool
+	mu             sync.Mutex
+	insts          []*instance
+	byName         map[string]*instance
+	complete       map[string]int
+	hookErrAt      map[string]time.Time
+	entryKinds     map[string][]string
+	manifestHashes map[string]string
+	started        bool
 }
 
 // NewHost builds a host. Nothing starts until Start.
@@ -129,13 +132,15 @@ func NewHost(opt HostOptions) *Host {
 		reg = tool.NewRegistry()
 	}
 	return &Host{
-		opt:       opt,
-		clock:     clock,
-		logf:      logf,
-		reg:       reg,
-		byName:    map[string]*instance{},
-		complete:  map[string]int{},
-		hookErrAt: map[string]time.Time{},
+		opt:            opt,
+		clock:          clock,
+		logf:           logf,
+		reg:            reg,
+		byName:         map[string]*instance{},
+		complete:       map[string]int{},
+		hookErrAt:      map[string]time.Time{},
+		entryKinds:     map[string][]string{},
+		manifestHashes: map[string]string{},
 	}
 }
 
@@ -160,6 +165,9 @@ func (h *Host) Start(ctx context.Context) []error {
 			errs = append(errs, err)
 			continue
 		}
+		h.mu.Lock()
+		inst.entryKinds = append([]string(nil), h.entryKinds[m.Name]...)
+		h.mu.Unlock()
 		if len(m.Run) == 0 {
 			inst.setState(stateRunning, "")
 			continue
@@ -171,6 +179,7 @@ func (h *Host) Start(ctx context.Context) []error {
 	h.mu.Lock()
 	h.started = true
 	h.mu.Unlock()
+	h.recordManifestHashes()
 	return errs
 }
 
@@ -252,6 +261,9 @@ func (h *Host) handleRegister(inst *instance, line []byte) {
 	}
 	h.clearRegistrations(inst)
 	inst.entryKinds = append([]string(nil), f.Entries...)
+	h.mu.Lock()
+	h.entryKinds[inst.manifest.Name] = append([]string(nil), f.Entries...)
+	h.mu.Unlock()
 	inst.reg.flags = append([]FlagSpec(nil), f.Flags...)
 	for _, rt := range f.Tools {
 		if !inst.manifest.hasCapability("tools") {
@@ -260,6 +272,7 @@ func (h *Host) handleRegister(inst *instance, line []byte) {
 		}
 		t := &protocolTool{host: h, inst: inst, def: rt}
 		if err := h.registerTool(inst, t.Info(), t); err != nil {
+			h.logf("warn", inst.manifest.Name+": "+err.Error())
 			h.deny(inst, proto.CodeBadRequest, err.Error())
 		}
 	}

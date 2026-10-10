@@ -235,11 +235,15 @@ func envString(name string) string {
 // sendRegister declares the tools, commands, and hooks this run wants.
 func sendRegister() {
 	tools := []map[string]any{}
+	params := map[string]any{"type": "object"}
+	if p := os.Getenv("ECHO_TOOL_PARAMS"); p != "" {
+		_ = json.Unmarshal([]byte(p), &params)
+	}
 	for _, name := range splitList(os.Getenv("ECHO_TOOL_NAMES"), "echo") {
 		tools = append(tools, map[string]any{
 			"name":        name,
 			"description": "echoes its arguments",
-			"parameters":  map[string]any{"type": "object"},
+			"parameters":  params,
 			"read_only":   true,
 			"parallel":    true,
 			"timeout_ms":  envInt("ECHO_TOOL_TIMEOUT_MS", 0),

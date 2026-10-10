@@ -123,7 +123,7 @@ type frontMatter struct {
 func parseFrontMatter(content string) (frontMatter, string, bool, error) {
 	raw, body, ok := splitFrontMatter(content)
 	if !ok {
-		return frontMatter{}, "", false, nil
+		return frontMatter{}, content, false, nil
 	}
 	var doc frontMatter
 	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {

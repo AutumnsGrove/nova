@@ -9,6 +9,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/openrouter"
@@ -374,7 +375,9 @@ func TestServer_SRV42_ThinkingEvents(t *testing.T) {
 func serverWithHTTP(t *testing.T, baseURL string) *Server {
 	t.Helper()
 	cfg := config.Defaults()
-	cfg.Tools.Active = []string{"read"}
+	cfg.Tools.Active = []string{"read", "bash"}
+	cfg.Tools.Bash.MaxOutputBytes = 2 << 20
+	cfg.Permissions.Headless = permission.Allow
 	cfg.Retry.BaseMS = 1
 	cfg.Retry.CapMS = 5
 	p := openrouter.New(openrouter.Config{BaseURL: baseURL, APIKey: "test-key"})

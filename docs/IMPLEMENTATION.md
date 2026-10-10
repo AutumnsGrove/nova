@@ -74,7 +74,6 @@ When you want a specific chunk, use this longer form:
 
 ```
 You are implementing chunk <CNN> of Nova, a Go agent harness. Read NEXTSTEPS.md and AGENTS.md first.
-Claim the chunk before anything else by creating docs/chunks/<CNN>.done.md from DONE-TEMPLATE.md.
 
 Read these, in this order, and nothing else unless a spec says to:
   1. docs/chunks/<CNN>-<name>.md        (your spec: follow it exactly)
@@ -86,40 +85,36 @@ Rules:
   - Every matrix row has a test whose name contains the row ID. You may add rows. You
     may not delete or weaken rows.
   - Do not change files outside the list in your spec. If you must, stop and say why.
-  - Match the surrounding code's style. No new dependencies unless the spec allows them.
+  - Match the surrounding code's style. Dependencies only from the allow-list.
   - Run `scripts/accept <CNN>` and make it pass before you finish.
-  - When done, finish the handoff note docs/chunks/<CNN>.done.md and run
-    `go run ./scripts/nextsteps build`. List any matrix row or acceptance item you could NOT
-    satisfy under `unmet`, with the reason. An empty list is fine.
+  - Your LAST step is to update NEXTSTEPS.md as AGENTS.md describes, so the next session starts clean.
 ```
 
 ## Handoff: one file to start every session from
 
-`NEXTSTEPS.md` at the repository root is the single place to start. It is **generated** by `scripts/nextsteps`
-(chunk C00) from the per-chunk handoff notes `docs/chunks/CNN.done.md` and the chunk specs, so it is always current
-and parallel agents never conflict (each writes only its own note).
+`NEXTSTEPS.md` at the repository root is the single place to start, and it is **edited by hand** (by the agent as
+its last step, and by you). Chunks run one at a time, so there is no tooling and no merge conflict to manage.
 
-- An agent **claims** a chunk by creating its note from `docs/chunks/DONE-TEMPLATE.md` (`status: in-progress`), and
-  **finishes** it by completing the note. `accept` fails until the note is complete, so the handoff cannot be skipped.
-- `nextsteps build` turns the notes into: what is in progress, what needs attention (partial or blocked), what is
-  ready to run in parallel, what the last chunks did, the notes the next agents need, spec corrections to apply,
-  decisions to record, unmet rows, and cost.
-- A **human block** in the file is yours: leave instructions for the next session there; it survives regeneration.
-- CI regenerates the file on every push to `main`.
-
-Before C00 exists, `NEXTSTEPS.md` is maintained by hand in the same format.
+- It has: **Start here** (the state of the project and the exact next step), a **Status** table, a **Last session** log
+  (newest first), **Spec corrections to apply**, **Decisions to record**, **Open questions for the human**, and a
+  **Cost** log.
+- Each agent, as its last step, marks its chunk's row, adds a Last-session entry (what it built, what it could not
+  satisfy, gotchas, the command that proves it works), updates **Start here** to name the next chunk, and adds any
+  spec corrections, decisions, and open questions. The exact steps are in `AGENTS.md`.
+- Because the habit is part of the definition of done in `AGENTS.md`, you check it when you review a chunk. No script
+  enforces it.
 
 ## The human's job
 
-1. Start an agent with the one-line prompt (or name a chunk from the **Ready now** list).
-2. Come back; read `NEXTSTEPS.md` or the agent's note `docs/chunks/<CNN>.done.md`.
-3. Run `scripts/accept <CNN>`. If it passes and `unmet` is empty, merge.
+1. Start an agent with the one-line prompt (or name a chunk).
+2. Come back; read the **Last session** entry in `NEXTSTEPS.md`.
+3. Run `scripts/accept <CNN>`. If it passes and the entry lists nothing unsatisfied, merge.
 4. If not, send the failing output back to the same agent.
-5. After merging, apply any **Spec corrections** and **Decisions to record** the notes list, and clear them from the
-   note. Leave instructions for the next session in the human block of `NEXTSTEPS.md`.
+5. After merging, apply any **Spec corrections** and **Decisions to record** the agent listed, then clear them from
+   `NEXTSTEPS.md`. Leave anything you want the next agent to know under **Start here**.
 
 That is the whole review for a chunk. A second pass by a larger model is an exception,
-used when a `.done.md` lists a gap or when a chunk touches security. Chunks flagged for review of
+used when the Last-session entry lists a gap or when a chunk touches security. Chunks flagged for review of
 their **tests**: C09 (the loop), C08 (session), C13 (extension host), C14 (serve and action),
 and C04 (permissions).
 
@@ -131,7 +126,7 @@ and C04 (permissions).
 | Gaps were found later by a bigger model | That model writes the matrix, now, in the spec |
 | The agent decided its own scope | A fixed file list and a "stop and say why" rule |
 | "Done" meant "I think so" | `scripts/accept` is the definition of done |
-| Silent gaps | The `.done.md` must list every unmet row |
+| Silent gaps | The agent must list every unmet row in `NEXTSTEPS.md` |
 
 ## What the guards cannot catch
 
@@ -166,7 +161,7 @@ bug is covered in every later chunk.
 
 Development cost is tracked per chunk from the provider's own usage, in the same way
 the `pi-extensions` repository does it (a table in the repository README). Each
-`.done.md` records the cost of its run. The total is expected to be small; a chunk that
+The Last-session entry records the cost of its run. The total is expected to be small; a chunk that
 costs much more than its neighbours is a sign the spec was unclear.
 
 ## Spec template

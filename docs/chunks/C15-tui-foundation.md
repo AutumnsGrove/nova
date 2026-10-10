@@ -30,7 +30,7 @@ Before writing any code, `go get` the versions pinned in `TUI.md` (bubbletea v2.
 v2.0.6, bubbles v2.2.1, glamour v2.0.1, log v2.0.1, ultraviolet, x/ansi v0.11.9, x/term, chroma
 v2.27.0, x/exp/golden v0.1.0, colorprofile). Run `go build ./...` and `go build -tags notui
 ./...` and `go run ./scripts/importcheck`. If any version does not resolve or the import
-boundary breaks, **stop** and write the problem in `C15.done.md`. Do not substitute versions
+boundary breaks, **stop** and write the problem under `Open questions` in `NEXTSTEPS.md`. Do not substitute versions
 silently. All tui files carry `//go:build !notui`.
 
 ## Files

@@ -23,7 +23,7 @@ key store, and the code-defined model catalog.
      endpoint, the request and response fields, and the key's lifetime).
   2. OpenRouter's Ori documentation (`openrouter.ai/docs/guides/ori/harness`), to learn how
      Ori hands a harness its credentials and model.
-  If you cannot fetch them, **stop** and list the questions in `C03.done.md`. Do not guess
+  If you cannot fetch them, **stop** and list the questions in the `Open questions` section of `NEXTSTEPS.md`. Do not guess
   endpoints or field names. The endpoints below are from memory and must be confirmed.
 
 ## Files
@@ -206,7 +206,7 @@ func Resolve(cfgKey string, env func(string) string, store Store) (key, source s
 - A refresh-token flow (confirm first whether OpenRouter issues one).
 - Other providers, the `/responses` API, the `nova login` command itself (C12 wires it).
 - Reading Ori's environment variables, **unless** the documentation fetched above makes it
-  a few lines. If it does, add a matrix row and a test; if not, list it in `C03.done.md`.
+  a few lines. If it does, add a matrix row and a test; if not, note it in `NEXTSTEPS.md`.
 
 ## Acceptance
 

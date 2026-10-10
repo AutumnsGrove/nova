@@ -80,7 +80,7 @@ wheel.
 | [`docs/TESTING.md`](docs/TESTING.md) | Test layers, the failure-mode catalog, the matrix rule, definition of done. |
 | [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) | The chunk plan and how agents build it. |
 | [`docs/chunks/`](docs/chunks/) | One spec per chunk (C00 to C19), each with a test matrix. |
-| [`NEXTSTEPS.md`](NEXTSTEPS.md) | Where every session starts: generated status, what is ready, notes from the last agent. |
+| [`NEXTSTEPS.md`](NEXTSTEPS.md) | Where every session starts: status, what is next, notes from the last agent. Hand-edited. |
 | [`AGENTS.md`](AGENTS.md) | Instructions for the agents that implement the chunks. |
 | [`docs/BRAND.md`](docs/BRAND.md) | The two logo marks, the palette, and how to regenerate them. |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | The ecosystem survey and what we borrow from where. |

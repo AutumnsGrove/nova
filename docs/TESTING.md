@@ -290,7 +290,7 @@ go run ./scripts/linecount <pkgs>      # within the package budget
 go run ./scripts/importcheck           # layer rules and the UI import boundary
 ```
 
-and the agent has written a short `docs/chunks/<chunk>.done.md` listing anything it
+and the agent has updated `NEXTSTEPS.md` (see `AGENTS.md`), listing anything it
 could not satisfy and why. An empty list is a valid result. A silent gap is not.
 
 ## 7. What not to test

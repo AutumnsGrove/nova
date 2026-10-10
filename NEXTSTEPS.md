@@ -5,14 +5,14 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C04 are done. `accept C04` and `make ci` pass. `message`, the `provider`
+**State:** C00 through C05 are done. `accept C05` and `make ci` pass. `message`, the `provider`
 contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, `auth`
 (PKCE login, key store, credential resolution), the hardened `tool` registry with JSON-schema argument
-validation, and the `permission` allow/ask/deny policy exist.
+validation, the `permission` allow/ask/deny policy, and the filesystem tools (`read`, `write`, `edit`,
+`list`) exist.
 
-**Next:** run **C05** (`docs/chunks/C05-tools-fs.md`): the filesystem tools. C04 and C08 were
-independent, one at a time. Then C06, C07, C11, C09, C10, C12. Remember D48: any package's `_test.go`
-may import `testkit`.
+**Next:** run **C06** (`docs/chunks/C06-tools-search.md`): the search tools (`glob`, `grep`). Then C07, C11,
+C09, C10, C12. Remember D48: any package's `_test.go` may import `testkit`.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -28,7 +28,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C02 | openaicompat streaming provider | done | C01 | 2026-10-09 | |
 | C03 | OpenRouter preset, login, model catalog | done | C02 | 2026-10-09 | |
 | C04 | Tool contract, registry, permission policy | done | C01 | 2026-10-09 | |
-| C05 | Filesystem tools | todo | C04 | | |
+| C05 | Filesystem tools | done | C04 | 2026-10-09 | |
 | C06 | Search tools | todo | C04 | | |
 | C07 | The bash tool | todo | C04 | | |
 | C08 | Protocol types and the session store | todo | C01 | | |
@@ -47,6 +47,54 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C05 — Filesystem tools — 2026-10-09 — pi — main — cost not visible
+
+Rebuilt `tools/fs` in small green commits: path resolution, atomic writes, read, diff, edit, list.
+
+- `tools/fs/fs.go` — `resolve` (length/NUL checks, WorkDir, `Roots` containment via `evalExisting`, which
+  follows symlinks in the existing part of a path) and a per-path lock shared by write and edit.
+- `tools/fs/atomic.go` — `writeAtomic` (temp file 0600, fsync, rename, dir sync), `realTarget` (writes
+  through a symlink), `fileMode`.
+- `tools/fs/read.go` — a streaming `lineReader` that counts runes without buffering a long line, detects
+  CRLF/BOM/invalid UTF-8, pages with offset/limit, caps at 2000 lines or 50 KiB, and reports `Details`.
+- `tools/fs/write.go` — size cap, parent creation, mode preservation, created/overwrote, `Details`.
+- `tools/fs/diff.go` — `unifiedDiff` with common prefix/suffix + LCS, hunks, and the no-newline marker.
+- `tools/fs/edit.go` — all edits matched against the original, exactly once, non-overlapping, applied
+  together and written atomically; CRLF fallback; BOM and mode preserved; on-disk change check.
+- `tools/fs/list.go` — sorted rows, glob filter, symlink targets, `?` for unstatable entries, 500 cap.
+- Tests `PTH01`–`PTH13`, `RDF01`–`RDF31`, `WRT01`–`WRT17`, `EDT01`–`EDT33`, `LST01`–`LST15`, `DIF01`–`DIF07`,
+  plus `FuzzResolve`, `FuzzUnifiedDiff`, `FuzzEditApply`, and `TestEdit_EDT33_Property`.
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C05` passes all nine steps; `make ci` and
+`go test -race ./...` are green. Budget: `tools/fs` 994/1000.
+
+**Differed from spec:**
+- The `tools/fs` budget was raised from 900 to 1000 (human-approved 2026-10-09) in the C05 spec and
+  `docs/ARCHITECTURE.md`.
+- `RDF29` uses a FIFO whose writer closes after two lines to test a stream that ends before its size,
+  rather than truncating a file mid-read (which is not deterministic). The reader also handles a real
+  mid-read EOF without a panic.
+- `read` reports `line_endings` over the lines it scanned; for a huge file stopped early it reflects that
+  prefix, not the whole file.
+- `RDF28` creates a 200 MiB sparse file to prove streaming; the reader continues to EOF to count remaining
+  lines for the "N more lines" trailer, so a huge file is read but never buffered.
+- `write` cannot carry invalid UTF-8 through JSON tool arguments (`json.Marshal` replaces bad bytes with
+  U+FFFD), so `WRT16` covers CRLF and NUL byte-for-byte rather than invalid bytes.
+- `read` takes `offset` as a pointer so an explicit `0` errors while an omitted offset defaults to 1;
+  `limit: 0` still means the default.
+- `list` shows `-` as a directory's size.
+
+**Gotchas:**
+- `gofmt` expands one-line `if`/`for` bodies; line budgets are code lines (comments and blanks do not count).
+- The read `lineReader` has a fast path for ASCII runs so a 200 MiB line is scanned in 64 KiB chunks
+  without a per-byte syscall; `renderRead` still counts to EOF for the trailer.
+- `editWriteHook` is a package var set by `EDT22`/`EDT26` to simulate another writer and a failing rename;
+  tests restore it. Tests that lower `maxFileBytes`/`maxDiffLines` restore them too.
+- Symlink containment is checked on the deepest existing ancestor, so a write to a new file under a
+  symlinked parent that leaves a root is refused (`PTH11`).
+
+**One command:** `go run ./scripts/accept C05`.
 
 ### C04 — Tool contract, registry, permission policy — 2026-10-09 — pi — main — cost not visible
 
@@ -239,6 +287,14 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
+- C05 budgets: `./tools/fs: 900` is too small for the full behaviour (994 lines). Applied: raised to 1000
+  in the C05 spec and `docs/ARCHITECTURE.md` (human-approved 2026-10-09).
+- C05 Matrix RDF29: "file shrinks while reading" is not deterministically reproducible; the test uses a
+  FIFO that ends early instead, and the reader is written to tolerate a real mid-read EOF.
+- C05 Behaviour 12: `line_endings` is detected over the scanned lines, not the whole file, so a huge read
+  stopped at the cap reports the prefix. Later drafts should say so.
+- C05 Matrix WRT16: invalid UTF-8 cannot cross JSON tool arguments; only CRLF and NUL are byte-for-byte
+  testable through the tool interface.
 - C04 budgets: `./tool: 400` is too small for the SCH matrix plus the hardened registry (516 lines).
   Applied: raised to 550 in the C04 spec and `docs/ARCHITECTURE.md` (human-approved 2026-10-09).
 - C04 Behaviour 12: "first problem found, in schema order" cannot mean map order, because `properties` is a
@@ -298,4 +354,4 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Cost
 
-Total: $0.00 recorded; the C00, C01, C02, C03, and C04 session costs were not visible.
+Total: $0.00 recorded; the C00, C01, C02, C03, C04, and C05 session costs were not visible.

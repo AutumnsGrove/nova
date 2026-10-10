@@ -11,8 +11,12 @@ contract, `testkit`, `openaicompat`, the `openrouter` preset with its model cata
 validation, the `permission` allow/ask/deny policy, the filesystem tools (`read`, `write`, `edit`,
 `list`), the search tools (`glob`, `grep`), and the `bash` tool exist.
 
-**Next:** run **C11** (`docs/chunks/C11-config-resources.md`): config, context files, skills, prompt
-templates, and trust. Then C09, C10, C12. Remember D48: any package's `_test.go` may import `testkit`.
+**Next:** run **C08** (`docs/chunks/C08-proto-session.md`): protocol types and the session store, the first
+chunk of milestone M3 (the engine: C08, C09, C10, C11). C08 is a prerequisite for C09, so do it before
+C11. Then C09, C10, C11, C12. Remember D48: any package's `_test.go` may import `testkit`.
+
+**Correction (2026-10-09):** the C05–C07 handoffs' "Next" lines read "C07, C11, C09, C10, C12" and
+dropped C08, but C09 depends on C08 and `PLAN.md` puts the engine in C08→C09→C10→C11 order. C08 is next.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 

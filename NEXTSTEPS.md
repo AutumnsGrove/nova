@@ -5,12 +5,12 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 is done. The guard programs, the Makefile, and CI are in place. `matrixcheck-all`/`linecount-all`
-guard only chunks whose Status below is `done`; the chunk being worked on is gated by `accept` alone.
+**State:** C00 and C01 are done. `message`, the `provider` contract, and `testkit` exist; `accept C01` and `make ci`
+pass. `matrixcheck-all`/`linecount-all` guard only chunks whose Status below is `done`.
 
-**Next:** run **C01** (`docs/chunks/C01-foundations.md`): `message`, the provider contract, and `testkit`. Its
-`packages` are `./message`, `./provider`, `./testkit`; keep from the prototype's `message/` and `provider/` only what
-the spec says to keep. Then C02, C04, C08 (independent, one at a time), then C05, C06, C07, C11, C09, C10, C03, C12.
+**Next:** run **C02** (`docs/chunks/C02-openaicompat.md`): the `openaicompat` streaming provider. It starts from the
+prototype's `provider/openaicompat/openaicompat.go` and its test; keep only what the spec says to keep. Then C04 and C08
+(independent, one at a time), then C05, C06, C07, C11, C09, C10, C03, C12.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -22,7 +22,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | Chunk | Title | Status | Depends on | Date | Cost |
 |---|---|---|---|---|---|
 | C00 | Guards | done | — | 2026-10-09 | |
-| C01 | Message, provider contract, testkit | todo | C00 | | |
+| C01 | Message, provider contract, testkit | done | C00 | 2026-10-09 | |
 | C02 | openaicompat streaming provider | todo | C01 | | |
 | C03 | OpenRouter preset, login, model catalog | todo | C02 | | |
 | C04 | Tool contract, registry, permission policy | todo | C01 | | |
@@ -45,6 +45,35 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C01 — Message, provider contract, testkit — 2026-10-09 — pi — main — cost not visible
+
+Finished `message` and the `provider` contract, and built all of `testkit`.
+
+- `message/message.go`, `message/validate.go` — added `Reasoning`/`Name`; `Validate` pairs tool calls with results.
+- `provider/options.go` — `MergeOptions` and `NormalizeFinish`.
+- `provider/error.go` — typed `Error`; `Classify`/`parseRetryAfter` (seconds and HTTP dates, capped at 5m).
+- `provider/provider.go` — `Request.Stop/ReasoningEffort/ProviderOptions`, `Usage.ReasoningTokens/CostSource`,
+  `StreamUsage`, `StreamEvent.Usage`.
+- `testkit/clock.go` — `Clock`, `RealClock`, `FakeClock` with `Advance`/`BlockUntil`.
+- `testkit/provider.go` — scripted in-process `Provider`.
+- `testkit/server.go` — SSE `Server` with the nine faults.
+- `testkit/fs.go`, `golden.go`, `leaks.go` — `TempTree`/`Symlink`/`WriteBinary`, `Golden`, `NoLeaks`.
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C01` passes all nine steps.
+
+**Differed from spec:**
+- `NoLeaks` is tested through its core `checkLeaks(t leakTB, baseline)` with a small fake, because `testing.TB` has an
+  unexported method and no test can implement it. `NoLeaks` is a thin wrapper that snapshots and registers the cleanup.
+
+**Gotchas:**
+- `testkit.Server`'s usage chunk marshals `provider.Usage` directly, so `reasoning_tokens` is top-level, not under
+  `completion_tokens_details`. C02 should adjust `server.go` if its usage mapping expects the OpenAI detail objects.
+- Go 1.26's `t.TempDir()` returns a new numbered subdirectory on each call, not one shared directory.
+- `Classify` must cap the seconds value before multiplying by `time.Second`: `Atoi` accepts numbers large enough to
+  overflow a `time.Duration` (found by `FuzzClassify`; it returns a negative otherwise).
+
+**One command:** `go run ./scripts/accept C01`.
 
 ### C00 — Guards — 2026-10-09 — pi — main — cost not visible in this session
 
@@ -86,6 +115,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   (human-approved 2026-10-09).
 - C00 Matrix: the MCK example IDs `X01`/`X02`/`X03`/`X99` are one letter and so do not match the documented
   `^[A-Z]{2,4}[0-9]{2,3}$` ID shape; later drafts should use two-to-four letter IDs.
+- C01 Matrix: TKL01/TKL02 say "run inside a sub-test harness", but `testing.TB` cannot be implemented outside
+  `testing`, so `NoLeaks` is tested through its core `checkLeaks`. Later drafts should say "test the check core".
 
 ## Decisions to record
 

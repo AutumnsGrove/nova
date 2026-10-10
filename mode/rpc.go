@@ -32,6 +32,21 @@ func ServeRPC(ctx context.Context, s *Server, in io.Reader, out io.Writer) error
 
 	events, cancel := s.Subscribe(0)
 	defer cancel()
+
+	// Until the client's hello arrives it can answer nothing, so permission
+	// asks resolve headless.
+	s.uiMu.Lock()
+	s.uiCaps = map[string]bool{}
+	s.uiHandler = func(ctx context.Context, req proto.UIRequest) (proto.UIResponse, error) {
+		if err := write(req); err != nil {
+			return proto.UIResponse{}, err
+		}
+		// The answer arrives as a separate ui_response frame and is routed by
+		// AnswerUI, so return nothing for callUI to use now.
+		return proto.UIResponse{}, nil
+	}
+	s.uiMu.Unlock()
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -65,7 +80,15 @@ func ServeRPC(ctx context.Context, s *Server, in io.Reader, out io.Writer) error
 			case frame.Command != nil:
 				_ = write(s.Handle(ctx, *frame.Command))
 			case frame.Hello != nil:
-				// Some clients skip the hello; accept it either way.
+				caps := map[string]bool{}
+				for _, cap := range frame.Hello.Capabilities {
+					caps[cap] = true
+				}
+				s.uiMu.Lock()
+				s.uiCaps = caps
+				s.uiMu.Unlock()
+			case frame.UIResponse != nil:
+				s.AnswerUI(*frame.UIResponse)
 			default:
 				_ = write(failResponse(proto.Command{}, proto.CodeUnsupported, "only commands are accepted"))
 			}

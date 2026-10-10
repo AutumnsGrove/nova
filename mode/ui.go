@@ -14,10 +14,7 @@ import (
 // ask resolves a permission question. With a UI handler it sends a confirm
 // request; without one it applies the policy's headless action.
 func (s *Server) ask(ctx context.Context, q agent.Question) (bool, error) {
-	s.uiMu.Lock()
-	handler := s.uiHandler
-	s.uiMu.Unlock()
-	if handler == nil {
+	if !s.supportsUI("ui.confirm") {
 		return s.policy.Headless == permission.Allow, nil
 	}
 	allowByDefault := s.policy.Headless == permission.Allow

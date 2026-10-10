@@ -104,6 +104,7 @@ type Server struct {
 	uiMu      sync.Mutex
 	uiHandler func(context.Context, proto.UIRequest) (proto.UIResponse, error)
 	uiPending map[string]chan proto.UIResponse
+	uiCaps    map[string]bool
 	uiNext    int64
 }
 

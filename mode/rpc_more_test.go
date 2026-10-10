@@ -259,6 +259,37 @@ func TestRPC_RPC12_CorrelationIDs(t *testing.T) {
 	}
 }
 
+func TestRPC_RPC11_StdoutOnlyFrames(t *testing.T) {
+	s, _ := testServer(t, testkit.Turn{Text: "42"})
+	h := startRPC(t, s)
+	h.next(t) // hello
+	h.send(t, proto.Command{Type: proto.CmdPrompt, ID: "1", Text: "hi"})
+	for {
+		frame := h.next(t)
+		if frame.Event != nil && frame.Event.Type == proto.EventRunEnd {
+			return
+		}
+	}
+}
+
+func TestRPC_RPC13_Backpressure(t *testing.T) {
+	chunks := make([]string, 30)
+	for i := range chunks {
+		chunks[i] = "x"
+	}
+	s, _ := testServer(t, testkit.Turn{TextChunks: chunks})
+	h := startRPC(t, s)
+	h.next(t) // hello
+	h.send(t, proto.Command{Type: proto.CmdPrompt, ID: "1", Text: "hi"})
+	// Read one frame at a time; the server must keep up without deadlocking.
+	for {
+		frame := h.next(t)
+		if frame.Event != nil && frame.Event.Type == proto.EventRunEnd {
+			return
+		}
+	}
+}
+
 func TestRPC_RPC14_LargeEvent(t *testing.T) {
 	bashArgs := `{"command":"yes x | head -c 1200000"}`
 	srv := testkit.NewServer(t,

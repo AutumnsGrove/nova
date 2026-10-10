@@ -250,10 +250,8 @@ func TestServer_SRV28_ReloadWaitsForRun(t *testing.T) {
 	}
 }
 
-func TestUI_SRV35_TimeoutAndSRV43_Expiry(t *testing.T) {
+func TestUI_SRV35_TimeoutDefault(t *testing.T) {
 	s, _ := testServer(t)
-	events, cancel := s.Subscribe(64)
-	defer cancel()
 	ms := 5
 	resp, err := s.callUI(context.Background(), proto.UIRequest{
 		Type: proto.FrameUIRequest, ID: "u1", Method: "ui.confirm", TimeoutMS: &ms, Default: boolPtr(true),
@@ -261,18 +259,26 @@ func TestUI_SRV35_TimeoutAndSRV43_Expiry(t *testing.T) {
 	if err != nil || !resp.OK {
 		t.Fatalf("callUI = %+v, %v; want the default (true)", resp, err)
 	}
-	found := false
+}
+
+func TestUI_SRV43_ExpiryEvent(t *testing.T) {
+	s, _ := testServer(t)
+	events, cancel := s.Subscribe(64)
+	defer cancel()
+	ms := 5
+	if _, err := s.callUI(context.Background(), proto.UIRequest{
+		Type: proto.FrameUIRequest, ID: "u2", Method: "ui.confirm", TimeoutMS: &ms, Default: boolPtr(false),
+	}); err != nil {
+		t.Fatalf("callUI: %v", err)
+	}
 	for {
 		select {
 		case ev := <-events:
-			if ev.Type == proto.EventUIExpired && ev.ID == "u1" {
-				found = true
+			if ev.Type == proto.EventUIExpired && ev.ID == "u2" {
+				return
 			}
 		default:
-			if !found {
-				t.Fatal("expected a ui_expired event with the id")
-			}
-			return
+			t.Fatal("expected a ui_expired event with the id")
 		}
 	}
 }

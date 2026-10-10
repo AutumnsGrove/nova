@@ -366,6 +366,12 @@ func loginCommand(stdout, stderr io.Writer) *cobra.Command {
 				return err
 			}
 			opts := auth.LoginOptions{Out: stderr}
+			if v := os.Getenv("NOVA_AUTH_URL"); v != "" {
+				opts.AuthURL = v
+			}
+			if v := os.Getenv("NOVA_EXCHANGE_URL"); v != "" {
+				opts.ExchangeURL = v
+			}
 			if !noBrowser {
 				opts.OpenBrowser = openBrowser
 			}

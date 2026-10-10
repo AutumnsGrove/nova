@@ -165,12 +165,13 @@ func Load(opt LoadOptions) (*Config, []Warning, error) {
 		}
 	}
 
+	mergeMaps(merged, envMap(env, &warnings))
+	mergeMaps(merged, flagsMap(opt.Flags))
+
 	warnings = append(warnings, unknownKeys(merged, "config")...)
 
 	cfg := Defaults()
 	decodeInto(&cfg, merged, &warnings)
-	applyEnv(&cfg, env, &warnings)
-	applyFlags(&cfg, opt.Flags, &warnings)
 	normalise(&cfg, home, &warnings)
 	return &cfg, warnings, nil
 }
@@ -222,7 +223,8 @@ func fileExists(readFile func(string) ([]byte, error), base string) bool {
 }
 
 // mergeMaps deep-merges maps and replaces every other value, so lists and
-// scalars from a higher layer win whole.
+// scalars from a higher layer win whole. Nested maps are copied, so a later
+// merge into the destination cannot mutate the source layers.
 func mergeMaps(dst, src map[string]any) {
 	for key, value := range src {
 		if sm, ok := value.(map[string]any); ok {
@@ -230,6 +232,10 @@ func mergeMaps(dst, src map[string]any) {
 				mergeMaps(dm, sm)
 				continue
 			}
+			fresh := map[string]any{}
+			mergeMaps(fresh, sm)
+			dst[key] = fresh
+			continue
 		}
 		dst[key] = value
 	}
@@ -259,32 +265,34 @@ func decodeInto(cfg *Config, m map[string]any, warnings *[]Warning) {
 	}
 }
 
-// applyEnv overrides the config from the documented NOVA_* variables. An empty
-// or whitespace-only value is ignored; one that will not parse is a warning.
-func applyEnv(cfg *Config, env func(string) string, warnings *[]Warning) {
-	if v, ok := envValue(env, "NOVA_MODEL"); ok {
-		cfg.Model = v
-	}
-	if v, ok := envValue(env, "NOVA_THINKING"); ok {
-		cfg.Thinking = v
-	}
-	if v, ok := envValue(env, "NOVA_THEME"); ok {
-		cfg.Theme = v
-	}
-	if v, ok := envValue(env, "NOVA_CONTEXT_LIMIT"); ok {
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			cfg.ContextLimit = n
-		} else {
-			*warnings = append(*warnings, Warning{Source: "env", Message: "NOVA_CONTEXT_LIMIT: " + err.Error()})
+// envMap builds the environment override layer from the documented NOVA_*
+// variables. An empty or whitespace-only value is ignored; one that will not
+// parse is a warning.
+func envMap(env func(string) string, warnings *[]Warning) map[string]any {
+	m := map[string]any{}
+	setString := func(key, name string) {
+		if v, ok := envValue(env, name); ok {
+			m[key] = v
 		}
 	}
-	if v, ok := envValue(env, "NOVA_MAX_TURNS"); ok {
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			cfg.MaxTurns = n
-		} else {
-			*warnings = append(*warnings, Warning{Source: "env", Message: "NOVA_MAX_TURNS: " + err.Error()})
+	setInt := func(key, name string) {
+		v, ok := envValue(env, name)
+		if !ok {
+			return
 		}
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			*warnings = append(*warnings, Warning{Source: "env", Message: name + ": " + err.Error()})
+			return
+		}
+		m[key] = n
 	}
+	setString("model", "NOVA_MODEL")
+	setString("thinking", "NOVA_THINKING")
+	setString("theme", "NOVA_THEME")
+	setInt("context_limit", "NOVA_CONTEXT_LIMIT")
+	setInt("max_turns", "NOVA_MAX_TURNS")
+	return m
 }
 
 // envValue returns a variable's value unless it is missing or blank.
@@ -296,18 +304,43 @@ func envValue(env func(string) string, name string) (string, bool) {
 	return v, true
 }
 
-// applyFlags sets dotted keys last. Keys are sorted so warnings are stable.
-func applyFlags(cfg *Config, flags map[string]any, warnings *[]Warning) {
+// flagsMap turns dotted flag keys into a nested map. The leading "bash." alias
+// maps onto tools.bash, matching the documented flag names. Keys are sorted so
+// warnings are stable.
+func flagsMap(flags map[string]any) map[string]any {
+	m := map[string]any{}
+	for _, key := range sortedFlagKeys(flags) {
+		parts := strings.Split(key, ".")
+		if parts[0] == "bash" {
+			parts = append([]string{"tools"}, parts...)
+		}
+		setNested(m, parts, flags[key])
+	}
+	return m
+}
+
+// sortedFlagKeys returns the flag keys in order.
+func sortedFlagKeys(flags map[string]any) []string {
 	keys := make([]string, 0, len(flags))
 	for key := range flags {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	for _, key := range keys {
-		if err := setDotted(cfg, key, flags[key]); err != nil {
-			*warnings = append(*warnings, Warning{Source: "flags", Message: err.Error()})
+	return keys
+}
+
+// setNested writes value at parts, creating intermediate maps.
+func setNested(m map[string]any, parts []string, value any) {
+	for len(parts) > 1 {
+		next, ok := m[parts[0]].(map[string]any)
+		if !ok {
+			next = map[string]any{}
+			m[parts[0]] = next
 		}
+		m = next
+		parts = parts[1:]
 	}
+	m[parts[0]] = value
 }
 
 // normalise applies cross-field rules after every layer is merged.

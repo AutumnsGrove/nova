@@ -1275,7 +1275,7 @@ func FuzzToolCallAssembly(f *testing.F) {
 	f.Fuzz(func(t *testing.T, seed int64, a, b, c uint8) {
 		const arguments = `{"x":1}`
 		fragments := interleave(arguments, []int{int(a)%4 + 1, int(b)%4 + 1, int(c)%4 + 1})
-		asm := newAssembler()
+		asm := &assembler{calls: map[int]*callAcc{}}
 		for n, frag := range fragments {
 			id := ""
 			name := ""

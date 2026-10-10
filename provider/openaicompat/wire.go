@@ -5,11 +5,6 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 )
 
-// streamOptions asks the server to end the stream with a usage-only chunk.
-type streamOptions struct {
-	IncludeUsage bool `json:"include_usage"`
-}
-
 // wireMessage is the chat-completions shape of a transcript message. It is
 // separate from message.Message so Reasoning can be dropped without modifying
 // the caller's transcript. Content is omitted when empty, which is what the
@@ -37,7 +32,7 @@ type chatRequest struct {
 	Stop            []string           `json:"stop,omitempty"`
 	ReasoningEffort string             `json:"reasoning_effort,omitempty"`
 	Stream          bool               `json:"stream"`
-	StreamOptions   *streamOptions     `json:"stream_options,omitempty"`
+	StreamOptions   map[string]bool    `json:"stream_options,omitempty"`
 }
 
 // toolCallDelta is one fragment of a streamed tool call. Index is a pointer

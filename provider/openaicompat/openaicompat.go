@@ -108,9 +108,12 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 		return nil, err
 	}
 
-	key, err := p.apiKey(ctx)
-	if err != nil {
-		return nil, &provider.Error{Message: "resolving API key", Retryable: false, Err: err}
+	key := p.cfg.APIKey
+	if p.cfg.APIKeyFunc != nil {
+		key, err = p.cfg.APIKeyFunc(ctx)
+		if err != nil {
+			return nil, &provider.Error{Message: "resolving API key", Retryable: false, Err: err}
+		}
 	}
 
 	// reqCtx is the request context; the connect timer cancels it if the
@@ -124,7 +127,19 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: build request: %w", err)
 	}
-	p.setHeaders(httpReq, key, req.ExtraHeaders)
+	// Header precedence: fixed first, then the request's extras, then the
+	// bearer token last so a stray Authorization cannot shadow the key.
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+	for k, v := range p.cfg.Headers {
+		httpReq.Header.Set(k, v)
+	}
+	for k, v := range req.ExtraHeaders {
+		httpReq.Header.Set(k, v)
+	}
+	if key != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+key)
+	}
 
 	var timedOut atomic.Bool
 	timer := time.AfterFunc(p.cfg.ConnectTimeout, func() {
@@ -147,32 +162,7 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, httpError(resp.StatusCode, resp.Header, readCapped(resp.Body))
 	}
-	return p.consume(reqCtx, resp.Body, req, onEvent)
-}
-
-// apiKey resolves the bearer token for this request, preferring the function.
-func (p *Provider) apiKey(ctx context.Context) (string, error) {
-	if p.cfg.APIKeyFunc != nil {
-		return p.cfg.APIKeyFunc(ctx)
-	}
-	return p.cfg.APIKey, nil
-}
-
-// setHeaders applies the documented precedence: fixed headers first, then the
-// request's extras, then the bearer token last so a stray Authorization cannot
-// shadow the configured key.
-func (p *Provider) setHeaders(r *http.Request, key string, extra map[string]string) {
-	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("Accept", "text/event-stream")
-	for k, v := range p.cfg.Headers {
-		r.Header.Set(k, v)
-	}
-	for k, v := range extra {
-		r.Header.Set(k, v)
-	}
-	if key != "" {
-		r.Header.Set("Authorization", "Bearer "+key)
-	}
+	return p.consume(ctx, cancel, resp.Body, req, onEvent)
 }
 
 // buildBody renders the request, drops reasoning unless asked to keep it, and
@@ -202,7 +192,7 @@ func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 		Stop:            req.Stop,
 		ReasoningEffort: req.ReasoningEffort,
 		Stream:          true,
-		StreamOptions:   &streamOptions{IncludeUsage: true},
+		StreamOptions:   map[string]bool{"include_usage": true},
 	}
 	if req.MaxTokens > 0 {
 		maxTokens := req.MaxTokens

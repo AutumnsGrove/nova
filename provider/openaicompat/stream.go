@@ -10,12 +10,16 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
 )
+
+// errTruncatedLine marks a line that ended without a newline, which means the
+// connection was cut mid-event rather than the stream ending cleanly.
+var errTruncatedLine = errors.New("openaicompat: stream ended mid-line")
 
 // lineReader reads SSE lines while tracking the line number for error
 // messages. bufio.Scanner cannot report the line or tell "too long" from "read
@@ -31,10 +35,6 @@ type lineReader struct {
 func newLineReader(r io.Reader, max int) *lineReader {
 	return &lineReader{r: bufio.NewReaderSize(r, max+2), max: max}
 }
-
-// errTruncatedLine marks a line that ended without a newline, which means the
-// connection was cut mid-event rather than the stream ending cleanly.
-var errTruncatedLine = errors.New("openaicompat: stream ended mid-line")
 
 // next returns the next line without its terminator, or io.EOF at the end. A
 // line over max is an *errLineTooLong; a line cut off before its terminator is
@@ -55,62 +55,6 @@ func (lr *lineReader) next() (string, error) {
 	return strings.TrimSuffix(line, "\r"), nil
 }
 
-// lineResult carries one line, or the error that ended the read, to the
-// consumer goroutine. num is the 1-based line number for error messages.
-type lineResult struct {
-	line string
-	num  int
-	err  error
-}
-
-// streamReader reads the blocking body on its own goroutine and feeds the
-// caller over a channel. The caller selects on the channel and a timer, so a
-// stalled server cannot pin it inside a blocked Read, and the caller is the
-// only goroutine that ever invokes onEvent.
-type streamReader struct {
-	lines chan lineResult
-	quit  chan struct{}
-	done  chan struct{}
-	body  io.Closer
-	once  sync.Once
-}
-
-// startStreamReader spawns the reader goroutine.
-func startStreamReader(body io.ReadCloser, max int) *streamReader {
-	sr := &streamReader{
-		lines: make(chan lineResult),
-		quit:  make(chan struct{}),
-		done:  make(chan struct{}),
-		body:  body,
-	}
-	go func() {
-		defer close(sr.done)
-		lr := newLineReader(body, max)
-		for {
-			line, err := lr.next()
-			select {
-			case sr.lines <- lineResult{line: line, num: lr.line, err: err}:
-			case <-sr.quit:
-				return
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-	return sr
-}
-
-// stop closes the body so a blocked Read returns, then waits for the goroutine.
-// It is idempotent and safe to defer.
-func (sr *streamReader) stop() {
-	sr.once.Do(func() {
-		close(sr.quit)
-		_ = sr.body.Close()
-	})
-	<-sr.done
-}
-
 // callAcc accumulates one tool call across its deltas.
 type callAcc struct {
 	id, name, typ string
@@ -123,10 +67,6 @@ type assembler struct {
 	calls     map[int]*callAcc
 	order     []int
 	generated int
-}
-
-func newAssembler() *assembler {
-	return &assembler{calls: map[int]*callAcc{}}
 }
 
 // add folds one delta into the call at its index.
@@ -192,18 +132,24 @@ func (a *assembler) assembled() (calls []message.ToolCall, dropped int) {
 // consume reads the SSE body, emits streaming events, and returns the response.
 // On any failure after the stream has started it returns the partial response
 // together with the error, so the caller keeps what the model already said.
-func (p *Provider) consume(ctx context.Context, body io.ReadCloser, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
+func (p *Provider) consume(ctx context.Context, cancel context.CancelFunc, body io.ReadCloser, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
 	result := &provider.Response{Model: req.Model}
 	result.Message.Role = message.RoleAssistant
 
-	sr := startStreamReader(body, p.cfg.MaxLineBytes)
-	defer sr.stop()
+	lr := newLineReader(body, p.cfg.MaxLineBytes)
 
-	timer := time.NewTimer(p.cfg.IdleTimeout)
-	defer timer.Stop()
+	// The idle timer cancels the request context, which unblocks the body read
+	// and closes the connection. A synchronous read plus a canceling timer is
+	// simpler than a reader goroutine, and it still cannot pin the caller.
+	var idleFired atomic.Bool
+	idle := time.AfterFunc(p.cfg.IdleTimeout, func() {
+		idleFired.Store(true)
+		cancel()
+	})
+	defer idle.Stop()
 
 	var text, reasoning strings.Builder
-	asm := newAssembler()
+	asm := &assembler{calls: map[int]*callAcc{}}
 	var sawChunk, sawFinish, sawDone, firstChunk bool = false, false, false, true
 
 	// partial snapshots the delivered text, so an error still carries what the
@@ -213,87 +159,79 @@ func (p *Provider) consume(ctx context.Context, body io.ReadCloser, req provider
 		result.Message.Reasoning = reasoning.String()
 		return result
 	}
+	fail := func(message string, retryable bool, cause error) (*provider.Response, error) {
+		return partial(), &provider.Error{Message: message, Retryable: retryable, Err: cause}
+	}
 
-streamLoop:
 	for {
-		select {
-		case <-ctx.Done():
-			return partial(), ctx.Err()
-		case <-timer.C:
-			return partial(), &provider.Error{Message: "stream idle timeout", Retryable: true}
-		case res := <-sr.lines:
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
-				}
+		line, err := lr.next()
+		if err != nil {
+			if ctx.Err() != nil {
+				return partial(), ctx.Err()
 			}
-			timer.Reset(p.cfg.IdleTimeout)
-
-			if res.err != nil {
-				if ctx.Err() != nil {
-					return partial(), ctx.Err()
-				}
-				if errors.Is(res.err, io.EOF) {
-					break streamLoop
-				}
-				var tooLong *errLineTooLong
-				switch {
-				case errors.Is(res.err, errTruncatedLine):
-					return partial(), &provider.Error{Message: "stream ended mid-event", Retryable: true}
-				case errors.As(res.err, &tooLong):
-					return partial(), &provider.Error{Message: tooLong.Error(), Retryable: false}
-				case errors.Is(res.err, os.ErrDeadlineExceeded), os.IsTimeout(res.err):
-					return partial(), &provider.Error{Message: "stream idle timeout", Retryable: true, Err: res.err}
-				default:
-					return partial(), &provider.Error{Message: fmt.Sprintf("read stream: %v", res.err), Retryable: true, Err: res.err}
-				}
+			if idleFired.Load() {
+				return fail("stream idle timeout", true, err)
 			}
-
-			data, ok := sseData(res.line)
-			if !ok || data == "" {
-				continue
+			if errors.Is(err, io.EOF) {
+				break
 			}
-			if data == "[DONE]" {
-				sawDone = true
-				break streamLoop
+			var tooLong *errLineTooLong
+			switch {
+			case errors.Is(err, errTruncatedLine):
+				return fail("stream ended mid-event", true, err)
+			case errors.As(err, &tooLong):
+				return fail(tooLong.Error(), false, nil)
+			case errors.Is(err, os.ErrDeadlineExceeded), os.IsTimeout(err):
+				return fail("stream idle timeout", true, err)
+			default:
+				return fail(fmt.Sprintf("read stream: %v", err), true, err)
 			}
-
-			var chunk chatChunk
-			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				return partial(), &provider.Error{
-					Message:   fmt.Sprintf("invalid JSON on line %d: %v", res.num, err),
-					Retryable: false,
-				}
-			}
-			if firstChunk {
-				firstChunk = false
-				if chunk.Error != nil {
-					return partial(), streamErrorObject(chunk.Error)
-				}
-			}
-			sawChunk = true
-			if chunk.Model != "" {
-				result.Model = chunk.Model
-			}
-			if chunk.Usage != nil {
-				usage := usageFromRaw(chunk.Usage)
-				result.Usage = usage
-				if onEvent != nil {
-					delivered := usage
-					onEvent(provider.StreamEvent{Type: provider.StreamUsage, Usage: &delivered})
-				}
-			}
-			if len(chunk.Choices) == 0 {
-				continue
-			}
-			choice := chunk.Choices[0]
-			if choice.FinishReason != "" {
-				result.FinishReason = provider.NormalizeFinish(choice.FinishReason)
-				sawFinish = true
-			}
-			appendDelta(&text, &reasoning, asm, choice.Delta, onEvent)
 		}
+		idle.Reset(p.cfg.IdleTimeout)
+
+		data, ok := strings.CutPrefix(line, "data:")
+		if !ok {
+			continue
+		}
+		if data = strings.TrimPrefix(data, " "); data == "" {
+			continue
+		}
+		if data == "[DONE]" {
+			sawDone = true
+			break
+		}
+
+		var chunk chatChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			return fail(fmt.Sprintf("invalid JSON on line %d: %v", lr.line, err), false, nil)
+		}
+		if firstChunk {
+			firstChunk = false
+			if chunk.Error != nil {
+				return partial(), streamErrorObject(chunk.Error)
+			}
+		}
+		sawChunk = true
+		if chunk.Model != "" {
+			result.Model = chunk.Model
+		}
+		if chunk.Usage != nil {
+			usage := usageFromRaw(chunk.Usage)
+			result.Usage = usage
+			if onEvent != nil {
+				delivered := usage
+				onEvent(provider.StreamEvent{Type: provider.StreamUsage, Usage: &delivered})
+			}
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		choice := chunk.Choices[0]
+		if choice.FinishReason != "" {
+			result.FinishReason = provider.NormalizeFinish(choice.FinishReason)
+			sawFinish = true
+		}
+		appendDelta(&text, &reasoning, asm, choice.Delta, onEvent)
 	}
 
 	calls, dropped := asm.assembled()
@@ -359,14 +297,4 @@ func reasoningText(d delta) string {
 		b.WriteString(detail.Text)
 	}
 	return b.String()
-}
-
-// sseData extracts a `data:` payload. An optional single space after the colon
-// is accepted; comments, blank lines, and every other SSE field report false.
-func sseData(line string) (string, bool) {
-	rest, ok := strings.CutPrefix(line, "data:")
-	if !ok {
-		return "", false
-	}
-	return strings.TrimPrefix(rest, " "), true
 }

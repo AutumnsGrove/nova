@@ -32,25 +32,34 @@ func (e *errLineTooLong) Error() string {
 // one and tag-stripped prose otherwise.
 func httpError(status int, header http.Header, body []byte) *provider.Error {
 	retryable, after := provider.Classify(status, header.Get("Retry-After"))
+	code, message := bodyError(body)
 	return &provider.Error{
 		Status:     status,
-		Code:       errorCode(body),
-		Message:    errorMessage(body),
+		Code:       code,
+		Message:    message,
 		Retryable:  retryable,
 		RetryAfter: after,
 	}
 }
 
-// errorCode pulls the optional machine code out of an error body.
-func errorCode(body []byte) string {
+// bodyError pulls the machine code and human message out of a failed body,
+// preferring error.message, then a top-level message, then tag-stripped prose.
+func bodyError(body []byte) (code, message string) {
 	var p errorPayload
 	if json.Unmarshal(body, &p) != nil {
-		return ""
+		return "", stripHTML(body)
 	}
+	code, message = codeString(p.Code), p.Message
 	if p.Error != nil {
-		return codeString(p.Error.Code)
+		code = codeString(p.Error.Code)
+		if p.Error.Message != "" {
+			message = p.Error.Message
+		}
 	}
-	return codeString(p.Code)
+	if message == "" {
+		message = stripHTML(body)
+	}
+	return code, message
 }
 
 // errorPayload is the body shape shared by `{"error":{...}}` and `{"message":...}`.
@@ -58,21 +67,6 @@ type errorPayload struct {
 	Error   *errorObject `json:"error"`
 	Message string       `json:"message"`
 	Code    any          `json:"code"`
-}
-
-// errorMessage prefers error.message, then a top-level message, then the first
-// bytes of the body with HTML tags stripped.
-func errorMessage(body []byte) string {
-	var p errorPayload
-	if json.Unmarshal(body, &p) == nil {
-		if p.Error != nil && p.Error.Message != "" {
-			return p.Error.Message
-		}
-		if p.Message != "" {
-			return p.Message
-		}
-	}
-	return stripHTML(body)
 }
 
 // streamErrorObject turns a 200 response whose first chunk is an error object

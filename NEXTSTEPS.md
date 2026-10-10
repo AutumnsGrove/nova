@@ -5,11 +5,12 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00, C01, and C02 are done. `accept C02` and `make ci` pass. `message`, the `provider`
-contract, `testkit`, and the `openaicompat` streaming provider exist.
+**State:** C00 through C03 are done. `accept C03` and `make ci` pass. `message`, the `provider`
+contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, and `auth`
+(PKCE login, key store, credential resolution) exist.
 
 **Next:** run **C04** (`docs/chunks/C04-tool-permission.md`): the tool contract, registry, and permission
-policy. C04 and C08 are independent, one at a time. Then C05, C06, C07, C11, C09, C10, C03, C12. C04 does
+policy. C04 and C08 are independent, one at a time. Then C05, C06, C07, C11, C09, C10, C12. C04 does
 not need `testkit` yet, but remember D48: any package's `_test.go` may import it.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
@@ -24,7 +25,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C00 | Guards | done | — | 2026-10-09 | |
 | C01 | Message, provider contract, testkit | done | C00 | 2026-10-09 | |
 | C02 | openaicompat streaming provider | done | C01 | 2026-10-09 | |
-| C03 | OpenRouter preset, login, model catalog | todo | C02 | | |
+| C03 | OpenRouter preset, login, model catalog | done | C02 | 2026-10-09 | |
 | C04 | Tool contract, registry, permission policy | todo | C01 | | |
 | C05 | Filesystem tools | todo | C04 | | |
 | C06 | Search tools | todo | C04 | | |
@@ -45,6 +46,54 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C03 — OpenRouter preset, login, model catalog — 2026-10-09 — pi — main — cost not visible
+
+Built the OpenRouter preset, its typed routing and model catalog, and all of `auth` (PKCE, login, store,
+resolution). Built in small green commits: routing, preset, catalog, PKCE, store, resolve, login.
+
+- `provider/openrouter/routing.go` — `Routing`, `Price`, `Options()` rendering the documented `provider`
+  object (`order`, `only`, `ignore`, `allow_fallbacks`, `sort`, `quantizations`, `require_parameters`,
+  `data_collection`, `zdr`, `max_price`, `preferred_min_throughput`, `preferred_max_latency`).
+- `provider/openrouter/openrouter.go` — `Config`, `New`; the attribution headers and key function.
+- `provider/openrouter/catalog.go` — `Catalog`, `RegisterModels` (called from `init`), `DefaultModel`.
+- `auth/pkce.go` — `NewVerifier`, `NewState`, `Challenge` (S256, RFC 7636 vector).
+- `auth/store.go` — `Store`, `NewFileStore` (0600 file, 0700 dir, atomic rename), `ErrNoKey`,
+  `*PermissionWarning`; an injectable `rename` so STO04 can force a failed rename.
+- `auth/resolve.go` — `Resolve` (config, env, store) and `EnvAPIKey`.
+- `auth/login.go` — `Login`, `LoginOptions`, the single-use loopback listener, the callback page, and the
+  code exchange (`POST` JSON `code`/`code_verifier`/`code_challenge_method` → `{key}`).
+- Tests `ORT01`–`ORT12`, `PKC01`–`PKC04`, `LOG01`–`LOG17`, `STO01`–`STO09`, `RES01`–`RES06`, plus
+  `FuzzRoutingOptions` and `FuzzCallbackQuery`.
+- `cmd/nova-run/main.go` — updated to the new `Config` form (see differed below).
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C03` passes all nine steps; `make ci` and
+`go test -short -race ./...` are green. Budgets: `provider/openrouter` 163/300, `auth` 399/500.
+
+**Differed from spec:**
+- The spec's model list has no `deepseek/deepseek-v4.1` slug; OpenRouter's list only has
+  `deepseek/deepseek-v4.1-flash` (checked 2026-10-09). Catalog entry: stable id `deepseek/deepseek-v4.1`,
+  wire slug `deepseek/deepseek-v4.1-flash`. `DefaultModel` is that stable id.
+- Behaviour 9's "(wrapped with the key)" is implemented as "returned alongside the key": `Load` returns
+  `(key, *PermissionWarning)`, and the warning names only path and mode, because STO08 forbids the key in
+  any error.
+- `cmd/nova-run/main.go` is not in the spec's Files table but had to change: `New(Config)` replaces the
+  prototype's `New(apiKey string, opts ...Option)`. The prototype `Option` helpers and `Register` were
+  dropped; C12 should call `New` directly (it already plans to use `auth.Resolve`).
+- `Login` does not quote the callback's `error` parameter; it reports a fixed "authorization was denied",
+  so no untrusted text can reach the page.
+
+**Gotchas:**
+- The callback page is flushed before `Login` closes the listener; without the flush the client sees EOF
+  before the page. `srv.Close()` after `flow.result` is deliberate (the whole flow is one request).
+- Fuzzing `httptest.NewRequest` with a raw query panics on a space; set `req.URL.RawQuery = raw` after
+  building the request. Two seed files now live in `auth/testdata/fuzz/FuzzCallbackQuery`.
+- `provider/openrouter` registers the catalog from `init`, so importing the package (including from tests)
+  populates `provider.Models`. `RegisterModels` is idempotent and re-registers.
+- OpenRouter authorization codes are single-use and expire after ten minutes; the default login timeout is
+  five minutes, below that. The key's own lifetime is undocumented and no refresh token is documented.
+
+**One command:** `go run ./scripts/accept C03`.
 
 ### C02 — openaicompat streaming provider — 2026-10-09 — pi — main — cost not visible
 
@@ -143,6 +192,20 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
+- C03 Behaviour 3 / Matrix ORT12: there is no OpenRouter slug `deepseek/deepseek-v4.1`; the model list has
+  only `deepseek/deepseek-v4.1-flash` (fetched 2026-10-09). Implemented as stable id
+  `deepseek/deepseek-v4.1` with wire slug `deepseek/deepseek-v4.1-flash`; later drafts should print the
+  confirmed slug and make the stable-id/slug split explicit.
+- C03 Behaviour 9: "returns a non-fatal `*PermissionWarning` (wrapped with the key)" contradicts STO08 if
+  read as "the warning contains the key". Implemented as "returned alongside the key": `Load` yields
+  `(key, *PermissionWarning)`, and the warning holds only path and mode.
+- C03 Files table: it omits `cmd/nova-run/main.go`, the one call site the `New(Config)` signature change
+  forces; later drafts should list it (or say the prototype `Option` helpers are removed).
+- C03 Behaviour 5: confirmation done. OpenRouter supports `state` (returned on the callback after
+  authorization), so the flow always sends it; the spec's "bind to the single-use listener" fallback is
+  not used. The auth URL is `https://openrouter.ai/auth`, the exchange is `POST
+  https://openrouter.ai/api/v1/auth/keys` with `code`, `code_verifier`, `code_challenge_method`, and the
+  response key is in `key`.
 - C02 Files table: it says `provider/openaicompat/*_test.go` "uses testkit.Server", but the layer rule
   (`provider` may only import `message`) forbade that. Resolved by D48 (test-only `testkit` imports),
   human-approved 2026-10-09.
@@ -166,12 +229,17 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - The `ci` guard loops (`matrixcheck-all`, `linecount-all`) guard only chunks marked `done` in `NEXTSTEPS.md`,
   replacing C00's "whose packages exist" rule, because the M0 prototype already occupies several future package
   paths. Belongs in `docs/DECISIONS.md`.
+- `auth.Resolve` treats a `*PermissionWarning` as non-fatal: a stored key returns even when the file is more
+  permissive than 0600, and the warning is left to direct `Store.Load` callers. Belongs in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
-- C03 needs OpenRouter's OAuth PKCE details and Ori's behaviour read from their current documentation (the specs say so).
+- OpenRouter's key lifetime is undocumented and its PKCE flow documents no refresh token. Nova stores the key
+  until `nova logout`; confirm whether a refresh flow is needed before C12.
+- Ori's harness documentation does not document environment variables for credentials or model handoff, so
+  reading Ori's environment is out of scope (as C03 allowed).
 - Multi-user `serve` is assumed out of scope (one trusted agent behind a bearer token).
 
 ## Cost
 
-Total: $0.00 recorded; the C00, C01, and C02 session costs were not visible.
+Total: $0.00 recorded; the C00, C01, C02, and C03 session costs were not visible.

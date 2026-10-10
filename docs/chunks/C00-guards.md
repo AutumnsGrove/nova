@@ -1,8 +1,8 @@
 ---
 chunk: C00
 title: "Guards"
-packages: [./scripts/matrixcheck, ./scripts/linecount, ./scripts/importcheck, ./scripts/accept]
-budgets: { ./scripts/matrixcheck: 250, ./scripts/linecount: 120, ./scripts/importcheck: 250, ./scripts/accept: 200 }
+packages: [./scripts/spec, ./scripts/matrixcheck, ./scripts/linecount, ./scripts/importcheck, ./scripts/accept]
+budgets: { ./scripts/spec: 250, ./scripts/matrixcheck: 250, ./scripts/linecount: 120, ./scripts/importcheck: 250, ./scripts/accept: 200 }
 depends: []
 ---
 

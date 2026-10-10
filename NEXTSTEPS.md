@@ -49,7 +49,9 @@ Newest first. Nothing yet.
 
 ## Spec corrections to apply
 
-None yet.
+- C00: `packages`/`budgets` omitted `./scripts/spec`, where the SPC01–SPC14 tests live, so
+  `accept C00` could not run or count them. Applied: added `./scripts/spec` with budget 250 (human-approved
+  2026-10-09).
 
 ## Decisions to record
 

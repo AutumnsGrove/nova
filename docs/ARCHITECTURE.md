@@ -90,7 +90,8 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
 - `permission` imports `tool`. `usage` imports `provider` and `session`.
 - `tools/*` import `message`, `provider`, `tool`, and (for the shared glob engine)
   `permission`; they never import each other or a higher layer.
-- `agent` imports `message`, `provider`, `tool`, `permission`, `proto`.
+- `agent` imports `message`, `provider`, `tool`, `permission`, `proto`. `config`
+  imports `permission` because it decodes the policy.
 - `session` imports `message`, `provider`, `proto`. `compaction` imports `session`, `provider`, `message`.
 - `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.
 - `mode` wires everything (including `serve` and `action`). `cmd/nova` only parses flags and calls `mode` and `ext`.

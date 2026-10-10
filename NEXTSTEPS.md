@@ -5,17 +5,18 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C09 are done. `accept C09` and `make ci` pass. `message`, the `provider`
+**State:** C00 through C10 are done. `accept C10` and `make ci` pass. `message`, the `provider`
 contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, `auth`
 (PKCE login, key store, credential resolution), the hardened `tool` registry with JSON-schema argument
 validation, the `permission` allow/ask/deny policy, the filesystem tools (`read`, `write`, `edit`,
 `list`), the search tools (`glob`, `grep`), the `bash` tool, the `proto` and `session` packages
-(the wire types, JSONL framing, and the session tree store), and the `agent` loop (hooks, queues,
-retry, permissions, cancellation, and a typed `proto.Event` stream) exist.
+(the wire types, JSONL framing, and the session tree store), the `agent` loop (hooks, queues,
+retry, permissions, cancellation, and a typed `proto.Event` stream), and `compaction` + `usage`
+(token estimation, cut points, summarisation, pruning, and the cost ledger) exist.
 
-**Next:** run **C10** (`docs/chunks/C10-compaction-usage.md`): compaction, the context limit, and the
-usage ledger, the fourth chunk of milestone M3 (the engine: C08, C09, C10, C11). Then C11, C12.
-Remember D48: any package's `_test.go` may import `testkit`. C10 builds on `session` and `agent`.
+**Next:** run **C11** (`docs/chunks/C11-config-resources.md`): config settings, trust, context files,
+skills, and prompt templates. Then C12 (the server core and `nova` command). Remember D48: any
+package's `_test.go` may import `testkit`. C11 depends only on C04.
 
 **Watch out:** `proto.Event` has no `Turns` field, so C09 put the `run_end` turn count in `Turn *int`;
 see **Spec corrections to apply** before C12 renders `run_end`.
@@ -39,7 +40,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C07 | The bash tool | done | C04 | 2026-10-09 | |
 | C08 | Protocol types and the session store | done | C01 | 2026-10-09 | |
 | C09 | The agent loop | done | C01, C04, C08 | 2026-10-10 | |
-| C10 | Compaction, context limit, usage ledger | todo | C08, C09 | | |
+| C10 | Compaction, context limit, usage ledger | done | C08, C09 | 2026-10-10 | |
 | C11 | Config, context files, skills, prompt templates, trust | todo | C04 | | |
 | C12 | The server core, modes, and the nova command | todo | C09, C10, C11 | | |
 | C13 | The extension host | todo | C12 | | |
@@ -53,6 +54,63 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C10 — Compaction, the context limit, and the usage ledger — 2026-10-10 — pi — main — cost not visible
+
+Built `compaction` and `usage` in small green commits: estimate, limit, cut, then summary/compact/prune,
+then the ledger, each with its tests.
+
+- `compaction/estimate.go` — `Estimate`/`EstimateMessage`, four runes per token plus four per-message
+  overhead, tool-call names and arguments counted the same way.
+- `compaction/limit.go` — `Settings`, `EffectiveLimit`, `ShouldCompact` (reported usage plus the estimate of
+  the messages after the last assistant).
+- `compaction/cut.go` — `CutPoint` at a user boundary with an assistant tool-group fallback; the system
+  message is never cut.
+- `compaction/summary.go` — the six-section prompt, `<summary>` update, `[user]`/`[assistant]`/`[tool]`
+  serialisation with 2,000-rune tool results, chunking and merge, and code-side read/modified extraction.
+- `compaction/compact.go` — `Compactor`, `Compact`, `Run` (appends the compaction entry on the current
+  leaf), `Outcome`, and `contextWithIDs` that mirrors `session.Messages`.
+- `compaction/prune.go` — `PruneToolOutput`.
+- `usage/ledger.go` — `Ledger` (`Add`, `Total`, `ByModel`, `Rebuild`) and `CostFor` with the catalog
+  fallback and cached-token discount.
+- Tests `EST01`–`EST07`, `LIM01`–`LIM12`, `CUT01`–`CUT11`, `CMP01`–`CMP21`, `PRN01`–`PRN07`,
+  `LED01`–`LED12`, `FuzzCutPoint`, `FuzzEstimate`, and `TestProperty_CMP_NeverLosesEntries`.
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C10` passes all nine steps; `make ci` exits 0;
+`go test -race ./...` is green; both fuzzers ran clean. Coverage: `compaction` 91.7%, `usage` 94.4%.
+Budgets: `compaction` 554/600, `usage` 95/200.
+
+**Differed from spec:**
+- `Settings.Enabled` is read at face value, so a zero `Settings` does not compact; the "default true"
+  promise belongs to the config layer that builds the struct. Every test that expects compaction sets it.
+- `ShouldCompact` receives the full transcript plus the last usage, not a baseline index, so "messages added
+  since" is implemented as the messages after the most recent assistant message. A caller that instead
+  passes only the new messages still works because the loop then finds no assistant and estimates them all.
+- The `CutPoint` fallback requires the assistant to have tool calls, not "any assistant message" as
+  behaviour 7 reads: a plain assistant fallback makes CUT07 and CUT09 return true. A user message must
+  precede the fallback assistant as well.
+- `PruneToolOutput` counts characters with `utf8.RuneCountInString`, not bytes.
+- `CostFor` returns `(0, "")` for an unknown model (`m.ID == ""`) or an unpriced one; a priced model with
+  zero usage returns `(0, "catalog")`. `NaN` cost returns `(0, "")`, and clamped negative tokens never
+  produce a negative cost.
+- `Outcome.Replaced` is `Result.FirstKept` (the number of messages replaced), because the spec names the
+  field but not its value.
+- `contextWithIDs` mirrors `session.Messages` but does not replay its repair pass, so a session with an
+  orphan tool result would misalign the id mapping; well-formed sessions are assumed.
+- The first `FuzzCutPoint` run found that a system message in the middle of a history makes the invariant
+  false; the fuzz input generator now emits a system message only at index 0, and the failing input is kept
+  as a regression seed in `compaction/testdata/fuzz/FuzzCutPoint/`.
+
+**Gotchas:**
+- Compaction tests use a small `KeepRecent` (100–400) so `CutPoint` finds a cut; the defaults (20,000)
+  make short test histories "everything fits".
+- CMP16 ("nothing after a compaction") needs a branch whose compaction entry has no messages after it;
+  the test hand-appends a compaction entry with `FirstKept` empty rather than compacting twice, because a
+  second `CutPoint` happily compacts the kept tail again.
+- `Settings.withDefaults` fills only the integer defaults, not `Enabled`.
+- The `session` package's `Store` has no exported path, so the property test opens its own file to stat it.
+
+**One command:** `go run ./scripts/accept C10`.
 
 ### C09 — The agent loop — 2026-10-10 — pi — main — cost not visible
 
@@ -594,6 +652,16 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   the run's context" should say "a child of".
 - C09 Files table: it omits `agent/loop.go` (deleted) and `cmd/nova-run/main.go` (updated for the new
   Config); later drafts should list both, or say the prototype command is retired.
+- C10 behaviour 4: `ShouldCompact` gets the full transcript and a usage, not a baseline index, so "messages
+  added since" cannot be read literally; implemented as the messages after the last assistant message.
+- C10 behaviour 7: the `CutPoint` fallback must require an assistant with tool calls and a preceding user
+  message, or CUT07 and CUT09 become true; the "(or any assistant message)" clause should be dropped.
+- C10 interfaces: `Settings.Enabled` has no way to distinguish unset from explicit false; the "default true"
+  comment should say the config layer sets it (or add a constructor).
+- C10 behaviour 18: `PruneToolOutput` counts characters as runes; later drafts should say so.
+- C10 interface `Outcome.Replaced` is unnamed in the behaviour; implemented as `Result.FirstKept`.
+- C10 `Run`: the session has no exported path, so a test that wants to stat the file must open it itself;
+  later drafts should not imply the store exposes the path.
 
 ## Decisions to record
 
@@ -612,6 +680,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - Tool progress is a bounded buffer with one drain goroutine that `runCall` waits on before `tool_end`;
   belongs in `docs/DECISIONS.md`.
 - `TurnEnd.Inject` continues the run after a final answer; belongs in `docs/DECISIONS.md`.
+- `ShouldCompact` estimates "messages added since" as the messages after the last assistant message;
+  belongs in `docs/DECISIONS.md`.
+- The `CutPoint` fallback requires an assistant with tool calls and a preceding user; belongs in
+  `docs/DECISIONS.md`.
+- `CostFor` treats an unknown model id (`m.ID == ""`) as unpriced and a NaN provider cost as zero; belongs
+  in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
@@ -628,7 +702,11 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C09: is `AgentEnd` expected to run on abort? It is currently skipped because the run context is cancelled.
 - C09: should the `ToolResult` hook run for a call blocked by the permission policy, or only for results
   the tool itself produced?
+- C10: should `Settings.Enabled` gain a tri-state (or a `DefaultSettings` constructor) so a zero value can
+  mean "enabled" while an explicit false still disables?
+- C10: who calls `compaction.Run` — the agent's `BeforeTurn` hook (C12) or the server — and does the caller
+  pass the whole transcript or only the messages since the last response to `ShouldCompact`?
 
 ## Cost
 
-Total: $0.00 recorded; the C00 through C09 session costs were not visible.
+Total: $0.00 recorded; the C00 through C10 session costs were not visible.

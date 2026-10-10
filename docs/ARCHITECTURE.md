@@ -219,7 +219,7 @@ These names are shared by Go callbacks, bundled extensions, and the protocol.
 
 ## 5. Sessions
 
-A session is a JSONL file. Each line is one entry with an `id` and a `parentId`.
+A session is a JSONL file. Each line is one entry with an `id` and a `parent`.
 The active leaf selects the branch that supplies model context. Continuing from an
 older entry makes a new branch without deleting the old one.
 

@@ -507,8 +507,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   unconditional group kill at the end of every call.
 - C07 Files table: `proc_other.go` is described as "returns an error result"; implemented as a
   `supported()` flag checked in `run.go`, so the shared run path stays one file.
-- C08 entry format: the interface says `json:"parent"`, but `ARCHITECTURE.md` (line 222) and `TESTING.md`
-  (line 183) say `parentId`. Later drafts should pick one and fix the other docs.
+- C08 entry format: applied. Entries use `json:"parent"`; `ARCHITECTURE.md` (line 222) and `TESTING.md`
+  (line 183) were corrected from `parentId` (human-approved 2026-10-09).
 - C08 Behaviour 21: `Messages` has no warning return, so repairs are appended to `Store.Warnings()`;
   later drafts should name the channel.
 - C08 Behaviour 14 vs the interface comment: "`Append` ... moves the leaf" conflicts with behaviour 12's
@@ -525,21 +525,9 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   permissive than 0600, and the warning is left to direct `Store.Load` callers. Belongs in `docs/DECISIONS.md`.
 - `permission.Policy.Decide` reports the first rule with the winning action and walks map keys in sorted order,
   so the decision and its `Reason` are deterministic across runs. Belongs in `docs/DECISIONS.md`.
-- `tools/*` may import `permission` so the path-glob engine has one implementation (C06); `permission` never
-  imports `tools`, so the graph stays acyclic. Belongs in `docs/DECISIONS.md`.
-- `grep` summarizes `files` as files-with-matches and folds skipped lines into `Details.skipped`; both are
-  display summaries, not part of the tool contract. Belongs in `docs/DECISIONS.md`.
-- The bash tool force-kills its process group at the end of every call, including a clean exit, so a
-  background child that redirected its output cannot outlive the call (BSH24/25). Belongs in
-  `docs/DECISIONS.md`.
-- `buildEnv` relies on `exec.Cmd`'s duplicate-key rule (last value wins) instead of deduplicating in a map.
-  Belongs in `docs/DECISIONS.md`.
-- Session entries use `parent` (not `parentId`) as the JSON field; `ARCHITECTURE.md`/`TESTING.md` prose is
-  stale. Belongs in `docs/DECISIONS.md`.
-- Session writes use `O_APPEND` under an advisory `flock`, and the leaf is refreshed under the lock before
-  a parent is assigned. Belongs in `docs/DECISIONS.md`.
-- A session's single warning channel is `Store.Warnings()`, which carries load warnings and context
-  repairs. Belongs in `docs/DECISIONS.md`.
+- Applied 2026-10-09 (human-approved): D49–D55 in `docs/DECISIONS.md` cover glob reuse, the `grep` result
+  summary, the bash group lifecycle, the bash environment, the session parent field, session durability, and
+  the session warning channel.
 
 ## Open questions for the human
 
@@ -552,9 +540,6 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   reached" acceptable? Currently the latter.
 - C07: a non-UTF-8 command cannot cross JSON tool arguments; is calling the internal `execute` in the test
   acceptable, or should the tool accept bytes/base64 for such commands?
-- C08: confirm the session entry parent field name (`parent` vs `parentId`) before C09/C12 build on the
-  format, and confirm that a clean unknown protocol `type` becoming a `Command` (rather than an error) is
-  how C12 should answer unknown commands.
 
 ## Cost
 

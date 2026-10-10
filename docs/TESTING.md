@@ -180,7 +180,7 @@ forgotten.
 - A new, empty file. An existing file. A file that does not end in a newline.
 - A corrupt line in the middle; a truncated final line; a line that is valid JSON but the
   wrong shape; an unknown entry type (must be preserved and skipped, not dropped).
-- A duplicate entry id; a `parentId` that does not exist; a cycle.
+- A duplicate entry id; a `parent` that does not exist; a cycle.
 - Appending concurrently from two goroutines; from two processes (advisory lock).
 - Branching: from the leaf, from the root, from a middle entry; navigating to a missing id.
 - Resume reconstructs exactly the active branch's messages, including tool pairs.

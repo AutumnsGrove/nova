@@ -52,6 +52,15 @@ func hasToolContent(msgs []message.Message, want string) bool {
 	return false
 }
 
+func hasToolPrefix(msgs []message.Message, prefix string) bool {
+	for _, m := range msgs {
+		if m.Role == message.RoleTool && strings.HasPrefix(m.Content, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestLPH02_ToolCallHookRewritesArguments(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))

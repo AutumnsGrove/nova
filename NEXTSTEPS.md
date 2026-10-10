@@ -53,6 +53,23 @@ Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, 
 
 ## Last session
 
+### C12 follow-up — hook race fix — 2026-10-10 — pi — main — cost not visible
+
+`TestProperty_SRV_EventOrder` exposed a real `-race` bug in `agent.runHook`: on abort or hook timeout it
+returns while the hook goroutine keeps running, and the hook closures read `r.messages` (and `r.turn`),
+which the loop then writes.
+
+- `agent/turn.go` — `before_turn`, `transform_context`, and `before_provider_request` now snapshot
+  `r.messages` on the loop goroutine before calling `runHook`.
+- `agent/run.go` — `turn_end` snapshots `r.turn`.
+- `mode/fuzz_test.go` — `TestProperty_SRV_EventOrder` includes `abort` again and drains until the server
+  is idle and every run has ended; it passes 20 `-race` runs.
+
+**Unsatisfied matrix rows:** none (this is outside the C12 matrix). `go test -short -race ./agent/ ./mode/
+./cmd/nova/` is green; `accept C12` and `make ci` still pass.
+
+**One command:** `go test -short -race -count=20 -run TestProperty_SRV_EventOrder ./mode/`.
+
 ### C12 — The server core, modes, and `cmd/nova` — 2026-10-10 — pi — main — cost not visible
 
 Finished C12 in eleven green commits. `go run ./scripts/accept C12` passes all nine steps and `make ci`
@@ -106,9 +123,10 @@ exits 0; every matrix row has a test.
 - RPC writes are serialized in the ServeRPC goroutine to avoid write-after-return races; a slow client
   therefore backpressures command handling (RPC13 reads slowly rather than not at all).
 - The `FuzzRPCLoop` target builds a fresh server per input; it runs clean for 6 s.
-- `TestProperty_SRV_EventOrder` exposed a pre-existing agent race: `runHook` abandons a hook goroutine
-  on abort/ctx cancellation, and that goroutine can still read `r.messages` while the loop writes it.
-  The property avoids `abort` for now; see **Open questions for the human**.
+- `TestProperty_SRV_EventOrder` exposed a pre-existing agent race: `runHook` abandoned a hook goroutine
+  on abort/ctx cancellation, and that goroutine could still read `r.messages` while the loop wrote it.
+  **Fixed 2026-10-10**: the agent now snapshots the hook inputs before spawning, and the property
+  includes `abort` again (20 clean `-race` runs).
 
 **One command:** `go run ./scripts/accept C12`.
 
@@ -819,9 +837,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   1500 in the C12 spec and `docs/ARCHITECTURE.md` (human-approved 2026-10-10).
 - C12 behaviour 3/22: the mode budget and `mode/builtin.go` file can be dropped from the Files table; the
   built-in command table and handlers live in `handlers.go`.
-- C12 FuzzSplitArgs-adjacent: `FuzzRPCLoop` and `TestProperty_SRV_EventOrder` both exist. The property
-  cannot include `abort` until the agent hook goroutine is fixed (it reads run state after the hook is
-  abandoned), so it sequences non-run commands then one prompt.
+- C12 FuzzSplitArgs-adjacent: `FuzzRPCLoop` and `TestProperty_SRV_EventOrder` both exist. Applied: the
+  property includes `abort` again now that the agent snapshots hook inputs before spawning.
 - C12 behaviour 5/22: RPC writes all frames from the ServeRPC goroutine, so a slow client blocks command
   handling; the old separate event goroutine could write after ServeRPC returned. This is the chosen
   trade-off for "no frame after return".
@@ -874,6 +891,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - RPC serializes all writes in the ServeRPC goroutine and fills `ui_caps` from the client hello;
   belongs in `docs/DECISIONS.md`.
 - The mode budget was raised to 1500 (human-approved 2026-10-10); belongs in `docs/DECISIONS.md`.
+- The agent snapshots hook inputs (`r.messages`, `r.turn`) before spawning the hook goroutine, so an
+  abandoned hook can only read its own copy; belongs in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
@@ -906,10 +925,9 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   transport cannot miss it?
 - C12: `pipe.go` is unspecified beyond `NewPipe(s, capabilities...)`; confirm the client shape (command
   send + event read, capabilities in its hello) before building it for the TUI.
-- C12/C09: `agent.runHook` abandons a hook goroutine on abort or context cancellation, and that goroutine
-  can still read `r.messages` while the loop writes it (`-race` reports it). Should the agent snapshot the
-  inputs before spawning the hook, or wait for the hook to return on abort? This blocks using `abort` in
-  `TestProperty_SRV_EventOrder`.
+- C12/C09: fixed 2026-10-10. `agent.runHook` abandons a hook goroutine on abort or context cancellation,
+  so the call sites now snapshot `r.messages`/`r.turn` before spawning the hook; the abandoned goroutine
+  only reads its own copy. `TestProperty_SRV_EventOrder` includes `abort` and passes 20 `-race` runs.
 
 ## Cost
 

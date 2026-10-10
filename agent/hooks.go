@@ -33,11 +33,11 @@ func runHook[R any](r *run, name string, fn func(context.Context) R) (R, bool) {
 		ch <- fn(ctx)
 	}()
 
+	var zero R
 	select {
 	case v := <-ch:
 		if panicked {
 			r.extensionError(name, "hook panicked")
-			var zero R
 			return zero, false
 		}
 		return v, true
@@ -46,7 +46,6 @@ func runHook[R any](r *run, name string, fn func(context.Context) R) (R, bool) {
 		if r.ctx.Err() == nil {
 			r.extensionError(name, "hook exceeded its deadline")
 		}
-		var zero R
 		return zero, false
 	}
 }

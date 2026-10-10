@@ -18,6 +18,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/docs"
 	"github.com/AutumnsGrove/nova/mode"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/provider"
@@ -112,8 +113,32 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		sessionsCommand(stdout, stderr),
 		loginCommand(stdout, stderr),
 		logoutCommand(stdout, stderr),
+		docsCommand(stdout),
 	)
 	return root
+}
+
+func docsCommand(stdout io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:   "docs [topic]",
+		Short: "Print embedded documentation",
+		RunE: func(_ *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				fmt.Fprintln(stdout, strings.Join(docs.List(), "\n"))
+				return nil
+			}
+			text, ok := docs.Get(args[0])
+			if !ok {
+				fmt.Fprintf(stdout, "unknown topic %q; topics: %s\n", args[0], strings.Join(docs.List(), ", "))
+				return nil
+			}
+			fmt.Fprint(stdout, text)
+			if !strings.HasSuffix(text, "\n") {
+				fmt.Fprintln(stdout)
+			}
+			return nil
+		},
+	}
 }
 
 // rootOptions carries the parsed flags into runRoot.

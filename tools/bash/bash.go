@@ -1,64 +1,95 @@
-// Package bash provides the bash execution tool.
+// Package bash provides the shell tool: one command, one process group, capped
+// output, and a result the model can read.
 package bash
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"os/exec"
+	"os"
 	"time"
 
 	"github.com/AutumnsGrove/nova/tool"
 )
 
 const (
-	defaultTimeout = 120 * time.Second
-	maxOutputBytes = 100 * 1024
+	defaultTimeout        = 120 * time.Second
+	defaultMaxTimeout     = 600 * time.Second
+	defaultMaxOutputBytes = 51200
+	defaultPipeGrace      = 200 * time.Millisecond
 )
+
+// Clock is the time seam for progress throttling. It is only used to decide
+// when an update is due; timeouts use the request context.
+type Clock interface{ Now() time.Time }
+
+// realClock is the system clock.
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
+
+// options is the resolved configuration of one bash tool.
+type options struct {
+	timeout        time.Duration
+	maxTimeout     time.Duration
+	maxOutputBytes int
+	shell          string
+	login          bool
+	clock          Clock
+	env            map[string]string
+	pipeGrace      time.Duration
+}
 
 // Option customizes the bash tool.
 type Option func(*options)
 
-type options struct {
-	timeout        time.Duration
-	maxOutputBytes int
-	shell          string
-}
-
 // WithTimeout sets the default per-command timeout.
-func WithTimeout(d time.Duration) Option {
-	return func(o *options) { o.timeout = d }
-}
+func WithTimeout(d time.Duration) Option { return func(o *options) { o.timeout = d } }
+
+// WithMaxTimeout caps a timeout requested in the arguments.
+func WithMaxTimeout(d time.Duration) Option { return func(o *options) { o.maxTimeout = d } }
 
 // WithMaxOutputBytes caps captured output.
-func WithMaxOutputBytes(n int) Option {
-	return func(o *options) { o.maxOutputBytes = n }
-}
+func WithMaxOutputBytes(n int) Option { return func(o *options) { o.maxOutputBytes = n } }
 
-// WithShell overrides the shell binary (default "bash", invoked as `bash -lc`).
-func WithShell(path string) Option {
-	return func(o *options) { o.shell = path }
-}
+// WithShell overrides the shell binary (default "bash", run as `bash -c`).
+func WithShell(path string) Option { return func(o *options) { o.shell = path } }
 
-// Bash returns the bash tool. It runs commands with `bash -lc` in the tool
-// context's working directory and returns combined stdout/stderr.
+// WithLoginShell runs the shell as a login shell (`-lc`).
+func WithLoginShell(on bool) Option { return func(o *options) { o.login = on } }
+
+// WithClock injects the clock used for progress throttling.
+func WithClock(c Clock) Option { return func(o *options) { o.clock = c } }
+
+// WithEnv adds or overrides environment variables for the command.
+func WithEnv(extra map[string]string) Option { return func(o *options) { o.env = extra } }
+
+// WithPipeGrace sets how long to wait for the output pipe to close after the
+// shell exits before treating a holder as a stray background process.
+func WithPipeGrace(d time.Duration) Option { return func(o *options) { o.pipeGrace = d } }
+
+// Bash returns the bash tool.
 func Bash(opts ...Option) tool.Tool {
-	o := options{timeout: defaultTimeout, maxOutputBytes: maxOutputBytes, shell: "bash"}
-	for _, opt := range opts {
-		opt(&o)
+	o := &options{
+		timeout:        defaultTimeout,
+		maxTimeout:     defaultMaxTimeout,
+		maxOutputBytes: defaultMaxOutputBytes,
+		shell:          "bash",
+		clock:          realClock{},
+		pipeGrace:      defaultPipeGrace,
 	}
-
+	for _, opt := range opts {
+		opt(o)
+	}
 	return tool.New(tool.Info{
 		Name:        "bash",
-		Description: "Execute a bash command in the working directory. Returns combined stdout/stderr and the exit code. Use a timeout (seconds) to bound long commands.",
+		Description: "Run a bash command in the working directory. Returns combined stdout/stderr, the exit code, and a timeout in seconds (default 120).",
 		Destructive: true,
 		OpenWorld:   true,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"command": map[string]any{"type": "string", "description": "Bash command to execute"},
-				"timeout": map[string]any{"type": "integer", "description": "Timeout in seconds (default 120)"},
+				"timeout": map[string]any{"type": "integer", "description": "Timeout in seconds (default 120, capped)"},
 			},
 			"required": []string{"command"},
 		},
@@ -68,56 +99,25 @@ func Bash(opts ...Option) tool.Tool {
 			Timeout int    `json:"timeout"`
 		}
 		if err := json.Unmarshal(args, &in); err != nil {
-			return tool.Result{}, fmt.Errorf("invalid arguments: %w", err)
+			return tool.Result{}, err
 		}
 		if in.Command == "" {
 			return tool.Errorf("command is required"), nil
 		}
-
-		timeout := o.timeout
-		if in.Timeout > 0 {
-			timeout = time.Duration(in.Timeout) * time.Second
-		}
-		cctx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-
-		cmd := exec.CommandContext(cctx, o.shell, "-lc", in.Command)
-		if tctx != nil && tctx.WorkDir != "" {
-			cmd.Dir = tctx.WorkDir
-		}
-
-		out, err := cmd.CombinedOutput()
-		text := truncate(string(out), o.maxOutputBytes)
-
-		if cctx.Err() == context.DeadlineExceeded {
-			return tool.Result{
-				Content: fmt.Sprintf("%s\n(no output)\nerror: command timed out after %s", text, timeout),
-				IsError: true,
-			}, nil
-		}
-		if err != nil {
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
-				if text == "" {
-					text = "(no output)"
-				}
-				return tool.Result{
-					Content: fmt.Sprintf("%s\n(exit code %d)", text, exitErr.ExitCode()),
-					IsError: true,
-				}, nil
-			}
-			return tool.Result{}, fmt.Errorf("exec: %w", err)
-		}
-		if text == "" {
-			text = "(no output)"
-		}
-		return tool.Result{Content: text}, nil
+		return o.execute(ctx, tctx, in.Command, in.Timeout), nil
 	})
 }
 
-func truncate(s string, max int) string {
-	if max <= 0 || len(s) <= max {
-		return s
+// buildEnv is the parent environment plus the fixed variables plus the
+// configured extras. exec uses the last value for a duplicate key, so a later
+// entry overrides an earlier one.
+func buildEnv(extra map[string]string) []string {
+	env := append(os.Environ(),
+		"NOVA=1", "TERM=dumb", "NO_COLOR=1",
+		"PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0",
+	)
+	for k, v := range extra {
+		env = append(env, k+"="+v)
 	}
-	return s[:max] + fmt.Sprintf("\n... (output truncated at %d bytes)", max)
+	return env
 }

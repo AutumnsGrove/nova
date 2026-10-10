@@ -32,16 +32,24 @@ func newLineReader(r io.Reader, max int) *lineReader {
 	return &lineReader{r: bufio.NewReaderSize(r, max+2), max: max}
 }
 
+// errTruncatedLine marks a line that ended without a newline, which means the
+// connection was cut mid-event rather than the stream ending cleanly.
+var errTruncatedLine = errors.New("openaicompat: stream ended mid-line")
+
 // next returns the next line without its terminator, or io.EOF at the end. A
-// line over max is an *errLineTooLong.
+// line over max is an *errLineTooLong; a line cut off before its terminator is
+// errTruncatedLine.
 func (lr *lineReader) next() (string, error) {
 	lr.line++
 	frag, err := lr.r.ReadSlice('\n')
 	if errors.Is(err, bufio.ErrBufferFull) {
 		return "", &errLineTooLong{limit: lr.max}
 	}
-	if err != nil && len(frag) == 0 {
-		return "", err
+	if err != nil {
+		if len(frag) == 0 {
+			return "", err
+		}
+		return "", errTruncatedLine
 	}
 	line := strings.TrimSuffix(string(frag), "\n")
 	return strings.TrimSuffix(line, "\r"), nil
@@ -231,8 +239,10 @@ streamLoop:
 				}
 				var tooLong *errLineTooLong
 				switch {
+				case errors.Is(res.err, errTruncatedLine):
+					return partial(), &provider.Error{Message: "stream ended mid-event", Retryable: true}
 				case errors.As(res.err, &tooLong):
-					return partial(), tooLong
+					return partial(), &provider.Error{Message: tooLong.Error(), Retryable: false}
 				case errors.Is(res.err, os.ErrDeadlineExceeded), os.IsTimeout(res.err):
 					return partial(), &provider.Error{Message: "stream idle timeout", Retryable: true, Err: res.err}
 				default:

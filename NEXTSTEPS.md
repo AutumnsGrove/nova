@@ -5,16 +5,20 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C08 are done. `accept C08` and `make ci` pass. `message`, the `provider`
+**State:** C00 through C09 are done. `accept C09` and `make ci` pass. `message`, the `provider`
 contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, `auth`
 (PKCE login, key store, credential resolution), the hardened `tool` registry with JSON-schema argument
 validation, the `permission` allow/ask/deny policy, the filesystem tools (`read`, `write`, `edit`,
-`list`), the search tools (`glob`, `grep`), the `bash` tool, and the `proto` and `session` packages
-(the wire types, JSONL framing, and the session tree store) exist.
+`list`), the search tools (`glob`, `grep`), the `bash` tool, the `proto` and `session` packages
+(the wire types, JSONL framing, and the session tree store), and the `agent` loop (hooks, queues,
+retry, permissions, cancellation, and a typed `proto.Event` stream) exist.
 
-**Next:** run **C09** (`docs/chunks/C09-agent-loop.md`): the agent loop, the third chunk of milestone M3
-(the engine: C08, C09, C10, C11). Then C10, C11, C12. Remember D48: any package's `_test.go` may import
-`testkit`.
+**Next:** run **C10** (`docs/chunks/C10-compaction-usage.md`): compaction, the context limit, and the
+usage ledger, the fourth chunk of milestone M3 (the engine: C08, C09, C10, C11). Then C11, C12.
+Remember D48: any package's `_test.go` may import `testkit`. C10 builds on `session` and `agent`.
+
+**Watch out:** `proto.Event` has no `Turns` field, so C09 put the `run_end` turn count in `Turn *int`;
+see **Spec corrections to apply** before C12 renders `run_end`.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -34,7 +38,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C06 | Search tools | done | C04 | 2026-10-09 | |
 | C07 | The bash tool | done | C04 | 2026-10-09 | |
 | C08 | Protocol types and the session store | done | C01 | 2026-10-09 | |
-| C09 | The agent loop | todo | C01, C04, C08 | | |
+| C09 | The agent loop | done | C01, C04, C08 | 2026-10-10 | |
 | C10 | Compaction, context limit, usage ledger | todo | C08, C09 | | |
 | C11 | Config, context files, skills, prompt templates, trust | todo | C04 | | |
 | C12 | The server core, modes, and the nova command | todo | C09, C10, C11 | | |
@@ -49,6 +53,69 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C09 — The agent loop — 2026-10-10 — pi — main — cost not visible
+
+Rewrote `agent` in small green commits: types and events, the run loop, tool dispatch, hooks, permissions,
+queues, retry, cancellation, usage, then the property and fuzz tests.
+
+- `agent/agent.go` — `Config`, `Hooks`, `Question`, `ToolCall`, `CallDecision`, `Turn`, `TurnDecision`,
+  `RetryPolicy`, `Clock`, `Result`, `Agent`, `New`, and the real clock. Removed the prototype
+  `OnEvent`/`OnTextDelta`/`OnReasoningDelta`/`BeforeToolCall`/`AfterToolCall`/`FinishTurn`/`TransformContext`
+  fields and the `Event`/`EventType` types.
+- `agent/events.go` — `Agent.emit` (serialised seq/ts/run, nil-safe `Emit`) plus the tool-call, tool-end,
+  and extension-error helpers.
+- `agent/run.go` — the run loop, turn budget, steering/follow-up drain, result assembly, and `finish`.
+- `agent/turn.go` — request build (`BeforeTurn`, `TransformContext`, `BeforeProviderRequest`), streaming
+  with thinking events, call-id normalisation, `MessageEnd`, and the `message_end`/`usage` events.
+- `agent/tools.go` — dispatch (parallel groups, non-parallel barriers, sequential), permission, the
+  `ToolCall` and `ToolResult` hooks, progress, and `tool_end`.
+- `agent/queue.go`, `agent/retry.go`, `agent/hooks.go`, `agent/compat.go` — queues and `Abort`, backoff,
+  the panic/deadline hook runner, and the prototype `Run(ctx, cfg, history)` wrapper.
+- Tests `LPE01`–`LPE20`, `LPT01`–`LPT20`, `LPH01`–`LPH18`, `LPP01`–`LPP10`, `LPQ01`–`LPQ12`,
+  `LPR01`–`LPR11`, `LPC01`–`LPC07`, `LPU01`–`LPU06`, `TestProperty_LP_TranscriptAlwaysValid`,
+  `TestProperty_LP_Order`, `TestProperty_LP_NoEventAfterEnd`, and `FuzzToolCallAssembly`.
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C09` passes all nine steps; `make ci` exits 0;
+`go test -race ./...` is green; `FuzzToolCallAssembly` ran 5 s clean. Coverage 91.9%. Budget: `agent`
+897/900 (three code lines of headroom).
+
+**Differed from spec:**
+- `proto.Event` has no `Turns` field, so `run_end` carries the turn count in `Turn *int`. PROTOCOL says
+  `run_end {turns}`; C12 needs a real field (or an agreed `turn`).
+- `proto.Event` has no plain `message` string for `extension_error`, so the hook message goes in
+  `Error.Message` with code `internal`.
+- `TurnEnd.Inject` also keeps the loop going after a no-tool-call turn. Behaviour 11 lists only steering,
+  follow-up, and `Continue`; without treating Inject as a continue reason, "before the next request"
+  never happens.
+- `tool_end` is emitted for a blocked call but `tool_start` is not, and the `ToolResult` hook runs for
+  every result, including permission- and hook-blocked ones.
+- Tool progress is a 32-deep buffer drained by one goroutine; `runCall` waits for the drain before
+  `tool_end`, so a slow consumer stalls the loop (not the tool). Updates are dropped when the buffer fills.
+- `BeforeTurn` returning nil (no error) means "keep the transcript"; only a non-nil slice replaces it, so a
+  zero-value return cannot wipe the state.
+- `MaxTurns` counts logical turns, not provider requests, so retries do not eat the budget (behaviour 3
+  says "counts provider requests").
+- Retry jitter defaults to 0.2 only when the whole `RetryPolicy` is zero; set any other field to keep an
+  explicit `Jitter: 0`.
+- `agent/loop.go` and `agent/loop_test.go` were deleted (the split into `run.go`, `turn.go`, `tools.go`,
+  etc. is the spec's file list), and `cmd/nova-run/main.go` was updated to the new `Hooks`/`Emit` API so
+  `go build ./...` stays green. Neither file is in the C09 Files table.
+- The `ToolCall` hook's `Arguments` replace the call arguments, but the `ToolResult` hook still receives
+  the original call; an `Ask` error becomes `not approved: <policy reason>` with no error text.
+- `AgentEnd` runs before `run_end` and through the hook runner, so a cancelled run context skips it.
+
+**Gotchas:**
+- A test's name must contain the matrix ID as a whole `_`-separated component (`Test_LPE01_...`, not
+  `TestLPE01_...`); `matrixcheck` splits on `_`.
+- The package is three code lines under budget. Comments do not count, but new statements need a removal.
+- Retry backoff uses `Clock.Sleep`, so a fake-clock test runs the agent in a goroutine and advances the
+  clock; the step must be large enough to fire the pending timer, or the run stalls.
+- `runCall` checks `ctx.Err()` at entry, so calls that never start get `error: cancelled`, while a tool
+  already running keeps its own result (LPC03/LPC05/LPC07).
+- `dispatch` groups only consecutive parallel-capable calls; a non-parallel call is a barrier (LPT05).
+
+**One command:** `go run ./scripts/accept C09`.
 
 ### C08 — Protocol types and the session store — 2026-10-09 — pi — main — cost not visible
 
@@ -515,6 +582,18 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   "last entry that is not `label` or `session_info`"; implemented behaviour 12.
 - C08 SES19: two processes appending needs both `O_APPEND` and a leaf refresh under the lock; the spec
   says "re-reads the new lines" but not that the leaf must be re-derived.
+- C09 / proto: `proto.Event` has no `Turns` field, but PROTOCOL's `run_end` carries `turns`; implemented
+  with `Turn *int`. Later drafts should add `Turns` to `Event` or change PROTOCOL.
+- C09 / proto: there is no plain `message` string for `extension_error`, so the hook message goes in
+  `Error.Message` with code `internal`; later drafts should name the field.
+- C09 behaviour 11: `TurnEnd.Inject` should be listed as a reason to continue after a final answer; the
+  implementation continues when injected messages were appended.
+- C09 behaviour 3: `MaxTurns` counts logical turns, not provider requests including retries; later drafts
+  should say which.
+- C09 behaviour 8: hook calls run under a derived timeout context, not the run's exact context; "receives
+  the run's context" should say "a child of".
+- C09 Files table: it omits `agent/loop.go` (deleted) and `cmd/nova-run/main.go` (updated for the new
+  Config); later drafts should list both, or say the prototype command is retired.
 
 ## Decisions to record
 
@@ -528,6 +607,11 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - Applied 2026-10-09 (human-approved): D49–D55 in `docs/DECISIONS.md` cover glob reuse, the `grep` result
   summary, the bash group lifecycle, the bash environment, the session parent field, session durability, and
   the session warning channel.
+- The agent puts the `run_end` turn count in `proto.Event.Turn` because `Event` has no `Turns` field;
+  belongs in `docs/DECISIONS.md` (or fix `proto` before C12).
+- Tool progress is a bounded buffer with one drain goroutine that `runCall` waits on before `tool_end`;
+  belongs in `docs/DECISIONS.md`.
+- `TurnEnd.Inject` continues the run after a final answer; belongs in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
@@ -540,7 +624,11 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   reached" acceptable? Currently the latter.
 - C07: a non-UTF-8 command cannot cross JSON tool arguments; is calling the internal `execute` in the test
   acceptable, or should the tool accept bytes/base64 for such commands?
+- C09: should `proto.Event` gain a `Turns` field before C12, or is `turn` the agreed `run_end` contract?
+- C09: is `AgentEnd` expected to run on abort? It is currently skipped because the run context is cancelled.
+- C09: should the `ToolResult` hook run for a call blocked by the permission policy, or only for results
+  the tool itself produced?
 
 ## Cost
 
-Total: $0.00 recorded; the C00 through C08 session costs were not visible.
+Total: $0.00 recorded; the C00 through C09 session costs were not visible.

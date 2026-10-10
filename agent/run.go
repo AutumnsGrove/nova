@@ -116,6 +116,7 @@ func (r *run) loop() (*Result, error) {
 		if err != nil {
 			return r.finish(r.result("error"), err)
 		}
+		r.emit(proto.Event{Type: proto.EventTurnEnd, Turn: intp(r.turn), Usage: &usage})
 		continueTurn := false
 		if r.cfg.Hooks.TurnEnd != nil {
 			td, ok := runHook(r, "turn_end", func(ctx context.Context) TurnDecision {

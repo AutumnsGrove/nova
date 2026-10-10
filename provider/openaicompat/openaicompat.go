@@ -5,18 +5,24 @@
 package openaicompat
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"sort"
 	"strings"
+	"sync/atomic"
+	"time"
 
-	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
+)
+
+// Defaults for the timeouts and the line cap. Zero in a Config means "use the
+// default", so a caller cannot accidentally ask for no timeout at all.
+const (
+	defaultConnectTimeout = 30 * time.Second
+	defaultIdleTimeout    = 120 * time.Second
+	defaultMaxLineBytes   = 8 << 20
 )
 
 // Config configures a Provider. BaseURL should include the API version path
@@ -29,11 +35,23 @@ type Config struct {
 	BaseURL string
 	// APIKey is sent as "Authorization: Bearer <key>" when non-empty.
 	APIKey string
+	// APIKeyFunc, when set, supplies the key per request and wins over APIKey.
+	// It lets a provider rotate or refresh credentials without rebuilding.
+	APIKeyFunc func(ctx context.Context) (string, error)
 	// Headers are added to every request (for example OpenRouter's
 	// HTTP-Referer and X-Title).
 	Headers map[string]string
 	// HTTPClient overrides the default client.
 	HTTPClient *http.Client
+	// ConnectTimeout bounds the time to first response header. Default 30s.
+	ConnectTimeout time.Duration
+	// IdleTimeout bounds the gap between stream chunks. Default 120s.
+	IdleTimeout time.Duration
+	// MaxLineBytes bounds one SSE line. Default 8 MiB.
+	MaxLineBytes int
+	// SendReasoning re-sends Message.Reasoning to the provider. Default false,
+	// because most providers reject a reasoning field they did not send.
+	SendReasoning bool
 }
 
 // Provider is an OpenAI-compatible chat-completions provider.
@@ -48,6 +66,15 @@ func New(cfg Config) *Provider {
 		cfg.Name = "openaicompat"
 	}
 	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
+	if cfg.ConnectTimeout == 0 {
+		cfg.ConnectTimeout = defaultConnectTimeout
+	}
+	if cfg.IdleTimeout == 0 {
+		cfg.IdleTimeout = defaultIdleTimeout
+	}
+	if cfg.MaxLineBytes == 0 {
+		cfg.MaxLineBytes = defaultMaxLineBytes
+	}
 	client := cfg.HTTPClient
 	if client == nil {
 		client = &http.Client{}
@@ -58,67 +85,17 @@ func New(cfg Config) *Provider {
 // Name returns the provider id.
 func (p *Provider) Name() string { return p.cfg.Name }
 
-// BaseURL returns the configured API root.
+// BaseURL returns the configured API root, trailing slash removed.
 func (p *Provider) BaseURL() string { return p.cfg.BaseURL }
 
-type streamOptions struct {
-	IncludeUsage bool `json:"include_usage"`
-}
-
-type chatRequest struct {
-	Model         string             `json:"model"`
-	Messages      []message.Message  `json:"messages"`
-	Tools         []provider.ToolDef `json:"tools,omitempty"`
-	ToolChoice    any                `json:"tool_choice,omitempty"`
-	Temperature   *float64           `json:"temperature,omitempty"`
-	MaxTokens     int                `json:"max_tokens,omitempty"`
-	Stream        bool               `json:"stream"`
-	StreamOptions *streamOptions     `json:"stream_options,omitempty"`
-}
-
-type toolCallDelta struct {
-	Index    *int   `json:"index"`
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
-}
-
-type delta struct {
-	Content          string          `json:"content"`
-	Reasoning        string          `json:"reasoning"`
-	ReasoningContent string          `json:"reasoning_content"`
-	ToolCalls        []toolCallDelta `json:"tool_calls"`
-}
-
-type chunkChoice struct {
-	Delta        delta  `json:"delta"`
-	FinishReason string `json:"finish_reason"`
-}
-
-type promptTokensDetails struct {
-	CachedTokens int `json:"cached_tokens"`
-}
-
-type rawUsage struct {
-	PromptTokens        int                  `json:"prompt_tokens"`
-	CompletionTokens    int                  `json:"completion_tokens"`
-	TotalTokens         int                  `json:"total_tokens"`
-	Cost                float64              `json:"cost"`
-	PromptTokensDetails *promptTokensDetails `json:"prompt_tokens_details"`
-}
-
-type chatChunk struct {
-	Choices []chunkChoice `json:"choices"`
-	Usage   *rawUsage     `json:"usage"`
-	Model   string        `json:"model"`
-}
-
 // Stream performs one streaming chat-completions request, accumulating text,
-// reasoning, and tool-call argument deltas into a final Response.
+// reasoning, and tool-call argument deltas into a final Response. A failure
+// after the stream has started still returns the partial Response alongside
+// the error, so the caller can keep what the model already said.
 func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if req.Model == "" {
 		return nil, fmt.Errorf("openaicompat: model is required")
 	}
@@ -126,178 +103,125 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 		return nil, fmt.Errorf("openaicompat: base URL is required")
 	}
 
-	payload := chatRequest{
-		Model:         req.Model,
-		Messages:      req.Messages,
-		Tools:         req.Tools,
-		ToolChoice:    req.ToolChoice,
-		Temperature:   req.Temperature,
-		MaxTokens:     req.MaxTokens,
-		Stream:        true,
-		StreamOptions: &streamOptions{IncludeUsage: true},
-	}
-	body, err := json.Marshal(payload)
+	body, err := p.buildBody(req)
 	if err != nil {
-		return nil, fmt.Errorf("openaicompat: encode request: %w", err)
+		return nil, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.cfg.BaseURL+"/chat/completions", bytes.NewReader(body))
+	key, err := p.apiKey(ctx)
+	if err != nil {
+		return nil, &provider.Error{Message: "resolving API key", Retryable: false, Err: err}
+	}
+
+	// reqCtx is the request context; the connect timer cancels it if the
+	// headers never arrive. It must outlive Do so the body stays readable, so
+	// cancel is deferred to the end of Stream rather than called here.
+	reqCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost,
+		p.cfg.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: build request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
-	if p.cfg.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+p.cfg.APIKey)
-	}
-	for k, v := range p.cfg.Headers {
-		httpReq.Header.Set(k, v)
-	}
-	for k, v := range req.ExtraHeaders {
-		httpReq.Header.Set(k, v)
-	}
+	p.setHeaders(httpReq, key, req.ExtraHeaders)
 
+	var timedOut atomic.Bool
+	timer := time.AfterFunc(p.cfg.ConnectTimeout, func() {
+		timedOut.Store(true)
+		cancel()
+	})
 	resp, err := p.client.Do(httpReq)
+	timer.Stop()
 	if err != nil {
-		return nil, fmt.Errorf("openaicompat: request failed: %w", err)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if timedOut.Load() {
+			return nil, &provider.Error{Message: "connect timeout", Retryable: true, Err: err}
+		}
+		return nil, &provider.Error{Message: "request failed", Retryable: true, Err: err}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 32*1024))
-		return nil, fmt.Errorf("openaicompat: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+		return nil, httpError(resp.StatusCode, resp.Header, readCapped(resp.Body))
 	}
-
-	result := &provider.Response{Model: req.Model}
-	result.Message.Role = message.RoleAssistant
-
-	var text strings.Builder
-	type acc struct {
-		id, name, typ string
-		args          strings.Builder
-	}
-	indexed := map[int]*acc{}
-	var order []int
-
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "" {
-			continue
-		}
-		if data == "[DONE]" {
-			break
-		}
-
-		var chunk chatChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			// Ignore keep-alive comments and unknown frames rather than
-			// aborting a response that is otherwise streaming fine.
-			continue
-		}
-		if chunk.Model != "" {
-			result.Model = chunk.Model
-		}
-		if chunk.Usage != nil {
-			result.Usage = usageFromRaw(chunk.Usage)
-		}
-
-		for _, choice := range chunk.Choices {
-			if choice.FinishReason != "" {
-				result.FinishReason = choice.FinishReason
-			}
-			d := choice.Delta
-			if d.Content != "" {
-				text.WriteString(d.Content)
-				if onEvent != nil {
-					onEvent(provider.StreamEvent{Type: provider.StreamTextDelta, Text: d.Content})
-				}
-			}
-			if reasoning := firstNonEmpty(d.Reasoning, d.ReasoningContent); reasoning != "" {
-				if onEvent != nil {
-					onEvent(provider.StreamEvent{Type: provider.StreamReasoningDelta, Text: reasoning})
-				}
-			}
-			for _, tc := range d.ToolCalls {
-				idx := 0
-				if tc.Index != nil {
-					idx = *tc.Index
-				}
-				a := indexed[idx]
-				if a == nil {
-					a = &acc{}
-					indexed[idx] = a
-					order = append(order, idx)
-				}
-				if tc.ID != "" {
-					a.id = tc.ID
-				}
-				if tc.Type != "" {
-					a.typ = tc.Type
-				}
-				if tc.Function.Name != "" {
-					a.name = tc.Function.Name
-				}
-				if tc.Function.Arguments != "" {
-					a.args.WriteString(tc.Function.Arguments)
-				}
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("openaicompat: read stream: %w", err)
-	}
-
-	sort.Ints(order)
-	for _, idx := range order {
-		a := indexed[idx]
-		typ := a.typ
-		if typ == "" {
-			typ = "function"
-		}
-		id := a.id
-		if id == "" {
-			id = fmt.Sprintf("call_%d", idx)
-		}
-		tc := message.ToolCall{
-			ID:       id,
-			Type:     typ,
-			Function: message.FunctionCall{Name: a.name, Arguments: a.args.String()},
-		}
-		result.Message.ToolCalls = append(result.Message.ToolCalls, tc)
-		if onEvent != nil {
-			done := tc
-			onEvent(provider.StreamEvent{Type: provider.StreamToolCall, ToolCall: &done})
-		}
-	}
-
-	result.Message.Content = text.String()
-	return result, nil
+	return p.consume(reqCtx, resp.Body, req, onEvent)
 }
 
-func usageFromRaw(u *rawUsage) provider.Usage {
-	out := provider.Usage{
-		PromptTokens:     u.PromptTokens,
-		CompletionTokens: u.CompletionTokens,
-		TotalTokens:      u.TotalTokens,
-		CostUSD:          u.Cost,
+// apiKey resolves the bearer token for this request, preferring the function.
+func (p *Provider) apiKey(ctx context.Context) (string, error) {
+	if p.cfg.APIKeyFunc != nil {
+		return p.cfg.APIKeyFunc(ctx)
 	}
-	if u.PromptTokensDetails != nil {
-		out.CachedTokens = u.PromptTokensDetails.CachedTokens
-	}
-	return out
+	return p.cfg.APIKey, nil
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
+// setHeaders applies the documented precedence: fixed headers first, then the
+// request's extras, then the bearer token last so a stray Authorization cannot
+// shadow the configured key.
+func (p *Provider) setHeaders(r *http.Request, key string, extra map[string]string) {
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Accept", "text/event-stream")
+	for k, v := range p.cfg.Headers {
+		r.Header.Set(k, v)
 	}
-	return ""
+	for k, v := range extra {
+		r.Header.Set(k, v)
+	}
+	if key != "" {
+		r.Header.Set("Authorization", "Bearer "+key)
+	}
+}
+
+// buildBody renders the request, drops reasoning unless asked to keep it, and
+// merges ProviderOptions into the top level so an option can add or override a
+// field. The caller's Request is never modified.
+func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
+	msgs := make([]wireMessage, len(req.Messages))
+	for i, m := range req.Messages {
+		wm := wireMessage{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCalls:  m.ToolCalls,
+			ToolCallID: m.ToolCallID,
+			Name:       m.Name,
+		}
+		if p.cfg.SendReasoning {
+			wm.Reasoning = m.Reasoning
+		}
+		msgs[i] = wm
+	}
+	cr := chatRequest{
+		Model:           req.Model,
+		Messages:        msgs,
+		Tools:           req.Tools,
+		ToolChoice:      req.ToolChoice,
+		Temperature:     req.Temperature,
+		Stop:            req.Stop,
+		ReasoningEffort: req.ReasoningEffort,
+		Stream:          true,
+		StreamOptions:   &streamOptions{IncludeUsage: true},
+	}
+	if req.MaxTokens > 0 {
+		maxTokens := req.MaxTokens
+		cr.MaxTokens = &maxTokens
+	}
+	raw, err := json.Marshal(cr)
+	if err != nil {
+		return nil, fmt.Errorf("openaicompat: encode request: %w", err)
+	}
+	if len(req.ProviderOptions) == 0 {
+		return raw, nil
+	}
+	var base map[string]any
+	if err := json.Unmarshal(raw, &base); err != nil {
+		return nil, fmt.Errorf("openaicompat: decode request for merge: %w", err)
+	}
+	merged, err := json.Marshal(provider.MergeOptions(base, req.ProviderOptions))
+	if err != nil {
+		return nil, fmt.Errorf("openaicompat: encode merged request: %w", err)
+	}
+	return merged, nil
 }

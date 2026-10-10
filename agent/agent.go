@@ -1,7 +1,22 @@
+// Package agent runs the tool-calling loop: request a completion, execute any
+// tool calls, feed the results back, and repeat until the model answers, the
+// turn budget runs out, the context is cancelled, or the provider fails.
+//
+// One Agent runs one loop at a time. A caller that wants concurrency runs it in
+// a goroutine and reads events through Config.Emit; steering and follow-up
+// messages may be queued from any goroutine.
 package agent
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"sync"
+	"time"
+
 	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/permission"
+	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
 )
@@ -12,93 +27,189 @@ type ToolExecutionMode string
 const (
 	// Sequential runs tool calls one at a time.
 	Sequential ToolExecutionMode = "sequential"
-	// Parallel runs tool calls concurrently (default).
+	// Parallel runs consecutive parallel-capable calls concurrently (default).
 	Parallel ToolExecutionMode = "parallel"
 )
 
-// ToolCall is the subset of a tool call passed to hooks.
+// ToolCall is the subset of a tool call passed to the ToolCall and ToolResult
+// hooks.
 type ToolCall struct {
 	ID        string
 	Name      string
-	Arguments string
+	Arguments json.RawMessage
 }
 
-// Block is returned by BeforeToolCall to prevent a tool from running.
-type Block struct {
-	Reason string
+// CallDecision is what the ToolCall hook returns. Block stops the call;
+// Arguments, when non-nil and not blocking, replaces the call's arguments.
+type CallDecision struct {
+	Block     bool
+	Reason    string
+	Arguments json.RawMessage
 }
 
-// Turn describes a completed turn passed to FinishTurn.
+// Turn describes a completed turn passed to the TurnEnd hook.
 type Turn struct {
 	Index   int
 	Message message.Message
 	Results []tool.Result
 }
 
-// TurnDecision is returned by FinishTurn. End stops the loop after the turn.
+// TurnDecision is what the TurnEnd hook returns. End stops the run; Continue
+// runs one more turn even after a final answer; Inject messages are appended
+// before the next request.
 type TurnDecision struct {
-	End bool
+	End      bool
+	Continue bool
+	Inject   []message.Message
 }
 
-// Config configures one agent run.
+// Question is a permission prompt handed to Ask.
+type Question struct {
+	Tool   string
+	Reason string
+	Args   json.RawMessage
+	Rule   int
+}
+
+// Hooks are the loop's optional extension points. Every hook is called with the
+// run's context and runs under HookTimeout; a hook that panics or exceeds its
+// deadline is abandoned and reported with an extension_error event.
+type Hooks struct {
+	BeforeProviderRequest func(ctx context.Context, req *provider.Request)
+	TransformContext      func(ctx context.Context, msgs []message.Message) []message.Message
+	BeforeTurn            func(ctx context.Context, msgs []message.Message) ([]message.Message, error)
+	MessageEnd            func(ctx context.Context, m message.Message) message.Message
+	ToolCall              func(ctx context.Context, c ToolCall) *CallDecision
+	ToolResult            func(ctx context.Context, c ToolCall, r tool.Result) tool.Result
+	TurnEnd               func(ctx context.Context, t Turn) TurnDecision
+	AgentEnd              func(ctx context.Context, r *Result)
+}
+
+// RetryPolicy configures how a retryable provider failure is retried.
+type RetryPolicy struct {
+	Max    int           // default 3 retries (so 4 attempts); negative disables
+	Base   time.Duration // default 1s
+	Cap    time.Duration // default 30s
+	Jitter float64       // default 0.2 when the whole policy is zero
+}
+
+// Clock is the time seam, so tests can drive time with a fake clock.
+type Clock interface {
+	Now() time.Time
+	Sleep(ctx context.Context, d time.Duration) error
+}
+
+// Config configures one agent.
 type Config struct {
-	// Provider and Model select the model backend.
+	// Provider and Model select the model backend. Both are required.
 	Provider provider.Provider
 	Model    string
 
 	// System is the system prompt, sent as the leading system message.
 	System string
 
-	// Tools is the tool registry offered to the model.
+	// Tools is the registry offered to the model.
 	Tools *tool.Registry
 
+	// Policy decides each tool call before dispatch. Nil allows everything.
+	Policy *permission.Policy
+	// Ask resolves a permission "ask". Nil means there is no one to ask, so
+	// the policy's headless action applies.
+	Ask func(ctx context.Context, q Question) (allow bool, err error)
+
 	// WorkDir is the directory relative tool paths resolve against.
-	WorkDir string
+	WorkDir   string
+	Roots     []string
+	ToolData  any
+	SessionID string
 
-	// ToolData is passed to tools via tool.Context.Data, for embedding
-	// applications to inject their own dependencies.
-	ToolData any
+	MaxTurns        int               // default 25
+	ToolExecution   ToolExecutionMode // default Parallel
+	MaxParallel     int               // default 8
+	Temperature     *float64
+	MaxTokens       int
+	ReasoningEffort string
+	ProviderOptions map[string]any
+	Retry           RetryPolicy
+	HookTimeout     time.Duration // default 5s
+	Clock           Clock         // default real; tests inject a fake
 
-	// MaxTurns bounds loop iterations. Defaults to 25.
-	MaxTurns int
+	Hooks Hooks
 
-	// ToolExecution selects sequential or parallel dispatch. Defaults to parallel.
-	ToolExecution ToolExecutionMode
-
-	// Temperature and MaxTokens are passed to the provider when set.
-	Temperature *float64
-	MaxTokens   int
-
-	// -- Hooks (all optional) --
-
-	// TransformContext can rewrite the message list right before each
-	// provider request (pruning, injecting context). It must not mutate the
-	// input in place.
-	TransformContext func([]message.Message) []message.Message
-	// BeforeToolCall can block a call; return nil to allow it.
-	BeforeToolCall func(ToolCall) *Block
-	// AfterToolCall can replace a tool result before it is recorded.
-	AfterToolCall func(ToolCall, tool.Result) tool.Result
-	// FinishTurn runs after each turn's tool results are appended. Return
-	// TurnDecision{End: true} to stop.
-	FinishTurn func(Turn) TurnDecision
-	// OnEvent receives every lifecycle event.
-	OnEvent func(Event)
-	// OnTextDelta and OnReasoningDelta are convenience streaming callbacks.
-	OnTextDelta      func(string)
-	OnReasoningDelta func(string)
+	// Emit receives every event, synchronously, in order. Seq, TS, and Run
+	// are filled in; it may be nil.
+	Emit func(proto.Event)
+	// OnMessage is called synchronously each time a message joins the
+	// transcript. A non-nil error aborts the run with reason "error".
+	OnMessage func(m message.Message, u *provider.Usage) error
+	// Complete is given to tools as tool.Context.Complete, for nested model
+	// calls.
+	Complete func(ctx context.Context, req provider.Request) (*provider.Response, error)
 }
 
 // Result is the outcome of a run.
 type Result struct {
-	// Messages is the full transcript including the initial history.
+	// Messages is the full transcript, history included.
 	Messages []message.Message
-	// Answer is the final assistant text.
+	// New is only the messages produced by this run.
+	New []message.Message
+	// Answer is the last non-empty assistant text.
 	Answer string
-	// Turns is the number of provider requests made.
+	// Turns is the number of turns this run completed.
 	Turns int
-	// Usage is the accumulated usage across every provider call.
+	// Usage is the usage summed over every successful response.
 	Usage provider.Usage
-	// Exhausted reports that the loop hit MaxTurns without a final answer.
+	// Reason is done, exhausted, aborted, or error.
+	Reason string
+	// Exhausted reports that the turn budget ran out before a final answer.
 	Exhausted bool
+}
+
+// ErrNotRunning is returned by Steer and FollowUp when no run is active.
+var ErrNotRunning = errors.New("agent: not running")
+
+// ErrBusy is returned by Run while another run is already active.
+var ErrBusy = errors.New("agent: a run is already in progress")
+
+// Agent runs one turn loop at a time and holds the steering and follow-up
+// queues. Its methods are safe for concurrent use.
+type Agent struct {
+	cfg   Config
+	clock Clock
+
+	mu       sync.Mutex
+	running  bool
+	cancel   context.CancelFunc
+	runCount int
+	runID    string
+	steering []string
+	followUp []string
+
+	emitMu sync.Mutex
+	seq    int64
+}
+
+// New builds an agent. A nil Clock means the real clock.
+func New(cfg Config) *Agent {
+	clock := cfg.Clock
+	if clock == nil {
+		clock = realClock{}
+	}
+	return &Agent{cfg: cfg, clock: clock}
+}
+
+// realClock is the wall-clock Clock used when none is injected.
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
+
+func (realClock) Sleep(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

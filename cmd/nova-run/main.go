@@ -14,6 +14,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider/openrouter"
 	"github.com/AutumnsGrove/nova/tool"
 	"github.com/AutumnsGrove/nova/tools/bash"
@@ -68,19 +69,20 @@ func main() {
 		WorkDir:       workDir,
 		MaxTurns:      *maxTurns,
 		ToolExecution: mode,
-		OnTextDelta: func(s string) {
-			fmt.Print(s)
-		},
-		OnEvent: func(e agent.Event) {
+		Emit: func(e proto.Event) {
 			switch e.Type {
-			case agent.EventToolResult:
+			case proto.EventTextDelta:
+				fmt.Print(e.Text)
+			case proto.EventToolEnd:
 				status := "ok"
-				if e.IsError {
+				if e.Result != nil && e.Result.IsError {
 					status = "error"
 				}
-				fmt.Fprintf(os.Stderr, "\n[tool] %s (%s)\n", e.ToolName, status)
-			case agent.EventError:
-				fmt.Fprintf(os.Stderr, "\n[error] %v\n", e.Err)
+				fmt.Fprintf(os.Stderr, "\n[tool] %s (%s)\n", e.CallID, status)
+			case proto.EventError:
+				if e.Error != nil {
+					fmt.Fprintf(os.Stderr, "\n[error] %s\n", e.Error.Message)
+				}
 			}
 		},
 	}

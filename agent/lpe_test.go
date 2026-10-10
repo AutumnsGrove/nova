@@ -13,7 +13,7 @@ import (
 	"github.com/AutumnsGrove/nova/testkit"
 )
 
-func TestLPE01_TextOnlyRun(t *testing.T) {
+func Test_LPE01_TextOnlyRun(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Text: "hi", Usage: &provider.Usage{PromptTokens: 3, CompletionTokens: 2}})
 	res, events := runCollect(t, Config{Provider: p, Model: "m", Clock: clock}, nil, message.User("hi"))
@@ -33,7 +33,7 @@ func TestLPE01_TextOnlyRun(t *testing.T) {
 	}
 }
 
-func TestLPE02_ExactlyOneRunStartAndEnd(t *testing.T) {
+func Test_LPE02_ExactlyOneRunStartAndEnd(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	scenarios := []struct {
 		name  string
@@ -57,14 +57,14 @@ func TestLPE02_ExactlyOneRunStartAndEnd(t *testing.T) {
 	}
 }
 
-func TestLPE03_NothingAfterRunEnd(t *testing.T) {
+func Test_LPE03_NothingAfterRunEnd(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Text: "hi"})
 	_, events := runCollect(t, Config{Provider: p, Model: "m", Clock: clock}, nil, message.User("go"))
 	assertRunBoundaries(t, events)
 }
 
-func TestLPE04_SeqIncreasesAndRunConstant(t *testing.T) {
+func Test_LPE04_SeqIncreasesAndRunConstant(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Text: "one"}, testkit.Turn{Text: "two"})
 	c := &collector{}
@@ -90,7 +90,7 @@ func TestLPE04_SeqIncreasesAndRunConstant(t *testing.T) {
 	}
 }
 
-func TestLPE05_TSFromClock(t *testing.T) {
+func Test_LPE05_TSFromClock(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Text: "hi"})
 	_, events := runCollect(t, Config{Provider: p, Model: "m", Clock: clock}, nil, message.User("go"))
@@ -101,7 +101,7 @@ func TestLPE05_TSFromClock(t *testing.T) {
 	}
 }
 
-func TestLPE06_ToolTurnEventOrder(t *testing.T) {
+func Test_LPE06_ToolTurnEventOrder(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}},
@@ -140,7 +140,7 @@ func indexOf(t *testing.T, events []proto.Event) map[string]int {
 	return out
 }
 
-func TestLPE07_ThinkingBeforeText(t *testing.T) {
+func Test_LPE07_ThinkingBeforeText(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Reasoning: "why", Text: "answer"})
 	_, events := runCollect(t, Config{Provider: p, Model: "m", Clock: clock}, nil, message.User("go"))
@@ -152,7 +152,7 @@ func TestLPE07_ThinkingBeforeText(t *testing.T) {
 	}
 }
 
-func TestLPE08_ThinkingBeforeToolCall(t *testing.T) {
+func Test_LPE08_ThinkingBeforeToolCall(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{Reasoning: "why", ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}},
@@ -165,7 +165,7 @@ func TestLPE08_ThinkingBeforeToolCall(t *testing.T) {
 	}
 }
 
-func TestLPE09_ThinkingDuration(t *testing.T) {
+func Test_LPE09_ThinkingDuration(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := &advancingProvider{clock: clock, text: "answer"}
 	_, events := runCollect(t, Config{Provider: p, Model: "m", Clock: clock}, nil, message.User("go"))
@@ -187,7 +187,7 @@ func findType(events []proto.Event, typ string) (proto.Event, bool) {
 	return proto.Event{}, false
 }
 
-func TestLPE10_NilEmit(t *testing.T) {
+func Test_LPE10_NilEmit(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Text: "hi"})
 	if _, err := New(Config{Provider: p, Model: "m", Clock: clock}).Run(context.Background(), nil, message.User("go")); err != nil {
@@ -195,7 +195,7 @@ func TestLPE10_NilEmit(t *testing.T) {
 	}
 }
 
-func TestLPE11_UnknownToolContinues(t *testing.T) {
+func Test_LPE11_UnknownToolContinues(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "nope", `{}`)}},
@@ -216,7 +216,7 @@ func TestLPE11_UnknownToolContinues(t *testing.T) {
 	}
 }
 
-func TestLPE12_MaxTurnsExhausted(t *testing.T) {
+func Test_LPE12_MaxTurnsExhausted(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, alwaysTool(3)...)
 	res, events := runCollect(t, Config{Provider: p, Model: "m", Clock: clock, MaxTurns: 3, Tools: registry(echoTool())}, nil, message.User("go"))
@@ -229,7 +229,7 @@ func TestLPE12_MaxTurnsExhausted(t *testing.T) {
 	assertRunBoundaries(t, events)
 }
 
-func TestLPE13_MaxTurnsDefault(t *testing.T) {
+func Test_LPE13_MaxTurnsDefault(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	for _, maxTurns := range []int{0, -1} {
 		p := testkit.NewProvider(clock, alwaysTool(defaultMaxTurns)...)
@@ -240,7 +240,7 @@ func TestLPE13_MaxTurnsDefault(t *testing.T) {
 	}
 }
 
-func TestLPE14_MaxTurnsExactlyEnough(t *testing.T) {
+func Test_LPE14_MaxTurnsExactlyEnough(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}},
@@ -253,7 +253,7 @@ func TestLPE14_MaxTurnsExactlyEnough(t *testing.T) {
 	}
 }
 
-func TestLPE15_MissingProviderOrModel(t *testing.T) {
+func Test_LPE15_MissingProviderOrModel(t *testing.T) {
 	c := &collector{}
 	if _, err := New(Config{Model: "m", Emit: c.emit}).Run(context.Background(), nil, message.User("go")); err == nil {
 		t.Fatal("expected error for missing provider")
@@ -267,7 +267,7 @@ func TestLPE15_MissingProviderOrModel(t *testing.T) {
 	}
 }
 
-func TestLPE16_RunWhileRunning(t *testing.T) {
+func Test_LPE16_RunWhileRunning(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	started := make(chan struct{}, 1)
 	p := testkit.NewProvider(clock, testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "hang", `{}`)}})
@@ -285,7 +285,7 @@ func TestLPE16_RunWhileRunning(t *testing.T) {
 	<-done
 }
 
-func TestLPE17_PromptThroughOnMessage(t *testing.T) {
+func Test_LPE17_PromptThroughOnMessage(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Text: "hi"})
 	var seen []message.Message
@@ -301,7 +301,7 @@ func TestLPE17_PromptThroughOnMessage(t *testing.T) {
 	}
 }
 
-func TestLPE18_CompatRun(t *testing.T) {
+func Test_LPE18_CompatRun(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Text: "ok"})
 	res, err := Run(context.Background(), Config{Provider: p, Model: "m", Clock: clock}, []message.Message{message.User("go")})
@@ -317,7 +317,7 @@ func TestLPE18_CompatRun(t *testing.T) {
 	}
 }
 
-func TestLPE19_ResultAnswer(t *testing.T) {
+func Test_LPE19_ResultAnswer(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Text: "the answer"})
 	res, _ := runCollect(t, Config{Provider: p, Model: "m", Clock: clock}, nil, message.User("go"))
@@ -326,7 +326,7 @@ func TestLPE19_ResultAnswer(t *testing.T) {
 	}
 }
 
-func TestLPE20_NewExcludesHistory(t *testing.T) {
+func Test_LPE20_NewExcludesHistory(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Text: "hi"})
 	res, _ := runCollect(t, Config{Provider: p, Model: "m", Clock: clock}, []message.Message{message.User("old")}, message.User("new"))

@@ -23,7 +23,7 @@ func cancellingTool(started chan<- struct{}) tool.Tool {
 	})
 }
 
-func TestLPC01_CancelBeforeFirstRequest(t *testing.T) {
+func Test_LPC01_CancelBeforeFirstRequest(t *testing.T) {
 	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("never"))
@@ -51,7 +51,7 @@ func (p *hangingStreamProvider) Stream(ctx context.Context, _ provider.Request, 
 	return nil, ctx.Err()
 }
 
-func TestLPC02_CancelDuringStreaming(t *testing.T) {
+func Test_LPC02_CancelDuringStreaming(t *testing.T) {
 	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	p := &hangingStreamProvider{entered: make(chan struct{})}
@@ -74,7 +74,7 @@ func TestLPC02_CancelDuringStreaming(t *testing.T) {
 	}
 }
 
-func TestLPC06_NoGoroutineLeak(t *testing.T) {
+func Test_LPC06_NoGoroutineLeak(t *testing.T) {
 	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	p := &hangingStreamProvider{entered: make(chan struct{})}
@@ -90,7 +90,7 @@ func TestLPC06_NoGoroutineLeak(t *testing.T) {
 	<-done
 }
 
-func TestLPC03_CancelDuringTool(t *testing.T) {
+func Test_LPC03_CancelDuringTool(t *testing.T) {
 	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	started := make(chan struct{}, 1)
@@ -121,7 +121,7 @@ func TestLPC03_CancelDuringTool(t *testing.T) {
 	assertValid(t, out.res.Messages)
 }
 
-func TestLPC04_CancelBetweenTurns(t *testing.T) {
+func Test_LPC04_CancelBetweenTurns(t *testing.T) {
 	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("never"))
@@ -138,7 +138,7 @@ func TestLPC04_CancelBetweenTurns(t *testing.T) {
 	assertValid(t, out.res.Messages)
 }
 
-func TestLPC05_CancelWhileParallelToolsRun(t *testing.T) {
+func Test_LPC05_CancelWhileParallelToolsRun(t *testing.T) {
 	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	started := make(chan struct{}, 5)
@@ -160,7 +160,7 @@ func TestLPC05_CancelWhileParallelToolsRun(t *testing.T) {
 	assertValid(t, out.res.Messages)
 }
 
-func TestLPC07_ToolIgnoresCancellation(t *testing.T) {
+func Test_LPC07_ToolIgnoresCancellation(t *testing.T) {
 	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	started := make(chan struct{}, 1)

@@ -30,7 +30,7 @@ func ranTool(ran *bool) tool.Tool {
 	})
 }
 
-func TestLPP01_NoPolicy(t *testing.T) {
+func Test_LPP01_NoPolicy(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
@@ -41,7 +41,7 @@ func TestLPP01_NoPolicy(t *testing.T) {
 	}
 }
 
-func TestLPP02_DenyRule(t *testing.T) {
+func Test_LPP02_DenyRule(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
@@ -60,7 +60,7 @@ func TestLPP02_DenyRule(t *testing.T) {
 	}
 }
 
-func TestLPP03_AllowRule(t *testing.T) {
+func Test_LPP03_AllowRule(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
@@ -71,7 +71,7 @@ func TestLPP03_AllowRule(t *testing.T) {
 	}
 }
 
-func TestLPP04_AskApproved(t *testing.T) {
+func Test_LPP04_AskApproved(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
@@ -90,7 +90,7 @@ func TestLPP04_AskApproved(t *testing.T) {
 	}
 }
 
-func TestLPP05_AskDenied(t *testing.T) {
+func Test_LPP05_AskDenied(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
@@ -108,7 +108,7 @@ func TestLPP05_AskDenied(t *testing.T) {
 	}
 }
 
-func TestLPP06_AskError(t *testing.T) {
+func Test_LPP06_AskError(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
@@ -129,7 +129,7 @@ func TestLPP06_AskError(t *testing.T) {
 	}
 }
 
-func TestLPP07_HeadlessDeny(t *testing.T) {
+func Test_LPP07_HeadlessDeny(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
@@ -147,7 +147,7 @@ func TestLPP07_HeadlessDeny(t *testing.T) {
 	}
 }
 
-func TestLPP08_PermissionEvent(t *testing.T) {
+func Test_LPP08_PermissionEvent(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
@@ -162,7 +162,7 @@ func TestLPP08_PermissionEvent(t *testing.T) {
 	}
 }
 
-func TestLPP09_AskHonoursCancellation(t *testing.T) {
+func Test_LPP09_AskHonoursCancellation(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	entered := make(chan struct{})
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
@@ -195,7 +195,7 @@ func runAsyncCtx(a *Agent, ctx context.Context) runOutcome {
 	return runOutcome{res, err}
 }
 
-func TestLPP10_ConcurrentAsks(t *testing.T) {
+func Test_LPP10_ConcurrentAsks(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	var asked int32
 	p := testkit.NewProvider(clock,

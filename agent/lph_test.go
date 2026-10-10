@@ -27,7 +27,7 @@ func namedToolTurn(name string) testkit.Turn {
 	return testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", name, `{}`)}}
 }
 
-func TestLPH01_ToolCallHookBlocks(t *testing.T) {
+func Test_LPH01_ToolCallHookBlocks(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false
 	tl := toolOf("echo", false, func(context.Context, json.RawMessage, *tool.Context) (tool.Result, error) {
@@ -66,7 +66,7 @@ func hasToolPrefix(msgs []message.Message, prefix string) bool {
 	return false
 }
 
-func TestLPH02_ToolCallHookRewritesArguments(t *testing.T) {
+func Test_LPH02_ToolCallHookRewritesArguments(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
 	cfg := Config{Provider: p, Model: "m", Clock: clock, Tools: registry(echoTool())}
@@ -79,7 +79,7 @@ func TestLPH02_ToolCallHookRewritesArguments(t *testing.T) {
 	}
 }
 
-func TestLPH03_ToolCallHookNil(t *testing.T) {
+func Test_LPH03_ToolCallHookNil(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
 	cfg := Config{Provider: p, Model: "m", Clock: clock, Tools: registry(echoTool())}
@@ -90,7 +90,7 @@ func TestLPH03_ToolCallHookNil(t *testing.T) {
 	}
 }
 
-func TestLPH04_ToolResultHookReplaces(t *testing.T) {
+func Test_LPH04_ToolResultHookReplaces(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
 	cfg := Config{Provider: p, Model: "m", Clock: clock, Tools: registry(echoTool())}
@@ -103,7 +103,7 @@ func TestLPH04_ToolResultHookReplaces(t *testing.T) {
 	}
 }
 
-func TestLPH05_HookPanics(t *testing.T) {
+func Test_LPH05_HookPanics(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	boom := func() { panic("hook boom") }
 	cases := []struct {
@@ -155,7 +155,7 @@ func TestLPH05_HookPanics(t *testing.T) {
 	}
 }
 
-func TestLPH06_HookExceedsDeadline(t *testing.T) {
+func Test_LPH06_HookExceedsDeadline(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("done"))
 	cfg := Config{Provider: p, Model: "m", Clock: clock, HookTimeout: 50 * time.Millisecond}
@@ -181,7 +181,7 @@ func TestLPH06_HookExceedsDeadline(t *testing.T) {
 	}
 }
 
-func TestLPH07_HookHonoursCancellation(t *testing.T) {
+func Test_LPH07_HookHonoursCancellation(t *testing.T) {
 	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("done"))
@@ -210,7 +210,7 @@ func TestLPH07_HookHonoursCancellation(t *testing.T) {
 	}
 }
 
-func TestLPH08_TransformContext(t *testing.T) {
+func Test_LPH08_TransformContext(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("done"))
 	cfg := Config{Provider: p, Model: "m", Clock: clock}
@@ -241,7 +241,7 @@ func hasMessageContent(msgs []message.Message, want string) bool {
 	return false
 }
 
-func TestLPH09_BeforeProviderRequest(t *testing.T) {
+func Test_LPH09_BeforeProviderRequest(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("done"))
 	cfg := Config{Provider: p, Model: "m", Clock: clock}
@@ -258,7 +258,7 @@ func TestLPH09_BeforeProviderRequest(t *testing.T) {
 	}
 }
 
-func TestLPH10_BeforeTurnReplacesTranscript(t *testing.T) {
+func Test_LPH10_BeforeTurnReplacesTranscript(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("done"))
 	var onMessage []string
@@ -282,7 +282,7 @@ func TestLPH10_BeforeTurnReplacesTranscript(t *testing.T) {
 	}
 }
 
-func TestLPH11_BeforeTurnError(t *testing.T) {
+func Test_LPH11_BeforeTurnError(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("done"))
 	cfg := Config{Provider: p, Model: "m", Clock: clock}
@@ -296,7 +296,7 @@ func TestLPH11_BeforeTurnError(t *testing.T) {
 	assertRunBoundaries(t, events)
 }
 
-func TestLPH12_MessageEndReplacesAndForcesRole(t *testing.T) {
+func Test_LPH12_MessageEndReplacesAndForcesRole(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("done"))
 	cfg := Config{Provider: p, Model: "m", Clock: clock}
@@ -314,7 +314,7 @@ func TestLPH12_MessageEndReplacesAndForcesRole(t *testing.T) {
 	}
 }
 
-func TestLPH13_TurnEndEnd(t *testing.T) {
+func Test_LPH13_TurnEndEnd(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, toolTurn())
 	cfg := Config{Provider: p, Model: "m", Clock: clock, Tools: registry(echoTool())}
@@ -328,7 +328,7 @@ func TestLPH13_TurnEndEnd(t *testing.T) {
 	}
 }
 
-func TestLPH14_TurnEndContinue(t *testing.T) {
+func Test_LPH14_TurnEndContinue(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("first"), textTurn("second"))
 	calls := 0
@@ -343,7 +343,7 @@ func TestLPH14_TurnEndContinue(t *testing.T) {
 	}
 }
 
-func TestLPH15_TurnEndInject(t *testing.T) {
+func Test_LPH15_TurnEndInject(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("first"), textTurn("second"))
 	var onMessage []string
@@ -388,7 +388,7 @@ func TestLPH15_TurnEndInject(t *testing.T) {
 	}
 }
 
-func TestLPH16_AgentEndCalledOnce(t *testing.T) {
+func Test_LPH16_AgentEndCalledOnce(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("done"))
 	var mu sync.Mutex
@@ -409,7 +409,7 @@ func TestLPH16_AgentEndCalledOnce(t *testing.T) {
 	}
 }
 
-func TestLPH17_OnMessageErrorAborts(t *testing.T) {
+func Test_LPH17_OnMessageErrorAborts(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("done"))
 	cfg := Config{Provider: p, Model: "m", Clock: clock, OnMessage: func(message.Message, *provider.Usage) error {
@@ -422,7 +422,7 @@ func TestLPH17_OnMessageErrorAborts(t *testing.T) {
 	assertRunBoundaries(t, events)
 }
 
-func TestLPH18_NilHooks(t *testing.T) {
+func Test_LPH18_NilHooks(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
 	res, _ := runCollect(t, Config{Provider: p, Model: "m", Clock: clock, Tools: registry(echoTool())}, nil, message.User("go"))

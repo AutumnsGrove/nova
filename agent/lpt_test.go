@@ -93,7 +93,7 @@ func runAsync(cfg Config, history []message.Message, prompt message.Message) run
 	return runOutcome{res, err}
 }
 
-func TestLPT01_OneToolCall(t *testing.T) {
+func Test_LPT01_OneToolCall(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}},
@@ -115,7 +115,7 @@ func TestLPT01_OneToolCall(t *testing.T) {
 	assertValid(t, res.Messages)
 }
 
-func TestLPT02_ManyParallelCalls(t *testing.T) {
+func Test_LPT02_ManyParallelCalls(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	c := &concur{}
 	entered := make(chan struct{}, 5)
@@ -137,7 +137,7 @@ func TestLPT02_ManyParallelCalls(t *testing.T) {
 	}
 }
 
-func TestLPT03_CompletionOrderDiffersFromCallOrder(t *testing.T) {
+func Test_LPT03_CompletionOrderDiffersFromCallOrder(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	release := make(chan struct{})
 	fastRan := make(chan struct{})
@@ -175,7 +175,7 @@ func TestLPT03_CompletionOrderDiffersFromCallOrder(t *testing.T) {
 	assertValid(t, res.Messages)
 }
 
-func TestLPT04_SequentialMode(t *testing.T) {
+func Test_LPT04_SequentialMode(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	c := &concur{}
 	gate := make(chan struct{})
@@ -191,7 +191,7 @@ func TestLPT04_SequentialMode(t *testing.T) {
 	}
 }
 
-func TestLPT05_NonParallelIsBarrier(t *testing.T) {
+func Test_LPT05_NonParallelIsBarrier(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	var mu sync.Mutex
 	var log []string
@@ -225,7 +225,7 @@ func TestLPT05_NonParallelIsBarrier(t *testing.T) {
 	}
 }
 
-func TestLPT06_MaxParallel(t *testing.T) {
+func Test_LPT06_MaxParallel(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	c := &concur{}
 	entered := make(chan struct{}, 20)
@@ -253,7 +253,7 @@ func panicTool(name string) tool.Tool {
 	})
 }
 
-func TestLPT07_PanicParallel(t *testing.T) {
+func Test_LPT07_PanicParallel(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ok := staticTool("ok", "fine")
 	p := testkit.NewProvider(clock,
@@ -269,7 +269,7 @@ func TestLPT07_PanicParallel(t *testing.T) {
 	assertValid(t, res.Messages)
 }
 
-func TestLPT08_PanicSequential(t *testing.T) {
+func Test_LPT08_PanicSequential(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "boom", `{}`)}},
@@ -293,7 +293,7 @@ func assertErrorResult(t *testing.T, msgs []message.Message, want string) {
 	t.Fatalf("no error result mentioning %q in %+v", want, msgs)
 }
 
-func TestLPT09_ToolReturnsError(t *testing.T) {
+func Test_LPT09_ToolReturnsError(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	failing := toolOf("fail", false, func(context.Context, json.RawMessage, *tool.Context) (tool.Result, error) {
 		return tool.Result{}, errors.New("nope")
@@ -306,7 +306,7 @@ func TestLPT09_ToolReturnsError(t *testing.T) {
 	assertErrorResult(t, res.Messages, "nope")
 }
 
-func TestLPT10_EmptyResult(t *testing.T) {
+func Test_LPT10_EmptyResult(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	empty := toolOf("empty", false, func(context.Context, json.RawMessage, *tool.Context) (tool.Result, error) {
 		return tool.Result{}, nil
@@ -319,7 +319,7 @@ func TestLPT10_EmptyResult(t *testing.T) {
 	assertErrorResult(t, res.Messages, "(empty result)")
 }
 
-func TestLPT11_EnormousContent(t *testing.T) {
+func Test_LPT11_EnormousContent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("allocates 50 MiB")
 	}
@@ -347,7 +347,7 @@ func TestLPT11_EnormousContent(t *testing.T) {
 	}
 }
 
-func TestLPT12_EmptyCallID(t *testing.T) {
+func Test_LPT12_EmptyCallID(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{{ID: "", Name: "echo", Args: `{}`}}},
@@ -371,7 +371,7 @@ func toolResultIDs(msgs []message.Message) []string {
 	return ids
 }
 
-func TestLPT13_DuplicateCallIDs(t *testing.T) {
+func Test_LPT13_DuplicateCallIDs(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{
@@ -388,7 +388,7 @@ func TestLPT13_DuplicateCallIDs(t *testing.T) {
 	assertValid(t, res.Messages)
 }
 
-func TestLPT14_InvalidJSONArguments(t *testing.T) {
+func Test_LPT14_InvalidJSONArguments(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{"a":`)}},
@@ -399,7 +399,7 @@ func TestLPT14_InvalidJSONArguments(t *testing.T) {
 	assertValid(t, res.Messages)
 }
 
-func TestLPT15_NullAndEmptyArguments(t *testing.T) {
+func Test_LPT15_NullAndEmptyArguments(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{
@@ -416,7 +416,7 @@ func TestLPT15_NullAndEmptyArguments(t *testing.T) {
 	}
 }
 
-func TestLPT16_UnknownToolListsKnown(t *testing.T) {
+func Test_LPT16_UnknownToolListsKnown(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "ghost", `{}`)}},
@@ -432,7 +432,7 @@ func TestLPT16_UnknownToolListsKnown(t *testing.T) {
 	}
 }
 
-func TestLPT17_ToolCallAfterFinalAnswer(t *testing.T) {
+func Test_LPT17_ToolCallAfterFinalAnswer(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{Text: "interim", ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}},
@@ -446,7 +446,7 @@ func TestLPT17_ToolCallAfterFinalAnswer(t *testing.T) {
 	assertValid(t, res.Messages)
 }
 
-func TestLPT18_ToolProgress(t *testing.T) {
+func Test_LPT18_ToolProgress(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	progressing := toolOf("prog", false, func(_ context.Context, _ json.RawMessage, tctx *tool.Context) (tool.Result, error) {
 		tctx.Progress("one")
@@ -470,7 +470,7 @@ func TestLPT18_ToolProgress(t *testing.T) {
 	}
 }
 
-func TestLPT19_SlowProgressConsumer(t *testing.T) {
+func Test_LPT19_SlowProgressConsumer(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	var returned sync.WaitGroup
 	returned.Add(1)
@@ -514,7 +514,7 @@ func TestLPT19_SlowProgressConsumer(t *testing.T) {
 	}
 }
 
-func TestLPT20_TranscriptValidAfterEachCase(t *testing.T) {
+func Test_LPT20_TranscriptValidAfterEachCase(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	cases := []struct {
 		name  string

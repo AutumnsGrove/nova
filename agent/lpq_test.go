@@ -32,7 +32,7 @@ func (p *steerProvider) Stream(_ context.Context, _ provider.Request, onEvent fu
 	return &provider.Response{Message: message.Assistant(text)}, nil
 }
 
-func TestLPQ01_SteerDuringTool(t *testing.T) {
+func Test_LPQ01_SteerDuringTool(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	var a *Agent
 	tl := toolOf("steer", false, func(context.Context, json.RawMessage, *tool.Context) (tool.Result, error) {
@@ -63,7 +63,7 @@ func requestHas(p *testkit.Provider, index int, content string) bool {
 	return false
 }
 
-func TestLPQ02_SteerDuringStreaming(t *testing.T) {
+func Test_LPQ02_SteerDuringStreaming(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := &steerProvider{}
 	c := &collector{}
@@ -90,7 +90,7 @@ func messageHas(msgs []message.Message, content string) bool {
 	return false
 }
 
-func TestLPQ03_SeveralSteeringMessages(t *testing.T) {
+func Test_LPQ03_SeveralSteeringMessages(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	var a *Agent
 	tl := toolOf("steer", false, func(context.Context, json.RawMessage, *tool.Context) (tool.Result, error) {
@@ -120,7 +120,7 @@ func TestLPQ03_SeveralSteeringMessages(t *testing.T) {
 	_ = res
 }
 
-func TestLPQ04_SteerAfterFinalAnswer(t *testing.T) {
+func Test_LPQ04_SteerAfterFinalAnswer(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("final"), textTurn("continued"))
 	var a *Agent
@@ -142,7 +142,7 @@ func TestLPQ04_SteerAfterFinalAnswer(t *testing.T) {
 	}
 }
 
-func TestLPQ05_FollowUpWhenWouldEnd(t *testing.T) {
+func Test_LPQ05_FollowUpWhenWouldEnd(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("first"), textTurn("second"))
 	var a *Agent
@@ -164,7 +164,7 @@ func TestLPQ05_FollowUpWhenWouldEnd(t *testing.T) {
 	}
 }
 
-func TestLPQ06_TwoFollowUpsInOrder(t *testing.T) {
+func Test_LPQ06_TwoFollowUpsInOrder(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("one"), textTurn("two"), textTurn("three"))
 	var a *Agent
@@ -195,7 +195,7 @@ func TestLPQ06_TwoFollowUpsInOrder(t *testing.T) {
 	}
 }
 
-func TestLPQ07_SteeringBeforeFollowUp(t *testing.T) {
+func Test_LPQ07_SteeringBeforeFollowUp(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("one"), textTurn("two"), textTurn("three"))
 	var a *Agent
@@ -227,7 +227,7 @@ func TestLPQ07_SteeringBeforeFollowUp(t *testing.T) {
 	}
 }
 
-func TestLPQ08_QueueWhenIdle(t *testing.T) {
+func Test_LPQ08_QueueWhenIdle(t *testing.T) {
 	a := New(Config{Provider: testkit.NewProvider(testkit.NewFakeClock(baseTime)), Model: "m"})
 	if err := a.Steer("x"); err != ErrNotRunning {
 		t.Fatalf("Steer err = %v, want ErrNotRunning", err)
@@ -237,7 +237,7 @@ func TestLPQ08_QueueWhenIdle(t *testing.T) {
 	}
 }
 
-func TestLPQ09_QueueUpdateEvents(t *testing.T) {
+func Test_LPQ09_QueueUpdateEvents(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	started := make(chan struct{}, 1)
 	p := testkit.NewProvider(clock, namedToolTurn("hang"))
@@ -259,7 +259,7 @@ func TestLPQ09_QueueUpdateEvents(t *testing.T) {
 	}
 }
 
-func TestLPQ10_AbortReturnsQueued(t *testing.T) {
+func Test_LPQ10_AbortReturnsQueued(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	started := make(chan struct{}, 1)
 	p := testkit.NewProvider(clock, namedToolTurn("hang"))
@@ -286,7 +286,7 @@ func TestLPQ10_AbortReturnsQueued(t *testing.T) {
 	}
 }
 
-func TestLPQ11_AbortIdleAndTwice(t *testing.T) {
+func Test_LPQ11_AbortIdleAndTwice(t *testing.T) {
 	a := New(Config{Provider: testkit.NewProvider(testkit.NewFakeClock(baseTime)), Model: "m"})
 	if s, f := a.Abort(); len(s) != 0 || len(f) != 0 {
 		t.Fatalf("idle Abort = %v %v", s, f)
@@ -296,7 +296,7 @@ func TestLPQ11_AbortIdleAndTwice(t *testing.T) {
 	}
 }
 
-func TestLPQ12_ConcurrentQueue(t *testing.T) {
+func Test_LPQ12_ConcurrentQueue(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	started := make(chan struct{}, 1)
 	p := testkit.NewProvider(clock, namedToolTurn("hang"))

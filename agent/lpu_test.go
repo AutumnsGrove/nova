@@ -9,7 +9,7 @@ import (
 	"github.com/AutumnsGrove/nova/testkit"
 )
 
-func TestLPU01_UsageSummed(t *testing.T) {
+func Test_LPU01_UsageSummed(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}, Usage: &provider.Usage{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2}},
@@ -23,7 +23,7 @@ func TestLPU01_UsageSummed(t *testing.T) {
 	}
 }
 
-func TestLPU02_UsageKeptOnLaterFailure(t *testing.T) {
+func Test_LPU02_UsageKeptOnLaterFailure(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}, Usage: &provider.Usage{PromptTokens: 9, CompletionTokens: 4, TotalTokens: 13}},
@@ -39,7 +39,7 @@ func TestLPU02_UsageKeptOnLaterFailure(t *testing.T) {
 	}
 }
 
-func TestLPU03_NoUsageReported(t *testing.T) {
+func Test_LPU03_NoUsageReported(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, textTurn("done"))
 	res, _ := runCollect(t, Config{Provider: p, Model: "m", Clock: clock}, nil, message.User("go"))
@@ -48,7 +48,7 @@ func TestLPU03_NoUsageReported(t *testing.T) {
 	}
 }
 
-func TestLPU04_UsageEventsCarryTotals(t *testing.T) {
+func Test_LPU04_UsageEventsCarryTotals(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}, Usage: &provider.Usage{PromptTokens: 2, CompletionTokens: 1}},
@@ -76,7 +76,7 @@ func TestLPU04_UsageEventsCarryTotals(t *testing.T) {
 	}
 }
 
-func TestLPU05_ReasoningTokensSummed(t *testing.T) {
+func Test_LPU05_ReasoningTokensSummed(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}, Usage: &provider.Usage{PromptTokens: 1, CompletionTokens: 1, ReasoningTokens: 4}},
@@ -88,7 +88,7 @@ func TestLPU05_ReasoningTokensSummed(t *testing.T) {
 	}
 }
 
-func TestLPU06_RunEndTotal(t *testing.T) {
+func Test_LPU06_RunEndTotal(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock,
 		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}, Usage: &provider.Usage{PromptTokens: 2, CompletionTokens: 1}},

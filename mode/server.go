@@ -259,10 +259,12 @@ func (s *Server) emit(ev proto.Event) {
 		default:
 			sub.dropped = true
 			delete(s.subs, id)
+			// Make room for the final error so a small buffer still sees it.
 			select {
-			case sub.ch <- proto.Event{Type: proto.EventError, Seq: sub.seq + 1, Error: &proto.Error{Code: proto.CodeInternal, Message: "subscriber too slow"}}:
+			case <-sub.ch:
 			default:
 			}
+			sub.ch <- proto.Event{Type: proto.EventError, Seq: sub.seq + 1, Error: &proto.Error{Code: proto.CodeInternal, Message: "subscriber too slow"}}
 			close(sub.ch)
 		}
 	}

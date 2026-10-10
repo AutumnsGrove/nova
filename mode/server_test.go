@@ -143,7 +143,7 @@ func TestServer_SRV03_PromptWhileBusy(t *testing.T) {
 	s.agent.Abort()
 }
 
-func TestServer_UnknownCommand(t *testing.T) {
+func TestServer_SRV09_UnknownCommand(t *testing.T) {
 	s, _ := testServer(t)
 	resp := s.Handle(context.Background(), proto.Command{Type: "nope"})
 	if resp.OK || resp.Error.Code != proto.CodeUnsupported {
@@ -151,7 +151,7 @@ func TestServer_UnknownCommand(t *testing.T) {
 	}
 }
 
-func TestServer_GetState_Fields(t *testing.T) {
+func TestServer_SRV20_GetStateFields(t *testing.T) {
 	s, _ := testServer(t)
 	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdGetState})
 	if !resp.OK {

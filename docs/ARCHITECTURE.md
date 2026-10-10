@@ -88,6 +88,8 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
 - `provider` imports `message`. `tool` imports `message` and `provider`.
 - `proto` imports `message` and `provider` and nothing above them.
 - `permission` imports `tool`. `usage` imports `provider` and `session`.
+- `tools/*` import `message`, `provider`, `tool`, and (for the shared glob engine)
+  `permission`; they never import each other or a higher layer.
 - `agent` imports `message`, `provider`, `tool`, `permission`, `proto`.
 - `session` imports `message`, `provider`, `proto`. `compaction` imports `session`, `provider`, `message`.
 - `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.

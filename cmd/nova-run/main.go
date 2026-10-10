@@ -61,7 +61,7 @@ func main() {
 	}
 
 	cfg := agent.Config{
-		Provider:      openrouter.New(""),
+		Provider:      openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY")}),
 		Model:         *model,
 		System:        *system,
 		Tools:         registry,

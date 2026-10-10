@@ -1,64 +1,65 @@
 // Package openrouter provides an OpenRouter preset over the OpenAI-compatible
-// provider. OpenRouter speaks chat-completions, so the only OpenRouter-specific
-// parts are the base URL, the optional attribution headers, and the API key.
+// provider. OpenRouter speaks chat completions, so the preset only supplies the
+// base URL, the attribution headers OpenRouter asks for, and the API key.
+// Routing preferences travel through Request.ProviderOptions as rendered by
+// Routing.Options, and the model catalog lives in Catalog.
 package openrouter
 
 import (
+	"context"
 	"net/http"
-	"os"
 
-	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/openaicompat"
 )
 
-// DefaultBaseURL is OpenRouter's API root.
-const DefaultBaseURL = "https://openrouter.ai/api/v1"
+// Defaults for the API root and the attribution headers.
+const (
+	// DefaultBaseURL is OpenRouter's chat-completions API root.
+	DefaultBaseURL = "https://openrouter.ai/api/v1"
+	// DefaultReferer is sent as HTTP-Referer for attribution.
+	DefaultReferer = "https://github.com/AutumnsGrove/nova"
+	// DefaultTitle is sent as X-Title for attribution.
+	DefaultTitle = "Nova"
+)
 
-// Option customizes the underlying OpenAI-compatible config.
-type Option func(*openaicompat.Config)
-
-// WithBaseURL overrides the API root (useful for a proxy).
-func WithBaseURL(url string) Option {
-	return func(c *openaicompat.Config) { c.BaseURL = url }
+// Config configures an OpenRouter provider.
+type Config struct {
+	// APIKey is sent as a bearer token. APIKeyFunc wins when both are set.
+	APIKey string
+	// APIKeyFunc supplies the key per request, so a credential resolved by
+	// auth.Resolve is read fresh on every call.
+	APIKeyFunc func(ctx context.Context) (string, error)
+	// BaseURL overrides the API root (useful for a proxy). Default DefaultBaseURL.
+	BaseURL string
+	// Referer is the HTTP-Referer attribution header. Default DefaultReferer.
+	Referer string
+	// Title is the X-Title attribution header. Default DefaultTitle.
+	Title string
+	// HTTPClient overrides the default client.
+	HTTPClient *http.Client
 }
 
-// WithHTTPReferer sets the HTTP-Referer attribution header.
-func WithHTTPReferer(referer string) Option {
-	return func(c *openaicompat.Config) { c.Headers["HTTP-Referer"] = referer }
-}
-
-// WithTitle sets the X-Title attribution header.
-func WithTitle(title string) Option {
-	return func(c *openaicompat.Config) { c.Headers["X-Title"] = title }
-}
-
-// WithHTTPClient overrides the HTTP client.
-func WithHTTPClient(client *http.Client) Option {
-	return func(c *openaicompat.Config) { c.HTTPClient = client }
-}
-
-// New builds an OpenRouter provider. When apiKey is empty, OPENROUTER_API_KEY
-// is read from the environment.
-func New(apiKey string, opts ...Option) *openaicompat.Provider {
-	if apiKey == "" {
-		apiKey = os.Getenv("OPENROUTER_API_KEY")
+// New builds an OpenRouter provider with the attribution headers and the key
+// wired in. It never fails; a missing key is reported by the first request.
+func New(cfg Config) *openaicompat.Provider {
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = DefaultBaseURL
 	}
-	cfg := openaicompat.Config{
-		Name:    "openrouter",
-		BaseURL: DefaultBaseURL,
-		APIKey:  apiKey,
-		Headers: map[string]string{},
+	if cfg.Referer == "" {
+		cfg.Referer = DefaultReferer
 	}
-	for _, opt := range opts {
-		opt(&cfg)
+	if cfg.Title == "" {
+		cfg.Title = DefaultTitle
 	}
-	return openaicompat.New(cfg)
-}
-
-// Register builds an OpenRouter provider and adds it to the global provider
-// registry, returning it for direct use.
-func Register(apiKey string, opts ...Option) *openaicompat.Provider {
-	p := New(apiKey, opts...)
-	provider.Register(p)
-	return p
+	return openaicompat.New(openaicompat.Config{
+		Name:       "openrouter",
+		BaseURL:    cfg.BaseURL,
+		APIKey:     cfg.APIKey,
+		APIKeyFunc: cfg.APIKeyFunc,
+		Headers: map[string]string{
+			"HTTP-Referer": cfg.Referer,
+			"X-Title":      cfg.Title,
+		},
+		HTTPClient: cfg.HTTPClient,
+	})
 }

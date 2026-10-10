@@ -195,6 +195,7 @@ func New(opt Options) (*Server, error) {
 		System:        s.system,
 		Tools:         s.tools,
 		Policy:        &s.policy,
+		Ask:           s.ask,
 		WorkDir:       opt.CWD,
 		Roots:         []string{opt.CWD},
 		SessionID:     s.sessionID(),

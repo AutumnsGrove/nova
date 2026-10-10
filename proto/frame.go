@@ -73,6 +73,7 @@ type Event struct {
 	Type         string           `json:"type"`
 	Seq          int64            `json:"seq,omitempty"`
 	TS           time.Time        `json:"ts,omitempty"`
+	ID           string           `json:"id,omitempty"`
 	Run          string           `json:"run,omitempty"`
 	Turn         *int             `json:"turn,omitempty"`
 	Role         string           `json:"role,omitempty"`

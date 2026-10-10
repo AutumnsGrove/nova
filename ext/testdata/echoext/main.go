@@ -40,10 +40,15 @@ func record(typ string) {
 	trace.Sync()
 }
 
-// env reports whether a variable is set to 1/true.
+// env reports whether a variable is set. A value of 1/true applies to every
+// extension; any other non-empty value applies only to the extension whose
+// name matches, so one test host can script two extensions differently.
 func env(name string) bool {
 	v := os.Getenv(name)
-	return v == "1" || v == "true"
+	if v == "1" || v == "true" {
+		return true
+	}
+	return v != "" && v == os.Getenv("NOVA_EXTENSION")
 }
 
 // envInt reads an integer variable, or the default.
@@ -68,6 +73,10 @@ func main() {
 	if env("ECHO_FORK") {
 		child = exec.Command("sleep", "60")
 		_ = child.Start()
+		if trace != nil {
+			fmt.Fprintf(trace, "CHILD %d\n", child.Process.Pid)
+			trace.Sync()
+		}
 	}
 	_ = child
 
@@ -116,6 +125,21 @@ func main() {
 				registered = true
 				if env("ECHO_REGISTER_TWICE") {
 					sendRegister()
+				}
+			}
+			if env("ECHO_STDERR") {
+				fmt.Fprintln(os.Stderr, "this is stderr")
+			}
+			if env("ECHO_CRASH_AFTER_REGISTER") {
+				os.Exit(3)
+			}
+			if env("ECHO_CRASH_ONCE") {
+				marker := os.Getenv("ECHO_CRASH_MARKER")
+				if marker != "" {
+					if _, err := os.Stat(marker); err != nil {
+						_ = os.WriteFile(marker, []byte("1"), 0o644)
+						os.Exit(3)
+					}
 				}
 			}
 		case "tool_call":

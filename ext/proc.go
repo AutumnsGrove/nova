@@ -112,7 +112,7 @@ func (inst *instance) spawn(_ context.Context) error {
 	inst.mu.Unlock()
 
 	go inst.forwardStderr(stderr)
-	inst.conn = newConn(m.Name, stdout, stdin, &procCloser{stdin: stdin}, inst.host.clock, inst.handle)
+	inst.conn = newConn(m.Name, stdout, stdin, &procCloser{stdin: stdin, stdout: stdout}, inst.host.clock, inst.handle)
 	go inst.waitExit(cmd, done)
 
 	flags := map[string]string{}
@@ -290,6 +290,7 @@ func (inst *instance) supervise() {
 		inst.restarts++
 		inst.mu.Unlock()
 		inst.host.clearRegistrations(inst)
+		inst.setState(stateStarting, "")
 		if err := inst.host.clock.Sleep(context.Background(), restartBackoff<<restarts); err != nil {
 			return
 		}
@@ -341,6 +342,8 @@ func (inst *instance) stop(ctx context.Context) {
 				forceKillGroup(pid)
 			}
 		}
+		// Always kill the group, so a forked child cannot outlive the call.
+		forceKillGroup(pid)
 	}
 	inst.closeConn(errExited)
 	inst.mu.Lock()
@@ -365,9 +368,11 @@ func (inst *instance) waitDone(done <-chan struct{}, d time.Duration) bool {
 	}
 }
 
-// procCloser closes the child's stdin; the process is killed separately.
+// procCloser closes the child's stdin and stdout; the process is killed
+// separately.
 type procCloser struct {
 	stdin  io.WriteCloser
+	stdout io.Closer
 	closed bool
 	mu     sync.Mutex
 }
@@ -379,7 +384,11 @@ func (p *procCloser) Close() error {
 		return nil
 	}
 	p.closed = true
-	return p.stdin.Close()
+	err := p.stdin.Close()
+	if p.stdout != nil {
+		_ = p.stdout.Close()
+	}
+	return err
 }
 
 // childEnv builds the environment for an extension process: the host base,

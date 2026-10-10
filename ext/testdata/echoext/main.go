@@ -89,6 +89,19 @@ func main() {
 					send(map[string]any{"type": "log", "level": "info", "text": "ENV " + n + "=" + os.Getenv(n)})
 				}
 			}
+			if env("ECHO_REPORT_FLAGS") {
+				b, _ := json.Marshal(f["flags"])
+				send(map[string]any{"type": "log", "level": "info", "text": "FLAGS " + string(b)})
+			}
+			if kind := os.Getenv("ECHO_APPEND"); kind != "" {
+				send(map[string]any{"type": "append_entry", "kind": kind, "data": map[string]any{"n": 1}, "keep": true})
+			}
+			if method := os.Getenv("ECHO_UI"); method != "" {
+				send(map[string]any{"type": "ui_request", "id": "u1", "method": method, "title": "t", "message": "m"})
+			}
+			for i := 0; i < envInt("ECHO_COMPLETE_COUNT", 0); i++ {
+				send(map[string]any{"type": "complete", "id": "m" + strconv.Itoa(i), "request": map[string]any{"Model": "x"}})
+			}
 			if env("ECHO_BIG_FRAME") {
 				sendRaw(strings.Repeat("a", 17<<20))
 			}

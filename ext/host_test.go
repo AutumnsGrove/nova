@@ -153,12 +153,40 @@ func startHost(t *testing.T, dirs []string, opt HostOptions) *Host {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if clk, ok := opt.Clock.(*testkit.FakeClock); ok {
-			go clk.Advance(10 * time.Second)
-		}
+		stop := make(chan struct{})
+		go func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					if clk, ok := opt.Clock.(*testkit.FakeClock); ok {
+						clk.Advance(time.Second)
+					}
+					time.Sleep(time.Millisecond)
+				}
+			}
+		}()
 		_ = h.Shutdown(ctx)
+		close(stop)
 	})
 	return h
+}
+
+// envWith returns an Env function that adds kv to the process environment.
+func envWith(kv ...string) func() []string {
+	return func() []string { return append(os.Environ(), kv...) }
+}
+
+// rawEchoDir writes a manifest verbatim, so a test can omit capabilities.
+func rawEchoDir(t *testing.T, name, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	manifest := "name: " + name + "\nversion: 1.0.0\ndescription: test extension\nrun: [\"" + echoBin + "\"]\n" + body
+	if err := os.WriteFile(filepath.Join(dir, "extension.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func TestHost_SUP01_StartRegister(t *testing.T) {

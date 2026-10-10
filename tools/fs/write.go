@@ -10,8 +10,9 @@ import (
 	"github.com/AutumnsGrove/nova/tool"
 )
 
-// Write returns the write tool. It creates parent directories and overwrites
-// the target if it already exists.
+// Write returns the write tool. It creates parent directories, preserves the
+// mode of an existing file, writes through a symlink, and replaces the file
+// atomically so a failure cannot truncate it.
 func Write() tool.Tool {
 	return tool.New(tool.Info{
 		Name:        "write",
@@ -33,18 +34,39 @@ func Write() tool.Tool {
 		if err := json.Unmarshal(args, &in); err != nil {
 			return tool.Result{}, fmt.Errorf("invalid arguments: %w", err)
 		}
+		if len(in.Content) > maxFileBytes {
+			return tool.Errorf("content is %d bytes, over the %d byte limit", len(in.Content), maxFileBytes), nil
+		}
 		abs, err := resolve(tctx, in.Path)
 		if err != nil {
-			return tool.Result{}, err
-		}
-		if dir := filepath.Dir(abs); dir != "" {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return tool.Errorf("%v", err), nil
-			}
-		}
-		if err := os.WriteFile(abs, []byte(in.Content), 0o644); err != nil {
 			return tool.Errorf("%v", err), nil
 		}
-		return tool.Text("wrote %d bytes to %s", len(in.Content), abs), nil
+		unlock := lockPath(abs)
+		defer unlock()
+
+		if info, statErr := os.Stat(abs); statErr == nil && info.IsDir() {
+			return tool.Errorf("%s is a directory", abs), nil
+		}
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			return tool.Errorf("%v", err), nil
+		}
+		target, err := realTarget(abs)
+		if err != nil {
+			return tool.Errorf("%v", err), nil
+		}
+		_, statErr := os.Stat(target)
+		created := os.IsNotExist(statErr)
+		if err := writeAtomic(target, []byte(in.Content), fileMode(target, 0o644)); err != nil {
+			return tool.Errorf("%v", err), nil
+		}
+		verb := "overwrote"
+		if created {
+			verb = "created"
+		}
+		details, _ := json.Marshal(map[string]any{"path": abs, "created": created, "bytes": len(in.Content)})
+		return tool.Result{
+			Content: fmt.Sprintf("wrote %d bytes to %s (%s)", len(in.Content), abs, verb),
+			Details: details,
+		}, nil
 	})
 }

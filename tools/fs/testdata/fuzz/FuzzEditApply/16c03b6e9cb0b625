@@ -1,0 +1,6 @@
+go test fuzz v1
+string("\x00xy")
+string("x")
+string("0")
+string("y")
+string("0")

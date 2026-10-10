@@ -1,0 +1,6 @@
+go test fuzz v1
+string("ac")
+string("a")
+string("0")
+string("c")
+string("\xff")

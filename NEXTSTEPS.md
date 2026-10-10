@@ -5,12 +5,12 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 and C01 are done. `message`, the `provider` contract, and `testkit` exist; `accept C01` and `make ci`
-pass. `matrixcheck-all`/`linecount-all` guard only chunks whose Status below is `done`.
+**State:** C00, C01, and C02 are done. `accept C02` and `make ci` pass. `message`, the `provider`
+contract, `testkit`, and the `openaicompat` streaming provider exist.
 
-**Next:** run **C02** (`docs/chunks/C02-openaicompat.md`): the `openaicompat` streaming provider. It starts from the
-prototype's `provider/openaicompat/openaicompat.go` and its test; keep only what the spec says to keep. Then C04 and C08
-(independent, one at a time), then C05, C06, C07, C11, C09, C10, C03, C12.
+**Next:** run **C04** (`docs/chunks/C04-tool-permission.md`): the tool contract, registry, and permission
+policy. C04 and C08 are independent, one at a time. Then C05, C06, C07, C11, C09, C10, C03, C12. C04 does
+not need `testkit` yet, but remember D48: any package's `_test.go` may import it.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -23,7 +23,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 |---|---|---|---|---|---|
 | C00 | Guards | done | — | 2026-10-09 | |
 | C01 | Message, provider contract, testkit | done | C00 | 2026-10-09 | |
-| C02 | openaicompat streaming provider | todo | C01 | | |
+| C02 | openaicompat streaming provider | done | C01 | 2026-10-09 | |
 | C03 | OpenRouter preset, login, model catalog | todo | C02 | | |
 | C04 | Tool contract, registry, permission policy | todo | C01 | | |
 | C05 | Filesystem tools | todo | C04 | | |
@@ -45,6 +45,42 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C02 — openaicompat streaming provider — 2026-10-09 — pi — main — cost not visible
+
+Rebuilt `provider/openaicompat` from the prototype so every path in `TESTING.md` section 3 is correct.
+
+- `provider/openaicompat/wire.go` — wire message/request/chunk/usage/error types; options merge via `json` map.
+- `provider/openaicompat/errors.go` — `httpError`, `bodyError`, `stripHTML`, and 200-stream error objects.
+- `provider/openaicompat/stream.go` — `lineReader` (line numbers, `MaxLineBytes`), `assembler`, `consume`.
+- `provider/openaicompat/openaicompat.go` — `Config`, `New`, `Stream`, `buildBody`, header precedence,
+  `APIKeyFunc`, connect and idle timeouts.
+- `provider/openaicompat/openaicompat_test.go` — OAI01–OAI62, `FuzzStream`, `FuzzToolCallAssembly`.
+- `testkit/server.go` — finish reasons, `ServerTurn.Raw`, `Fault401`, OpenAI usage detail objects (C01's
+  handoff asked for this).
+- `scripts/importcheck`, `docs/DECISIONS.md` D48, `docs/ARCHITECTURE.md` — test-only `testkit` imports.
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C02` passes all nine steps; `make ci` exits 0.
+
+**Differed from spec:**
+- C02's tests use `testkit.Server`, but the layer rule lets `provider` import only `message`. The human chose
+  to allow test-only `testkit` imports; recorded as D48 and covered by a new importcheck test.
+- The idle timeout is enforced by a timer that cancels the request context, not by a reader goroutine (and
+  not by `ResponseController`, which is server-only). Same behaviour, fewer lines.
+- C02's Files table omits `testkit/server.go`; it was extended, as C01's handoff asked.
+
+**Gotchas:**
+- `net/http`'s server does not always notice a client close while a handler with an unread request body is
+  blocked. The header-less and stalling servers in the tests need a release channel, or `httptest.Server.Close`
+  wedges and the test times out in cleanup.
+- A cut-off SSE line without a newline is `errTruncatedLine` (retryable), not malformed JSON; `FaultCutMidEvent`
+  depends on that distinction.
+- `testkit`'s fault bodies (`FaultMalformedJSON`, `FaultHugeChunk`) return before `writeTurn`, so they carry no
+  finish reason.
+- `openaicompat` is at 597 code lines against the 600 budget; comments do not count, but new code will need
+  something removed.
+
+**One command:** `go run ./scripts/accept C02`.
 
 ### C01 — Message, provider contract, testkit — 2026-10-09 — pi — main — cost not visible
 
@@ -107,6 +143,13 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
+- C02 Files table: it says `provider/openaicompat/*_test.go` "uses testkit.Server", but the layer rule
+  (`provider` may only import `message`) forbade that. Resolved by D48 (test-only `testkit` imports),
+  human-approved 2026-10-09.
+- C02 Files table: it omits `testkit/server.go`, which must carry `finish_reason`, `ServerTurn.Raw`, and the
+  OpenAI usage detail objects for the matrix to be testable; later drafts should list it.
+- C02 Behaviour 12: "naming the line number" is implemented as the physical SSE line (blank lines count).
+  Say so explicitly if a data-line ordinal was intended instead.
 - C00: `packages`/`budgets` omitted `./scripts/spec`, where the SPC01–SPC14 tests live, so
   `accept C00` could not run or count them. Applied: added `./scripts/spec` with budget 250 (human-approved
   2026-10-09).
@@ -131,4 +174,4 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Cost
 
-Total: $0.00 recorded; the C00 session cost was not visible.
+Total: $0.00 recorded; the C00, C01, and C02 session costs were not visible.

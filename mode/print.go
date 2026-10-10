@@ -39,6 +39,10 @@ func RunPrint(ctx context.Context, s *Server, prompt string, out, errOut io.Writ
 				if ev.Call != nil {
 					fmt.Fprintf(errOut, "· %s\n", ev.Call.Name)
 				}
+			case proto.EventError:
+				if ev.Error != nil {
+					fmt.Fprintln(errOut, ev.Error.Message)
+				}
 			case proto.EventMessageEnd:
 				if ev.Message != nil && ev.Message.Role == message.RoleAssistant && ev.Message.Content != "" {
 					answer = ev.Message.Content

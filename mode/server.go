@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
+	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/provider/openrouter"
 	"github.com/AutumnsGrove/nova/session"
 	"github.com/AutumnsGrove/nova/tool"
 )
@@ -57,6 +59,8 @@ type Options struct {
 	Clock       Clock
 	Interactive bool // whether a UI client is attached (affects permission "ask")
 	Version     string
+	Tools       []string // explicit active tool set; nil means use the config
+	NoTools     bool     // register no tools at all
 }
 
 // subscriber is one event consumer.
@@ -74,6 +78,8 @@ type Server struct {
 	clock     Clock
 
 	prov      provider.Provider
+	usesAuth  bool
+	keyStore  auth.Store
 	tools     *tool.Registry
 	pool      map[string]tool.Tool
 	active    []string
@@ -123,6 +129,9 @@ func New(opt Options) (*Server, error) {
 		clock = realClock{}
 	}
 	cfg := opt.Config
+	if cfg.Model == "" {
+		cfg.Model = openrouter.DefaultModel
+	}
 	s := &Server{
 		opt:       opt,
 		cfg:       cfg,
@@ -137,6 +146,8 @@ func New(opt Options) (*Server, error) {
 	}
 	s.prov = opt.Provider
 	if s.prov == nil {
+		s.usesAuth = true
+		s.keyStore = auth.NewFileStore(keyPath(home))
 		s.prov = buildProvider(cfg, home)
 	}
 	tools, pool, err := buildTools(cfg)
@@ -148,6 +159,14 @@ func New(opt Options) (*Server, error) {
 	s.active = append([]string(nil), cfg.Tools.Active...)
 	if len(s.active) == 0 {
 		s.active = append([]string(nil), defaultToolNames...)
+	}
+	if opt.NoTools {
+		s.active = nil
+	} else if opt.Tools != nil {
+		s.active = append([]string(nil), opt.Tools...)
+	}
+	if err := registerTools(s.tools, s.pool, s.active); err != nil {
+		return nil, err
 	}
 	s.policy = cfg.Permissions
 

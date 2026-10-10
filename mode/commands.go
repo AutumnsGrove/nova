@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
+	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/session"
@@ -55,6 +57,11 @@ func (s *Server) dispatch(ctx context.Context, cmd proto.Command) proto.Response
 func (s *Server) handlePrompt(cmd proto.Command) proto.Response {
 	if strings.TrimSpace(cmd.Text) == "" {
 		return failResponse(cmd, proto.CodeBadRequest, "prompt: text is required")
+	}
+	if s.usesAuth {
+		if _, _, err := auth.Resolve("", os.Getenv, s.keyStore); err != nil {
+			return failResponse(cmd, proto.CodeProviderError, `no API key: run "nova login" or set OPENROUTER_API_KEY`)
+		}
 	}
 	if s.agent.Running() {
 		if !cmd.Queue {

@@ -50,6 +50,9 @@ func validGlob(pattern string) bool {
 	return ok
 }
 
+// ValidPath reports whether pattern is a path glob that MatchPath can use.
+func ValidPath(pattern string) bool { return validGlob(pattern) }
+
 // compileGlob translates a glob into an anchored regular expression. The
 // translation runs on bytes so multibyte literals pass through unchanged.
 // It returns false for an unbalanced character class.

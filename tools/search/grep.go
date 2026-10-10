@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -102,7 +103,7 @@ func Grep() tool.Tool {
 			limit = maxGrepLimit
 		}
 		globBase := strings.TrimSuffix(in.Glob, "/")
-		if globBase != "" && !globValid(globBase) {
+		if globBase != "" && !permission.ValidPath(globBase) {
 			return tool.Errorf("invalid glob: %s", in.Glob), nil
 		}
 		if in.Path == "" {
@@ -188,8 +189,8 @@ func loadGrepLines(path string) (text []string, long []bool, skipped int, ok boo
 		return nil, nil, 0, false
 	}
 	defer f.Close()
-	data, err := readLimited(f, maxGrepFileBytes)
-	if err != nil || data == nil {
+	data, err := io.ReadAll(io.LimitReader(f, maxGrepFileBytes+1))
+	if err != nil || len(data) > maxGrepFileBytes {
 		return nil, nil, 0, false
 	}
 	sniff := data
@@ -199,9 +200,17 @@ func loadGrepLines(path string) (text []string, long []bool, skipped int, ok boo
 	if bytes.IndexByte(sniff, 0) >= 0 {
 		return nil, nil, 0, false
 	}
-	for rest := data; len(rest) > 0; {
-		raw, tail := nextLine(rest)
-		rest = tail
+	for len(data) > 0 {
+		i := bytes.IndexByte(data, '\n')
+		raw := data
+		if i >= 0 {
+			raw, data = data[:i], data[i+1:]
+		} else {
+			data = nil
+		}
+		if len(raw) > 0 && raw[len(raw)-1] == '\r' {
+			raw = raw[:len(raw)-1]
+		}
 		if len(raw) > maxGrepLineBytes {
 			text, long, skipped = append(text, ""), append(long, true), skipped+1
 			continue
@@ -209,32 +218,6 @@ func loadGrepLines(path string) (text []string, long []bool, skipped int, ok boo
 		text, long = append(text, string(raw)), append(long, false)
 	}
 	return text, long, skipped, true
-}
-
-// readLimited reads at most limit bytes; it returns nil when the file is larger.
-func readLimited(f *os.File, limit int) ([]byte, error) {
-	data, err := io.ReadAll(io.LimitReader(f, int64(limit)+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > limit {
-		return nil, nil
-	}
-	return data, nil
-}
-
-// nextLine splits off the next line, without its newline and without a trailing
-// carriage return.
-func nextLine(data []byte) (line, rest []byte) {
-	if i := bytes.IndexByte(data, '\n'); i >= 0 {
-		line, rest = data[:i], data[i+1:]
-	} else {
-		line, rest = data, nil
-	}
-	if len(line) > 0 && line[len(line)-1] == '\r' {
-		line = line[:len(line)-1]
-	}
-	return line, rest
 }
 
 // matchGrepLines returns the 1-based numbers of lines matching re. Lines marked

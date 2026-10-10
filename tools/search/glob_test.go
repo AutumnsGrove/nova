@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -166,7 +167,7 @@ func FuzzGlobPattern(f *testing.F) {
 		if len(pattern) > 1024 || len(target) > 1024 {
 			t.Skip()
 		}
-		globValid(pattern)
+		permission.ValidPath(pattern)
 		globMatch(strings.TrimSuffix(pattern, "/"), target)
 	})
 }

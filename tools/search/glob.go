@@ -55,7 +55,7 @@ func Glob() tool.Tool {
 		}
 		dirsOnly := strings.HasSuffix(in.Pattern, "/")
 		base := strings.TrimSuffix(in.Pattern, "/")
-		if base == "" || !globValid(base) {
+		if base == "" || !permission.ValidPath(base) {
 			return tool.Errorf("invalid pattern: %s", in.Pattern), nil
 		}
 		if in.Path == "" {
@@ -126,28 +126,4 @@ func globMatch(pattern, rel string) bool {
 		return permission.MatchPath(pattern, rel)
 	}
 	return permission.MatchPath(pattern, path.Base(rel))
-}
-
-// globValid reports whether pattern is a glob the matcher can use. It mirrors
-// the one invalid case the matcher rejects: an unbalanced character class.
-func globValid(pattern string) bool {
-	for i := 0; i < len(pattern); i++ {
-		if pattern[i] != '[' {
-			continue
-		}
-		i++
-		if i < len(pattern) && (pattern[i] == '!' || pattern[i] == '^') {
-			i++
-		}
-		if i < len(pattern) && pattern[i] == ']' {
-			i++
-		}
-		for i < len(pattern) && pattern[i] != ']' {
-			i++
-		}
-		if i >= len(pattern) {
-			return false
-		}
-	}
-	return true
 }

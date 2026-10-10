@@ -2,19 +2,27 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/testkit"
 )
 
 // runCLI calls run with a fresh stdin and returns the exit code and output.
 func runCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
+	return runCLIStdin(t, "", args...)
+}
+
+// runCLIStdin calls run with the given stdin.
+func runCLIStdin(t *testing.T, stdin string, args ...string) (int, string, string) {
+	t.Helper()
 	var out, errOut bytes.Buffer
-	code := run(args, strings.NewReader(""), &out, &errOut, true)
+	code := run(args, strings.NewReader(stdin), &out, &errOut, true)
 	return code, out.String(), errOut.String()
 }
 
@@ -146,5 +154,156 @@ func TestCLI_FUL01_ReadEditAnswer(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "new") {
 		t.Fatalf("file was not edited: %q", data)
+	}
+}
+
+// withServer points the CLI at a testkit server and sets a dummy key and home.
+func withServer(t *testing.T, srv *testkit.Server) {
+	t.Helper()
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
+	t.Setenv("NOVA_OPENROUTER_BASE_URL", srv.URL)
+	t.Setenv("HOME", t.TempDir())
+}
+
+func TestCLI_PRI03_PromptFromStdin(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	withServer(t, srv)
+	code, out, errOut := runCLIStdin(t, "hello from stdin", "--cwd", t.TempDir(), "--no-session", "-p", "-")
+	if code != 0 || out != "ok\n" {
+		t.Fatalf("exit = %d out = %q stderr = %q", code, out, errOut)
+	}
+	if body := string(srv.Requests()[0].Body); !strings.Contains(body, "hello from stdin") {
+		t.Fatalf("request did not carry the stdin prompt: %s", body)
+	}
+}
+
+func TestCLI_PRI04_StdinAppendedFenced(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	withServer(t, srv)
+	var out, errOut bytes.Buffer
+	code := run([]string{"--cwd", t.TempDir(), "--no-session", "-p", "explain"}, strings.NewReader("PIPED CONTENT"), &out, &errOut, false)
+	if code != 0 {
+		t.Fatalf("exit = %d stderr = %q", code, errOut.String())
+	}
+	body := string(srv.Requests()[0].Body)
+	if !strings.Contains(body, "explain") || !strings.Contains(body, "PIPED CONTENT") || !strings.Contains(body, "```") {
+		t.Fatalf("request missing the fenced stdin block: %s", body)
+	}
+}
+
+func TestCLI_PRI05_EmptyPrompt(t *testing.T) {
+	code, _, _ := runCLIStdin(t, "", "--cwd", t.TempDir(), "-p", "-")
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+}
+
+func TestCLI_PRI07_Exhausted(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{ToolCalls: []testkit.Call{{ID: "c1", Name: "read", Args: `{"path":"none"}`}}}})
+	withServer(t, srv)
+	code, _, _ := runCLI(t, "--cwd", t.TempDir(), "--no-session", "--max-turns", "1", "-p", "go")
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3 (exhausted)", code)
+	}
+}
+
+func TestCLI_PRI09_ToolErrorKeepsExitZero(t *testing.T) {
+	srv := testkit.NewServer(t,
+		testkit.ServerTurn{Turn: testkit.Turn{ToolCalls: []testkit.Call{{ID: "c1", Name: "read", Args: `{"path":"does-not-exist"}`}}}},
+		testkit.ServerTurn{Turn: testkit.Turn{Text: "recovered"}},
+	)
+	withServer(t, srv)
+	code, out, errOut := runCLI(t, "--cwd", t.TempDir(), "--no-session", "-p", "go")
+	if code != 0 || out != "recovered\n" {
+		t.Fatalf("exit = %d out = %q stderr = %q", code, out, errOut)
+	}
+}
+
+func TestCLI_PRI10_PermissionDeniedByHeadless(t *testing.T) {
+	srv := testkit.NewServer(t,
+		testkit.ServerTurn{Turn: testkit.Turn{ToolCalls: []testkit.Call{{ID: "c1", Name: "write", Args: `{"path":"out.txt","content":"x"}`}}}},
+		testkit.ServerTurn{Turn: testkit.Turn{Text: "done"}},
+	)
+	withServer(t, srv)
+	cwd := t.TempDir()
+	code, _, _ := runCLI(t, "--cwd", cwd, "--no-session", "-p", "write it")
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "out.txt")); err == nil {
+		t.Fatal("write should have been denied without --yes")
+	}
+}
+
+func TestCLI_PRI11_YesAllowsAndWarns(t *testing.T) {
+	srv := testkit.NewServer(t,
+		testkit.ServerTurn{Turn: testkit.Turn{ToolCalls: []testkit.Call{{ID: "c1", Name: "write", Args: `{"path":"out.txt","content":"x"}`}}}},
+		testkit.ServerTurn{Turn: testkit.Turn{Text: "done"}},
+	)
+	withServer(t, srv)
+	cwd := t.TempDir()
+	code, _, errOut := runCLI(t, "--cwd", cwd, "--no-session", "--yes", "-p", "write it")
+	if code != 0 {
+		t.Fatalf("exit = %d stderr = %q", code, errOut)
+	}
+	if !strings.Contains(errOut, "--yes") {
+		t.Fatalf("stderr should warn about --yes: %q", errOut)
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "out.txt")); err != nil {
+		t.Fatalf("write should have run with --yes: %v", err)
+	}
+}
+
+func TestCLI_JSN01_EventStream(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "42"}})
+	withServer(t, srv)
+	code, out, errOut := runCLI(t, "--cwd", t.TempDir(), "--no-session", "--mode", "json", "-p", "hi")
+	if code != 0 {
+		t.Fatalf("exit = %d stderr = %q", code, errOut)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("want multiple JSONL events, got %q", out)
+	}
+	if !strings.Contains(lines[0], `"type":"run_start"`) || !strings.Contains(lines[len(lines)-1], `"type":"run_end"`) {
+		t.Fatalf("first/last = %q / %q", lines[0], lines[len(lines)-1])
+	}
+	for _, line := range lines {
+		var ev proto.Event
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("line is not a JSON event: %v (%s)", err, line)
+		}
+	}
+}
+
+func TestCLI_JSN02_NoOtherOutput(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "42"}})
+	withServer(t, srv)
+	code, out, _ := runCLI(t, "--cwd", t.TempDir(), "--no-session", "--mode", "json", "-p", "hi")
+	if code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "{") {
+			t.Fatalf("stdout has a non-frame line: %q", line)
+		}
+	}
+}
+
+func TestCLI_JSN03_ExitCodesMatchPrint(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Fault: testkit.Fault401})
+	withServer(t, srv)
+	code, _, _ := runCLI(t, "--cwd", t.TempDir(), "--no-session", "--mode", "json", "-p", "hi")
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+}
+
+func TestCLI_JSN04_NoHello(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "42"}})
+	withServer(t, srv)
+	_, out, _ := runCLI(t, "--cwd", t.TempDir(), "--no-session", "--mode", "json", "-p", "hi")
+	if strings.Contains(out, `"hello"`) {
+		t.Fatalf("JSON mode must not write a hello frame: %s", out)
 	}
 }

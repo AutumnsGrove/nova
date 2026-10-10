@@ -131,7 +131,7 @@ type rootOptions struct {
 
 // runRoot executes a normal (non-subcommand) invocation.
 func runRoot(ctx context.Context, o rootOptions) (int, error) {
-	if o.prompt != "" && o.mode != "" && o.mode != "print" {
+	if o.prompt != "" && (o.mode == "rpc" || o.mode == "tui") {
 		return 0, fmt.Errorf("nova: -p cannot be combined with --mode %s", o.mode)
 	}
 	cwd, err := resolveCWD(o.cwd)

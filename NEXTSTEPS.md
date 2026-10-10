@@ -55,54 +55,59 @@ Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, 
 
 ### C12 (in progress) — Modes and `cmd/nova` — 2026-10-10 — pi — main — cost not visible
 
-Started C12 and left the tree green in three commits. `make ci` exits 0; `accept C12` does **not**
-pass yet (the matrix is mostly untested and two files are missing).
+Pushed C12 much further in seven green commits. `make ci` exits 0; `accept C12` still does **not**
+pass (the matrix rows and the L2 binary harness remain).
 
 **Built so far:**
-- `mode/wire.go` — `buildProvider` (lazy OpenRouter key via `auth.Resolve`), `buildTools`/`registerTools`,
-  `registryInfos`, `buildSystemPrompt`, `modelSlug`/`modelWindow`, `compactionSettings`, `findRoot`,
-  `defaultSessionPath`, `randomID`.
+- `mode/wire.go` — provider/tools/registry/system-prompt/compaction wiring.
 - `mode/server.go` — `Options`, `Server`, `New`, `Subscribe`/`emit` (per-subscriber `seq`, slow
-  subscriber dropped with a final `error`), `onMessage` persistence, `history`, `beforeProviderRequest`
-  (live model/thinking), `beforeTurn` (compaction), `run`, `Close`, `SetUIHandler`.
-- `mode/commands.go` — `Handle` with panic recovery, `dispatch`, and handlers for `prompt`, `steer`,
-  `follow_up`, `abort`, `get_state`, `set_model`, `set_thinking`, `set_context_limit`, `set_tools`,
-  `shutdown`; the auth gate returns `provider_error` with the login hint.
-- `mode/print.go`, `mode/json.go`, `mode/rpc.go`, `mode/prompt.go` + `prompt.md`.
-- `cmd/nova/main.go` — cobra root (all documented flags) plus `version`, `models`, `sessions`,
-  `login`, `logout`; `--continue` finds the newest session; print/JSON/RPC selection; exit codes.
-- Tests: `PRI01`, `PRI02`, `SRV02`, `SRV03` (busy), unknown-command, and `get_state` field coverage.
+  subscriber dropped with a final `error`), persistence, `history`, `beforeProviderRequest`,
+  `beforeTurn` (compaction), `transformContext` (live reload), `run`, `Close`.
+- `mode/commands.go` — `Handle` with panic recovery and dispatch for prompt/steer/follow_up/abort,
+  get_state, set_model/thinking/context_limit/tools, compact, get_messages, get_commands, list_models,
+  session.list/tree/navigate/name/new/resume/fork, run_command, bash, reload, shutdown.
+- `mode/handlers.go`; `mode/ui.go` (permission ask, `AnswerUI`, `ui_expired`); `mode/pipe.go`
+  (`Client`, `NewPipe`, capability filtering); `mode/print.go`; `mode/json.go`; `mode/rpc.go` (UI routing);
+  `mode/prompt.go` + `prompt.md`.
+- `cmd/nova/main.go` — cobra root (all documented flags) plus `version`, `models`, `sessions`, `login`,
+  `logout`; `--continue` resolves the newest session.
 - `go.mod` gained `github.com/spf13/cobra v1.10.2` (D45, cached).
+- Tests: SRV01, SRV02, SRV03, SRV04, SRV05, SRV06, SRV07, SRV08, SRV09, SRV10, SRV12, SRV13, SRV14,
+  SRV16, SRV20, SRV21, SRV29, SRV30, SRV33, SRV34, SRV36, SRV44, PRI01, PRI02, RPC01, RPC04.
 
-**Not yet done (C12):** `mode/builtin.go` and `mode/pipe.go`; permissions/UI (`Ask`, `AnswerUI`,
-`ui_request`/`ui_expired`); the session.*/reload/get_messages/get_commands/list_models/session.list/
-run_command/bash/compact handlers; `docs` and `completion`; and almost all matrix rows (SRV04–SRV44,
-JSN*, RPC*, CLI*, FUL*, `FuzzRPCLoop`, `TestProperty_SRV_EventOrder`).
-
-**Unsatisfied matrix rows:** all except PRI01, PRI02, SRV02, SRV03, SRV20 (partial).
+**Remaining C12 work:** `nova docs`; `mode/builtin.go` (built-ins were folded into `handlers.go`
+instead); and these matrix rows: SRV11, SRV15, SRV17–SRV19, SRV22–SRV28, SRV31, SRV32, SRV35,
+SRV37–SRV43, PRI03–PRI11, JSN01–JSN04, RPC02, RPC03, RPC05–RPC14, CLI01–CLI18, FUL01–FUL05,
+`FuzzRPCLoop`, and `TestProperty_SRV_EventOrder`. The L2 harness (build the binary once in `TestMain`
+and drive it against `testkit.Server`) is not written; most CLI/JSN/RPC/FUL rows need it.
 
 **Differed from spec:**
+- `proto.Event` gained an `ID string` field (json `id`) for `ui_expired { id }`; the C08 struct had no
+  such field. Small, additive; C08 tests still pass.
 - `mode.Options` gained `Tools []string` and `NoTools bool`, because `Config.Tools.Active` cannot say
   "no tools" (empty means the default set).
 - `New` defaults an empty `Config.Model` to `openrouter.DefaultModel`. Without this, `agent.Run`
-  returns a config error before emitting any event, and print mode waits for a `run_end` that never
-  comes. The agent should arguably emit `run_end(error)` for a config error; left as a C09 follow-up.
-- The missing-key check is synchronous in `handlePrompt` (provider_error + login hint, per behaviour 1)
-  rather than a failed first turn.
-- RPC currently handles commands sequentially in the read loop and writes responses/events under one
-  writer mutex; ordering and concurrency rules are only partly satisfied. `pipe.go` is not written.
-- `cmd/nova docs` is not implemented (embedding `docs/*.md` needs a package at the repo root or an
-  embed path inside the module); `completion` comes free from cobra.
+  returns a config error before emitting any event and print/RPC wait for a `run_end` that never comes.
+  C09 should probably emit `run_end(error)` for a pre-run config error.
+- The missing-key check is synchronous in `handlePrompt` (provider_error + login hint, behaviour 1).
+- `mode/builtin.go` was not created; the slash-command table and handlers live in `handlers.go`.
+- RPC handles commands sequentially in the read loop and writes responses/events under one mutex;
+  ordering is close but not the stated guarantee. `ui_caps` starts empty and is filled from the
+  client's hello, so asks before a hello resolve headless.
+- A subscriber with a full buffer loses its oldest event to make room for the final `error`, so a
+  buffer-size-1 subscriber still sees it (SRV13).
+- `cmd/nova docs` and `--resume` are not implemented; `completion` comes free from cobra.
 
 **Gotchas:**
-- `go run ./cmd/nova -p hi` with no key now exits 1 and prints the login hint on stderr. With a
-  reachable-but-refused base URL it retries with backoff for up to ~90 s; that is the agent retry
-  policy, not a hang (found while debugging the empty-model bug).
+- Empty `Config.Model` made `agent.Run` return before emitting any event, hanging print mode; always
+  default the model. `agent.Run` should arguably emit `run_end(error)`.
+- `go run ./cmd/nova -p hi` with no key exits 1 with the login hint; with a refused base URL it retries
+  with backoff for ~90 s (agent retry policy, not a hang).
 - `config.Load` returns `*Config`; do not take its address.
 - Build the binary with `go build -o /tmp/nova ./cmd/nova` when testing flags; `go run` obscures the
   exit code.
 
-**One command:** `go run ./scripts/accept C11` still passes; C12 is not ready for its acceptance run.
+**One command:** `go test -short -race ./mode/ ./cmd/nova/`; `go run ./scripts/accept C11` still passes.
 
 ### C11 — Configuration and resources — 2026-10-10 — pi — main — cost not visible
 
@@ -805,6 +810,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   but not the stated ordering.
 - C12 mode line budget `./mode: 1400`: currently 890 with roughly half the handlers and no `builtin.go`/
   `pipe.go`; expect it to be tight, but no raise is requested yet.
+- C12/PROTOCOL: `proto.Event` has no `ID` field, but `ui_expired { id }` needs one. Applied: added
+  `ID string` (json `id`, `omitempty`) to `proto.Event`; C08 tests still pass.
 
 ## Decisions to record
 

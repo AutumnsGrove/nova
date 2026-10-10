@@ -161,15 +161,22 @@ func main() {
 		case "hook":
 			id, _ := f["id"].(string)
 			result := map[string]any{}
+			event, _ := f["event"].(map[string]any)
 			if env("ECHO_HOOK_BLOCK") {
 				result["block"] = true
-				result["reason"] = os.Getenv("ECHO_HOOK_REASON")
+				result["reason"] = envString("ECHO_HOOK_REASON")
 			}
-			if a := os.Getenv("ECHO_HOOK_ARGS"); a != "" {
+			if a := envString("ECHO_HOOK_ARGS"); a != "" {
 				var args any
 				if json.Unmarshal([]byte(a), &args) == nil {
 					result["arguments"] = args
 				}
+			}
+			if env("ECHO_HOOK_ECHO") && event != nil {
+				result["arguments"] = event["arguments"]
+			}
+			if c := envString("ECHO_HOOK_RESULT"); c != "" {
+				result["result"] = map[string]any{"content": c}
 			}
 			if env("ECHO_HOOK_END") {
 				result["end"] = true
@@ -177,7 +184,14 @@ func main() {
 			if env("ECHO_HOOK_CONTINUE") {
 				result["continue"] = true
 			}
+			if t := envString("ECHO_HOOK_INJECT"); t != "" {
+				result["inject"] = []any{map[string]any{"role": "user", "content": t}}
+			}
 			if env("ECHO_HOOK_NO_ANSWER") {
+				continue
+			}
+			if env("ECHO_HOOK_BAD") {
+				send(map[string]any{"type": "hook_result", "id": id, "result": "not an object"})
 				continue
 			}
 			send(map[string]any{"type": "hook_result", "id": id, "result": result})
@@ -207,6 +221,15 @@ func sendRaw(line string) {
 	out.WriteString(line)
 	out.WriteByte('\n')
 	out.Flush()
+}
+
+// envString reads a variable, preferring the per-extension suffix form
+// NAME_<extension> so one host can script two extensions differently.
+func envString(name string) string {
+	if v := os.Getenv(name + "_" + os.Getenv("NOVA_EXTENSION")); v != "" {
+		return v
+	}
+	return os.Getenv(name)
 }
 
 // sendRegister declares the tools, commands, and hooks this run wants.

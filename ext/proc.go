@@ -153,7 +153,10 @@ func (inst *instance) replay() {
 	if inst.host.opt.Session == nil {
 		return
 	}
-	for _, kind := range inst.entryKinds {
+	inst.mu.Lock()
+	kinds := append([]string(nil), inst.entryKinds...)
+	inst.mu.Unlock()
+	for _, kind := range kinds {
 		for _, data := range inst.host.opt.Session.Entries(kind) {
 			_ = inst.conn.notify(&outFrame{Type: "replay", Kind: kind, Data: data})
 		}

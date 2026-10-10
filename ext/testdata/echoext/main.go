@@ -90,7 +90,12 @@ func main() {
 			continue
 		}
 		typ, _ := f["type"].(string)
-		record(typ)
+		if typ == "replay" {
+			kind, _ := f["kind"].(string)
+			record("replay:" + kind)
+		} else {
+			record(typ)
+		}
 		switch typ {
 		case "init":
 			if names := os.Getenv("ECHO_REPORT_ENV"); names != "" {

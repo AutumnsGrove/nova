@@ -60,7 +60,7 @@ func (p *peer) recv() map[string]any {
 	return m
 }
 
-func TestSDK01_Handshake(t *testing.T) {
+func TestSDK_SDK01_Handshake(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.Tool(Tool{Name: "hello", Description: "d", Params: Object(String("name", "n"))}, func(*Call) (Result, error) {
 			return Text("hi"), nil
@@ -70,7 +70,7 @@ func TestSDK01_Handshake(t *testing.T) {
 	_ = p
 }
 
-func TestSDK02_ToolHandler(t *testing.T) {
+func TestSDK_SDK02_ToolHandler(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.Tool(Tool{Name: "echo"}, func(c *Call) (Result, error) {
 			return Text("got %s", c.String("x")), nil
@@ -84,7 +84,7 @@ func TestSDK02_ToolHandler(t *testing.T) {
 	}
 }
 
-func TestSDK03_HandlerError(t *testing.T) {
+func TestSDK_SDK03_HandlerError(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.Tool(Tool{Name: "bad"}, func(*Call) (Result, error) {
 			return Result{}, io.ErrUnexpectedEOF
@@ -98,7 +98,7 @@ func TestSDK03_HandlerError(t *testing.T) {
 	}
 }
 
-func TestSDK04_HandlerPanic(t *testing.T) {
+func TestSDK_SDK04_HandlerPanic(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.Tool(Tool{Name: "boom"}, func(*Call) (Result, error) { panic("x") })
 		return nil
@@ -114,7 +114,7 @@ func TestSDK04_HandlerPanic(t *testing.T) {
 	}
 }
 
-func TestSDK05_Deadline(t *testing.T) {
+func TestSDK_SDK05_Deadline(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.Tool(Tool{Name: "d"}, func(c *Call) (Result, error) {
 			dl, ok := c.Context().Deadline()
@@ -133,7 +133,7 @@ func TestSDK05_Deadline(t *testing.T) {
 	}
 }
 
-func TestSDK06_HookHandler(t *testing.T) {
+func TestSDK_SDK06_HookHandler(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.On("tool_call", func(*Hook) (*HookDecision, error) {
 			return &HookDecision{Block: true, Reason: "no"}, nil
@@ -148,7 +148,7 @@ func TestSDK06_HookHandler(t *testing.T) {
 	}
 }
 
-func TestSDK07_UIHelpers(t *testing.T) {
+func TestSDK_SDK07_UIHelpers(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.Tool(Tool{Name: "ask"}, func(c *Call) (Result, error) {
 			if err := c.UI.Notify("hello", "info"); err != nil {
@@ -175,7 +175,7 @@ func TestSDK07_UIHelpers(t *testing.T) {
 	}
 }
 
-func TestSDK08_AppendEntryAndEntries(t *testing.T) {
+func TestSDK_SDK08_AppendEntryAndEntries(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.Tool(Tool{Name: "read"}, func(*Call) (Result, error) {
 			return Text("%d", len(h.Entries("todo.state"))), nil
@@ -190,7 +190,7 @@ func TestSDK08_AppendEntryAndEntries(t *testing.T) {
 	}
 }
 
-func TestSDK09_Complete(t *testing.T) {
+func TestSDK_SDK09_Complete(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.Tool(Tool{Name: "c"}, func(c *Call) (Result, error) {
 			raw, err := h.Complete(c.Context(), map[string]any{"Model": "x"})
@@ -213,7 +213,7 @@ func TestSDK09_Complete(t *testing.T) {
 	}
 }
 
-func TestSDK10_CleanExit(t *testing.T) {
+func TestSDK_SDK10_CleanExit(t *testing.T) {
 	p := startSDK(t, func(*Host) error { return nil })
 	p.send(map[string]any{"type": "shutdown"})
 	select {
@@ -226,7 +226,7 @@ func TestSDK10_CleanExit(t *testing.T) {
 	}
 }
 
-func TestSDK10_EOFExit(t *testing.T) {
+func TestSDK_SDK10_EOFExit(t *testing.T) {
 	p := startSDK(t, func(*Host) error { return nil })
 	_ = p.inW.Close()
 	select {
@@ -236,7 +236,7 @@ func TestSDK10_EOFExit(t *testing.T) {
 	}
 }
 
-func TestSDK11_SchemaHelpers(t *testing.T) {
+func TestSDK_SDK11_SchemaHelpers(t *testing.T) {
 	schema := Object(String("name", "Who", Required), Int("count", "How many"), Bool("flag", "yes"))
 	if err := tool.ValidateArgs(schema, json.RawMessage(`{"name":"x","count":2,"flag":true}`)); err != nil {
 		t.Fatalf("valid args rejected: %v", err)
@@ -246,7 +246,7 @@ func TestSDK11_SchemaHelpers(t *testing.T) {
 	}
 }
 
-func TestSDK12_Concurrent(t *testing.T) {
+func TestSDK_SDK12_Concurrent(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.Tool(Tool{Name: "slow"}, func(c *Call) (Result, error) {
 			time.Sleep(5 * time.Millisecond)

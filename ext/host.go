@@ -66,6 +66,7 @@ type HostOptions struct {
 	ScrubEnv    []string
 	PassEnv     []string
 	Flags       map[string]string
+	EntryKinds  map[string][]string
 	Run         CommandRunner
 	Clock       Clock
 	Log         func(level, msg string)
@@ -166,7 +167,9 @@ func (h *Host) Start(ctx context.Context) []error {
 			continue
 		}
 		h.mu.Lock()
-		inst.entryKinds = append([]string(nil), h.entryKinds[m.Name]...)
+		kinds := append([]string(nil), h.opt.EntryKinds[m.Name]...)
+		kinds = append(kinds, h.entryKinds[m.Name]...)
+		inst.entryKinds = kinds
 		h.mu.Unlock()
 		if len(m.Run) == 0 {
 			inst.setState(stateRunning, "")
@@ -260,7 +263,9 @@ func (h *Host) handleRegister(inst *instance, line []byte) {
 		return
 	}
 	h.clearRegistrations(inst)
+	inst.mu.Lock()
 	inst.entryKinds = append([]string(nil), f.Entries...)
+	inst.mu.Unlock()
 	h.mu.Lock()
 	h.entryKinds[inst.manifest.Name] = append([]string(nil), f.Entries...)
 	h.mu.Unlock()

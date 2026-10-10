@@ -21,10 +21,15 @@ const (
 type Message struct {
 	Role    Role   `json:"role"`
 	Content string `json:"content,omitempty"`
+	// Reasoning is the model's thinking text. It is displayed and stored but
+	// not re-sent to the provider unless that provider needs it.
+	Reasoning string `json:"reasoning,omitempty"`
 	// ToolCalls is set on assistant messages that request tool execution.
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 	// ToolCallID links a tool result back to the call that produced it.
 	ToolCallID string `json:"tool_call_id,omitempty"`
+	// Name is the tool name on a tool result, used by some providers.
+	Name string `json:"name,omitempty"`
 }
 
 // ToolCall is a model-requested tool invocation.

@@ -27,6 +27,8 @@ const (
 	FaultMalformedJSON
 	// FaultStall sends headers, then nothing until the client gives up.
 	FaultStall
+	// Fault401 responds 401 with a JSON error body.
+	Fault401
 	// Fault429 responds 429 with Retry-After: 1.
 	Fault429
 	// Fault500 responds 500 with a JSON error body.
@@ -41,6 +43,13 @@ const (
 type ServerTurn struct {
 	Turn
 	Fault Fault
+	// Raw, when non-nil, replaces the scripted turn: each element is written
+	// verbatim to an SSE response body, in order, and flushed. An empty
+	// non-nil slice therefore produces a 200 response with no body. Raw
+	// bypasses every fault except none; it exists so tests can script wire
+	// shapes the high-level Turn cannot express (comments, CRLF, missing
+	// choices, late tool-call ids, usage detail objects).
+	Raw []string
 }
 
 // RecordedRequest is what the server saw.
@@ -110,7 +119,22 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if turn.Raw != nil {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		for _, chunk := range turn.Raw {
+			io.WriteString(w, chunk)
+			flush(w)
+		}
+		return
+	}
+
 	switch turn.Fault {
+	case Fault401:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		io.WriteString(w, `{"error":{"message":"invalid api key"}}`)
+		return
 	case Fault429:
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Retry-After", "1")
@@ -197,9 +221,29 @@ func (s *Server) writeTurn(w http.ResponseWriter, turn Turn) {
 			}}})
 		}
 	}
-	if turn.Usage != nil {
-		writeEvent(w, sseChunk{ID: "chatcmpl-test", Object: "chat.completion.chunk", Model: "testkit", Choices: []sseChoice{}, Usage: turn.Usage})
+	finish := turn.Finish
+	if finish == "" {
+		if len(turn.ToolCalls) > 0 {
+			finish = "tool_calls"
+		} else {
+			finish = "stop"
+		}
 	}
+	s.finish(w, finish)
+	if turn.Usage != nil {
+		writeEvent(w, sseChunk{ID: "chatcmpl-test", Object: "chat.completion.chunk", Model: "testkit", Choices: []sseChoice{}, Usage: usageWire(turn.Usage)})
+	}
+}
+
+// finish writes a chunk that carries only a finish reason, the shape OpenAI
+// uses to close a choice.
+func (s *Server) finish(w http.ResponseWriter, reason string) {
+	writeEvent(w, map[string]any{
+		"id":      "chatcmpl-test",
+		"object":  "chat.completion.chunk",
+		"model":   "testkit",
+		"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": reason}},
+	})
 }
 
 func (s *Server) writeDelta(w http.ResponseWriter, role string, delta sseDelta) {
@@ -223,11 +267,51 @@ func roleOf(first bool) string {
 
 // sseChunk is the wire shape of one chunk.
 type sseChunk struct {
-	ID      string          `json:"id,omitempty"`
-	Object  string          `json:"object,omitempty"`
-	Model   string          `json:"model,omitempty"`
-	Choices []sseChoice     `json:"choices"`
-	Usage   *provider.Usage `json:"usage,omitempty"`
+	ID      string      `json:"id,omitempty"`
+	Object  string      `json:"object,omitempty"`
+	Model   string      `json:"model,omitempty"`
+	Choices []sseChoice `json:"choices"`
+	Usage   *sseUsage   `json:"usage,omitempty"`
+}
+
+// sseUsage mirrors the OpenAI usage object, including the detail sub-objects
+// and OpenRouter's top-level cost, rather than provider.Usage's flat shape.
+type sseUsage struct {
+	PromptTokens            int                  `json:"prompt_tokens"`
+	CompletionTokens        int                  `json:"completion_tokens"`
+	TotalTokens             int                  `json:"total_tokens"`
+	Cost                    *float64             `json:"cost,omitempty"`
+	PromptTokensDetails     *sseCachedDetails    `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *sseReasoningDetails `json:"completion_tokens_details,omitempty"`
+}
+
+type sseCachedDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+type sseReasoningDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
+}
+
+// usageWire converts the provider-facing usage into the OpenAI wire shape. A
+// cost is only emitted when the usage says the provider reported it.
+func usageWire(u *provider.Usage) *sseUsage {
+	out := &sseUsage{
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		TotalTokens:      u.TotalTokens,
+	}
+	if u.CachedTokens != 0 {
+		out.PromptTokensDetails = &sseCachedDetails{CachedTokens: u.CachedTokens}
+	}
+	if u.ReasoningTokens != 0 {
+		out.CompletionTokensDetails = &sseReasoningDetails{ReasoningTokens: u.ReasoningTokens}
+	}
+	if u.CostSource == "provider" {
+		cost := u.CostUSD
+		out.Cost = &cost
+	}
+	return out
 }
 
 type sseChoice struct {

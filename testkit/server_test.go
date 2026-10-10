@@ -335,3 +335,47 @@ func TestServer_TKS14_UnknownPath(t *testing.T) {
 		t.Errorf("status = %d, want 404", resp.StatusCode)
 	}
 }
+
+func TestServer_RawLines(t *testing.T) {
+	s := NewServer(t, ServerTurn{Raw: []string{
+		": keep-alive\n\n",
+		"data:{\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\r\n\r\n",
+		"data: [DONE]\n\n",
+	}})
+	_, _, body := postTurn(t, s)
+	if !strings.Contains(body, ": keep-alive") {
+		t.Errorf("raw comment line missing:\n%s", body)
+	}
+	if !strings.Contains(body, "\r\n\r\n") {
+		t.Errorf("raw CRLF line missing:\n%s", body)
+	}
+}
+
+func TestServer_EmitsFinishReason(t *testing.T) {
+	s := NewServer(t, ServerTurn{Turn: Turn{Text: "hi", Finish: "end_turn"}})
+	_, _, body := postTurn(t, s)
+	if !strings.Contains(body, `"finish_reason":"end_turn"`) {
+		t.Errorf("finish_reason missing:\n%s", body)
+	}
+}
+
+func TestServer_UsageDetails(t *testing.T) {
+	cost := 0.5
+	s := NewServer(t, ServerTurn{Turn: Turn{
+		Text: "hi",
+		Usage: &provider.Usage{
+			PromptTokens: 1, CompletionTokens: 2, TotalTokens: 3,
+			CachedTokens: 4, ReasoningTokens: 5, CostUSD: cost, CostSource: "provider",
+		},
+	}})
+	_, _, body := postTurn(t, s)
+	for _, want := range []string{
+		`"prompt_tokens_details":{"cached_tokens":4}`,
+		`"completion_tokens_details":{"reasoning_tokens":5}`,
+		`"cost":0.5`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("usage body missing %s:\n%s", want, body)
+		}
+	}
+}

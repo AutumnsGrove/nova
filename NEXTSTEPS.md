@@ -5,14 +5,14 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C06 are done. `accept C06` and `make ci` pass. `message`, the `provider`
+**State:** C00 through C07 are done. `accept C07` and `make ci` pass. `message`, the `provider`
 contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, `auth`
 (PKCE login, key store, credential resolution), the hardened `tool` registry with JSON-schema argument
 validation, the `permission` allow/ask/deny policy, the filesystem tools (`read`, `write`, `edit`,
-`list`), and the search tools (`glob`, `grep`) exist.
+`list`), the search tools (`glob`, `grep`), and the `bash` tool exist.
 
-**Next:** run **C07** (`docs/chunks/C07-tool-bash.md`): the bash tool. Then C11, C09, C10, C12. Remember
-D48: any package's `_test.go` may import `testkit`.
+**Next:** run **C11** (`docs/chunks/C11-config-resources.md`): config, context files, skills, prompt
+templates, and trust. Then C09, C10, C12. Remember D48: any package's `_test.go` may import `testkit`.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -30,7 +30,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C04 | Tool contract, registry, permission policy | done | C01 | 2026-10-09 | |
 | C05 | Filesystem tools | done | C04 | 2026-10-09 | |
 | C06 | Search tools | done | C04 | 2026-10-09 | |
-| C07 | The bash tool | todo | C04 | | |
+| C07 | The bash tool | done | C04 | 2026-10-09 | |
 | C08 | Protocol types and the session store | todo | C01 | | |
 | C09 | The agent loop | todo | C01, C04, C08 | | |
 | C10 | Compaction, context limit, usage ledger | todo | C08, C09 | | |
@@ -47,6 +47,51 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C07 — The bash tool — 2026-10-09 — pi — main — cost not visible
+
+Rebuilt `tools/bash` in small green commits: output buffer, process helpers, run path, then the full
+BSH matrix.
+
+- `tools/bash/output.go` — `tailBuffer` (first 20% and last 80%, memory bounded by the cap, marker
+  `... (N bytes omitted) ...`) plus `sanitizeOutput` (`collapseCR`, NUL and invalid UTF-8 → U+FFFD).
+- `tools/bash/proc_unix.go` / `proc_other.go` — `supported`, `setProcessGroup` (Setpgid), group
+  TERM/KILL, `exitStatus`, `signalName`; Windows returns `bash is not supported on this platform`.
+- `tools/bash/run.go` — `execute`: `/dev/null` stdin, one merged stdout/stderr pipe, group TERM then
+  KILL after 2 s, a pipe grace (200 ms) for a background holder, always force-kills the group at the
+  end, `capture` writes through `io.Copy` and emits throttled progress, and `shapeResult` builds the
+  exit/signal/timeout/cancel shapes and `Details`.
+- `tools/bash/bash.go` — `options`, the `With*` options, the tool closure and schema, `buildEnv`.
+- Tests `BSH01`–`BSH50` in `bash_test.go`, process-survival checks in `group_unix_test.go`
+  (`//go:build !windows`), `FuzzOutputBuffer`, `FuzzSanitizeOutput`, and `TestProperty_BSH_GroupKill`.
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C07` passes all nine steps; `make ci` exits
+0; `go test -race ./...` is green; both fuzzers ran 5 s clean. Budget: `tools/bash` 400/400 (none left).
+
+**Differed from spec:**
+- The group is force-killed after every call, even on a clean exit; this is what reaps a background child
+  that redirected its output (BSH24/25). The spec says the child is killed but not where.
+- BSH47's non-UTF-8 command cannot cross the JSON tool arguments (`json` replaces invalid bytes with
+  U+FFFD), so the test calls the internal `execute` directly with the raw command bytes. Same class as C05
+  WRT16.
+- BSH07's `pwd` returns the symlink-resolved path on macOS (`/private/var/...`), so the test compares
+  `filepath.EvalSymlinks(dir)`.
+- `buildEnv` appends the fixed variables and extras to `os.Environ()` and relies on `exec.Cmd`'s
+  duplicate-key rule (last wins) instead of rebuilding the environment in a map.
+- `Details` uses `any` fields so a null `exit_code`/`signal` is explicit.
+- The `Clock` interface is `Now()` only: timeouts use the request context and real time; the clock only
+  throttles progress, exactly as the spec's `WithClock` comment says.
+
+**Gotchas:**
+- `tools/bash` is exactly at its 400-line budget; any new code needs a removal elsewhere in the package.
+- BSH29 prints 500 MiB and takes ~20 s, so it is skipped in `-short` (keeping `accept`'s `test-short` at
+  ~13 s) and only runs in the full `test` step.
+- On macOS `t.TempDir()` sits under a symlink (`/var` → `/private/var`); a command's `pwd` is physical.
+- Process-survival checks use `syscall.Kill`, so they live in `group_unix_test.go` behind `!windows`.
+- `io.Copy` into `capture` keeps the read buffer inside `io`; the only retained output is the tail buffer.
+- The background-holder note appears without `IsError` because the shell itself exited 0.
+
+**One command:** `go run ./scripts/accept C07`.
 
 ### C06 — Search tools — 2026-10-09 — pi — main — cost not visible
 
@@ -398,6 +443,16 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   later drafts should say which.
 - C06 Behaviour 19: `grep` `Details.files` is not defined (searched files vs files with matches); implemented
   as files with matches. Later drafts should say.
+- C07 Matrix BSH23: the command `sleep 30 &; echo done` has a stray `;` and is a bash syntax error;
+  implemented and tested as `sleep 30 & echo done`.
+- C07 Matrix BSH50: `exit 256` wraps to exit 0, so the result text is the exit-0 shape (`(no output)`),
+  not the literal `(exit code 0)` the row shows.
+- C07 Behaviour 7: the marker is emitted as `\n... (<n> bytes omitted) ...\n` between the head and tail;
+  later drafts should say whether it is newline-separated.
+- C07 Behaviour 6: the spec does not say where a redirected background child is killed; implemented as an
+  unconditional group kill at the end of every call.
+- C07 Files table: `proc_other.go` is described as "returns an error result"; implemented as a
+  `supported()` flag checked in `run.go`, so the shared run path stays one file.
 
 ## Decisions to record
 
@@ -412,6 +467,11 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   imports `tools`, so the graph stays acyclic. Belongs in `docs/DECISIONS.md`.
 - `grep` summarizes `files` as files-with-matches and folds skipped lines into `Details.skipped`; both are
   display summaries, not part of the tool contract. Belongs in `docs/DECISIONS.md`.
+- The bash tool force-kills its process group at the end of every call, including a clean exit, so a
+  background child that redirected its output cannot outlive the call (BSH24/25). Belongs in
+  `docs/DECISIONS.md`.
+- `buildEnv` relies on `exec.Cmd`'s duplicate-key rule (last value wins) instead of deduplicating in a map.
+  Belongs in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
@@ -422,7 +482,9 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - Multi-user `serve` is assumed out of scope (one trusted agent behind a bearer token).
 - C06: is `grep` truncation expected to be exact (true only when a further match exists), or is "the cap was
   reached" acceptable? Currently the latter.
+- C07: a non-UTF-8 command cannot cross JSON tool arguments; is calling the internal `execute` in the test
+  acceptable, or should the tool accept bytes/base64 for such commands?
 
 ## Cost
 
-Total: $0.00 recorded; the C00 through C06 session costs were not visible.
+Total: $0.00 recorded; the C00 through C07 session costs were not visible.

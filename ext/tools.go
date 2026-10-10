@@ -42,10 +42,11 @@ func (t *protocolTool) Run(ctx context.Context, args json.RawMessage, tctx *tool
 		callID = tctx.SessionID
 	}
 	reply, err := t.inst.conn.request(ctx, &outFrame{
-		Type:      "tool_call",
-		Name:      t.def.Name,
-		Arguments: args,
-		CallID:    callID,
+		Type:       "tool_call",
+		Name:       t.def.Name,
+		Arguments:  args,
+		CallID:     callID,
+		DeadlineMS: int(timeout / time.Millisecond),
 	}, timeout)
 	if err != nil {
 		return tool.Errorf("%s", t.failure(err, timeout)), nil

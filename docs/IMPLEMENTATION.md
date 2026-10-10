@@ -131,9 +131,9 @@ bug is covered in every later chunk.
 - **Errors:** wrap with `fmt.Errorf("…: %w", err)`. Return errors; panic only for
   programmer mistakes at startup wiring.
 - **Context:** first parameter of anything that blocks.
-- **Dependencies:** the core allows `gopkg.in/yaml.v3` and nothing else outside the
-  standard library. `tui/` and `bundled/` allow the charm stack. Anything new needs a
-  decision recorded in `DECISIONS.md`.
+- **Dependencies:** allowed when they remove code or risk, from the allow-list in
+  `scripts/importcheck` (D46). `cmd/nova` uses cobra; `tui/`, `tui/cli`, and `bundled/` use the charm
+  stack; the core uses `gopkg.in/yaml.v3`. Anything new needs a line in `DECISIONS.md` and a table entry.
 - **Style:** `gofumpt` if available, otherwise `gofmt`.
 - **Prototype code:** the M0 code at the repository root is the starting point for
   C01, C02, C04, C05, C07, and C09. Each of those specs says what to keep and what to

@@ -19,8 +19,10 @@ Work arrives as **one chunk** (`docs/chunks/CNN-*.md`). Your spec is the source 
 
 ## Rules
 
-- Go only. The core (everything except `tui/`, `bundled/`, `testkit/`) imports the standard library and
-  `gopkg.in/yaml.v3` and nothing else. Never import `charm.land/*` outside `tui/` and `bundled/`.
+- Go only. Dependencies are allowed when they remove code or risk, but only the ones in the allow-list in
+  `scripts/importcheck` (see `docs/DECISIONS.md` D46); adding one needs a line in `DECISIONS.md` and a table
+  entry. Never import `charm.land/*` or any UI library outside `tui/`, `tui/cli/`, and `bundled/`. Builds must
+  work with `CGO_ENABLED=0`.
 - Every package has a line budget in its spec and in `docs/ARCHITECTURE.md`. Stay inside it.
 - Errors are values: wrap with `fmt.Errorf("…: %w", err)`. Panic only for programmer mistakes during
   startup wiring. Anything that blocks takes a `context.Context` first.

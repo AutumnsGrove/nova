@@ -86,7 +86,7 @@ compile them. That is cosmetic. Nothing UI-related is built into their binary.
 | # | Decision | Choice | Rationale | Rejected |
 |---|---|---|---|---|
 | D31 | Sessions | JSONL tree, one file per session, Pi-style entries with `id` and `parentId` | Simple, diffable, no database, easy to test | SQLite (Crush) |
-| D32 | Config | YAML. `~/.config/nova/config.yaml` plus project `.nova/config.yaml`, deep-merged, JSON accepted. | `gopkg.in/yaml.v3` is the only non-stdlib dependency in the core | JSON only; a bash config (Crush) |
+| D32 | Config | YAML. `~/.config/nova/config.yaml` plus project `.nova/config.yaml`, deep-merged, JSON accepted. | `gopkg.in/yaml.v3` is small and standard for Go YAML; see D46 for the dependency policy | JSON only; a bash config (Crush) |
 | D33 | Context files | `AGENTS.md` and `CLAUDE.md` in the working directory and parents | Matches every other agent | A Nova-only file |
 
 ### Safety
@@ -107,8 +107,9 @@ compile them. That is cosmetic. Nothing UI-related is built into their binary.
 | D36 | Implementing agent | DeepSeek V4.1. Specs are therefore explicit: file lists, signatures, matrices, and acceptance commands. | The user's preferred model. Their Pi extensions were built with it for about $2.50 in total. |
 | D37 | Size | A line budget per package, enforced in CI | The Pi lesson: an agent can only extend what fits in its context |
 | D38 | Go version | The version in `go.mod`, currently 1.26 | Crush uses 1.27. Move when needed. |
-| D44 | One extra dependency | `golang.org/x/net/html`, allowed in `bundled/webfetch` only | The standard library has no HTML parser; the converter needs one | A hand-written parser |
-| D45 | Styled help | Hand-built with lipgloss in the full build; no `fang` | `fang` wraps cobra, which the core avoids | Add cobra and fang |
+| D44 | HTML parsing | `golang.org/x/net/html` in `bundled/webfetch` | The standard library has no HTML parser | A hand-written parser |
+| D45 | CLI framework | `github.com/spf13/cobra` in `cmd/nova`; `charm.land/fang/v2` for styled help and errors in the full build, through a build-tagged `tui/cli` package so a `notui` build has plain cobra output | Subcommands, flags, completion, and help for free; fang is what Crush uses | Hand-rolled `flag` parsing |
+| D46 | Dependency policy | Dependencies are welcome when they remove code or risk. The UI boundary stays: no UI library outside `tui/`, `tui/cli`, and `bundled/`. Every module is listed, with the packages allowed to import it, in `scripts/importcheck`, and each addition gets a line in this file. Prefer the standard library for trivial things. Pin versions. `CGO_ENABLED=0` builds must keep working. | Earlier "standard library plus yaml only" was a means to keep the core small, not a goal. Initial table: `yaml.v3` (core), `cobra` (`cmd/nova`), `fang` and the charm stack (`tui`, `tui/cli`, `bundled`), `x/net/html` (`bundled/webfetch`). Pre-approved candidates, to use when they save code: `bmatcuk/doublestar/v4` for glob matching (C04, C06) and `mvdan.cc/sh/v3` for parsing shell commands in permission rules. | A fixed one-dependency rule |
 | D43 | Protocol additions for the TUI | `list_models`, `session.list`, `get_extensions`, and a `remember` field on confirm answers | The model picker, session list, `/ext` view, and "allow for this session" need them; added in C17 |
 
 ## Superseded decisions at a glance

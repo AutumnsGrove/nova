@@ -62,7 +62,7 @@ documentation, write an extension, and load it with `/reload`.
    provider errors end one run, not the process; a bad extension never takes down the loop.
 5. **Add, don't modify.** New tools, providers, and commands are registered from outside.
 6. **Spend is never lost, and every run ends cleanly.** One `run_start`, one `run_end`.
-7. **The core is UI-free**, enforced by a check, and has one non-stdlib dependency (`yaml.v3`).
+7. **The core is UI-free**, enforced by a check, and takes dependencies only deliberately (an allow-list, D46).
 8. **Everything has a budget**, in lines, in time, and in context.
 9. **Specs carry the edge cases.** An agent fills in a matrix; it does not invent one.
 

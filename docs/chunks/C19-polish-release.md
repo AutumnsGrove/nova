@@ -1,8 +1,8 @@
 ---
 chunk: C19
 title: Polish, first run, doctor, examples, release
-packages: [./cmd/nova, ./doctor, ./config, ./tui/firstrun]
-budgets: { ./cmd/nova: 500, ./doctor: 300, ./config: 1000, ./tui/firstrun: 250 }
+packages: [./cmd/nova, ./doctor, ./config, ./tui/firstrun, ./tui/cli]
+budgets: { ./cmd/nova: 500, ./doctor: 300, ./config: 1000, ./tui/firstrun: 250, ./tui/cli: 150 }
 depends: [C16, C17, C18]
 ---
 
@@ -28,7 +28,9 @@ pipeline with checksummed binaries and an install script.
 
 | File | Change | Purpose |
 |---|---|---|
-| `cmd/nova/help.go`, `help_tui.go` (`!notui`) | create | styled help in the full build, plain in `notui` |
+| `tui/cli/cli.go` (`!notui`) | create | `Execute(root *cobra.Command) error` using `fang` for styled help and errors |
+| `cmd/nova/exec_tui.go` (`!notui`), `exec_min.go` (`notui`) | create | pick `cli.Execute` or plain `root.Execute` |
+| `cmd/nova/help.go` | create | grouped help text, examples, and links shared by both builds |
 | `cmd/nova/version.go` | create | version stamping and `nova version` |
 | `cmd/nova/doctor.go` | create | the subcommand |
 | `cmd/nova/docs.go` | change | `docs list`, `docs search`, topics from the embedded set |
@@ -45,8 +47,8 @@ pipeline with checksummed binaries and an install script.
 | `CHANGELOG.md`, `CONTRIBUTING.md` | create | |
 | `*/*_test.go` | create | |
 
-`charm.land/fang` is **not** used: it wraps cobra, and the core avoids that dependency. The styled
-help is built with lipgloss in the full build (this supersedes the "later" note in `TUI.md`).
+The CLI is cobra (C12). The full build styles help and errors with `charm.land/fang/v2` through `tui/cli`, so
+`cmd/nova` itself never imports a UI library and a `notui` build prints plain cobra help (D45).
 
 ## Interfaces
 
@@ -79,8 +81,8 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 ### Help and version
 
 1. `nova --help` and `nova help [command]` print grouped usage: modes, session flags, subcommands, examples, and links to the docs.
-   In the full build, headings and flags are styled with the theme (no colour when `NO_COLOR` or not a terminal); in a `notui` build, plain
-   text. Output is identical in content across builds. Width adapts to the terminal (default 80) and never exceeds it.
+   In the full build, fang styles headings, flags, and errors (no colour when `NO_COLOR` or not a terminal); in a `notui` build,
+   plain cobra text. The content is identical across builds. Width adapts to the terminal (default 80) and never exceeds it.
 2. `nova help <subcommand>` documents each subcommand and its flags. An unknown subcommand is a usage error (exit 2) suggesting the closest
    known name by edit distance.
 3. `nova version` prints `nova v0.1.0 (commit abc1234, built 2026-10-09, go1.26, linux/amd64, full)`; `--json` prints the same fields as

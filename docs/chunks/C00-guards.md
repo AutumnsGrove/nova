@@ -37,7 +37,7 @@ are built first and tested hardest.
 | `Makefile` | `test`, `test-full`, `race`, `accept`, `fmt`, `vet`, `ci` |
 | `.github/workflows/ci.yml` | Runs the `ci` target on push and pull request |
 
-The programs use only the standard library, plus `gopkg.in/yaml.v3` for the front matter.
+The programs use the standard library, plus `gopkg.in/yaml.v3` for the front matter.
 
 ## Interfaces
 
@@ -96,10 +96,12 @@ accept <CNN> [-from step]          exit 0 all steps pass; exit 1 a step failed; 
       `charm.land/` or `github.com/charmbracelet/`, in non-test **or** test files;
    c. nothing outside `./tui/...` and `./bundled/...` is reachable only through them
       (checked by building with `-tags notui`);
-   d. the core imports no module other than the standard library and `gopkg.in/yaml.v3`. `./tui/...` and
-      `./bundled/...` may import the modules listed for them in the allowed-imports table, which is data at
-      the top of the file, one line per package (for example `./bundled/webfetch` may import
-      `golang.org/x/net/html`).
+   d. every third-party module is in the **allowed-imports table**, which is data at the top of the file:
+      one line per module naming the packages allowed to import it. The initial table: `gopkg.in/yaml.v3`
+      (any non-UI package), `github.com/spf13/cobra` (`./cmd/nova`), `golang.org/x/net/html`
+      (`./bundled/webfetch`), and the charm modules, `charm.land/...` and `github.com/charmbracelet/...`
+      (`./tui/...`, `./bundled/...`, with `charm.land/fang` also in `./tui/cli`). A violation message names
+      the module, the package, and says to record the addition in `docs/DECISIONS.md` (D46).
 7. **accept** runs, in order, stopping at the first failure and printing the failing
    command's output: `gofmt -l`, `go vet`, `go build ./...`, `go build -tags notui ./...`,
    `go test -short -race -p 2` on the spec's packages, `go test -race -p 2` on the same,
@@ -146,8 +148,12 @@ accept <CNN> [-from step]          exit 0 all steps pass; exit 1 a step failed; 
 | ICK03 | `message` imports `provider` | upward import | exit 1; cites the layer rule |
 | ICK04 | `agent` imports `message` | allowed downward import | exit 0 |
 | ICK05 | a test file in the core imports charm | `_test.go` in `tool` | exit 1 |
-| ICK06 | core imports an unlisted third-party module | `github.com/x/y` | exit 1 |
+| ICK06 | a package imports a module not in the table | `github.com/x/y` | exit 1; the message points to D46 |
 | ICK07 | core imports `gopkg.in/yaml.v3` | | exit 0 |
+| ICK12 | `cmd/nova` imports cobra | | exit 0 |
+| ICK13 | a core package other than `cmd/nova` imports cobra | | exit 1 |
+| ICK14 | `tui/cli` imports fang; `cmd/nova` imports fang directly | | exit 0; exit 1 |
+| ICK15 | a module allowed only for one package is imported by another | `x/net/html` in `tool` | exit 1 |
 | ICK08 | package reachable only via `tui` | core package imported solely by `tui` | exit 0 |
 | ICK09 | `-tags notui` build breaks | core file referencing a `tui` symbol | exit 1 |
 | ICK10 | `bundled` imports charm | | exit 0 |

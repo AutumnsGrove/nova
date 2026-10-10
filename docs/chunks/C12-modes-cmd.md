@@ -79,7 +79,10 @@ Exit codes: `0` run ended `done`; `1` error (provider failure, bad configuration
 `--model`, `--thinking`, `--session <path>`, `--no-session`, `--continue`, `--resume`,
 `--tools a,b`, `--no-tools`, `--cwd`, `--max-turns`, `--context-limit`, `--yes` (headless
 permission default becomes allow for the run; prints a warning), `--version`, `--help`.
-Subcommands: `login`, `logout`, `models`, `sessions`, `docs [topic]`, `version`. (`ext` is added
+Subcommands: `login`, `logout`, `models`, `sessions`, `docs [topic]`, `version`, `completion`.
+The command line is built with **cobra** (D45): one root command with the flags above, one cobra command per
+subcommand, `SilenceUsage` and `SilenceErrors` set so `main` controls output, and every usage error mapped to
+exit code 2. `cmd/nova` imports only cobra for this; the styled help in the full build is added in C19. (`ext` is added
 in C13, `serve` and `action` in C14.)
 
 ## Behaviour
@@ -277,6 +280,9 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | CLI13 | `--tools` and `--no-tools` | | the registry matches |
 | CLI14 | `--continue` | existing session | resumes it |
 | CLI15 | `--session` path | | created or opened there |
+| CLI16 | `nova completion bash`, `zsh`, `fish` | | a valid completion script on stdout; exit 0 |
+| CLI17 | cobra errors map to exit 2 | unknown flag, missing argument, unknown subcommand | message on stderr; exit 2; no stack |
+| CLI18 | flags after subcommands and `--` | `nova docs -- --help` | handled as cobra documents |
 | FUL01 | the whole stack | scripted: read a file, edit it, answer | file changed; events as expected; session file valid |
 | FUL02 | tool permission denied by config | policy denies `write` | tool blocked; file unchanged; model sees the error |
 | FUL03 | compaction in a real run | small limit | compacted; the next request contains the summary |

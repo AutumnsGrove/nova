@@ -62,7 +62,8 @@ nova/
   bundled/        in-tree extensions: tasks, ask, plan,
                   subagent, webfetch                            ≤ 2500 total
   tui/            the terminal UI                               ≤ 9000
-  cmd/nova/       main, help, doctor, version                   ≤ 500
+    cli/          fang-styled help and errors (full build only) ≤ 150
+  cmd/nova/       main, cobra commands, doctor, version         ≤ 500
   doctor/         environment checks                            ≤ 300
   scripts/        matrixcheck, linecount, importcheck, accept
   assets/         logo SVGs and the generator
@@ -94,7 +95,9 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
 - **`tui/` and `bundled/*` are the only packages allowed to import `charm.land/*`.**
   `scripts/importcheck` (C00) walks the import graph and fails if any other package does
   (D15), and also enforces the layer rules above.
-- The core's only non-stdlib dependency is `gopkg.in/yaml.v3`.
+- Dependencies follow the policy in `DECISIONS.md` D46: an allow-list in `scripts/importcheck`, each
+  module tied to the packages that may import it. The core uses `gopkg.in/yaml.v3`; `cmd/nova` uses
+  `cobra`; only `tui/`, `tui/cli`, and `bundled/` use UI libraries.
 
 ### Build flavours
 

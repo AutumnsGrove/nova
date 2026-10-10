@@ -17,7 +17,7 @@ they resolve before anything else is written.
 | `charm.land/bubbles/v2` | v2.2.1 | textarea, viewport, spinner, key bindings |
 | `charm.land/glamour/v2` | v2.0.1 | markdown |
 | `charm.land/log/v2` | v2.0.1 | logging to a file (never stdout) |
-| `charm.land/fang/v2` | not used | it wraps cobra; styled help is hand-built (D45) |
+| `charm.land/fang/v2` | v2.0.1 | styled CLI help and errors, through `tui/cli` (D45) |
 | `github.com/charmbracelet/ultraviolet` | pinned | screen buffer and layout rectangles |
 | `github.com/charmbracelet/x/ansi` | v0.11.9 | all ANSI-aware string work |
 | `github.com/alecthomas/chroma/v2` | v2.27.0 | syntax highlighting |

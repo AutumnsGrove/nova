@@ -47,8 +47,8 @@ extension cannot do, that is a gap to close in the protocol.
 | `examples/extensions/` | change | add `todo-like-sdk` (a subprocess port of `tasks`) as the equivalence test |
 | `*/*_test.go` | create | |
 
-`golang.org/x/net/html` is the only new dependency (D44, record it in `DECISIONS.md`); the standard
-library has no HTML parser. It is allowed in `./bundled/webfetch` only.
+`golang.org/x/net/html` is this chunk's dependency (D44); the standard library has no HTML parser. It is
+in the importcheck table for `./bundled/webfetch` only.
 
 ## Interfaces
 

@@ -5,18 +5,16 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C07 are done. `accept C07` and `make ci` pass. `message`, the `provider`
+**State:** C00 through C08 are done. `accept C08` and `make ci` pass. `message`, the `provider`
 contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, `auth`
 (PKCE login, key store, credential resolution), the hardened `tool` registry with JSON-schema argument
 validation, the `permission` allow/ask/deny policy, the filesystem tools (`read`, `write`, `edit`,
-`list`), the search tools (`glob`, `grep`), and the `bash` tool exist.
+`list`), the search tools (`glob`, `grep`), the `bash` tool, and the `proto` and `session` packages
+(the wire types, JSONL framing, and the session tree store) exist.
 
-**Next:** run **C08** (`docs/chunks/C08-proto-session.md`): protocol types and the session store, the first
-chunk of milestone M3 (the engine: C08, C09, C10, C11). C08 is a prerequisite for C09, so do it before
-C11. Then C09, C10, C11, C12. Remember D48: any package's `_test.go` may import `testkit`.
-
-**Correction (2026-10-09):** the C05–C07 handoffs' "Next" lines read "C07, C11, C09, C10, C12" and
-dropped C08, but C09 depends on C08 and `PLAN.md` puts the engine in C08→C09→C10→C11 order. C08 is next.
+**Next:** run **C09** (`docs/chunks/C09-agent-loop.md`): the agent loop, the third chunk of milestone M3
+(the engine: C08, C09, C10, C11). Then C10, C11, C12. Remember D48: any package's `_test.go` may import
+`testkit`.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -35,7 +33,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C05 | Filesystem tools | done | C04 | 2026-10-09 | |
 | C06 | Search tools | done | C04 | 2026-10-09 | |
 | C07 | The bash tool | done | C04 | 2026-10-09 | |
-| C08 | Protocol types and the session store | todo | C01 | | |
+| C08 | Protocol types and the session store | done | C01 | 2026-10-09 | |
 | C09 | The agent loop | todo | C01, C04, C08 | | |
 | C10 | Compaction, context limit, usage ledger | todo | C08, C09 | | |
 | C11 | Config, context files, skills, prompt templates, trust | todo | C04 | | |
@@ -51,6 +49,58 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C08 — Protocol types and the session store — 2026-10-09 — pi — main — cost not visible
+
+Built `proto` and `session` in small green commits: framing/decoding first, then the store, then tree and
+context, then list and fork.
+
+- `proto/codes.go` — version, frame names, error codes, command names, and event names.
+- `proto/frame.go` — `Command`, `Response`, one `Event` struct (pointers where zero matters), `UIRequest`,
+  `UIResponse`, `Hello`, `ToolCall`, `ToolResult`, attachments, and the UI helper types.
+- `proto/codec.go` — `Writer` (one `Write` call per frame), `Reader` (splits on `\n` only, 16 MiB cap,
+  stays failed after a too-long line), and `Decode` (type probe, `ErrBadFrame`, `*UnknownTypeError`,
+  any clean unknown type becomes a `Command`).
+- `session/entry.go`, `store.go` — the append-only JSONL store: forgiving load, header check, parent and
+  cycle repair, `O_APPEND` writes under `flock`, cross-process refresh, leaf tracking, id-collision
+  retry, and repair warnings.
+- `session/tree.go`, `context.go` — branch/children/navigate, and context reconstruction with the
+  last-compaction rule, `<summary>`/`<branch_summary>` wrappers, custom messages, and `message.Validate`
+  repair (drop an orphan result, add a `(result unavailable)` placeholder).
+- `session/list.go`, `lock_*.go` — `List`, `Fork`, `DefaultDir`, and the flock helpers.
+- Tests `FRM01`–`FRM14`, `PRT01`–`PRT18`, `SES01`–`SES27`, `TRE01`–`TRE09`, `CTX01`–`CTX17`,
+  `SLS01`–`SLS05`, `FRK01`–`FRK06`, `FuzzDecode`, `FuzzReader`, `FuzzOpen`,
+  `TestProperty_CTX14_AlwaysValid`, and `TestProperty_SES_AppendOnly`.
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C08` passes all nine steps; `make ci` exits 0;
+both packages pass `-race`; all three fuzzers ran 5 s clean. Budgets: `proto` 378/600, `session` 788/900.
+
+**Differed from spec:**
+- Entry JSON uses `parent`, matching the C08 interface, while `ARCHITECTURE.md` and `TESTING.md` prose say
+  `parentId`. This is the one durable naming choice; flagged for the human.
+- `Store.Warnings()` also carries the context-repair warnings from `Messages` (behaviour 21 says "reports a
+  warning" but names no channel).
+- `Append`/`AppendOn` do not move the leaf for `label`/`session_info`; the interface comment says "moves
+  the leaf", but behaviour 12 defines the leaf as the last non-display entry.
+- Cross-process refresh runs before every read as well as before writes, so two `Store`s on one file see
+  each other; writes use `O_APPEND`.
+- `Messages` returns a nil slice for an empty session (CTX17 accepts len 0).
+- `List` skips a file only when its header is missing or invalid; a valid header with a corrupt entry
+  still lists.
+- `Fork` writes copied entries through `AppendOn` (preserving ids, parents, and raw unknown lines) and
+  sets the new header's `CWD` from the source.
+
+**Gotchas:**
+- Writes must be `O_APPEND`: two `Open` handles otherwise write at their own offsets and clobber each
+  other. SES19 caught this.
+- `Append` must read `s.leaf` *after* the refresh under the lock, or a second process attaches to a stale
+  parent.
+- `FuzzOpen` calls `f.TempDir()` once (not per input) so filesystem setup does not dominate it.
+- `session` depends only on `message`/`provider`; it splits lines itself rather than importing `proto`, so
+  the file format stays independent of the wire codec.
+- The reader is 16 MiB; a session entry up to 10 MiB (SES24) fits, but nothing larger will.
+
+**One command:** `go run ./scripts/accept C08`.
 
 ### C07 — The bash tool — 2026-10-09 — pi — main — cost not visible
 
@@ -457,6 +507,14 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   unconditional group kill at the end of every call.
 - C07 Files table: `proc_other.go` is described as "returns an error result"; implemented as a
   `supported()` flag checked in `run.go`, so the shared run path stays one file.
+- C08 entry format: the interface says `json:"parent"`, but `ARCHITECTURE.md` (line 222) and `TESTING.md`
+  (line 183) say `parentId`. Later drafts should pick one and fix the other docs.
+- C08 Behaviour 21: `Messages` has no warning return, so repairs are appended to `Store.Warnings()`;
+  later drafts should name the channel.
+- C08 Behaviour 14 vs the interface comment: "`Append` ... moves the leaf" conflicts with behaviour 12's
+  "last entry that is not `label` or `session_info`"; implemented behaviour 12.
+- C08 SES19: two processes appending needs both `O_APPEND` and a leaf refresh under the lock; the spec
+  says "re-reads the new lines" but not that the leaf must be re-derived.
 
 ## Decisions to record
 
@@ -476,6 +534,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   `docs/DECISIONS.md`.
 - `buildEnv` relies on `exec.Cmd`'s duplicate-key rule (last value wins) instead of deduplicating in a map.
   Belongs in `docs/DECISIONS.md`.
+- Session entries use `parent` (not `parentId`) as the JSON field; `ARCHITECTURE.md`/`TESTING.md` prose is
+  stale. Belongs in `docs/DECISIONS.md`.
+- Session writes use `O_APPEND` under an advisory `flock`, and the leaf is refreshed under the lock before
+  a parent is assigned. Belongs in `docs/DECISIONS.md`.
+- A session's single warning channel is `Store.Warnings()`, which carries load warnings and context
+  repairs. Belongs in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
@@ -488,7 +552,10 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   reached" acceptable? Currently the latter.
 - C07: a non-UTF-8 command cannot cross JSON tool arguments; is calling the internal `execute` in the test
   acceptable, or should the tool accept bytes/base64 for such commands?
+- C08: confirm the session entry parent field name (`parent` vs `parentId`) before C09/C12 build on the
+  format, and confirm that a clean unknown protocol `type` becoming a `Command` (rather than an error) is
+  how C12 should answer unknown commands.
 
 ## Cost
 
-Total: $0.00 recorded; the C00 through C07 session costs were not visible.
+Total: $0.00 recorded; the C00 through C08 session costs were not visible.

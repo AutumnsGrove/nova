@@ -1,0 +1,232 @@
+# Nova — TUI
+
+The terminal UI is a client of the protocol ([`PROTOCOL.md`](PROTOCOL.md)). It lives
+in the `tui/` package, is excluded by `-tags notui`, and is the only part of the
+core tree allowed to import `charm.land/*` (D15). Its experience is modelled on
+[Crush](https://github.com/charmbracelet/crush): calm, information-dense, keyboard-first.
+
+## Stack
+
+Versions are those Crush uses today. They are pinned in `go.mod`; chunk C15 confirms
+they resolve before anything else is written.
+
+| Library | Version | Role |
+|---|---|---|
+| `charm.land/bubbletea/v2` | v2.1.0 | event loop |
+| `charm.land/lipgloss/v2` | v2.0.6 | styling |
+| `charm.land/bubbles/v2` | v2.2.1 | textarea, viewport, spinner, key bindings |
+| `charm.land/glamour/v2` | v2.0.1 | markdown |
+| `charm.land/log/v2` | v2.0.1 | logging to a file (never stdout) |
+| `charm.land/fang/v2` | v2.0.1 | styled CLI help and errors, through `tui/cli` (D45) |
+| `github.com/charmbracelet/ultraviolet` | pinned | screen buffer and layout rectangles |
+| `github.com/charmbracelet/x/ansi` | v0.11.9 | all ANSI-aware string work |
+| `github.com/alecthomas/chroma/v2` | v2.27.0 | syntax highlighting |
+| `github.com/charmbracelet/x/exp/golden` | v0.1.0 | golden-file comparison (tests) |
+| `charm.land/catwalk` | v0.52.49 | snapshot testing of components (tests) |
+
+## Rules of the code
+
+Taken from Crush's `internal/ui/AGENTS.md`, because they work.
+
+- **One Bubble Tea model.** The top-level `UI` is the only `tea.Model`. Sub-components
+  (chat list, editor wrapper, dialogs, widgets) are plain structs with imperative
+  methods. They do not have their own `Update`.
+- **No I/O and no expensive work in `Update`.** Use a `tea.Cmd`.
+- **Never mutate model state inside a command.** A command returns a message; `Update`
+  applies it.
+- **Never touch ANSI strings by byte.** Use `ansi.Cut`, `ansi.StringWidth`,
+  `ansi.Strip`, `ansi.Truncate`.
+- **Rendering is a pure function of state.** Every item renders from its data and a
+  width. This is what makes golden tests possible.
+- **Items cache their render** and invalidate on change or width change.
+- **Themes are data.** A theme is a palette of tokens that builds every style. No
+  component hardcodes a colour.
+
+## Screen layout
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ ✦ nova   deepseek/deepseek-v4.1   ~/code/project   main      │  header
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  you   add a retry to the fetch call                         │
+│                                                              │
+│  ▸ Thinking for 12s · ~3.4k tokens            ctrl+o expand  │  thinking block
+│    …the call is in client.go and has no retry…               │
+│                                                              │
+│  ● read  client.go                                  0.1s     │  tool card
+│  ● edit  client.go   +9 −2                          0.0s     │
+│    ┌ diff ───────────────────────────────────────────┐       │
+│    │ - resp, err := http.Get(u)                      │       │
+│    │ + resp, err := retry(ctx, func() ...            │       │
+│    └─────────────────────────────────────────────────┘       │
+│                                                              │
+│  nova  I added exponential backoff…                          │  assistant text
+│                                                              │
+├──────────────────────────────────────────────────────────────┤
+│ ☐ 1 of 3 tasks  · fix retry ▸ write test ▸ update docs       │  widgets (extensions)
+├──────────────────────────────────────────────────────────────┤
+│ > _                                                          │  editor
+├──────────────────────────────────────────────────────────────┤
+│ ctx ▮▮▮▮▯▯▯▯ 42% · $0.031 · plan:off · 2 queued    ///  ext… │  footer
+└──────────────────────────────────────────────────────────────┘
+```
+
+Regions are rectangles computed from the terminal size by one `layout()` function.
+Widgets appear above the editor, below it, or in a sidebar that shows only on wide
+terminals. A narrow terminal drops the sidebar, then the header detail, then the
+footer detail, in that order.
+
+## Transcript items
+
+| Item | Notes |
+|---|---|
+| User message | plain text, wrapped; shows attached files |
+| Assistant text | **incremental markdown**: re-render only the changed tail; code blocks highlighted |
+| **Thinking block** | native (D24). While streaming: a box of the last 8 lines with a live timer and token count. Finished: one collapsed line `Thinking for 12s · ~3.4k tokens`. `ctrl+o` expands all; the preview height is a setting. |
+| Tool card | header (status dot, name, key argument, duration), optional body, collapsible |
+| Compaction marker | a rule with `compacted 38k → 6k tokens` |
+| Error | red, with the retry count when retrying |
+| Extension message | rendered by the extension's template, or by a bundled renderer |
+
+### Tool renderers
+
+A registry maps tool name to a renderer. A renderer takes the call, the result, the
+width, and an `expanded` flag, and returns a string. Defaults:
+
+| Tool | Collapsed | Expanded |
+|---|---|---|
+| `read` | path and line range | first lines, highlighted |
+| `write` | path and size | the content, highlighted |
+| `edit` | path and `+N −M` | a unified diff, highlighted |
+| `bash` | the command and exit status | command, then output (tail-biased, capped) |
+| `glob`, `grep` | pattern and match count | the matches |
+| anything else | name and a one-line argument summary | the arguments and result as text |
+
+A tool the TUI has never heard of still renders through the default, so a new
+extension tool works without any TUI change. Third-party tools can supply a template
+over their `details` JSON for a nicer card.
+
+## Input
+
+- Multi-line editor (`bubbles/v2/textarea`). `enter` sends, `shift+enter` or `alt+enter`
+  newline, `ctrl+g` opens `$EDITOR`.
+- `/` opens command completion: built-ins, prompt templates, and extension commands.
+- `@` completes file paths.
+- `!cmd` runs a shell command and shows the output; `!!cmd` runs it without adding it
+  to the model's context.
+- Pasted text over a size limit is attached as a block, not inserted raw.
+- Input history on `up` and `down`.
+
+### Keys (defaults, all rebindable in config)
+
+| Key | Action |
+|---|---|
+| `enter` | send. While a run is active, queue as a **steering** message |
+| `alt+enter` | queue as a **follow-up** |
+| `esc` | abort the run; in a dialog, close it |
+| `ctrl+c` | clear the editor; twice quits |
+| `ctrl+o` | expand or collapse tool output and thinking |
+| `ctrl+l` | model picker |
+| `ctrl+t` | cycle thinking level |
+| `ctrl+r` | session list |
+| `pgup` / `pgdn` | scroll the transcript |
+| `tab` | complete |
+
+### Slash commands
+
+`/model`, `/thinking`, `/context [tokens]`, `/compact`, `/new`, `/resume`, `/fork`,
+`/tree`, `/name`, `/cost`, `/theme`, `/reload`, `/ext`, `/todos`, `/plan`, `/help`,
+`/quit`. Extensions add more. Each is also a protocol command, so a headless client has
+the same set.
+
+## Dialogs
+
+A stack of overlays. Each is a struct with `Draw` and a key handler.
+
+| Dialog | Used for |
+|---|---|
+| Permission | the `ask` outcome of the permission policy: shows the tool, its arguments, and the matched rule; allow once, allow for the session, deny |
+| Select / input / confirm | `ui_request` methods from extensions |
+| **Form** | the `ask` tool: tabs per question, single and multi select, free text, a note per answer, skip, a review screen |
+| Model picker | filterable list from the catalog, with context window and price |
+| Session list and tree | resume, fork, navigate branches |
+
+A dialog opened while a run is streaming does not interrupt the stream; the transcript
+keeps updating underneath.
+
+## Widgets and status
+
+Extensions (bundled or third-party) publish to named slots through `widget` and
+`status`. The TUI owns layout; an extension only chooses a placement and content. The
+footer shows status segments left to right with a muted `///` between them.
+
+## Themes
+
+A theme is a YAML palette that builds every style (the same idea as Crush's
+`quickStyle`). The default palette comes from the brand, so the product and the logo
+match ([`BRAND.md`](BRAND.md)).
+
+```yaml
+name: nova-dark
+colors:
+  spark: "#62c6ff"     # primary accent, links, focus
+  ink:   "#f2f6fb"     # text
+  core:  "#fff4cf"     # highlights, the active item
+  warm:  "#ff9a5c"     # warnings, the companion accent
+  bg:    "#0b0f16"
+  muted: "#8b98ad"
+  success: "#7ee0a1"
+  error:   "#ff6b6b"
+```
+
+Shipped themes: `nova-dark`, `nova-light`, and `mono` (no colour, for dumb terminals and
+`NO_COLOR`). The colour profile is detected and degraded (`colorprofile`).
+
+## Splash and logo
+
+The first screen of a new session shows the **full mark** rendered from its cell
+grid, one cell per half-block character so two cell rows fit in one terminal row
+(`▀ ▄ █`). The cell data is generated from `assets/logo/gen` into a Go file
+(`tui/splash/mark_gen.go`) so the TUI does not parse SVG. On a terminal without
+truecolor it falls back to a plain-ASCII star. The header uses the **minimal mark** as
+a one-line glyph, `✦`, and the splash is dismissed by the first keypress. The splash
+is skipped in a narrow terminal.
+
+## Modes the TUI degrades to
+
+The same binary runs print and JSON modes with no TUI. In the TUI, `NO_COLOR` selects
+`mono`, a terminal under 60 columns uses a single-column layout, and a non-terminal
+stdin refuses to start the TUI and says to use `-p`.
+
+## Bundled extension UIs
+
+| Extension | UI it adds |
+|---|---|
+| `tasks` | a checklist widget above the editor (current task highlighted) and a full `/todos` view |
+| `ask` | the form dialog |
+| `plan` | a footer segment and a banner while planning, an approve/revise dialog |
+| `subagent` | a nested, collapsible card with live progress and the sub-run's cost |
+| `webfetch` | a card with the URL, status, and size |
+
+## Performance budget
+
+- A streaming token must reach the screen in one frame. Rendering work is bounded by
+  re-rendering only the changed item.
+- A transcript of 10,000 items scrolls without re-rendering items that did not change.
+- `Update` does no I/O. Markdown rendering for finished items happens once and is cached.
+- A resize re-renders only visible items.
+
+These are tested with benchmarks and a golden test at three widths (see
+[`TESTING.md`](TESTING.md), the TUI section).
+
+## How the TUI is tested
+
+- **Model tests**: send `tea.Msg` values to `Update`, assert on the model.
+- **Golden views**: render `View()` at widths 40, 80, and 120 for each component and
+  state, compare with `testdata/*.golden`. `catwalk` and `x/exp/golden` provide the
+  harness.
+- **Event replay**: feed a recorded protocol event stream (from a scenario) into the
+  TUI and compare the final view. This ties the TUI to the real backend behaviour
+  without running a terminal.
+- **PTY smoke** (CI only): start, send a prompt against the fake server, quit.

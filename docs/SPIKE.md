@@ -5,9 +5,9 @@ to de-risk the loop, provider, and tool interfaces before writing the real plan.
 It is **exploratory**: its API is not frozen, and it does not implement the full
 target architecture. Treat it as executable documentation.
 
-The prototype is backend-only. The `cmd/nova-run` in it is a throwaway line REPL, not
-the real frontend, which will live in the nested `github.com/AutumnsGrove/nova/tui`
-module (M3).
+The prototype is backend-only. The `cmd/nova-run` in it is a throwaway line REPL; chunk C12
+deletes it and replaces it with `cmd/nova`. The TUI will live in the `tui/` package of the
+same module (chunks C15 to C17).
 
 ## What is present
 
@@ -23,8 +23,7 @@ agent/                   loop, Config, hooks, typed events
 cmd/nova-run/                throwaway headless CLI (single prompt or REPL)
 ```
 
-(No frontend module is present yet; the real coding agent lands in M3 as a
-nested `github.com/AutumnsGrove/nova/tui` module.)
+(No TUI is present yet; it lands in chunks C15 to C17 as the `tui/` package.)
 
 ~2,300 lines including tests. `go vet ./...`, `go build ./...`, and
 `go test ./...` are clean.
@@ -93,3 +92,10 @@ The interfaces in the prototype are the ones proposed in
 [`ARCHITECTURE.md`](ARCHITECTURE.md): the `Provider`/`Tool`/`agent.Config`
 shapes, the OpenAI-shaped transcript, and the hook set. When the real build
 starts, each becomes the basis for its milestone package rather than a throwaway.
+
+## How the prototype is used
+
+The chunk specs in `docs/chunks/` say, per file, what to keep and what to change. Several list
+known prototype defects (the loop recovers panics only in parallel mode, `bash` leaves child
+processes running, `edit` applies edits sequentially, and others). Those defects are the reason
+the specs carry test matrices.

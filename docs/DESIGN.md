@@ -6,21 +6,8 @@ them. It is the "why" companion to [`ARCHITECTURE.md`](ARCHITECTURE.md) (the
 
 ## Decision log
 
-| # | Decision | Choice | Rationale | Alternatives rejected |
-|---|---|---|---|---|
-| D1 | Core engine | Own, modeled on pi | Full control, no upstream churn, matches our habits; the loop is the smallest and most reusable piece | Adopt `fantasy`; adopt `sausheong/harness`; fork crush |
-| D2 | v1 scope | Loop + registry + core tools + sessions + compaction + TUI | A harness that can't remember and can't be driven isn't useful as a daily coding agent | Loop-only library first |
-| D3 | Tool authoring | Both Go registration and YAML/Markdown manifests | Go for logic, YAML for description/schema/agent-scoping/trace; matches her-go | Go-only; YAML-only |
-| D4 | Provider | Small interface + registry; OpenRouter first over a generic OpenAI-compatible implementation | OpenRouter is what we actually use; everything else compatible is nearly free | Hard-code one client; adopt fantasy providers |
-| D5 | Extensions | Compile-time in-process Go registration; MCP for external tools | Type-safe, zero runtime deps, idiomatic Go; MCP covers other languages | Go `.so` plugins; Starlark/JS scripting in v1 |
-| D6 | Distribution | Separate versioned Go module (`github.com/AutumnsGrove/nova`) | One source of truth for three consumers | Vendored copy per repo (drifts) |
-| D7 | First adopter | Nova standalone first | Prove the harness as a coding agent before touching production loops | Integrate ivy/her-go first |
-| D8 | Name | **Nova** | Astral, short, in the family with `polaris`; only the N capitalized | Aster, Canopy, Cirrus, Loom |
-| D9 | North star | A full pi-class coding harness, our own, same principles | The library and the standalone agent are the same artifact | Keep it a pure library |
-| D10 | Frontend stack | `charm.land` libraries (Bubble Tea, Lipgloss, Bubbles, Glamour, Log), designed after crush | Best-in-class terminal UX, proven at scale by crush; we get the craft without writing a renderer | Hand-rolled ANSI; a web UI; a different TUI toolkit |
-| D11 | Backend/frontend split | Two separate programs: a UI-free backend (library + headless CLI) and a frontend coding agent that imports it | Programs that embed an agent loop pay for nothing UI-related; the frontend can evolve fast without destabilizing the backend | One binary; UI inside the core; `tui/` as a backend subpackage |
-| D12 | Repo layout | Monorepo, two Go modules (`github.com/AutumnsGrove/nova` at root, `github.com/AutumnsGrove/nova/tui` under `tui/`), tied with `go.work` | Backend consumers never see charm deps in their module graph; one repo keeps the pair in lockstep | One module with `cmd/` binaries; two repos |
-| D13 | Transport | In-process library now, with an RPC-ready seam; backend also ships a headless CLI | Simplest and fastest today; a daemon/RPC mode (remote or multiple frontends) can be added later without touching the frontend | Build RPC first; library-only with no seam |
+Moved to [`DECISIONS.md`](DECISIONS.md), which also records what was superseded on
+2026-10-09 (the two-program split, the two-module layout, compile-time-only extensions).
 
 ## Ecosystem survey
 
@@ -112,49 +99,10 @@ crush's *taste* and the libraries that express it, applied to a much smaller cor
 
 ## Backend/frontend split
 
-Nova is two programs, not one, and the split is load-bearing.
-
-**Why two programs:**
-
-- **Dependency isolation.** The backend is embedded by her-go, polaris, and ivy.
-  If the TUI lived in the backend module, every embedder's module graph would
-  carry Bubble Tea, Lipgloss, and friends even though they never render a frame.
-  Two modules means a backend consumer's `go.mod` never mentions a UI library.
-- **Independent cadence.** The frontend is where visual iteration happens fast;
-  the backend is where the stable primitives live. Separate modules keep a TUI
-  redesign from touching the loop.
-- **A clean contract.** The frontend can only use the backend's exported API, so
-  the API stays honest. That same constraint is what makes an RPC mode feasible
-  later.
-- **Two audiences.** Embedders want a library; users want an app. One artifact
-  serving both tends to serve neither well.
-
-**What lives where:**
-
-| Concern | Backend (`nova`) | Frontend (`nova/tui`) |
-|---|---|---|
-| Agent loop, hooks, events | ✓ | consumes |
-| Providers, tools, sessions, compaction | ✓ | consumes |
-| Headless CLI, JSON/print output | ✓ | |
-| Events → UI state | | ✓ |
-| TUI, renderers, themes, commands | | ✓ |
-| `charm.land` dependencies | | ✓ |
-
-**The seam:** the frontend depends on a small `Session` interface (see
-[`ARCHITECTURE.md`](ARCHITECTURE.md#11-the-seam-between-them)) and a stream of
-serializable `Event`s — not on the loop or its internals. In-process today; the
-same interface can be backed by an RPC client later.
-
-**Layout:** a monorepo with two modules tied by `go.work`. The repo is
-`github.com/AutumnsGrove/nova`. The backend module is the repo root,
-`github.com/AutumnsGrove/nova`; the frontend is the nested module
-`github.com/AutumnsGrove/nova/tui`, living in the `tui/` subdirectory. A
-`replace`/`go.work` entry points the frontend at the local backend during
-development; once tagged, it is a normal dependency.
-
-Because the frontend is a nested module, its release tags are prefixed by the
-subdirectory: `tui/v0.1.0`, not `v0.1.0`. The backend keeps unprefixed tags
-(`v0.1.0`). Each module versions independently.
+**Superseded.** This section argued for two programs and two Go modules. The decision changed:
+Nova is one binary and one module; the UI lives in the `tui/` package, is excluded by
+`-tags notui`, and a check stops the core importing it. See [`DECISIONS.md`](DECISIONS.md)
+(D11, D12, D14, D15). The dependency-isolation goal is kept; only the mechanism changed.
 
 ## Provider design
 
@@ -176,22 +124,11 @@ renames a slug, and cost accounting has a fallback when a response reports none.
 
 ## Extension mechanism
 
-Decision: **compile-time in-process Go registration, plus MCP for external
-tools.**
-
-- Go's `plugin` package (`.so`) is toolchain- and platform-locked and cannot be
-  recommended.
-- An embedded scripting host (Starlark or JS via goja) is the closest analogue to
-  pi's TypeScript extensions, but it adds a runtime and a large host-API surface
-  before the API is stable. Deferred, not rejected.
-- MCP is the ecosystem standard for out-of-process tools and gives us tools
-  written in any language. It slots into the same registry.
-- An in-process `Extension` interface calling `Host.RegisterTool/Provider/
-  Command/On` is idiomatic, type-safe, and exactly how her-go already registers
-  tools.
-
-The `Host` API is designed so a scripting host can be layered on later without
-changing extension authors' code.
+**Superseded.** This section chose compile-time Go registration plus MCP. The decision changed:
+extensions are subprocesses speaking the same JSONL protocol as every other client, plus
+declarative YAML tools and command hooks; bundled extensions are in-tree Go. Embedded
+interpreters (Yaegi, goja, wasm) were rejected. See [`EXTENSIONS.md`](EXTENSIONS.md) and
+[`DECISIONS.md`](DECISIONS.md) (D5, D16 to D20).
 
 ## Naming
 

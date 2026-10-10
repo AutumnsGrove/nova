@@ -1,14 +1,16 @@
 # Nova — Integration
 
 How `her-go`, `polaris`, and `ivy` adopt Nova, and the migration strategy for
-each. Integration begins at M5; this document is the target, not current work.
+each. Integration begins at M8; this document is the target, not current work.
 
 ## Strategy
 
-These programs embed the **backend**. None of them import the frontend
-(`nova/tui`) or its `charm.land` dependencies; the frontend is only Nova's own
-coding agent. Concretely: a consumer depends on `github.com/AutumnsGrove/nova`
-and nothing in its module graph is a UI library.
+These programs embed Nova as a **library**. None of them import `tui/` or `bundled/`
+(the only packages that use `charm.land`); a consumer depends on
+`github.com/AutumnsGrove/nova` and compiles none of the UI. Note that the shared
+`go.mod` may still list the charm modules; they are not built into the consumer.
+The loop is `agent.New(cfg).Run(...)` (see `docs/chunks/C09-agent-loop.md`); the old
+`agent.Run(ctx, cfg, history)` function is kept as a compatibility wrapper.
 
 - **Adapter-first, no big bang.** Each project keeps its existing types and adds
   a thin Nova layer. Port one loop, prove it, then switch.

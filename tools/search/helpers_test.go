@@ -36,6 +36,12 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+// osWriteFile is os.WriteFile for tests that build large byte slices.
+func osWriteFile(path string, data []byte) error { return os.WriteFile(path, data, 0o644) }
+
+// osMkdirAll is os.MkdirAll for tests.
+func osMkdirAll(path string) error { return os.MkdirAll(path, 0o755) }
+
 // tree builds a set of files under a fresh temp directory. Keys are slash
 // paths relative to the root; a trailing slash makes a directory.
 func tree(t *testing.T, files map[string]string) string {

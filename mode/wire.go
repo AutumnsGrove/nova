@@ -35,8 +35,12 @@ func trustPath(home string) string {
 // takes effect and a missing key is reported by the first request, not by New.
 func buildProvider(cfg *config.Config, home string) provider.Provider {
 	store := auth.NewFileStore(keyPath(home))
+	base := cfg.Provider.OpenRouter.BaseURL
+	if base == "" {
+		base = os.Getenv("NOVA_OPENROUTER_BASE_URL")
+	}
 	return openrouter.New(openrouter.Config{
-		BaseURL: cfg.Provider.OpenRouter.BaseURL,
+		BaseURL: base,
 		APIKeyFunc: func(context.Context) (string, error) {
 			key, _, err := auth.Resolve("", os.Getenv, store)
 			return key, err

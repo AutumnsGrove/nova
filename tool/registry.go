@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/AutumnsGrove/nova/provider"
@@ -21,16 +22,24 @@ func NewRegistry() *Registry {
 	return &Registry{tools: map[string]Tool{}}
 }
 
-// Register adds a tool. It returns an error for a nil tool, an empty name, or a
-// duplicate name, so wiring mistakes are reported to the caller.
-func (r *Registry) Register(t Tool) error {
+// validateTool rejects the two wiring mistakes Register and Replace share.
+func validateTool(t Tool) error {
 	if t == nil {
 		return fmt.Errorf("tool: cannot register nil tool")
 	}
-	name := t.Info().Name
-	if name == "" {
+	if t.Info().Name == "" {
 		return fmt.Errorf("tool: name is required")
 	}
+	return nil
+}
+
+// Register adds a tool. It returns an error for a nil tool, an empty name, or a
+// duplicate name, so wiring mistakes are reported to the caller.
+func (r *Registry) Register(t Tool) error {
+	if err := validateTool(t); err != nil {
+		return err
+	}
+	name := t.Info().Name
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.tools[name]; exists {
@@ -48,12 +57,79 @@ func (r *Registry) MustRegister(t Tool) {
 	}
 }
 
+// Replace registers a tool, replacing any existing tool with the same name. An
+// existing tool keeps its position in the registration order.
+func (r *Registry) Replace(t Tool) error {
+	if err := validateTool(t); err != nil {
+		return err
+	}
+	name := t.Info().Name
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.tools[name]; exists {
+		r.tools[name] = t
+		return nil
+	}
+	r.tools[name] = t
+	r.order = append(r.order, name)
+	return nil
+}
+
+// Unregister removes a tool by name and reports whether it was present.
+func (r *Registry) Unregister(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.tools[name]; !exists {
+		return false
+	}
+	delete(r.tools, name)
+	for i, n := range r.order {
+		if n == name {
+			r.order = append(r.order[:i], r.order[i+1:]...)
+			break
+		}
+	}
+	return true
+}
+
+// View returns a registry holding only the named tools, in the parent's
+// registration order. Unknown names are ignored. The view shares the tool
+// values but has its own registration state, so changing one does not change
+// the other.
+func (r *Registry) View(names ...string) *Registry {
+	view := NewRegistry()
+	wanted := make(map[string]bool, len(names))
+	for _, name := range names {
+		wanted[name] = true
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, name := range r.order {
+		if !wanted[name] {
+			continue
+		}
+		view.tools[name] = r.tools[name]
+		view.order = append(view.order, name)
+		delete(wanted, name)
+	}
+	return view
+}
+
 // Get returns a tool by name.
 func (r *Registry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	t, ok := r.tools[name]
 	return t, ok
+}
+
+// Info returns a tool's definition by name.
+func (r *Registry) Info(name string) (Info, bool) {
+	t, ok := r.Get(name)
+	if !ok {
+		return Info{}, false
+	}
+	return t.Info(), true
 }
 
 // Defs returns the model-facing definitions in registration order.
@@ -74,16 +150,64 @@ func (r *Registry) Names() []string {
 	return append([]string(nil), r.order...)
 }
 
-// Execute dispatches one call. Unknown tools and handler errors become failed
-// results rather than loop-fatal errors, so the model can self-correct.
+// Execute dispatches one call. Unknown tools, invalid arguments, cancellation,
+// panics, and handler errors all become failed results rather than loop-fatal
+// errors, so the model can self-correct and a misbehaving tool cannot kill the
+// run.
 func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessage, tctx *Context) Result {
-	t, ok := r.Get(name)
-	if !ok {
-		return Errorf("unknown tool %q", name)
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	res, err := t.Run(ctx, args, tctx)
+	if err := ctx.Err(); err != nil {
+		return Errorf("cancelled")
+	}
+	t, info, ok := r.lookup(name)
+	if !ok {
+		return r.unknownTool(name)
+	}
+	norm, err := normalizeArgs(args)
+	if err != nil {
+		return Errorf("invalid arguments: %v", err)
+	}
+	if err := ValidateArgs(info.Parameters, norm); err != nil {
+		return Errorf("invalid arguments: %v", err)
+	}
+	return runGuarded(ctx, name, t, norm, tctx)
+}
+
+// lookup returns a tool and its Info under one read lock.
+func (r *Registry) lookup(name string) (Tool, Info, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	t, ok := r.tools[name]
+	if !ok {
+		return nil, Info{}, false
+	}
+	return t, t.Info(), true
+}
+
+// unknownTool builds the error result for a missing tool, naming up to ten
+// registered tools so the model can pick a real one.
+func (r *Registry) unknownTool(name string) Result {
+	names := r.Names()
+	const maxListed = 10
+	if len(names) > maxListed {
+		names = names[:maxListed]
+	}
+	return Errorf("unknown tool %q; known tools: %s", name, strings.Join(names, ", "))
+}
+
+// runGuarded runs a tool and converts a panic into an error result. It is the
+// only recover on the tool path, for both sequential and parallel callers.
+func runGuarded(ctx context.Context, name string, t Tool, args json.RawMessage, tctx *Context) (res Result) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			res = Errorf("internal error in %s: %v", name, rec)
+		}
+	}()
+	out, err := t.Run(ctx, args, tctx)
 	if err != nil {
 		return Errorf("%s: %v", name, err)
 	}
-	return res
+	return out
 }

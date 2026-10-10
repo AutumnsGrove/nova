@@ -16,19 +16,44 @@ import (
 
 // Context carries per-call dependencies and application state to a tool.
 //
-// WorkDir is the directory relative paths resolve against. Data is an opaque
-// slot for the embedding application: her-go, polaris, and ivy can hang their
-// own dependency bundles (stores, clients, callbacks) off it without the
-// harness knowing about any of them.
+// WorkDir is the directory relative paths resolve against. Roots, when
+// non-empty, restricts file tools to those directories. Data is an opaque slot
+// for the embedding application: her-go, polaris, and ivy can hang their own
+// dependency bundles (stores, clients, callbacks) off it without the harness
+// knowing about any of them. Emit streams progress to the client and is
+// nil-safe through Progress; Complete makes a nested model call (D29).
 type Context struct {
-	WorkDir string
-	Data    any
+	WorkDir   string
+	Roots     []string
+	Data      any
+	SessionID string
+	// Emit receives progress updates; it may be nil.
+	Emit func(Update)
+	// Complete performs a nested model call, for a tool that needs one.
+	Complete func(ctx context.Context, req provider.Request) (*provider.Response, error)
+}
+
+// Progress sends a progress update, or does nothing when Emit is nil.
+func (c *Context) Progress(text string) {
+	if c != nil && c.Emit != nil {
+		c.Emit(Update{Text: text})
+	}
+}
+
+// Update is one progress update streamed from a running tool.
+type Update struct {
+	Text string
 }
 
 // Result is what a tool returns to the model.
 type Result struct {
 	Content string
 	IsError bool
+	// Truncated reports that the tool cut its own output to fit a cap.
+	Truncated bool
+	// Details carries structured data for renderers. It is never sent to the
+	// model.
+	Details json.RawMessage
 }
 
 // Info is a tool's model-facing definition plus behavioral annotations.

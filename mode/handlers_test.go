@@ -30,7 +30,7 @@ func TestHandlers_ListModels(t *testing.T) {
 	}
 }
 
-func TestHandlers_GetCommands_IncludesTemplate(t *testing.T) {
+func TestHandlers_SRV31_GetCommands(t *testing.T) {
 	s, _ := testServer(t)
 	if err := writeFile(s.cwd+"/.nova/prompts/foo.md", "do foo $1"); err != nil {
 		t.Fatal(err)
@@ -41,7 +41,7 @@ func TestHandlers_GetCommands_IncludesTemplate(t *testing.T) {
 	}
 }
 
-func TestHandlers_RunCommandHelp(t *testing.T) {
+func TestHandlers_SRV32_RunCommandHelp(t *testing.T) {
 	s, _ := testServer(t)
 	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdRunCommand, Name: "help"})
 	if !resp.OK || !bytesContain(resp.Data, "commands:") {
@@ -49,7 +49,7 @@ func TestHandlers_RunCommandHelp(t *testing.T) {
 	}
 }
 
-func TestHandlers_RunCommandUnknown(t *testing.T) {
+func TestHandlers_SRV32_RunCommandUnknown(t *testing.T) {
 	s, _ := testServer(t)
 	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdRunCommand, Name: "nope"})
 	if resp.OK || resp.Error.Code != proto.CodeBadRequest {
@@ -57,7 +57,7 @@ func TestHandlers_RunCommandUnknown(t *testing.T) {
 	}
 }
 
-func TestHandlers_CompactNothing(t *testing.T) {
+func TestHandlers_SRV19_CompactNothing(t *testing.T) {
 	s, _ := testServer(t)
 	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdCompact})
 	if resp.OK || resp.Error.Code != proto.CodeBadRequest {
@@ -65,7 +65,7 @@ func TestHandlers_CompactNothing(t *testing.T) {
 	}
 }
 
-func TestHandlers_SessionNavigateAndName(t *testing.T) {
+func TestHandlers_SRV24_NavigateAndName(t *testing.T) {
 	s, _ := testServer(t, testkit.Turn{Text: "hi"})
 	events, cancel := s.Subscribe(64)
 	defer cancel()
@@ -88,7 +88,7 @@ func TestHandlers_SessionNavigateAndName(t *testing.T) {
 	}
 }
 
-func TestHandlers_SessionNew(t *testing.T) {
+func TestHandlers_SRV24_SessionNew(t *testing.T) {
 	s, _ := testServer(t)
 	before := s.path
 	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdSessionNew})

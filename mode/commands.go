@@ -15,14 +15,19 @@ import (
 
 // Handle runs one protocol command. It never panics: a panic becomes an
 // internal error response and an error event.
-func (s *Server) Handle(ctx context.Context, cmd proto.Command) (resp proto.Response) {
+func (s *Server) Handle(ctx context.Context, cmd proto.Command) proto.Response {
+	return s.recoverResponse(cmd, func() proto.Response { return s.dispatch(ctx, cmd) })
+}
+
+// recoverResponse runs fn and turns a panic into an internal error response.
+func (s *Server) recoverResponse(cmd proto.Command, fn func() proto.Response) (resp proto.Response) {
 	defer func() {
 		if r := recover(); r != nil {
 			s.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: proto.CodeInternal, Message: fmt.Sprintf("panic: %v", r)}})
 			resp = failResponse(cmd, proto.CodeInternal, fmt.Sprintf("internal error: %v", r))
 		}
 	}()
-	return s.dispatch(ctx, cmd)
+	return fn()
 }
 
 // dispatch routes a command to its handler.

@@ -1,0 +1,7 @@
+name: hello-go
+version: 0.1.0
+description: A Go SDK greeting tool.
+nova: ">=0.1"
+run: ["./hello-go"]
+build: ["go", "build", "-o", "hello-go", "."]
+capabilities: [tools]

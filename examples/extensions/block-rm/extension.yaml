@@ -1,0 +1,8 @@
+name: block-rm
+version: 0.1.0
+description: Refuses any bash call that contains rm -rf.
+nova: ">=0.1"
+hooks:
+  - on: tool_call
+    match: { tool: bash }
+    run: ["./check.sh"]

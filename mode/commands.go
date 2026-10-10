@@ -46,6 +46,24 @@ func (s *Server) dispatch(ctx context.Context, cmd proto.Command) proto.Response
 		return s.handleSetContextLimit(cmd)
 	case proto.CmdSetTools:
 		return s.handleSetTools(cmd)
+	case proto.CmdCompact:
+		return s.handleCompact(cmd)
+	case proto.CmdGetMessages:
+		return s.handleGetMessages(cmd)
+	case proto.CmdGetCommands:
+		return s.handleGetCommands(cmd)
+	case proto.CmdListModels:
+		return s.handleListModels(cmd)
+	case proto.CmdSessionList:
+		return s.handleSessionList(cmd)
+	case proto.CmdSessionTree:
+		return s.handleSessionTree(cmd)
+	case proto.CmdSessionNavigate:
+		return s.handleSessionNavigate(cmd)
+	case proto.CmdSessionName:
+		return s.handleSessionName(cmd)
+	case proto.CmdRunCommand:
+		return s.handleRunCommand(cmd)
 	case proto.CmdShutdown:
 		return s.handleShutdown(cmd)
 	default:

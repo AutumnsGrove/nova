@@ -118,6 +118,7 @@ func (r *run) loop() (*Result, error) {
 		}
 		r.emit(proto.Event{Type: proto.EventTurnEnd, Turn: intp(r.turn), Usage: &usage})
 		continueTurn := false
+		injected := 0
 		if r.cfg.Hooks.TurnEnd != nil {
 			td, ok := runHook(r, "turn_end", func(ctx context.Context) TurnDecision {
 				return r.cfg.Hooks.TurnEnd(ctx, Turn{Index: r.turn, Message: assistant, Results: results})
@@ -127,6 +128,7 @@ func (r *run) loop() (*Result, error) {
 					return r.finish(r.result("done"), nil)
 				}
 				continueTurn = td.Continue
+				injected = len(td.Inject)
 				for _, m := range td.Inject {
 					if err := r.record(m, nil); err != nil {
 						return r.finish(r.result("error"), err)
@@ -143,7 +145,7 @@ func (r *run) loop() (*Result, error) {
 			return r.finish(r.result("aborted"), cerr)
 		}
 		if len(assistant.ToolCalls) == 0 {
-			if steered > 0 || continueTurn {
+			if steered > 0 || continueTurn || injected > 0 {
 				continue
 			}
 			if text, ok := r.popFollowUp(); ok {

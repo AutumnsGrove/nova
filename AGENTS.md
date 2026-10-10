@@ -35,6 +35,33 @@ Work arrives as **one chunk** (`docs/chunks/CNN-*.md`). Your spec is the source 
    - Add your cost to **Cost**.
    A silent gap is not allowed: if you did not finish something, it must be written down there.
 
+## Working rhythm: small steps, frequent commits
+
+A chunk is one unit of *work*, not one commit. Take every chunk in many small steps and commit at the end
+of each step, so history shows how the work was built and any step can be reviewed or reverted on its own.
+Never let a chunk become one big lump of commits.
+
+A **step** is the smallest change that leaves the tree green and better: one matrix row (or a small group of
+related rows), one function, one file's worth of behaviour.
+
+1. Pick the next step and do only it.
+2. Follow TDD inside the step: add the failing test, run it and watch it fail, implement, run the narrowest
+   check that proves it (`go test -short ./scripts/matrixcheck`), watch it pass.
+3. Commit the moment the step is green, before starting the next step.
+
+Rules:
+
+- **Commit green.** Every commit builds and passes the tests that exist at that point. A step that spans
+  several packages is still committed once it compiles and its tests pass.
+- **One concern per commit.** Separate test, implementation, docs, and plumbing even when they touch the same
+  file; never mix unrelated work.
+- **Cite the row.** When a commit makes a matrix row pass, name the row id in the message
+  (`test: cover SPC01 to SPC03 spec parsing`).
+- **Small means reviewable.** If a single commit's diff runs past a few hundred lines or crosses unrelated
+  packages, split it.
+- **Keep the handoff current as you go**, not only at the end. The final `NEXTSTEPS.md` update is the last
+  step of the chunk, not the only documentation.
+
 ## Rules
 
 - Go only. Dependencies are allowed when they remove code or risk, but only the ones in the allow-list in

@@ -73,13 +73,16 @@ pass (the matrix rows and the L2 binary harness remain).
   `logout`; `--continue` resolves the newest session.
 - `go.mod` gained `github.com/spf13/cobra v1.10.2` (D45, cached).
 - Tests: SRV01, SRV02, SRV03, SRV04, SRV05, SRV06, SRV07, SRV08, SRV09, SRV10, SRV12, SRV13, SRV14,
-  SRV16, SRV20, SRV21, SRV29, SRV30, SRV33, SRV34, SRV36, SRV44, PRI01, PRI02, RPC01, RPC04.
+  SRV16, SRV20, SRV21, SRV29, SRV30, SRV33, SRV34, SRV36, SRV44, PRI01, PRI02, PRI06, RPC01, RPC04,
+  CLI01, CLI02, CLI04, CLI05, CLI11, CLI17, FUL01. The CLI/PRI/FUL tests drive `run` against a local
+  `testkit.Server` via `NOVA_OPENROUTER_BASE_URL` (added in `mode/wire.go`) and a dummy key.
 
 **Remaining C12 work:** `nova docs`; `mode/builtin.go` (built-ins were folded into `handlers.go`
 instead); and these matrix rows: SRV11, SRV15, SRV17–SRV19, SRV22–SRV28, SRV31, SRV32, SRV35,
-SRV37–SRV43, PRI03–PRI11, JSN01–JSN04, RPC02, RPC03, RPC05–RPC14, CLI01–CLI18, FUL01–FUL05,
-`FuzzRPCLoop`, and `TestProperty_SRV_EventOrder`. The L2 harness (build the binary once in `TestMain`
-and drive it against `testkit.Server`) is not written; most CLI/JSN/RPC/FUL rows need it.
+SRV37–SRV43, PRI03–PRI05, PRI07–PRI11, JSN01–JSN04, RPC02, RPC03, RPC05–RPC14, CLI03, CLI06–CLI10,
+CLI12–CLI16, CLI18, FUL02–FUL05, `FuzzRPCLoop`, and `TestProperty_SRV_EventOrder`. `TestMain` does
+not build a separate binary; the CLI tests call `run` in-process, which covers the CLI/PRI/FUL rows
+without a subprocess.
 
 **Differed from spec:**
 - `proto.Event` gained an `ID string` field (json `id`) for `ui_expired { id }`; the C08 struct had no

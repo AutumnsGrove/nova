@@ -39,12 +39,16 @@ func NewPipe(s *Server, capabilities ...string) *Client {
 	return c
 }
 
-// serveUI hands a request to the client and waits for its answer.
+// serveUI hands a request to the client and waits for its answer. Fire-and-
+// forget methods are delivered without waiting for one.
 func (c *Client) serveUI(ctx context.Context, req proto.UIRequest) (proto.UIResponse, error) {
 	select {
 	case c.requests <- req:
 	case <-ctx.Done():
 		return proto.UIResponse{}, ctx.Err()
+	}
+	if fireAndForgetMethod(req.Method) {
+		return proto.UIResponse{Type: proto.FrameUIResponse, ID: req.ID}, nil
 	}
 	select {
 	case resp := <-c.answers:
@@ -53,6 +57,15 @@ func (c *Client) serveUI(ctx context.Context, req proto.UIRequest) (proto.UIResp
 	case <-ctx.Done():
 		return proto.UIResponse{}, ctx.Err()
 	}
+}
+
+// fireAndForgetMethod reports a UI method that needs no answer.
+func fireAndForgetMethod(method string) bool {
+	switch method {
+	case "notify", "status", "widget", "title", "set_editor_text":
+		return true
+	}
+	return false
 }
 
 // Events is the client's event stream.

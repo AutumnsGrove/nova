@@ -196,7 +196,7 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 
 	opt := mode.Options{
 		Config: cfg, CWD: cwd, Home: home, Out: o.stdout, In: o.stdin,
-		NoSession: o.noSession, Version: version,
+		NoSession: o.noSession, Version: version, Mode: o.mode,
 	}
 	if o.tools != "" {
 		opt.Tools = splitList(o.tools)

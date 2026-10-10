@@ -72,6 +72,9 @@ func (s *Server) handleGetCommands(cmd proto.Command) proto.Response {
 	for _, tpl := range s.templates() {
 		out = append(out, commandInfo{Name: tpl.Name, Description: tpl.Description, Kind: "template"})
 	}
+	for _, c := range s.extensionCommands() {
+		out = append(out, commandInfo{Name: c.Name, Description: c.Description, Kind: "extension"})
+	}
 	return okResponse(cmd, map[string]any{"commands": out})
 }
 
@@ -129,6 +132,13 @@ func (s *Server) handleRunCommand(cmd proto.Command) proto.Response {
 			go s.run(text)
 			return okResponse(cmd, nil)
 		}
+	}
+	if s.ext != nil && s.hasExtensionCommand(cmd.Name) {
+		out, err := s.ext.RunCommand(context.Background(), cmd.Name, cmd.Args)
+		if err != nil {
+			return failResponse(cmd, proto.CodeInternal, err.Error())
+		}
+		return okResponse(cmd, map[string]any{"text": out})
 	}
 	return failResponse(cmd, proto.CodeBadRequest, "unknown command "+cmd.Name)
 }
@@ -350,8 +360,13 @@ func (s *Server) handleReload(ctx context.Context, cmd proto.Command) proto.Resp
 	s.mu.Lock()
 	s.system = buildSystemPrompt(s.cfg, s.cwd, s.home, s.tools, s.clock.Now())
 	s.mu.Unlock()
+	if s.ext != nil {
+		for _, err := range s.ext.Reload(ctx) {
+			s.emit(proto.Event{Type: proto.EventExtensionError, Error: &proto.Error{Code: proto.CodeInternal, Message: err.Error()}})
+		}
+	}
 	s.emitState()
-	return okResponse(cmd, map[string]any{"reloaded": []string{"config", "skills", "templates"}})
+	return okResponse(cmd, map[string]any{"reloaded": []string{"config", "skills", "templates", "extensions"}})
 }
 
 // transformContext keeps the leading system message current after a reload.

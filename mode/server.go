@@ -16,6 +16,7 @@ import (
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
@@ -59,6 +60,7 @@ type Options struct {
 	Clock       Clock
 	Interactive bool // whether a UI client is attached (affects permission "ask")
 	Version     string
+	Mode        string   // tui | print | json | rpc | serve, for extensions
 	Tools       []string // explicit active tool set; nil means use the config
 	NoTools     bool     // register no tools at all
 }
@@ -88,6 +90,7 @@ type Server struct {
 	store     *session.Store
 	compactor *compaction.Compactor
 	system    string
+	ext       *ext.Host
 
 	mu      sync.Mutex
 	subs    map[int64]*subscriber
@@ -190,6 +193,9 @@ func New(opt Options) (*Server, error) {
 	}
 	s.system = buildSystemPrompt(cfg, opt.CWD, home, tools, clock.Now())
 
+	s.ext = s.buildExtensionHost()
+	extHooks := s.ext.Hooks()
+
 	s.agent = agent.New(agent.Config{
 		Provider:      s.prov,
 		Model:         s.model,
@@ -210,12 +216,30 @@ func New(opt Options) (*Server, error) {
 		},
 		Emit:      s.emit,
 		OnMessage: s.onMessage,
+		Complete:  s.complete,
 		Hooks: agent.Hooks{
-			TransformContext:      s.transformContext,
-			BeforeProviderRequest: s.beforeProviderRequest,
-			BeforeTurn:            s.beforeTurn,
+			BeforeProviderRequest: func(ctx context.Context, req *provider.Request) {
+				s.beforeProviderRequest(ctx, req)
+				if extHooks.BeforeProviderRequest != nil {
+					extHooks.BeforeProviderRequest(ctx, req)
+				}
+			},
+			TransformContext: func(ctx context.Context, msgs []message.Message) []message.Message {
+				msgs = s.transformContext(ctx, msgs)
+				if extHooks.TransformContext != nil {
+					msgs = extHooks.TransformContext(ctx, msgs)
+				}
+				return msgs
+			},
+			BeforeTurn: s.beforeTurn,
+			ToolCall:   extHooks.ToolCall,
+			ToolResult: extHooks.ToolResult,
+			MessageEnd: extHooks.MessageEnd,
+			TurnEnd:    extHooks.TurnEnd,
+			AgentEnd:   extHooks.AgentEnd,
 		},
 	})
+	go s.startExtensions()
 	return s, nil
 }
 
@@ -361,7 +385,12 @@ func (s *Server) Close() error {
 	store := s.store
 	s.mu.Unlock()
 	if store != nil {
-		return store.Close()
+		_ = store.Close()
+	}
+	if s.ext != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return s.ext.Shutdown(ctx)
 	}
 	return nil
 }

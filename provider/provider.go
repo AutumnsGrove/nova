@@ -29,31 +29,50 @@ type ToolFunction struct {
 // Request is one completion request. The system prompt is carried as the
 // leading system message in Messages, mirroring the model-facing transcript.
 type Request struct {
-	Model        string
-	Messages     []message.Message
-	Tools        []ToolDef
-	ToolChoice   any
-	Temperature  *float64
-	MaxTokens    int
-	ExtraHeaders map[string]string
+	Model           string
+	Messages        []message.Message
+	Tools           []ToolDef
+	ToolChoice      any
+	Temperature     *float64
+	MaxTokens       int
+	Stop            []string
+	ReasoningEffort string         // "", "low", "medium", or "high"
+	ProviderOptions map[string]any // merged into the wire body by the provider
+	ExtraHeaders    map[string]string
 }
 
 // Usage reports token and cost accounting for one provider call.
 type Usage struct {
 	PromptTokens     int     `json:"prompt_tokens"`
 	CompletionTokens int     `json:"completion_tokens"`
+	ReasoningTokens  int     `json:"reasoning_tokens,omitempty"`
 	TotalTokens      int     `json:"total_tokens"`
 	CachedTokens     int     `json:"cached_tokens,omitempty"`
 	CostUSD          float64 `json:"cost_usd,omitempty"`
+	CostSource       string  `json:"cost_source,omitempty"` // "provider", "catalog", or ""
 }
 
 // Add accumulates another usage record into u.
 func (u *Usage) Add(o Usage) {
 	u.PromptTokens += o.PromptTokens
 	u.CompletionTokens += o.CompletionTokens
+	u.ReasoningTokens += o.ReasoningTokens
 	u.TotalTokens += o.TotalTokens
 	u.CachedTokens += o.CachedTokens
 	u.CostUSD += o.CostUSD
+	u.CostSource = combineCostSource(u.CostSource, o.CostSource)
+}
+
+// combineCostSource keeps the strongest provenance: a provider-reported cost
+// is trusted over a catalog estimate.
+func combineCostSource(a, b string) string {
+	if a == "provider" || b == "provider" {
+		return "provider"
+	}
+	if a == "catalog" || b == "catalog" {
+		return "catalog"
+	}
+	return ""
 }
 
 // Response is the finalized result of one provider call.
@@ -74,6 +93,8 @@ const (
 	StreamReasoningDelta StreamEventType = "reasoning_delta"
 	// StreamToolCall is emitted once a tool call is fully assembled.
 	StreamToolCall StreamEventType = "tool_call"
+	// StreamUsage carries a mid-stream usage update.
+	StreamUsage StreamEventType = "usage"
 	// StreamError reports a mid-stream failure; the call still returns an error.
 	StreamError StreamEventType = "error"
 )
@@ -83,6 +104,7 @@ type StreamEvent struct {
 	Type     StreamEventType
 	Text     string
 	ToolCall *message.ToolCall
+	Usage    *Usage
 	Err      error
 }
 

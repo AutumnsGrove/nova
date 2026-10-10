@@ -41,7 +41,7 @@ nova/
     openaicompat/ chat-completions + SSE                        ≤ 600
     openrouter/   preset: routing options, headers, usage       ≤ 300
   auth/           OAuth PKCE login, key store                   ≤ 500
-  tool/           Tool contract, registry, schema validation    ≤ 400
+  tool/           Tool contract, registry, schema validation    ≤ 550
   tools/          fs (read write edit list)                     ≤ 900
                   search (glob grep)                            ≤ 700
                   bash                                          ≤ 400

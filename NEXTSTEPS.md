@@ -5,18 +5,21 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C10 are done. `accept C10` and `make ci` pass. `message`, the `provider`
+**State:** C00 through C11 are done. `accept C11` and `make ci` pass. `message`, the `provider`
 contract, `testkit`, `openaicompat`, the `openrouter` preset with its model catalog, `auth`
 (PKCE login, key store, credential resolution), the hardened `tool` registry with JSON-schema argument
 validation, the `permission` allow/ask/deny policy, the filesystem tools (`read`, `write`, `edit`,
 `list`), the search tools (`glob`, `grep`), the `bash` tool, the `proto` and `session` packages
 (the wire types, JSONL framing, and the session tree store), the `agent` loop (hooks, queues,
-retry, permissions, cancellation, and a typed `proto.Event` stream), and `compaction` + `usage`
-(token estimation, cut points, summarisation, pruning, and the cost ledger) exist.
+retry, permissions, cancellation, and a typed `proto.Event` stream), `compaction` + `usage`
+(token estimation, cut points, summarisation, pruning, and the cost ledger), and `config`
+(defaults, merge order, env and flags, the trust store, AGENTS.md/CLAUDE.md discovery, skills,
+prompt templates, and system-prompt assembly) exist.
 
-**Next:** run **C11** (`docs/chunks/C11-config-resources.md`): config settings, trust, context files,
-skills, and prompt templates. Then C12 (the server core and `nova` command). Remember D48: any
-package's `_test.go` may import `testkit`. C11 depends only on C04.
+**Next:** run **C12** (`docs/chunks/C12-modes-cmd.md`): the server core, modes, and the `nova`
+command. C12 depends on C09, C10, and C11. Remember D48: any package's `_test.go` may import
+`testkit`. C11 added `config.ContextOptions.Trusted` and `config.BuildSystemPrompt`; see
+**Spec corrections to apply** for the details C12 should know.
 
 **Watch out:** `proto.Event` has no `Turns` field, so C09 put the `run_end` turn count in `Turn *int`;
 see **Spec corrections to apply** before C12 renders `run_end`.
@@ -41,7 +44,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C08 | Protocol types and the session store | done | C01 | 2026-10-09 | |
 | C09 | The agent loop | done | C01, C04, C08 | 2026-10-10 | |
 | C10 | Compaction, context limit, usage ledger | done | C08, C09 | 2026-10-10 | |
-| C11 | Config, context files, skills, prompt templates, trust | todo | C04 | | |
+| C11 | Config, context files, skills, prompt templates, trust | done | C04 | 2026-10-10 | |
 | C12 | The server core, modes, and the nova command | todo | C09, C10, C11 | | |
 | C13 | The extension host | todo | C12 | | |
 | C14 | The serve mode and the GitHub Action | todo | C12 | | |
@@ -54,6 +57,71 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C11 — Configuration and resources — 2026-10-10 — pi — main — cost not visible
+
+Built `config` in small green commits: load/merge/env/flags, unknown-key detection and normalisation,
+the trust store, context files, skills, templates, prompt assembly, then the fuzz and property tests.
+
+- `config/paths.go` — `UserConfigDir`/`UserConfigPath`, `ProjectConfigDir`/`ProjectConfigPath`,
+  `SkillsDir`, `PromptsDir`.
+- `config/config.go` — the `Config` tree, `Defaults`, `Load` (defaults → user → project → env →
+  flags), deep `mergeMaps`, `decodeInto` (overlay onto the defaults so a bad type keeps its default),
+  `envMap`/`flagsMap` (dotted keys, `bash.` aliased to `tools.bash`), `normalise` (`~`, thinking,
+  negatives, `Permissions.Validate`), and `findProjectRoot` (`.nova` or `.git`).
+- `config/warn.go` — `unknownKeys`, a reflection walk through the yaml tags that reports nested keys
+  by dotted path and is deterministic (sorted).
+- `config/trust.go` — `TrustStore`, `NewTrustStore`, JSON file, ancestor matching on `EvalSymlinks`
+  real paths, atomic 0600 writes, `ErrTooBroad` for `/` and the home directory.
+- `config/context.go` — `LoadContext`: global then outermost-to-innermost, per-file 64 KiB cut with a
+  marker, 256 KiB total cap dropping outermost project files first, NUL/binary and directory skips,
+  symlink dedup, BOM stripped and CRLF preserved, and the trust gate.
+- `config/skills.go` — `LoadSkills`, one-level scan, `SKILL.md` front matter, name/description rules,
+  duplicate-keeps-first, 256 KiB cap, symlinked directories followed once; shared `parseFrontMatter`.
+- `config/templates.go` — `LoadTemplates`, `Template.Expand` (single pass), and shell-like `SplitArgs`.
+- `config/prompt.go` — `BuildSystemPrompt` in the order base, environment, context, skills, tools,
+  extra, omitting empty parts.
+- Tests `CFG01`–`CFG30`, `TRU01`–`TRU11`, `CTF01`–`CTF13`, `SKL01`–`SKL12`, `TPL01`–`TPL15`,
+  `SYS01`–`SYS06`, `FuzzLoadYAML`, `FuzzSplitArgs`, `FuzzExpand`, and
+  `TestProperty_CFG_MergeAssociative`.
+
+**Unsatisfied matrix rows:** none. `go run ./scripts/accept C11` passes all nine steps; `make ci`
+exits 0; `go test -short -race ./...` is green. Coverage 89.5%. Budget: `config` 1155/1250 (raised
+from 1000 by the human, 2026-10-10).
+
+**Differed from spec:**
+- `ContextOptions` gained `Trusted func(dir string) bool`. Behaviour 15 (an untrusted project loads
+  only the global file) has no other channel, since `LoadContext` takes no trust store.
+- `ToolsConfig.Bash` and `RetryConfig` use explicit yaml tags (`timeout_seconds`, `max_output_bytes`,
+  `base_ms`, `cap_ms`); the spec's untagged inline structs would decode as `timeoutseconds`,
+  `basems`, and `capms`.
+- `tool.Info` has no prompt guideline, so the tools block prints the first line of `Description`.
+- `FuzzSplitArgs`: the row's "joining the result and splitting again is stable" cannot hold for all
+  inputs, because a space join loses quotes and empty arguments and a trailing backslash escapes the
+  separator. The fuzz asserts no panic always, and an exact round trip only for non-empty arguments
+  with no whitespace, quotes, or backslashes. The three found inputs are kept as regression seeds.
+- Env and flags are merged as nested maps before the single decode rather than applied typed after
+  it. An unknown flag key is therefore reported by `unknownKeys` (source `config`), not a `flags`
+  source, but still names the key.
+- `Load` returns an error only for a missing `CWD`; everything else is a warning.
+- `mergeMaps` copies nested maps, so a later merge into the merged map cannot mutate a source layer.
+- Skills set `Source` to the search directory; the spec names the field but not its value.
+- The context ancestor scan stops at home's parent when cwd is below home, and at the filesystem
+  root otherwise.
+
+**Gotchas:**
+- yaml.v3 refuses duplicate keys and bounds alias expansion, so CFG29/CFG30 become warnings with the
+  whole layer skipped (not a partial load).
+- The per-file cut appends the marker after slicing, so a truncated file is slightly over
+  `MaxFileBytes` and its full content counts toward the total cap.
+- `Trust` stores `EvalSymlinks` real paths, so tests on macOS must compare against `realPath`
+  (`/var` → `/private/var`).
+- `normalise` resets an invalid permission policy to `Defaults().Permissions`, which is an empty
+  policy; there is no richer default.
+- `matrixcheck` needs a row ID as a whole `_`-separated component, so tests are named
+  `TestLoad_CFG01_...`, not `TestLoadCFG01...`.
+
+**One command:** `go run ./scripts/accept C11`.
 
 ### C10 — Compaction, the context limit, and the usage ledger — 2026-10-10 — pi — main — cost not visible
 
@@ -662,6 +730,22 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C10 interface `Outcome.Replaced` is unnamed in the behaviour; implemented as `Result.FirstKept`.
 - C10 `Run`: the session has no exported path, so a test that wants to stat the file must open it itself;
   later drafts should not imply the store exposes the path.
+- C11 budgets: `./config: 1000` is too small for the full behaviour (1155 lines). Applied: raised to
+  1250 in the C11 spec and `docs/ARCHITECTURE.md` (human-approved 2026-10-10).
+- C11 interfaces: `ContextOptions` needs a `Trusted func(dir string) bool` field for behaviour 15; the
+  spec's struct has no trust channel.
+- C11 interfaces: `ToolsConfig.Bash` and `RetryConfig` need explicit yaml tags (`timeout_seconds`,
+  `max_output_bytes`, `base_ms`, `cap_ms`); the untagged inner structs otherwise decode as one word.
+- C11 behaviour 22: `tool.Info` has no prompt guideline, so the tools block uses the first line of
+  `Description`; later drafts should add a guideline field or drop the clause.
+- C11 `FuzzSplitArgs`: a space join cannot round-trip quotes, empty arguments, or a trailing
+  backslash, so the stability claim only holds for plain arguments; the test asserts no panic always.
+- C11 layer rules: `config` must import `permission` to decode the policy. Applied in
+  `scripts/importcheck` and `docs/ARCHITECTURE.md`.
+- C11 behaviour 12: the ancestor scan stops at home's parent only when cwd is below home; otherwise it
+  reaches the filesystem root. Later drafts should say which boundary applies.
+- C11 behaviour 13: the 256 KiB total cap counts the appended truncation marker, so a cut file can
+  push the total over the per-file limit.
 
 ## Decisions to record
 
@@ -686,6 +770,16 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   `docs/DECISIONS.md`.
 - `CostFor` treats an unknown model id (`m.ID == ""`) as unpriced and a NaN provider cost as zero; belongs
   in `docs/DECISIONS.md`.
+- `config` imports `permission` (it decodes the policy), and the layer list in `scripts/importcheck`
+  now names it; belongs in `docs/DECISIONS.md`.
+- Config env and flags merge as nested maps before the single decode, so all layers share one overlay
+  and one unknown-key walk; belongs in `docs/DECISIONS.md`.
+- `mergeMaps` copies nested maps, so a later merge cannot mutate a source layer; belongs in
+  `docs/DECISIONS.md`.
+- The trust store refuses `/` and the home directory and matches ancestors on `EvalSymlinks` real
+  paths; belongs in `docs/DECISIONS.md`.
+- Context trust is passed through `config.ContextOptions.Trusted`, not a parameter of `LoadContext`;
+  belongs in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
@@ -706,7 +800,13 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   mean "enabled" while an explicit false still disables?
 - C10: who calls `compaction.Run` — the agent's `BeforeTurn` hook (C12) or the server — and does the caller
   pass the whole transcript or only the messages since the last response to `ShouldCompact`?
+- C11: is `config.ContextOptions.Trusted` the right channel for the context trust gate, or should
+  `LoadContext` take the `TrustStore` directly?
+- C11: should `tool.Info` gain a prompt-guideline field, or should `BuildSystemPrompt` stop claiming to
+  render one?
+- C11: `Trust` derives the home directory from `os.UserHomeDir` when `NewTrustStore` is called; is that
+  acceptable, or should the home directory be a parameter?
 
 ## Cost
 
-Total: $0.00 recorded; the C00 through C10 session costs were not visible.
+Total: $0.00 recorded; the C00 through C11 session costs were not visible.

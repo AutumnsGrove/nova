@@ -21,8 +21,11 @@ func (r *run) turnRequest() (message.Message, provider.Usage, error) {
 			msgs []message.Message
 			err  error
 		}
+		// Snapshot before spawning: an abandoned hook goroutine must not read
+		// r.messages while the loop appends to it.
+		snapshot := cloneMessages(r.messages)
 		out, ok := runHook(r, "before_turn", func(ctx context.Context) outcome {
-			msgs, err := h(ctx, cloneMessages(r.messages))
+			msgs, err := h(ctx, snapshot)
 			return outcome{msgs, err}
 		})
 		if ok {
@@ -49,8 +52,9 @@ func (r *run) turnRequest() (message.Message, provider.Usage, error) {
 		req.Tools = r.cfg.Tools.Defs()
 	}
 	if h := r.cfg.Hooks.TransformContext; h != nil {
+		snapshot := cloneMessages(r.messages)
 		msgs, ok := runHook(r, "transform_context", func(ctx context.Context) []message.Message {
-			return h(ctx, cloneMessages(r.messages))
+			return h(ctx, snapshot)
 		})
 		if ok && msgs != nil {
 			req.Messages = msgs
@@ -58,6 +62,7 @@ func (r *run) turnRequest() (message.Message, provider.Usage, error) {
 	}
 	if h := r.cfg.Hooks.BeforeProviderRequest; h != nil {
 		next := req
+		next.Messages = cloneMessages(req.Messages)
 		if _, ok := runHook(r, "before_provider_request", func(ctx context.Context) bool {
 			h(ctx, &next)
 			return true

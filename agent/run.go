@@ -120,8 +120,9 @@ func (r *run) loop() (*Result, error) {
 		continueTurn := false
 		injected := 0
 		if r.cfg.Hooks.TurnEnd != nil {
+			turnIndex := r.turn
 			td, ok := runHook(r, "turn_end", func(ctx context.Context) TurnDecision {
-				return r.cfg.Hooks.TurnEnd(ctx, Turn{Index: r.turn, Message: assistant, Results: results})
+				return r.cfg.Hooks.TurnEnd(ctx, Turn{Index: turnIndex, Message: assistant, Results: results})
 			})
 			if ok {
 				if td.End {

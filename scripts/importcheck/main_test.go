@@ -246,3 +246,29 @@ func TestImportcheck_ICK11_BundledImportedByCore(t *testing.T) {
 		t.Errorf("output should name bundled:\n%s", out)
 	}
 }
+
+// TestImportcheck_TestkitAllowedOnlyInTests pins the D48 exception: testkit is
+// test support, so a package's _test.go may import it even when the layer table
+// does not list it, but production code may not.
+func TestImportcheck_TestkitAllowedOnlyInTests(t *testing.T) {
+	okRoot := fixtureModule(t, map[string]string{
+		"provider/provider.go":      "package provider\n",
+		"testkit/testkit.go":        "package testkit\n",
+		"provider/provider_test.go": "package provider\n\nimport _ \"example.com/m/testkit\"\n",
+	})
+	if code, out := runImportcheck(t, okRoot); code != 0 {
+		t.Fatalf("test-only import: exit = %d, want 0\n%s", code, out)
+	}
+
+	badRoot := fixtureModule(t, map[string]string{
+		"provider/provider.go": "package provider\n\nimport _ \"example.com/m/testkit\"\n",
+		"testkit/testkit.go":   "package testkit\n",
+	})
+	code, out := runImportcheck(t, badRoot)
+	if code != 1 {
+		t.Fatalf("production import: exit = %d, want 1\n%s", code, out)
+	}
+	if !strings.Contains(out, "layer rule") {
+		t.Errorf("output should cite the layer rule:\n%s", out)
+	}
+}

@@ -177,16 +177,26 @@ func (c *checker) checkAll(pkgs []listPackage) {
 			continue
 		}
 		importer := relPath(c.main, p.ImportPath)
-		imports := append(append(append([]string{}, p.Imports...), p.TestImports...), p.XTestImports...)
-		for _, imp := range imports {
-			c.checkImport(importer, imp)
+		for _, imp := range p.Imports {
+			c.checkImport(importer, imp, false)
+		}
+		for _, imp := range append(append([]string{}, p.TestImports...), p.XTestImports...) {
+			c.checkImport(importer, imp, true)
 		}
 	}
 }
 
-func (c *checker) checkImport(importer, imp string) {
+// checkImport applies the layer rule to main-module imports. testkit is test
+// support, so any package's tests may import it even though the layer table
+// does not list it; production code still may not. The third-party allow-list
+// applies to test imports unchanged.
+func (c *checker) checkImport(importer, imp string, test bool) {
 	if imp == c.main || strings.HasPrefix(imp, c.main+"/") {
-		c.checkLayer(importer, relPath(c.main, imp))
+		imported := relPath(c.main, imp)
+		if test && imported == "testkit" {
+			return
+		}
+		c.checkLayer(importer, imported)
 		return
 	}
 	if isStandard(imp) {

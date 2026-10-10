@@ -92,6 +92,8 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
 - `session` imports `message`, `provider`, `proto`. `compaction` imports `session`, `provider`, `message`.
 - `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.
 - `mode` wires everything (including `serve` and `action`). `cmd/nova` only parses flags and calls `mode` and `ext`.
+- `testkit` is test support: any package's `_test.go` may import it, but production
+  code may not (D48).
 - **`tui/` and `bundled/*` are the only packages allowed to import `charm.land/*`.**
   `scripts/importcheck` (C00) walks the import graph and fails if any other package does
   (D15), and also enforces the layer rules above.

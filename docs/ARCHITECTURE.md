@@ -39,6 +39,10 @@ nova/
   message/        transcript types                              ≤ 250 lines
   provider/       Provider interface, registry, model catalog   ≤ 500
     openaicompat/ chat-completions + SSE                        ≤ 600
+    responses/    OpenAI Responses API + SSE                    ≤ 480
+    messages/     Anthropic Messages API + SSE                  ≤ 480
+    ssestream/    shared POST + SSE transport, timeouts         ≤ 320
+    opencodego/   preset: catalog, endpoint routing             ≤ 320
     openrouter/   preset: routing options, headers, usage       ≤ 300
   auth/           OAuth PKCE login, key store                   ≤ 500
   tool/           Tool contract, registry, schema validation    ≤ 550
@@ -55,6 +59,7 @@ nova/
   mode/           server core, print, json, rpc                 ≤ 1800
     serve/        the protocol over HTTP and SSE                ≤ 400
     action/       the GitHub review action                      ≤ 700
+    providers/    build both providers, route by model          ≤ 320
   ext/            extension host, manifest, install, reload,
                   in-process API for bundled extensions         ≤ 3200
     sdk/          the Go SDK for extensions                     ≤ 700
@@ -193,8 +198,10 @@ Rules the loop must keep, each of which has tests in [`TESTING.md`](TESTING.md):
   after the current assistant turn finishes its tool calls. A *follow-up* message is
   run after the agent has finished all pending work. Abort returns queued messages
   to the caller.
-- **Retry.** A transient provider failure (network error, 429, 5xx) retries with
-  exponential backoff, up to a configured count, and emits `retry` events.
+- **Retry.** A transient provider failure retries with exponential backoff, up to a
+  configured count, and emits `retry` events. This includes a network timeout: a
+  connect or idle timeout is a retryable error on every provider dialect, and the
+  partial response is kept.
 - **Turn budget.** `MaxTurns` ends the run with `Exhausted=true`. It never errors.
 - **Hooks never crash the loop.** A hook that panics or exceeds its deadline is
   skipped, logged, and reported as an `extension_error` event.
@@ -270,15 +277,23 @@ the defaults: read-only tools are allowed, destructive ones ask.
 
 ## 8. Providers and auth
 
-`openaicompat` implements chat completions with SSE and tool calls. `openrouter` is
-a preset that adds routing options, the attribution headers, and OpenRouter's
-`cost` field. Later, `openaicompat` gains a `/responses` mode (needed for some
-OpenCode Go models).
+Nova ships two core providers at launch. `openrouter` is a preset over
+`openaicompat` (chat completions with SSE and tool calls) that adds routing
+options, the attribution headers, and OpenRouter's `cost` field. `opencodego` is
+the second: a preset with its own catalog that routes each model to one of three
+streaming dialects, `provider/responses` (the OpenAI Responses API),
+`provider/messages` (the Anthropic Messages API), or `openaicompat`. All three
+dialects sit on `provider/ssestream`, which owns the connect timeout (30 s), the
+idle timeout (120 s), the SSE line reader, and the `provider.Classify` error
+mapping, so a network timeout is retryable and identical on every endpoint.
+`mode/providers` builds both providers and picks one by the model's catalog entry.
 
 `auth` owns login. `nova login` runs OpenRouter's OAuth PKCE flow with a loopback
 redirect (or prints a URL with `--no-browser`) and stores the key in the user's
 config directory with mode 0600. Resolution order: explicit config, `OPENROUTER_API_KEY`,
-stored key. Credentials resolve per request so a refreshed token takes effect mid-run.
+stored key. OpenCode Go resolves `provider.opencode_go.api_key` then
+`OPENCODE_GO_API_KEY`; it has no OAuth flow at launch. Credentials resolve per
+request so a refreshed token takes effect mid-run.
 
 Models are a code-defined catalog (stable id, wire slug, context window, pricing)
 so a stored choice keeps resolving when a provider renames a slug, and cost has a

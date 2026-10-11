@@ -255,6 +255,9 @@ Native features that were extensions in Pi are in the core, not here: the thinki
 block, the context limit, the cost and usage footer, OpenRouter provider routing,
 and the permission policy.
 
+OpenCode Go is no longer a suggested extension. D56 makes it a core launch provider
+beside OpenRouter, with its own catalog and its Responses and Messages dialects (C20).
+
 ## Suggested, not bundled
 
 Official or recommended extensions, installed on request.
@@ -263,7 +266,6 @@ Official or recommended extensions, installed on request.
 |---|---|
 | `semantic-search` | Heavy: tree-sitter chunking, SQLite with vector search, an embedding service. Genuinely useful, so it is the first recommended install. |
 | `parallel` | Needs an API key and has a quota. A better `web_search`. Search is not built into the core. |
-| `opencode-go` | Registers a provider for the OpenCode Go subscription. Needs `/responses` support in `openaicompat` first, and its quota API is undocumented, so quota is tracked locally. |
 | `git-checkpoint` | Opinionated about how you use git. |
 | `cost-tracker` | Reads the usage ledger to attribute cost to a task. The ledger is core; the reporting is optional. |
 

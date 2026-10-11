@@ -37,8 +37,9 @@ acceptance command.
 | **C17** | TUI: dialogs, widgets, status, extension UI bridge, trust prompt, `/ext` | C15, C13 | 1250 | [C17](chunks/C17-tui-dialogs-widgets.md) |
 | **C18** | Bundled extensions: tasks, ask, plan, subagent, webfetch | C13, C17 | 2500 | [C18](chunks/C18-bundled-extensions.md) |
 | **C19** | Polish: styled help, first run, doctor, docs search, examples, favicon, release workflow | C16, C17, C18 | 800 + 300 | [C19](chunks/C19-polish-release.md) |
+| **C20** | OpenCode Go: Responses and Messages dialects, the second launch provider | C02, C03, C12 | 320 + 480 + 480 + 320 + 320 | [C20](chunks/C20-opencode-go.md) |
 
-All twenty chunks are specified, each with a test matrix. C00 to C14 are the backend. C15 to C19 were
+All twenty-one chunks are specified, each with a test matrix. C00 to C14 and C20 are the backend. C15 to C19 were
 written against the protocol (`PROTOCOL.md`), which is their contract; if building the backend changes an
 event or command, update those specs before starting the chunk. C15 starts by confirming the pinned
 charm.land versions in `TUI.md` resolve.
@@ -53,7 +54,8 @@ C00 ─▶ C01 ─┬─▶ C02 ─▶ C03
             │        └─▶ C11
             └─▶ C08 ─▶ C09 (needs C04) ─▶ C10 ─▶ C12 (needs C11) ─┬─▶ C13 ─┐
                                                                     ├─▶ C14  ├─▶ C17 ─▶ C18 ─▶ C19
-                                                                    └─▶ C15 ─▶ C16 ─┘
+                                                                    ├─▶ C15 ─▶ C16 ─┘
+                                                                    └─▶ C20 (needs C02, C03)
 ```
 
 Safe to run at the same time: {C02, C04, C08}, then {C05, C06, C07, C11} alongside C09 once

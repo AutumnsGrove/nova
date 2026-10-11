@@ -68,7 +68,8 @@ compile them. That is cosmetic. Nothing UI-related is built into their binary.
 | D4 | Provider | OpenRouter first, built on a generic OpenAI-compatible provider | OpenRouter is what is actually used and it reaches everything else | Many providers in core |
 | D21 | Login | `nova login` runs OpenRouter's OAuth PKCE flow and stores the key. `OPENROUTER_API_KEY` also works. Nova should work when launched through Ori. | Ori logs in to OpenRouter by OAuth PKCE and bills to the OpenRouter account. Nova does the same natively. | Key paste only |
 | D22 | Provider options | A `ProviderOptions` map on every request, passed through to the wire body. OpenRouter routing (`order`, `only`, `ignore`, `allow_fallbacks`, `sort`, `quantizations`, `max_price`, ...) is a typed helper. A `before_provider_request` hook can mutate the payload. | Replaces the `provider-pinning` extension. Keeps prompt caches warm. | Extension only |
-| D23 | Other providers | OpenCode Go and others are extensions that register a provider. They need `/responses` and `/chat/completions` support in the OpenAI-compatible layer, which comes later. | Not core scope. The user wants OpenRouter as the one core provider. | Bundle every provider |
+| D23 | Other providers | **Superseded by D56.** OpenCode Go and others were extensions that register a provider, needing `/responses` and `/chat/completions` support later. | Not core scope. The user wants OpenRouter as the one core provider. | Bundle every provider |
+| D56 | Second launch provider | **OpenCode Go** ships at launch as a core provider beside OpenRouter, built from three streaming dialects (chat completions, OpenAI Responses, Anthropic Messages) over a shared SSE transport, with its own catalog and `OPENCODE_GO_API_KEY`/config credentials. | The Go subscription is the low-cost path to the open coding models, and some of its models speak only `/responses` or `/messages`; a launch with one provider has no fallback. | Keep it a suggested extension installed later (D23); bundle every provider; OpenRouter only |
 
 ### Primitives that were extensions in Pi
 
@@ -129,6 +130,7 @@ compile them. That is cosmetic. Nothing UI-related is built into their binary.
 | D11 two programs | D11 one program, UI isolated by package and build tag |
 | D12 two modules and `go.work` | D12 one module |
 | D13 in-process seam, RPC later | D13 protocol first |
+| D23 OpenCode Go as a later extension | D56 OpenCode Go as a core launch provider |
 
 ## Open items
 

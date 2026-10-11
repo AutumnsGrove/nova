@@ -4,9 +4,9 @@ The roadmap. Reasons are in [`DECISIONS.md`](DECISIONS.md), structure in
 [`ARCHITECTURE.md`](ARCHITECTURE.md), and the build process in
 [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 
-Status: **planning.** The design is documented; all twenty chunks (C00 to C19) are specified in full.
-An M0 prototype exists at the repository root ([`SPIKE.md`](SPIKE.md)) and is the starting
-point for several chunks.
+Status: **building.** The backend is done and tested through C13; all twenty-one chunks (C00 to C20) are
+specified in full, each with a test matrix. An M0 prototype exists at the repository root
+([`SPIKE.md`](SPIKE.md)) and is the starting point for several chunks.
 
 ## 1. Vision
 
@@ -76,7 +76,7 @@ Each milestone is a set of chunks from [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
 | **M2 Providers and tools** | C02, C03, C04, C05, C06, C07 | a tested OpenRouter provider and the core tools |
 | **M3 The engine** | C08, C09, C10, C11 | protocol, sessions, the loop, compaction, config |
 | **M4 It runs** | C12 | `nova -p "…"` and `--mode rpc` work end to end |
-| **M5 Extensible** | C13, C14 | the extension host, `nova serve`, the GitHub Action |
+| **M5 Extensible** | C13, C14, C20 | the extension host, `nova serve`, the GitHub Action, the OpenCode Go launch provider |
 | **M6 The terminal** | C15, C16, C17 | the TUI: thinking block, tool cards, dialogs, widgets |
 | **M7 Batteries** | C18, C19 | bundled extensions, polish, release |
 | **M8 Adoption** | | Ivy, then her-go, then polaris embed the library ([`INTEGRATION.md`](INTEGRATION.md)) |

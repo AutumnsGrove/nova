@@ -10,10 +10,13 @@
 > A minimal, pi-and-crush-inspired agent harness in Go — built to be embedded in
 > Go applications (her-go, polaris, ivy) or run standalone as a CLI/TUI.
 
-**Status: planning.** The design is documented and all twenty implementation chunks
-are specified in full, each with a test matrix. No product code is being written yet; the repository also holds an early
-M0 prototype at the repository root (see [`docs/SPIKE.md`](docs/SPIKE.md)). The prototype is
-exploratory and its API is not frozen.
+**Status: building.** The backend is done and tested through C13 — the agent loop, the
+core tools, sessions, compaction, config, the JSONL protocol, the server and every mode,
+and the extension host. The TUI (C15–C17), bundled extensions (C18), release polish
+(C19), and the serve/Action work (C14) are next. All twenty-one implementation chunks
+are specified in full, each with a test matrix. An early M0 prototype also sits at the
+repository root (see [`docs/SPIKE.md`](docs/SPIKE.md)); it is exploratory and its API is
+not frozen.
 
 ## What Nova is
 

@@ -13,7 +13,8 @@ them, and `mode.New` builds the host so a running agent loads extensions, compos
 their commands, reloads them, and shuts them down.
 
 **Next:** run **C14** (`docs/chunks/C14-serve-action.md`): serve mode and the GitHub Action. It depends on
-C12. The `/ext` and trust-prompt UI is still C17.
+C12. **C20** (`docs/chunks/C20-opencode-go.md`) is new: OpenCode Go as the second launch provider; it
+depends only on C02, C03, and C12, so it can run any time. The `/ext` and trust-prompt UI is still C17.
 
 **Watch out:** the fake clock's `After` timers are never cancelled, so leftover timers make
 `testkit.FakeClock.BlockUntil` unreliable; the supervision tests advance the clock in a loop instead.
@@ -48,10 +49,43 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C17 | TUI dialogs, widgets, status, extension UI bridge | todo | C15, C13 | | |
 | C18 | Bundled extensions | todo | C13, C17 | | |
 | C19 | Polish, first run, doctor, examples, release | todo | C16, C17, C18 | | |
+| C20 | OpenCode Go, the second launch provider | todo | C02, C03, C12 | 2026-10-11 | |
 
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C20 spec — OpenCode Go, the second launch provider — 2026-10-11 — pi — main — cost not visible
+
+Docs-only session. Authored the C20 chunk spec and recorded the plan; no Go code changed, so `make ci` is
+unaffected. It exists because the human wants a second provider at launch and explicit network-timeout
+handling in the plans.
+
+**Built:**
+- `docs/chunks/C20-opencode-go.md` — five new packages (`provider/ssestream`, `provider/responses`,
+  `provider/messages`, `provider/opencodego`, `mode/providers`), three streaming dialects over a shared SSE
+  transport, the OpenCode Go catalog and routing, credential/config wiring, and matrix rows RSP01–RSP19,
+  MSG01–MSG17, OPG01–OPG20, TMO01–TMO11. Timeout handling is explicit in behaviour 29–33 and the TMO rows.
+- `docs/DECISIONS.md` — D56 (OpenCode Go is a core launch provider) and D23 marked superseded.
+- `docs/PLAN.md`, `docs/IMPLEMENTATION.md`, `docs/EXTENSIONS.md`, `docs/ARCHITECTURE.md` — the roadmap,
+  chunk table, extension table, provider section, and the retry rule now name the second provider and
+  network timeouts.
+- `README.md` — status is "building", not "planning".
+
+**Why five new packages:** `scripts/matrixcheck` treats a package's test names as one spec's, so new tests
+cannot go in `provider/openaicompat`, `auth`, `config`, or `mode` (their tests cite C02/C03/C11/C12 rows).
+The shared packages change without new tests and are exercised from `mode/providers`.
+
+**Not satisfied:** none (docs only). **Differed from spec:** n/a. The budget numbers in the C20 frontmatter
+are estimates and need approval; see Open questions.
+
+**Loose end (not this session's):** `mode/serve/sse_test.go` is untracked and its
+`TestServe_SSE09_SlowClientDropped` fails ("the dropped client's channel is still open"). It is C14
+work-in-progress and was left untracked; the committed tree is green, but `make ci` in this working tree
+fails until C14 finishes it or it is removed.
+
+**One command:** `go run ./scripts/linecount docs/chunks/C20-opencode-go.md` reports the new packages as
+missing, which is expected until C20 is built; it proves the spec parses.
 
 ### C13 — The extension host — 2026-10-10 — pi — main — cost visible
 
@@ -919,9 +953,18 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C12 behaviour 5/22: RPC writes all frames from the ServeRPC goroutine, so a slow client blocks command
   handling; the old separate event goroutine could write after ServeRPC returned. This is the chosen
   trade-off for "no frame after return".
+- C20 frontmatter budgets are proposals, not yet approved: the new packages `provider/ssestream: 320`,
+  `provider/responses: 480`, `provider/messages: 480`, `provider/opencodego: 320`, `mode/providers: 320`,
+  plus `config: 1250`, `auth: 500`, `mode: 1800` for the shared edits. `docs/ARCHITECTURE.md` lists the
+  same numbers. Later drafts should mark them as estimates until the code exists.
+- C20 architecture: `provider/ssestream` is a second copy of the C02 SSE transport; migrating
+  `openaicompat` onto it is out of scope. If a later chunk migrates it, C02's spec should say so, and C20's
+  "Out of scope" note should be removed.
 
 ## Decisions to record
 
+- Applied 2026-10-11 (the human asked for the plan): D56 in `docs/DECISIONS.md` makes OpenCode Go a core
+  launch provider and supersedes D23; C20 specifies it.
 - The `ci` guard loops (`matrixcheck-all`, `linecount-all`) guard only chunks marked `done` in `NEXTSTEPS.md`,
   replacing C00's "whose packages exist" rule, because the M0 prototype already occupies several future package
   paths. Belongs in `docs/DECISIONS.md`.
@@ -1013,7 +1056,16 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   only reads its own copy. `TestProperty_SRV_EventOrder` includes `abort` and passes 20 `-race` runs.
 - C13: the SDK's hook API is generic rather than the per-hook types shown in `EXTENSIONS.md`; should the doc
   change or the SDK grow typed hooks?
+- C20: approve the budgets in the C20 frontmatter. `provider/responses`, `provider/messages`,
+  `provider/ssestream`, `provider/opencodego`, and `mode/providers` are new packages; `config`, `auth`, and
+  `mode` grow a little. The numbers are estimates until the code exists.
+- C20: is a second copy of the SSE transport in `provider/ssestream` acceptable at launch, with
+  `openaicompat` migrating onto it later, or should C20 refactor `openaicompat` now and revisit its C02
+  budget and tests?
+- C20: should OpenCode Go get a `nova login` paste-key flow at launch, or is config/env enough?
+- C20: the `provider/opencodego` catalog holds three representative models (one per dialect). Should the full
+  Go list be catalogued, or is a curated small set the rule as for OpenRouter?
 
 ## Cost
 
-Total: $0.00 recorded; the C00 through C13 session costs were not visible.
+Total: $0.00 recorded; the C00 through C20 session costs were not visible.

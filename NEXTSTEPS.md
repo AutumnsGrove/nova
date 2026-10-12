@@ -5,14 +5,12 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C14 are done. C15 (the TUI foundation) is **partial but accepted** (only the PTY
-smoke tests are stubs) and C16 (TUI rendering) is **done**: `accept C15` and `accept C16` pass all nine
-steps, every matrix row has a test, and `make ci` exits 0.
+**State:** C00 through C16 are done. `accept C15`, `accept C16`, and `make ci` all pass; every matrix row
+has a test, and the TUI's PTY smoke tests (`NOVA_PTY=1 go test ./tui/ui -run PTY`) now run for real.
 
 **Next:** run **C17** (`docs/chunks/C17-tui-dialogs-widgets.md`) — dialogs, widgets, status segments, the
 model and session pickers, the trust prompt, and the extension UI bridge (it depends on C15 and C13).
-**C20** (`docs/chunks/C20-opencode-go.md`) can still run whenever. The only outstanding C15 item is a real
-PTY harness (PTY01/PTY02 are stubs).
+**C20** (`docs/chunks/C20-opencode-go.md`) can still run whenever.
 
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
 files carry `//go:build !notui`, and `scripts/linecount` skips generated files (`tui/splash/mark_gen.go`).
@@ -44,7 +42,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C12 | The server core, modes, and the nova command | done | C09, C10, C11 | 2026-10-10 | |
 | C13 | The extension host | done | C12 | 2026-10-10 | visible |
 | C14 | The serve mode and the GitHub Action | done | C12 | 2026-10-11 | visible |
-| C15 | TUI foundation | partial | C12 | 2026-10-11 | |
+| C15 | TUI foundation | done | C12 | 2026-10-11 | |
 | C16 | TUI rendering: thinking block, tool cards, diffs, themes, splash | done | C15 | 2026-10-11 | |
 | C17 | TUI dialogs, widgets, status, extension UI bridge | todo | C15, C13 | | |
 | C18 | Bundled extensions | todo | C13, C17 | | |
@@ -54,6 +52,28 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C15 PTY follow-up — 2026-10-11 — pi — main — cost not visible
+
+Closed C15's only gap. `NOVA_PTY=1 go test ./tui/ui -run PTY` now runs for real on a pseudo-terminal and
+both tests pass, so C15 is `done`.
+
+**Built:**
+- `tui/ui/pty_{linux,darwin,other}_test.go` — `openPTY` allocates a pty (Linux `/dev/ptmx` + `TIOCSPTLCK`,
+  macOS `TIOCPTYGRANT`/`TIOCPTYUNLK`/`TIOCPTYGNAME`), sets an 80×24 window, and skips elsewhere.
+- `tui/ui/pty_test.go` — a local `scriptProvider`, a real `mode.New` server over it, PTY01 (start, ctrl+c
+  twice, exit) and PTY02 (type a prompt, see the reply), with one persistent pty reader.
+- `tui/ui/run.go` — `tea.WithInput(in)` / `tea.WithOutput(out)`, so `runWith` can be driven off the real
+  terminal.
+- `scripts/importcheck` + D59 — `golang.org/x/sys/unix` is allowed test-only in `tui/` for the pty syscalls
+  (the `TESTING.md` "stdlib only" rule cannot cover a pty).
+
+**Gotchas for the next agent:**
+- Do not import `testkit` in `tui/ui` tests: its `-update` flag clashes with `x/exp/golden`'s and the test
+  binary panics at init. The pty test defines its own `scriptProvider` instead.
+- Both pty tests skip unless `NOVA_PTY=1`.
+
+**One command:** `NOVA_PTY=1 go test ./tui/ui -run PTY`.
 
 ### C16 — TUI rendering — 2026-10-11 — pi — main — cost not visible
 
@@ -105,7 +125,7 @@ Built the renderers and items in eight green commits on top of C15. `go generate
 
 Built all seven packages of the TUI foundation in sixteen green commits. `go run ./scripts/accept C15`
 passes all nine steps, every matrix row has a named test, every package is inside its budget, and `make ci`
-exits 0. C15 is **partial** only because the PTY smoke tests are stubs (see below).
+exits 0. The PTY smoke tests were completed in the C15 PTY follow-up below.
 
 **Built:**
 - `tui/layout/layout.go` — pure rectangle computation (LYT01–LYT10, `TestProperty_LYT_Tiles`).
@@ -127,7 +147,7 @@ exits 0. C15 is **partial** only because the PTY smoke tests are stubs (see belo
   keeps the minimal build compiling (RUN04).
 - `go.mod`/`go.sum` — the pinned TUI stack (see **Spec corrections** for the two paths that do not exist).
 
-**Unsatisfied (why C15 is partial):**
+**Unsatisfied:** none (PTY01/PTY02 completed in the follow-up).
 - PTY01 and PTY02 are skip-only stubs: `NOVA_PTY=1 go test ./tui/ui -run PTY` passes vacuously. The real
   pseudo-terminal harness (start, prompt against `testkit.Server`, quit) is not built.
 - For colour profiles the `bubbles/textarea` keeps its own default styles, so a dark/light theme does not
@@ -1153,6 +1173,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   struct has none. Applied: added `Now time.Time`.
 - C16 splash: the full mark is sparse (2,073 cells in 97x97), so the Full golden is large; later drafts
   should say the acceptance golden may be big.
+- C15 PTY: the L5 pseudo-terminal tests need a syscall wrapper to allocate a pty; `TESTING.md` says tests
+  use the standard library only. Applied: D59 allows `golang.org/x/sys/unix` test-only in `tui/`.
 
 ## Decisions to record
 
@@ -1237,6 +1259,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   unbudgeted. Belongs in `docs/DECISIONS.md`.
 - `render.Call.Now` is the render clock; the running timer and spinner frame read only it. Belongs in
   `docs/DECISIONS.md`.
+- Applied 2026-10-11: D59 permits `golang.org/x/sys/unix` for the `tui/ui` PTY smoke tests; it is already an
+  indirect dependency and there is no stdlib pty.
 
 ## Open questions for the human
 
@@ -1303,4 +1327,5 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 Total: $0.00 recorded; the C00 through C20 session costs were not visible. C14 was one session of seven
 commits; its cost was not visible either. C15 was one session of sixteen commits; its cost was not visible
-either. C16 was one session of eight commits; its cost was not visible either.
+either. C16 was one session of eight commits; its cost was not visible either. The C15 PTY follow-up was
+one commit; its cost was not visible either.

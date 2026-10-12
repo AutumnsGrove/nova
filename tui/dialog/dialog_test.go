@@ -18,11 +18,16 @@ import (
 func runeKey(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Text: string(r)} }
 
 var (
-	enterKey = tea.KeyPressMsg{Code: tea.KeyEnter}
-	escKey   = tea.KeyPressMsg{Code: tea.KeyEsc}
-	leftKey  = tea.KeyPressMsg{Code: tea.KeyLeft}
-	rightKey = tea.KeyPressMsg{Code: tea.KeyRight}
-	tabKey   = tea.KeyPressMsg{Code: tea.KeyTab}
+	enterKey  = tea.KeyPressMsg{Code: tea.KeyEnter}
+	escKey    = tea.KeyPressMsg{Code: tea.KeyEsc}
+	leftKey   = tea.KeyPressMsg{Code: tea.KeyLeft}
+	rightKey  = tea.KeyPressMsg{Code: tea.KeyRight}
+	tabKey    = tea.KeyPressMsg{Code: tea.KeyTab}
+	upKey     = tea.KeyPressMsg{Code: tea.KeyUp}
+	downKey   = tea.KeyPressMsg{Code: tea.KeyDown}
+	pgupKey   = tea.KeyPressMsg{Code: tea.KeyPgUp}
+	pgdownKey = tea.KeyPressMsg{Code: tea.KeyPgDown}
+	spaceKey  = tea.KeyPressMsg{Code: tea.KeySpace}
 )
 
 // confirmReq builds a confirm request for tests.

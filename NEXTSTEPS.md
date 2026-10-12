@@ -5,23 +5,20 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C14 are done. C15 (the TUI foundation) is **partial but accepted**: all seven
-packages are built, `go run ./scripts/accept C15` passes all nine steps, every matrix row has a test, and
-`make ci` exits 0. Only the PTY smoke tests are stubs, so C15 is not marked `done`.
+**State:** C00 through C14 are done. C15 (the TUI foundation) is **partial but accepted** (only the PTY
+smoke tests are stubs) and C16 (TUI rendering) is **done**: `accept C15` and `accept C16` pass all nine
+steps, every matrix row has a test, and `make ci` exits 0.
 
-**Next:** run **C16** (`docs/chunks/C16-tui-rendering.md`) — thinking blocks, tool-specific cards, diffs,
-custom themes, and the splash, on top of C15. Leave the real PTY harness for whoever wants it: it is the
-only unsatisfied C15 item (PTY01/PTY02). **C20** (`docs/chunks/C20-opencode-go.md`) can still run whenever;
-C17 is the `/ext` and trust-prompt UI.
+**Next:** run **C17** (`docs/chunks/C17-tui-dialogs-widgets.md`) — dialogs, widgets, status segments, the
+model and session pickers, the trust prompt, and the extension UI bridge (it depends on C15 and C13).
+**C20** (`docs/chunks/C20-opencode-go.md`) can still run whenever. The only outstanding C15 item is a real
+PTY harness (PTY01/PTY02 are stubs).
 
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
-files carry `//go:build !notui`. `cmd/nova`'s budget was raised to 680 for `tui.go`. `mode/action` is still
-exactly at its 700-line budget. The fake clock's `After` timers are never cancelled, so leftover timers make
-`testkit.FakeClock.BlockUntil` unreliable; the supervision and wall-clock tests advance the clock in a loop
-instead. `proto.Event` has no `Turns` field, so C09 put the `run_end` turn count in `Turn *int`.
-
-**Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
-turn count in `Turn *int`.
+files carry `//go:build !notui`, and `scripts/linecount` skips generated files (`tui/splash/mark_gen.go`).
+`cmd/nova`'s budget is 680. `mode/action` is exactly at its 700-line budget. The fake clock's `After` timers
+are never cancelled, so leftover timers make `testkit.FakeClock.BlockUntil` unreliable. `proto.Event` has no
+`Turns` field, so C09 put the `run_end` turn count in `Turn *int`.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -48,7 +45,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C13 | The extension host | done | C12 | 2026-10-10 | visible |
 | C14 | The serve mode and the GitHub Action | done | C12 | 2026-10-11 | visible |
 | C15 | TUI foundation | partial | C12 | 2026-10-11 | |
-| C16 | TUI rendering: thinking block, tool cards, diffs, themes, splash | todo | C15 | | |
+| C16 | TUI rendering: thinking block, tool cards, diffs, themes, splash | done | C15 | 2026-10-11 | |
 | C17 | TUI dialogs, widgets, status, extension UI bridge | todo | C15, C13 | | |
 | C18 | Bundled extensions | todo | C13, C17 | | |
 | C19 | Polish, first run, doctor, examples, release | todo | C16, C17, C18 | | |
@@ -57,6 +54,52 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C16 — TUI rendering — 2026-10-11 — pi — main — cost not visible
+
+Built the renderers and items in eight green commits on top of C15. `go generate ./tui/splash` is current,
+`go run ./scripts/accept C16` passes all nine steps, every matrix row has a named test, and `make ci` exits 0.
+
+**Built:**
+- `tui/diff/diff.go` — unified diff view: gutter, add/remove backgrounds, hunk headers, wrapping,
+  `MaxLines`, and a malformed fallback (DFV01–DFV15, `FuzzDiffRender`).
+- `tui/highlight/highlight.go` — a shared chroma lexer/`terminal256` wrapper used by diff and render (D57).
+- `tui/render/{registry,read,write,edit,bash,search,generic,highlight}.go` — `Call`, `Renderer`, a
+  panic-safe `Registry`, `Summarize`, `FormatDuration`/`FormatTokens`, `Highlight`, and the built-in cards
+  (CRD/ARG/RRD/RWR/RED/RBS/RSR/RGN, `FuzzSummarize`, `TestProperty_CRD_NoOverflow`).
+- `tui/chat/{thinking,toolitem}.go` plus transcript changes — a native thinking item (streaming preview,
+  timer, tokens, expansion) and registry-driven tool cards; `Display`, `SetDisplay`, `SetNow`, `NeedsTick`,
+  `SetStyles` (THK01–THK24, `FuzzThinkingFormat`).
+- `tui/styles/themeyaml.go` — `LoadTheme`/`LoadThemes` with warnings and built-in precedence (THM01–THM06).
+- `assets/logo/gen/main.go -go` and `tui/splash/{splash,mark_gen}.go` — the cell grid, four levels,
+  opacity blending, an ASCII fallback, and the caption (SPL01–SPL11).
+- `tui/ui` — 250 ms ticks, `/theme`, `/display`, `ctrl+o` flips both flags, and splash show/dismiss/resize
+  (THM07–THM10, DSP01–DSP05, SPL12–SPL14, GLR01–GLR04, PRR01–PRR02).
+- `scripts/{matrixcheck,linecount}` — see **Differed from spec** below.
+
+**Differed from spec / decisions worth recording:**
+- `render.Call` gained `Now time.Time` for the running timer and spinner frame; the spec's struct has no clock.
+- `tui/highlight` is a new shared package (not in the spec) so `diff` and `render` share one chroma setup
+  without an import cycle (D57).
+- `matrixcheck` now enforces the ID shape only on tests that cite a row of the current spec, so one package
+  may serve several chunks (C15 and C16 share `chat`, `styles`, and `ui`).
+- `scripts/linecount` skips files whose first line is the standard `// Code generated ... DO NOT EDIT.`
+  header, so `tui/splash/mark_gen.go` has no hand-written budget.
+- `importcheck` allows `github.com/alecthomas/chroma/v2` in `tui/`/`bundled/` (D57) and `gopkg.in/yaml.v3`
+  in the UI too (D58).
+- C16's `packages`/`budgets` frontmatter omitted the changed `chat`/`styles`/`ui` packages; added with their
+  existing budgets (no raise was needed).
+
+**Gotchas for the next agent:**
+- The splash mark is sparse (2,073 cells over a 97×97 grid) and its golden is large. Run
+  `go generate ./tui/splash` before committing any generator change.
+- `render.Registry.Lookup` never returns nil and recovers a panic; `safeRenderer` also clips every line to
+  the width, which is the guarantee behind the overflow property test.
+- Theme switching rebuilds `styles.Styles` and calls `Transcript.SetStyles`, which restyles every item.
+- Run the four new fuzzers (`FuzzDiffRender`, `FuzzSummarize`, `FuzzThinkingFormat`) before touching these
+  packages.
+
+**One command:** `go run ./scripts/accept C16`.
 
 ### C15 — TUI foundation — 2026-10-11 — pi — main — cost not visible
 
@@ -1103,6 +1146,14 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C12 budgets: `./cmd/nova: 600` is too small for C15's `cmd/nova/tui.go` plus the notui stub (632 lines).
   Applied (pending human approval): raised to 680 in the C12 spec and `docs/ARCHITECTURE.md`.
 
+- C16 frontmatter omitted the changed `./tui/chat`, `./tui/styles`, and `./tui/ui` packages, so
+  `matrixcheck` could not see their rows. Applied: added them with their existing C15 budgets; later drafts
+  should list every package a chunk changes.
+- C16 interfaces: `render.Call` needs a render clock for the running timer and spinner frame; the spec's
+  struct has none. Applied: added `Now time.Time`.
+- C16 splash: the full mark is sparse (2,073 cells in 97x97), so the Full golden is large; later drafts
+  should say the acceptance golden may be big.
+
 ## Decisions to record
 
 - `mode.Build`/`BuildOptions` load config and build a server, so `cmd/nova` only parses flags
@@ -1180,6 +1231,13 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - TUI start is decided by `ui.Interactive(mode, stdinTTY, stdoutTTY)` and `cmd/nova` calls it; the `notui`
   build supplies a stub. Belongs in `docs/DECISIONS.md`.
 
+- `matrixcheck` enforces the ID shape only on a test that cites a row of the current spec, so a package
+  may serve several chunks. Belongs in `docs/DECISIONS.md`.
+- `scripts/linecount` skips generated files (`// Code generated ... DO NOT EDIT.`), so `mark_gen.go` is
+  unbudgeted. Belongs in `docs/DECISIONS.md`.
+- `render.Call.Now` is the render clock; the running timer and spinner frame read only it. Belongs in
+  `docs/DECISIONS.md`.
+
 ## Open questions for the human
 
 - Should `mode/serve` regain a per-route 30 s write timeout, and should `cmd/nova` get a C14 budget line
@@ -1236,8 +1294,13 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C15: for colour profiles the `bubbles/textarea` keeps its own default styles (the dark/light theme does
   not recolour it). Recolour the editor from the theme, or accept the library defaults?
 
+- C16: confirm the `matrixcheck` change (unknown-ID checks are skipped for tests that cite no row of the
+  current spec) and the `linecount` change (generated files are skipped).
+- C16: the full splash mark renders sparsely at 97x97; is that acceptable, or should the generator emit a
+  denser grid or the splash downsample differently?
+
 ## Cost
 
 Total: $0.00 recorded; the C00 through C20 session costs were not visible. C14 was one session of seven
 commits; its cost was not visible either. C15 was one session of sixteen commits; its cost was not visible
-either.
+either. C16 was one session of eight commits; its cost was not visible either.

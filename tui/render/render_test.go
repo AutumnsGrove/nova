@@ -498,3 +498,23 @@ func TestProperty_CRD_NoOverflow(t *testing.T) {
 		}
 	}
 }
+
+func TestRender_CRD11_WidthNeverExceeded(t *testing.T) {
+	st := colors()
+	reg := NewRegistry()
+	for width := 20; width <= 200; width += 30 {
+		c := Call{
+			Name:    "read",
+			Args:    raw(`{"path":"世界/very/long/path.go"}`),
+			Content: "1\t世界世界世界",
+			Details: raw(`{"start":1,"end":1}`),
+		}
+		for _, out := range []string{reg.Lookup("read").Header(c, st, width), reg.Lookup("read").Body(c, st, width, true)} {
+			for _, l := range strings.Split(out, "\n") {
+				if ansi.StringWidth(l) > width {
+					t.Fatalf("width %d: %q is %d wide", width, l, ansi.StringWidth(l))
+				}
+			}
+		}
+	}
+}

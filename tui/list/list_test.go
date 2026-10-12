@@ -258,7 +258,7 @@ func TestList_VLS13_ZeroLineItems(t *testing.T) {
 }
 
 // BenchmarkVLS14_Append measures the cost of growing a large list.
-func BenchmarkVLS14_Append(b *testing.B) {
+func BenchmarkList_VLS14_Append(b *testing.B) {
 	l := New()
 	l.Resize(40, 30)
 	items := make([]*testItem, 10000)

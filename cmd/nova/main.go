@@ -20,7 +20,6 @@ import (
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/docs"
 	"github.com/AutumnsGrove/nova/mode"
-	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
 )
@@ -115,8 +114,8 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		logoutCommand(stdout, stderr),
 		docsCommand(stdout),
 		extCommand(stdin, stdout),
-		serveCommand(stderr),
-		actionCommand(stdout, stderr, exit),
+		serveCommand(),
+		actionReview(stdout, exit),
 	)
 	return root
 }
@@ -183,42 +182,24 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 	if o.changed("context-limit") {
 		flags["context_limit"] = o.contextLimit
 	}
-	trust := config.NewTrustStore(filepath.Join(config.UserConfigDir(home), "trust.json"))
-	cfg, warnings, err := config.Load(config.LoadOptions{CWD: cwd, Home: home, Trusted: trust.IsTrusted, Flags: flags})
-	if err != nil {
-		return 0, err
-	}
-	for _, w := range warnings {
-		fmt.Fprintf(o.stderr, "warning: %s: %s\n", w.Source, w.Message)
-	}
-	if o.yes {
-		cfg.Permissions.Headless = permission.Allow
-		fmt.Fprintln(o.stderr, "warning: --yes auto-approves tool calls for this run")
-	}
-
-	opt := mode.Options{
-		Config: cfg, CWD: cwd, Home: home, Out: o.stdout, In: o.stdin,
-		NoSession: o.noSession, Version: version, Mode: o.mode,
-	}
+	var tools []string
 	if o.tools != "" {
-		opt.Tools = splitList(o.tools)
+		tools = splitList(o.tools)
 	}
-	if o.noTools {
-		opt.NoTools = true
-	}
+	sessionPath := o.session
 	if o.continueRun {
-		path, err := newestSession(cwd)
-		if err != nil {
+		if sessionPath, err = newestSession(cwd); err != nil {
 			return 0, err
 		}
-		opt.Session = path
-	} else if o.session != "" {
-		opt.Session = o.session
 	}
 	if o.resume && o.mode != "tui" {
 		return 0, fmt.Errorf("nova: --resume needs the TUI (not built yet)")
 	}
-	s, err := mode.New(opt)
+	s, err := mode.Build(mode.BuildOptions{
+		CWD: cwd, Home: home, Mode: o.mode, Version: version, Flags: flags,
+		Yes: o.yes, Out: o.stdout, In: o.stdin, NoSession: o.noSession, Session: sessionPath,
+		NoTools: o.noTools, Tools: tools, Stderr: o.stderr,
+	})
 	if err != nil {
 		return 0, err
 	}

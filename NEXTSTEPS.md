@@ -5,11 +5,15 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C16 are done. `accept C15`, `accept C16`, and `make ci` all pass; every matrix row
-has a test, and the TUI's PTY smoke tests (`NOVA_PTY=1 go test ./tui/ui -run PTY`) now run for real.
+**State:** C00 through C16 are done. `accept C15`, `accept C16`, and `make ci` all pass. **C17 is in progress**
+(partial): its new packages (`tui/dialog`, `tui/widget`, `tui/trust`) exist and are green, and the mode server
+additions are done, but the TUI bridge and the pickers/help dialogs are not built yet (see **Last session**).
 
-**Next:** run **C17** (`docs/chunks/C17-tui-dialogs-widgets.md`) — dialogs, widgets, status segments, the
-model and session pickers, the trust prompt, and the extension UI bridge (it depends on C15 and C13).
+**Next:** finish **C17** (`docs/chunks/C17-tui-dialogs-widgets.md`) by taking it in this order:
+1. the remaining `tui/dialog` dialogs: `models.go` (MPK01-05), `sessions.go` (SSL01-05, TRV01-03), `extensions.go`
+   (EXV01-03), `help.go` (HLP01);
+2. `tui/ui/bridge.go` plus the key/command/footer wiring (DLG02/04/08/09, STS04, TST04 focus, KYA01-03, UXB01-09);
+3. `cmd/nova/tui.go`: run `trust.Ensure` before the server starts (the trust flow itself, TRP01-08, is done and tested).
 **C20** (`docs/chunks/C20-opencode-go.md`) can still run whenever.
 
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
@@ -44,7 +48,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C14 | The serve mode and the GitHub Action | done | C12 | 2026-10-11 | visible |
 | C15 | TUI foundation | done | C12 | 2026-10-11 | |
 | C16 | TUI rendering: thinking block, tool cards, diffs, themes, splash | done | C15 | 2026-10-11 | |
-| C17 | TUI dialogs, widgets, status, extension UI bridge | todo | C15, C13 | | |
+| C17 | TUI dialogs, widgets, status, extension UI bridge | partial | C15, C13 | 2026-10-12 | |
 | C18 | Bundled extensions | todo | C13, C17 | | |
 | C19 | Polish, first run, doctor, examples, release | todo | C16, C17, C18 | | |
 | C20 | OpenCode Go, the second launch provider | todo | C02, C03, C12 | 2026-10-11 | |
@@ -52,6 +56,73 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C17 (partial) — 2026-10-12 — pi — main — cost not visible
+
+Built C17 in seven green commits and paused (the human asked to stop). The new packages and the mode server
+additions are done and tested; the TUI bridge and the picker/help dialogs are not. `go build ./...` is green and
+so are `go test -short -race ./tui/dialog/ ./tui/widget/ ./tui/trust/ ./mode/ ./config/ ./proto/`.
+
+**Built:**
+- `mode/` (SVA01-SVA09) — `handleGetExtensions` + dispatch; `list_models` now returns a top-level array of
+  `{id,name,provider,context_window,in_per_m,out_per_m,current}`, `session.list` a top-level array of
+  `{id,path,name,modified,entries,current}`; `s.ask` sets `remember: true` and `Tool`/`Args`, and a
+  `remember: "session"` answer adds a per-server allow rule (checked in `s.ask`, never persisted, deny still
+  wins). Tests in `mode/c17_test.go`.
+- `tui/widget` (WDG01-WDG12, STS01-STS03, TST01-TST04, `FuzzWidgetContent`) — `Content`/`Store`/`Item`/`Segment`,
+  text/list/table/progress rendering, an 8-line per-placement cap with `… N more`, status segments joined by a
+  muted `///`, and toast lifetimes/dedupe/caps.
+- `tui/trust` (TRP01-TRP08) — `Found`, `Discover`, `Prompt`, `ApplyTrust`, `Ensure`, and the too-broad refusal.
+  `config.ProjectRoot` was exported for it.
+- `tui/dialog` — `dialog.go` (Dialog/Result/Overlay, framed `View`, `Compose` centring/clipping/too-small
+  fallback), `confirm.go` (DLG01-DLG10, CNF01-CNF03), `permission.go` (PRD01-PRD09), `select.go` (SEL01-SEL07),
+  `input.go` (INP01-INP05), `form.go` (FRD01-FRD17). Goldens in `tui/dialog/testdata`.
+- `proto/frame.go` — added `UIRequest.Tool`/`.Args`, `UIQuestion.AllowOther *bool`, `UIOption.Preview`.
+- `docs/chunks/C17-*.md` — frontmatter now lists **six** packages with raised budgets (see below).
+
+**Satisfied matrix rows:** SVA01-09; WDG01-12; STS01-03; TST01-04; TRP01-08; DLG01, DLG03, DLG05-07, DLG10;
+CNF01-03; PRD01-09; SEL01-07; INP01-05; FRD01-17. Fuzz/property: `FuzzWidgetContent`, `FuzzDialogKeys`,
+`TestProperty_DLG_ComposeBounds` (as `TestDialog_DLG10_ComposeSize`).
+
+**Unsatisfied (next session):**
+- `tui/dialog`: **MPK01-05** (`models.go`), **SSL01-05** and **TRV01-03** (`sessions.go`), **EXV01-03**
+  (`extensions.go`), **HLP01** (`help.go`). `NewModelPicker`/`NewSessionList`/`NewTree`/`NewExtensions`/`NewHelp`
+  do not exist yet; the `ModelInfo`/`SessionInfo`/`SessionChoice`/`TreeNode`/`ExtInfo`/`KeyHelp` types do not
+  exist yet either (the spec's Interfaces block lists them).
+- `tui/ui` (bridge, not started): **DLG02** queued requests, **DLG04** dialog while streaming, **DLG08**
+  `ui_expired`, **DLG09** close answers all cancelled, **STS04** narrow footer drops extension segments first,
+  **KYA01-03**, **UXB01-09**. `tui/ui/bridge.go` does not exist; `update.go`'s `handleUIRequest` still only
+  handles `notify`/`set_editor_text`, and the slash commands/key bindings (`ctrl+l`, `ctrl+r`, `ctrl+t`, `/help`,
+  `/model`, `/resume`, `/tree`, `/ext`, `/cost`) are not wired.
+- `cmd/nova/tui.go`: the pre-start `trust.Ensure` call is not wired (the trust package and its tests are done).
+- `PROTOCOL.md` still documents `confirm` without `tool`/`args` and the form without `allow_other`/`preview`.
+
+**Differed from spec / decisions worth recording:**
+- Session remember is a per-server allowlist consulted in `s.ask`, not a `permission.Rule` appended to the
+  policy: appending a rule to `s.policy.Rules` would race with the agent's parallel `Decide`, and an `Allow`
+  rule cannot beat an `ask` rule under "most restrictive wins" anyway. Behaviour is the same for SVA05-07.
+- `list_models`/`session.list` now return top-level arrays (the spec's stated data shape) rather than the old
+  `{models: [...]}`/`{sessions: [...]}` wrappers.
+- `UIRequest` gained `Tool`/`Args` so the permission dialog can show `render.Summarize`; `UIQuestion` gained
+  `AllowOther *bool` (nil means true) and `UIOption` gained `Preview`.
+- C17's frontmatter was missing the changed packages; added `./mode`, `./tui/ui`, `./cmd/nova` and raised
+  `./tui/dialog` 800→1100 (actual 1060) and `./mode` 1800→1850 (actual 1806). `tui/ui` 1700 and `cmd/nova` 720
+  are guesses with headroom for the bridge; adjust if the real code is bigger.
+
+**Gotchas for the next agent:**
+- The permission method is inconsistent: `s.ask` sends `ui.confirm`, but `ext/sdk` sends bare `confirm` (the
+  bridge prepends `ui.` only for the capability check). The TUI bridge must strip a leading `ui.` when mapping
+  methods, and declare the full capability list from UXB08.
+- `Dialog.View(w,h)` returns the *whole* framed box (border/title/hint included) at exactly w×h; `Compose`
+  centres it. Use `frame(title, body, hint, w, h, st)` from `dialog.go` in every new dialog.
+- The form treats printable keys as text only when the question is free-text/Other; `n`/`s` are commands
+  otherwise. Notes are edited via `Paster.Paste` (used by the tests) so newlines survive verbatim.
+- Regenerate goldens from inside the package: `go test ./tui/dialog/ -update` (the flag goes *after* the
+  package, otherwise `go test` rejects it).
+- The overlay's too-small path (`w<30 || h<8`) cancels non-confirm dialogs and records a notice via
+  `Overlay.TakeNotice()`.
+
+**One command:** `go test -short -race ./tui/dialog/ ./tui/widget/ ./tui/trust/ ./mode/`.
 
 ### C15 PTY follow-up — 2026-10-11 — pi — main — cost not visible
 
@@ -981,6 +1052,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
+- C17 frontmatter: the `packages`/`budgets` list omitted the changed `./mode`, `./tui/ui`, and `./cmd/nova`
+  packages, and `./tui/dialog` 800 was too small (1060 lines). Applied: added the three packages,
+  `dialog` 800→1100, `mode` 1800→1850, `tui/ui` 1700, `cmd/nova` 720. Human should confirm the raises.
+- C17 Interfaces/Protocol: `proto.UIRequest` gained `Tool`/`Args`, `UIQuestion` gained `AllowOther`, and
+  `UIOption` gained `Preview`, none of which `docs/PROTOCOL.md` documents yet.
+
 - C05 budgets: `./tools/fs: 900` is too small for the full behaviour (994 lines). Applied: raised to 1000
   in the C05 spec and `docs/ARCHITECTURE.md` (human-approved 2026-10-09).
 - C05 Matrix RDF29: "file shrinks while reading" is not deterministically reproducible; the test uses a
@@ -1178,6 +1255,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Decisions to record
 
+- C17 session remember is a per-server allowlist consulted in `mode.Server.ask`, not a `permission.Rule`
+  appended to the policy (race-free; `Allow` cannot beat `ask` under most-restrictive-wins). Belongs in
+  `docs/DECISIONS.md`.
+- C17 `list_models`/`session.list` return top-level arrays rather than `{models:}`/`{sessions:}` wrappers.
+  Belongs in `docs/DECISIONS.md`.
+
 - `mode.Build`/`BuildOptions` load config and build a server, so `cmd/nova` only parses flags
   (ARCHITECTURE.md section 10); `runRoot` now uses it. Belongs in `docs/DECISIONS.md`.
 - `mode.Options.ExtraTools`/`SystemPrompt` let a mode register its own tools and system prompt; the action
@@ -1264,6 +1347,9 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Open questions for the human
 
+- C17: are the raised budgets (`tui/dialog` 1100, `mode` 1850, `tui/ui` 1700, `cmd/nova` 720) acceptable,
+  or should `tui/dialog` be split and the mode additions moved?
+
 - Should `mode/serve` regain a per-route 30 s write timeout, and should `cmd/nova` get a C14 budget line
   (it is checked against C12's 600)?
 
@@ -1328,4 +1414,5 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 Total: $0.00 recorded; the C00 through C20 session costs were not visible. C14 was one session of seven
 commits; its cost was not visible either. C15 was one session of sixteen commits; its cost was not visible
 either. C16 was one session of eight commits; its cost was not visible either. The C15 PTY follow-up was
-one commit; its cost was not visible either.
+one commit; its cost was not visible either. C17 (partial) was one session of seven commits; its cost was not
+visible either.

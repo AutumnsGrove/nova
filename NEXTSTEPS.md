@@ -5,20 +5,19 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C13 are done. `accept C13`, `accept C12`, and `make ci` pass. `ext/` loads and
-supervises subprocess extensions (manifest, process groups, restart policy, capability checks,
-tool/command/hook routing, replay, install/update/remove/check from git or a local link), `ext/sdk` is the
-Go SDK, `examples/extensions/` ships `hello`, `block-rm`, and `hello-go`, `nova ext` installs and checks
-them, and `mode.New` builds the host so a running agent loads extensions, composes their hooks, lists
-their commands, reloads them, and shuts them down.
+**State:** C00 through C14 are done. `accept C14`, `accept C13`, `accept C12`, and `make ci` pass.
+`mode/serve` exposes the protocol over HTTP and SSE (bearer token, Host check, CORS, resume ring), and
+`nova action review` reviews a pull request and posts one `COMMENT` review. `mode.Build` now loads config
+and builds a server, so `cmd/nova` stays a thin flag parser.
 
-**Next:** run **C14** (`docs/chunks/C14-serve-action.md`): serve mode and the GitHub Action. It depends on
-C12. **C20** (`docs/chunks/C20-opencode-go.md`) is new: OpenCode Go as the second launch provider; it
-depends only on C02, C03, and C12, so it can run any time. The `/ext` and trust-prompt UI is still C17.
+**Next:** run **C15** (`docs/chunks/C15-tui-foundation.md`): the TUI foundation. It depends on C12.
+**C20** (`docs/chunks/C20-opencode-go.md`), the second launch provider, can also run now. The `/ext` and
+trust-prompt UI is still C17.
 
-**Watch out:** the fake clock's `After` timers are never cancelled, so leftover timers make
-`testkit.FakeClock.BlockUntil` unreliable; the supervision tests advance the clock in a loop instead.
-`proto.Event` has no `Turns` field, so C09 put the `run_end` turn count in `Turn *int`.
+**Watch out:** `mode/action` is exactly at its 700-line budget, so any addition needs a matching cut. The
+fake clock's `After` timers are never cancelled, so leftover timers make `testkit.FakeClock.BlockUntil`
+unreliable; the supervision and wall-clock tests advance the clock in a loop instead. `proto.Event` has no
+`Turns` field, so C09 put the `run_end` turn count in `Turn *int`.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -43,7 +42,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C11 | Config, context files, skills, prompt templates, trust | done | C04 | 2026-10-10 | |
 | C12 | The server core, modes, and the nova command | done | C09, C10, C11 | 2026-10-10 | |
 | C13 | The extension host | done | C12 | 2026-10-10 | visible |
-| C14 | The serve mode and the GitHub Action | todo | C12 | | |
+| C14 | The serve mode and the GitHub Action | done | C12 | 2026-10-11 | visible |
 | C15 | TUI foundation | todo | C12 | | |
 | C16 | TUI rendering: thinking block, tool cards, diffs, themes, splash | todo | C15 | | |
 | C17 | TUI dialogs, widgets, status, extension UI bridge | todo | C15, C13 | | |
@@ -54,6 +53,67 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C14 — The serve mode and the GitHub Action — 2026-10-11 — pi — main — cost visible
+
+Built `mode/serve` and `mode/action` in seven green commits. `go run ./scripts/accept C14` passes all nine
+steps and `make ci` exits 0; every matrix row has a named test.
+
+**Built:**
+- `mode/serve/serve.go` — one file (the 400-line budget forced `auth.go`/`sse.go` to merge): `Options`,
+  `Handler`/`ListenAndServe`, the bearer token with `subtle.ConstantTimeCompare`, the loopback/Host check,
+  CORS, body limits, panic recovery, the SSE ring with resume/resync/heartbeat, slow-client eviction, and
+  UI-request forwarding.
+- `mode/action/diff.go` — `ParseFileDiff`, both-side line maps, hunk-header parsing, `BuildDiffText`
+  truncation, and generated/lock-file filtering.
+- `mode/action/github.go` — the `GitHub` client: pull, paginated files capped at 300, reviews, review
+  comments, post-review, Retry-After/5xx retries, pinned headers, and a redacting `String`.
+- `mode/action/tools.go`, `review.go`, `prompt.md` — `State`, the `review_comment`/`review_summary` tools,
+  `Review`, `Run`, the cost/turn/wall-clock caps, one `COMMENT` review with re-run dedup and a 422
+  fallback, dry-run, and step-summary output.
+- `mode/build.go` — `mode.Build`/`BuildOptions` now load config and build a server, so `cmd/nova` stays a
+  thin flag parser; `runRoot` was refactored onto it.
+- `cmd/nova/serve.go`, `cmd/nova/action.go`, `action.yml` — the subcommands and the composite action.
+- Tests: every row ATH01–ATH19, HTP01–HTP14, SSE01–SSE12, GHC01–GHC09, PDI01–PDI09, RVW01–RVW26, ACT01,
+  ACT02, plus `FuzzParseDiff`, `FuzzBearer`, `FuzzHostHeader`, and `TestProperty_RVW_OnlyDiffLines`.
+
+**Acceptance:** `accept C14` and `make ci` pass. Budgets: `mode/serve` 399/400, `mode/action` 700/700,
+`cmd/nova` 599/600.
+
+**Unsatisfied matrix rows:** none. One behaviour has no row: `serve` sets `ReadHeaderTimeout` and
+`IdleTimeout` but no 30 s per-route write timeout (spec behaviour 14); it was cut to fit the 400-line
+budget.
+
+**Differed from spec:**
+- `mode.Options` gained `ExtraTools []tool.Tool` and `SystemPrompt string`; `mode.Build`/`BuildOptions` are
+  new. The action needs to register its two tools and its prompt, and `cmd/nova` must stay inside its
+  600-line budget.
+- `action.Options` gained `HasKey`, `State *State`, `After`, `WallClock`, and `Sleep`; `Review` returns
+  `*Report`. The spec's struct has no channel for the model key, the shared state, the timer seam, or the
+  retry sleep.
+- The cost cap and wall-clock limit are enforced by watching events and sending `abort` between turns, not
+  by a `BeforeTurn` hook (which `mode` does not expose).
+- Re-run dedup keys on `(path, line, body)` text, not a hash of the body; the effect is the same.
+- `mode/serve` has no `Clock` option; SSE02 uses a short real `Heartbeat` (the spec allows "fake clock or
+  short interval").
+- `mode/serve`'s `auth.go` and `sse.go` are merged into `serve.go` to fit the budget.
+- `GitHub.File` carries only `Filename` and `Patch`; `PreviousFilename`/`Status` were unused.
+- `nova serve` exposes `--listen/--token/--allowed-host/--cors`; the other `Options` fields are
+  programmatic only. `nova action review` exposes `--model/--max-comments/--max-cost/--dry-run/--json/--token`.
+
+**Gotchas:**
+- `mode/action` is exactly at its 700-line budget; any addition needs a matching cut.
+- The wall-clock test (RVW09) must advance the fake clock until `Review` returns; a fixed number of
+  advances races the goroutine that registers the timer.
+- `Review` reads the collected comments *after* the run; reading them before `waitRun` returns an empty
+  report.
+- The cost cap is checked at `turn_end`, not on the provider's `usage` event, so a turn's tool calls (and
+  its comments) still land before the abort.
+- `action.Run` prints a compact Markdown report (counts and summary); it does not list every comment.
+- HTP11 proves UI routing through the SSE stream: the agent asks for permission, the `ui_request` arrives
+  as an SSE frame, and the `POST /v1/ui_response` resolves the run.
+
+**One command:** `go run ./scripts/accept C14`.
 
 ### C20 spec — OpenCode Go, the second launch provider — 2026-10-11 — pi — main — cost not visible
 
@@ -960,9 +1020,28 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C20 architecture: `provider/ssestream` is a second copy of the C02 SSE transport; migrating
   `openaicompat` onto it is out of scope. If a later chunk migrates it, C02's spec should say so, and C20's
   "Out of scope" note should be removed.
+- C14 budgets omit `./cmd/nova`, but `make ci`'s `linecount-all` checks it against C12's 600-line budget.
+  Later drafts should add `./cmd/nova` to C14's `budgets` or say the subcommands must be thin. The 400-line
+  `mode/serve` budget also forced `auth.go` and `sse.go` to merge into `serve.go`; allow three files.
+- C14 behaviour 14: `serve` sets `ReadHeaderTimeout` and `IdleTimeout` but no 30 s per-route write timeout;
+  it was cut to fit the 400-line budget.
+- C14 behaviour 22: the cost cap is enforced by aborting between turns, not by a `BeforeTurn` hook.
+- C14 behaviour 25: re-run dedup keys on `(path, line, body)` text, not a hash of the body.
+- C14 Files table: it does not list `mode/build.go`, which now centralizes config loading and server
+  construction so `cmd/nova` stays thin.
+- C14 behaviour 30: `action.yml` uses `actions/setup-go@v5` and a folded `run:` scalar; later drafts should
+  name the setup-go action version.
 
 ## Decisions to record
 
+- `mode.Build`/`BuildOptions` load config and build a server, so `cmd/nova` only parses flags
+  (ARCHITECTURE.md section 10); `runRoot` now uses it. Belongs in `docs/DECISIONS.md`.
+- `mode.Options.ExtraTools`/`SystemPrompt` let a mode register its own tools and system prompt; the action
+  uses them for `review_comment`/`review_summary` and the review prompt. Belongs in `docs/DECISIONS.md`.
+- The GitHub Action enforces the cost cap by watching events and aborting between turns rather than a
+  `BeforeTurn` hook. Belongs in `docs/DECISIONS.md`.
+- The GitHub client's `String` redacts the token so a stray `%v` never prints it. Belongs in
+  `docs/DECISIONS.md`.
 - Applied 2026-10-11 (the human asked for the plan): D56 in `docs/DECISIONS.md` makes OpenCode Go a core
   launch provider and supersedes D23; C20 specifies it.
 - The `ci` guard loops (`matrixcheck-all`, `linecount-all`) guard only chunks marked `done` in `NEXTSTEPS.md`,
@@ -1022,6 +1101,9 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Open questions for the human
 
+- Should `mode/serve` regain a per-route 30 s write timeout, and should `cmd/nova` get a C14 budget line
+  (it is checked against C12's 600)?
+
 - OpenRouter's key lifetime is undocumented and its PKCE flow documents no refresh token. Nova stores the key
   until `nova logout`; confirm whether a refresh flow is needed before C12.
 - Ori's harness documentation does not document environment variables for credentials or model handoff, so
@@ -1068,4 +1150,5 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Cost
 
-Total: $0.00 recorded; the C00 through C20 session costs were not visible.
+Total: $0.00 recorded; the C00 through C20 session costs were not visible. C14 was one session of seven
+commits; its cost was not visible either.

@@ -114,11 +114,12 @@ type UIOption struct {
 
 // UIQuestion is one question in a form.
 type UIQuestion struct {
-	ID      string     `json:"id"`
-	Prompt  string     `json:"prompt"`
-	Kind    string     `json:"kind"` // single | multi | text
-	Options []UIOption `json:"options,omitempty"`
-	Notes   bool       `json:"notes,omitempty"`
+	ID         string     `json:"id"`
+	Prompt     string     `json:"prompt"`
+	Kind       string     `json:"kind"` // single | multi | text
+	Options    []UIOption `json:"options,omitempty"`
+	Notes      bool       `json:"notes,omitempty"`
+	AllowOther *bool      `json:"allow_other,omitempty"`
 }
 
 // UISegment is one segment of a status update.
@@ -148,6 +149,11 @@ type UIRequest struct {
 	Segments    []UISegment     `json:"segments,omitempty"`
 	Placement   string          `json:"placement,omitempty"`
 	Content     json.RawMessage `json:"content,omitempty"`
+	// Tool and Args are set on a permission confirm so the dialog can show the
+	// tool and a summary of its arguments. They are empty for every other
+	// method.
+	Tool string          `json:"tool,omitempty"`
+	Args json.RawMessage `json:"args,omitempty"`
 }
 
 // UIAnswer is the answer to one form question.

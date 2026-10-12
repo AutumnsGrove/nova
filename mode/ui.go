@@ -30,6 +30,8 @@ func (s *Server) ask(ctx context.Context, q agent.Question) (bool, error) {
 		Message:  q.Reason,
 		Default:  &allowByDefault,
 		Remember: true,
+		Tool:     q.Tool,
+		Args:     q.Args,
 	}
 	resp, err := s.callUI(ctx, req)
 	if err != nil {

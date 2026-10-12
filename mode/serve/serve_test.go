@@ -53,7 +53,7 @@ func newTestHTTP(t *testing.T, s *mode.Server, opt Options) (*httptest.Server, *
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}
-	srv.start(context.Background())
+	srv.start()
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	t.Cleanup(srv.close)
@@ -198,12 +198,12 @@ func TestServe_ATH10_ConstantTimeComparison(t *testing.T) {
 	if !constantTimeEqual("abc", "abc") || constantTimeEqual("abc", "abd") {
 		t.Fatal("constantTimeEqual misbehaves")
 	}
-	src, err := os.ReadFile("auth.go")
+	src, err := os.ReadFile("serve.go")
 	if err != nil {
-		t.Fatalf("read auth.go: %v", err)
+		t.Fatalf("read serve.go: %v", err)
 	}
 	if !strings.Contains(string(src), "subtle.ConstantTimeCompare") {
-		t.Fatal("auth.go does not use subtle.ConstantTimeCompare")
+		t.Fatal("serve.go does not use subtle.ConstantTimeCompare")
 	}
 }
 

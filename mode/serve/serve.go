@@ -5,14 +5,17 @@ package serve
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,21 +32,7 @@ const (
 	idleTimeout      = 120 * time.Second
 	writeTimeout     = 30 * time.Second
 	shutdownGrace    = 5 * time.Second
-	// NoTime is a sentinel meaning "no write deadline", used on the event
-	// route where a stream legitimately stays open.
-	NoTime time.Duration = 0
 )
-
-// Clock is the time seam for the heartbeat, so tests can drive it.
-type Clock interface {
-	Now() time.Time
-	After(d time.Duration) <-chan time.Time
-}
-
-type realClock struct{}
-
-func (realClock) Now() time.Time                         { return time.Now() }
-func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 // Options configures the HTTP transport.
 type Options struct {
@@ -55,68 +44,65 @@ type Options struct {
 	Heartbeat    time.Duration // default 15s
 	MaxBody      int64         // default 16 MiB
 
-	// Clock and headerTimeout are test seams. Production callers leave them
-	// zero and get the real clock and the documented 10s header timeout.
-	Clock         Clock
-	headerTimeout time.Duration
+	headerTimeout time.Duration // test seam; zero means the documented 10s
 }
 
-// normalize fills defaults and validates the configuration.
-func (o Options) normalize() (Options, error) {
-	if o.Listen == "" {
-		o.Listen = defaultListen
+// apply fills defaults and validates the configuration. The heartbeat uses the
+// real clock; a test that wants it sooner sets a small Heartbeat.
+func (o *Options) apply() error {
+	o.Listen = def(o.Listen, defaultListen)
+	o.Token = def(o.Token, os.Getenv("NOVA_SERVE_TOKEN"))
+	o.RingSize = def(o.RingSize, defaultRingSize)
+	o.Heartbeat = def(o.Heartbeat, defaultHeartbeat)
+	o.MaxBody = def(o.MaxBody, defaultMaxBody)
+	o.headerTimeout = def(o.headerTimeout, defaultHeader)
+	if o.CORSOrigin != "" {
+		u, err := url.Parse(o.CORSOrigin)
+		if o.CORSOrigin == "*" || err != nil || u.Scheme == "" || u.Host == "" {
+			return fmt.Errorf("serve: CORSOrigin %q must be one exact origin", o.CORSOrigin)
+		}
 	}
-	if o.Token == "" {
-		o.Token = os.Getenv("NOVA_SERVE_TOKEN")
-	}
-	if o.RingSize <= 0 {
-		o.RingSize = defaultRingSize
-	}
-	if o.Heartbeat <= 0 {
-		o.Heartbeat = defaultHeartbeat
-	}
-	if o.MaxBody <= 0 {
-		o.MaxBody = defaultMaxBody
-	}
-	if o.Clock == nil {
-		o.Clock = realClock{}
-	}
-	if o.headerTimeout <= 0 {
-		o.headerTimeout = defaultHeader
-	}
-	if err := validateCORS(o.CORSOrigin); err != nil {
-		return Options{}, err
-	}
-	return o, nil
+	return nil
 }
 
-// server is the transport. It owns the event ring and the UI forwarding, not
-// the session: the mode.Server does.
+// def returns v, or d when v is the zero value.
+func def[T comparable](v, d T) T {
+	var zero T
+	if v == zero {
+		return d
+	}
+	return v
+}
+
+// server is the transport. It owns the event ring and UI forwarding, not the
+// session: the mode.Server does.
 type server struct {
-	mode *mode.Server
-	opt  Options
-	mux  *http.ServeMux
-
+	mode    *mode.Server
+	opt     Options
+	mux     *http.ServeMux
 	mu      sync.Mutex
 	ring    []streamItem
 	seq     int64
 	clients map[chan streamItem]struct{}
 	done    chan struct{}
 	closed  sync.Once
-
-	pendingMu sync.Mutex
-	pending   map[string]struct{}
+	pending map[string]struct{}
 }
 
-// Handler builds the HTTP handler over s. It starts the event pump, which a
-// caller that also binds should stop by cancelling the context passed to
-// ListenAndServe; a bare handler keeps it for the process lifetime.
+// streamItem is one SSE payload with its sequence number. The payload is a
+// marshalled event or ui_request; the transport does not interpret it.
+type streamItem struct {
+	seq     int64
+	payload []byte
+}
+
+// Handler builds the HTTP handler over s and starts its event pump.
 func Handler(s *mode.Server, opt Options) (http.Handler, error) {
 	srv, err := newServer(s, opt)
 	if err != nil {
 		return nil, err
 	}
-	srv.start(context.Background())
+	srv.start()
 	return srv, nil
 }
 
@@ -125,37 +111,30 @@ func newServer(s *mode.Server, opt Options) (*server, error) {
 	if s == nil {
 		return nil, fmt.Errorf("serve: mode.Server is required")
 	}
-	norm, err := opt.normalize()
-	if err != nil {
+	if err := opt.apply(); err != nil {
 		return nil, err
 	}
-	srv := &server{
-		mode:    s,
-		opt:     norm,
-		clients: map[chan streamItem]struct{}{},
-		done:    make(chan struct{}),
-		pending: map[string]struct{}{},
-	}
+	srv := &server{mode: s, opt: opt, clients: map[chan streamItem]struct{}{}, done: make(chan struct{}), pending: map[string]struct{}{}}
 	srv.mux = http.NewServeMux()
 	srv.mux.HandleFunc("POST /v1/commands", srv.handleCommands)
 	srv.mux.HandleFunc("GET /v1/events", srv.handleEvents)
 	srv.mux.HandleFunc("POST /v1/ui_response", srv.handleUIResponse)
-	srv.mux.HandleFunc("GET /v1/state", srv.handleState)
-	srv.mux.HandleFunc("GET /healthz", srv.handleHealthz)
-	srv.mode.SetUIHandler(srv.forwardUI)
+	srv.mux.HandleFunc("GET /v1/state", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, s.Handle(r.Context(), proto.Command{Type: proto.CmdGetState}))
+	})
+	srv.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	s.SetUIHandler(srv.forwardUI)
 	return srv, nil
 }
 
-// start pumps server events into the ring until done or ctx.
-func (s *server) start(ctx context.Context) {
+// start pumps server events into the ring until close.
+func (s *server) start() {
 	events, cancel := s.mode.Subscribe(4096)
 	go func() {
 		defer cancel()
 		for {
 			select {
 			case <-s.done:
-				return
-			case <-ctx.Done():
 				return
 			case ev, ok := <-events:
 				if !ok {
@@ -180,114 +159,96 @@ func (s *server) close() {
 
 // ServeHTTP applies the transport defences, then routes.
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	defer s.recover500(w)
+	defer func() {
+		if recover() != nil {
+			writeJSON(w, http.StatusInternalServerError, fail(proto.CodeInternal, "internal error"))
+		}
+	}()
 	if s.opt.CORSOrigin != "" {
-		s.corsHeaders(w, r)
-		if r.Method == http.MethodOptions && isRoute(r.URL.Path) {
-			s.handlePreflight(w)
+		w.Header().Add("Vary", "Origin")
+		if r.Header.Get("Origin") == s.opt.CORSOrigin {
+			w.Header().Set("Access-Control-Allow-Origin", s.opt.CORSOrigin)
+		}
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 	}
-	if r.URL.Path != "/healthz" && !s.authorized(r) {
+	auth := r.Header.Get("Authorization")
+	if len(auth) < 7 || !strings.EqualFold(auth[:7], "Bearer ") {
+		auth = ""
+	} else {
+		auth = auth[7:]
+	}
+	if r.URL.Path != "/healthz" && s.opt.Token != "" && !constantTimeEqual(auth, s.opt.Token) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
-		writeJSONError(w, http.StatusUnauthorized, "unauthorized", "")
+		writeJSON(w, http.StatusUnauthorized, fail("unauthorized", ""))
 		return
 	}
-	if (s.opt.Token == "" || len(s.opt.AllowedHosts) > 0) && r.Method != http.MethodOptions &&
-		!hostAllowed(r.Host, s.opt.AllowedHosts) {
-		writeJSONError(w, http.StatusForbidden, "forbidden", "")
+	if (s.opt.Token == "" || len(s.opt.AllowedHosts) > 0) && r.Method != http.MethodOptions && !hostAllowed(r.Host, s.opt.AllowedHosts) {
+		writeJSON(w, http.StatusForbidden, fail("forbidden", ""))
 		return
 	}
 	s.mux.ServeHTTP(w, r)
 }
 
-// authorized reports whether the request may proceed. An empty token disables
-// the check; the token is never read from the query string.
-func (s *server) authorized(r *http.Request) bool {
-	if s.opt.Token == "" {
-		return true
-	}
-	return constantTimeEqual(bearer(r.Header.Get("Authorization")), s.opt.Token)
+// fail builds a response-shaped error body.
+func fail(code, message string) proto.Response {
+	return proto.Response{Type: proto.FrameResponse, Error: &proto.Error{Code: code, Message: message}}
 }
 
-// recover500 turns a handler panic into a bare 500 with no stack text.
-func (s *server) recover500(w http.ResponseWriter) {
-	if recover() != nil {
-		writeJSONError(w, http.StatusInternalServerError, proto.CodeInternal, "internal error")
+// readBody enforces the content type and body limit and returns the bytes. On
+// failure it has already written the response.
+func (s *server) readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
+	if strings.TrimSpace(r.Header.Get("Content-Type")) != "application/json" {
+		writeJSON(w, http.StatusUnsupportedMediaType, fail(proto.CodeUnsupported, "Content-Type must be application/json"))
+		return nil, false
 	}
-}
-
-// isRoute reports whether path is one of the four protocol routes.
-func isRoute(path string) bool {
-	switch path {
-	case "/v1/commands", "/v1/events", "/v1/ui_response", "/v1/state":
-		return true
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	if err != nil {
+		if maxErr := (*http.MaxBytesError)(nil); errors.As(err, &maxErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, fail(proto.CodeBadRequest, "request body too large"))
+		} else {
+			writeJSON(w, http.StatusBadRequest, fail(proto.CodeBadRequest, "invalid request body"))
+		}
+		return nil, false
 	}
-	return false
-}
-
-// handlePreflight answers an OPTIONS preflight for one exact origin.
-func (s *server) handlePreflight(w http.ResponseWriter) {
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-	w.Header().Set("Access-Control-Max-Age", "600")
-	w.WriteHeader(http.StatusNoContent)
+	return data, true
 }
 
 // handleCommands takes one command frame and returns its response frame.
 func (s *server) handleCommands(w http.ResponseWriter, r *http.Request) {
-	setDeadline(w, writeTimeout)
-	if !isJSON(r.Header.Get("Content-Type")) {
-		writeJSONError(w, http.StatusUnsupportedMediaType, proto.CodeUnsupported, "Content-Type must be application/json")
-		return
-	}
-	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.opt.MaxBody))
-	if err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
-			writeJSONError(w, http.StatusRequestEntityTooLarge, proto.CodeBadRequest, "request body too large")
-			return
-		}
-		writeJSONError(w, http.StatusBadRequest, proto.CodeBadRequest, "invalid request body")
+	data, ok := s.readBody(w, r, s.opt.MaxBody)
+	if !ok {
 		return
 	}
 	var cmd proto.Command
 	if err := json.Unmarshal(data, &cmd); err != nil {
-		writeJSONError(w, http.StatusBadRequest, proto.CodeBadRequest, "invalid JSON")
+		writeJSON(w, http.StatusBadRequest, fail(proto.CodeBadRequest, "invalid JSON"))
 		return
 	}
 	writeJSON(w, http.StatusOK, s.mode.Handle(r.Context(), cmd))
 }
 
-// handleState is get_state, the same command the protocol defines.
-func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
-	setDeadline(w, writeTimeout)
-	writeJSON(w, http.StatusOK, s.mode.Handle(r.Context(), proto.Command{Type: proto.CmdGetState}))
-}
-
-// handleHealthz is the one route that needs no token and has no detail.
-func (s *server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
-	setDeadline(w, writeTimeout)
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, "ok")
-}
-
 // handleUIResponse routes an answer to the request that is waiting for it.
 func (s *server) handleUIResponse(w http.ResponseWriter, r *http.Request) {
-	setDeadline(w, writeTimeout)
-	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, proto.CodeBadRequest, "invalid request body")
+	data, ok := s.readBody(w, r, 1<<20)
+	if !ok {
 		return
 	}
 	var resp proto.UIResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		writeJSONError(w, http.StatusBadRequest, proto.CodeBadRequest, "invalid JSON")
+		writeJSON(w, http.StatusBadRequest, fail(proto.CodeBadRequest, "invalid JSON"))
 		return
 	}
-	if !s.takePending(resp.ID) {
-		writeJSONError(w, http.StatusNotFound, proto.CodeNotFound, "unknown ui_request id")
+	s.mu.Lock()
+	_, live := s.pending[resp.ID]
+	delete(s.pending, resp.ID)
+	s.mu.Unlock()
+	if !live {
+		writeJSON(w, http.StatusNotFound, fail(proto.CodeNotFound, "unknown ui_request id"))
 		return
 	}
 	s.mode.AnswerUI(resp)
@@ -297,22 +258,134 @@ func (s *server) handleUIResponse(w http.ResponseWriter, r *http.Request) {
 // forwardUI streams a UI request to the event clients and marks its id live.
 // The answer arrives later as a separate POST /v1/ui_response.
 func (s *server) forwardUI(_ context.Context, req proto.UIRequest) (proto.UIResponse, error) {
-	s.pendingMu.Lock()
+	s.mu.Lock()
 	s.pending[req.ID] = struct{}{}
-	s.pendingMu.Unlock()
+	s.mu.Unlock()
 	s.publish(req)
 	return proto.UIResponse{}, nil
 }
 
-// takePending removes id and reports whether it was live.
-func (s *server) takePending(id string) bool {
-	s.pendingMu.Lock()
-	defer s.pendingMu.Unlock()
-	if _, ok := s.pending[id]; !ok {
-		return false
+// publish assigns the next sequence number, appends the payload to the ring,
+// and fans it out. A client whose buffer is full is dropped, never blocked.
+func (s *server) publish(v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
 	}
-	delete(s.pending, id)
-	return true
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.seq++
+	it := streamItem{seq: s.seq, payload: data}
+	s.ring = append(s.ring, it)
+	if len(s.ring) > s.opt.RingSize {
+		s.ring = append([]streamItem(nil), s.ring[len(s.ring)-s.opt.RingSize:]...)
+	}
+	for ch := range s.clients {
+		select {
+		case ch <- it:
+		default:
+			delete(s.clients, ch)
+			close(ch)
+		}
+	}
+}
+
+// subscribe registers a client and returns the events it must replay. With no
+// Last-Event-ID (hasLast false) it starts live. If lastID is older than the
+// ring, resync is true and the caller sends a state snapshot instead.
+func (s *server) subscribe(lastID int64, hasLast bool) (replay []streamItem, ch chan streamItem, resync bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ch = make(chan streamItem, 256)
+	s.clients[ch] = struct{}{}
+	if !hasLast {
+		return nil, ch, false
+	}
+	if len(s.ring) > 0 && lastID+1 < s.ring[0].seq {
+		return nil, ch, true
+	}
+	for _, it := range s.ring {
+		if it.seq > lastID {
+			replay = append(replay, it)
+		}
+	}
+	return replay, ch, false
+}
+
+// unsubscribe removes a client. It is safe when the publisher dropped it first.
+func (s *server) unsubscribe(ch chan streamItem) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.clients[ch]; ok {
+		delete(s.clients, ch)
+		close(ch)
+	}
+}
+
+// handleEvents streams the server's events as server-sent events.
+func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeJSON(w, http.StatusInternalServerError, fail(proto.CodeInternal, "streaming unsupported"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	lastID, hasLast := int64(0), false
+	if v := r.Header.Get("Last-Event-ID"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			lastID, hasLast = n, true
+		}
+	}
+	replay, ch, resync := s.subscribe(lastID, hasLast)
+	defer s.unsubscribe(ch)
+
+	var skip int64
+	if resync {
+		if state := s.mode.Handle(r.Context(), proto.Command{Type: proto.CmdGetState}); state.OK {
+			if data, err := json.Marshal(proto.Event{Type: proto.EventStateChanged, State: state.Data, Reason: "resync"}); err == nil {
+				s.mu.Lock()
+				s.seq++
+				skip = s.seq
+				s.mu.Unlock()
+				fmt.Fprintf(w, "id: %d\ndata: %s\n\n", skip, data)
+				flusher.Flush()
+			}
+		}
+	}
+	for _, it := range replay {
+		fmt.Fprintf(w, "id: %d\ndata: %s\n\n", it.seq, it.payload)
+		flusher.Flush()
+	}
+
+	heartbeat := time.After(s.opt.Heartbeat)
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-s.done:
+			_, _ = io.WriteString(w, ": closing\n\n")
+			flusher.Flush()
+			return
+		case <-heartbeat:
+			_, _ = io.WriteString(w, ": ping\n\n")
+			flusher.Flush()
+			heartbeat = time.After(s.opt.Heartbeat)
+		case it, ok := <-ch:
+			if !ok {
+				return
+			}
+			if it.seq <= skip {
+				continue
+			}
+			fmt.Fprintf(w, "id: %d\ndata: %s\n\n", it.seq, it.payload)
+			flusher.Flush()
+		}
+	}
 }
 
 // ListenAndServe binds, serves, and shuts down with ctx. It refuses to bind a
@@ -329,12 +402,8 @@ func ListenAndServe(ctx context.Context, s *mode.Server, opt Options) error {
 	if err != nil {
 		return err
 	}
-	httpSrv := &http.Server{
-		Handler:           srv,
-		ReadHeaderTimeout: srv.opt.headerTimeout,
-		IdleTimeout:       idleTimeout,
-	}
-	srv.start(ctx)
+	httpSrv := &http.Server{Handler: srv, ReadHeaderTimeout: srv.opt.headerTimeout, IdleTimeout: idleTimeout}
+	srv.start()
 	errCh := make(chan error, 1)
 	go func() { errCh <- httpSrv.Serve(ln) }()
 	select {
@@ -353,18 +422,44 @@ func ListenAndServe(ctx context.Context, s *mode.Server, opt Options) error {
 	}
 }
 
-// isJSON reports whether a Content-Type header is application/json.
-func isJSON(ct string) bool {
-	media, _, err := mime.ParseMediaType(ct)
-	return err == nil && media == "application/json"
+// constantTimeEqual compares the presented token with the configured one
+// without an early exit on the first differing byte. It is a named wrapper so a
+// test can prove that the token check goes through subtle.ConstantTimeCompare.
+func constantTimeEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
-// setDeadline bounds a non-streaming response. A zero duration clears it.
-func setDeadline(w http.ResponseWriter, d time.Duration) {
-	if d == NoTime {
-		return
+// loopbackListen reports whether a listen address or Host value names only the
+// loopback interface. An empty host, a wildcard address, or a hostname is not
+// loopback; the port, when present, never matters.
+func loopbackListen(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
 	}
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// hostAllowed reports whether the Host header is trusted.
+func hostAllowed(header string, allowed []string) bool {
+	if loopbackListen(header) {
+		return true
+	}
+	host, _, err := net.SplitHostPort(header)
+	if err != nil {
+		host = header
+	}
+	for _, a := range allowed {
+		if strings.EqualFold(a, host) || strings.EqualFold(a, header) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeJSON writes v as a JSON response with status.
@@ -372,13 +467,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
-}
-
-// writeJSONError writes a response-shaped error with an HTTP status.
-func writeJSONError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, proto.Response{
-		Type:  proto.FrameResponse,
-		OK:    false,
-		Error: &proto.Error{Code: code, Message: message},
-	})
 }

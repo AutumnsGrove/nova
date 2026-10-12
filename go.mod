@@ -16,6 +16,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.6 // indirect
 	charm.land/log/v2 v2.0.1 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
+	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-udiff v0.4.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

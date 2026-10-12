@@ -405,6 +405,10 @@ func findProjectRoot(cwd string) (string, bool) {
 	}
 }
 
+// ProjectRoot returns the nearest ancestor of cwd holding .nova or .git. It
+// is exported so the trust prompt can name the folder it would trust.
+func ProjectRoot(cwd string) (string, bool) { return findProjectRoot(cwd) }
+
 // exists reports whether a path can be stat'd.
 func exists(path string) bool {
 	_, err := os.Stat(path)

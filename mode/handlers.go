@@ -11,6 +11,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
@@ -33,29 +34,83 @@ func (s *Server) handleGetMessages(cmd proto.Command) proto.Response {
 	return okResponse(cmd, map[string]any{"messages": msgs})
 }
 
+// modelInfo is one catalog entry as the protocol carries it. The field names
+// are the wire contract for list_models.
+type modelInfo struct {
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Provider      string  `json:"provider"`
+	ContextWindow int     `json:"context_window"`
+	InPerM        float64 `json:"in_per_m"`
+	OutPerM       float64 `json:"out_per_m"`
+	Current       bool    `json:"current"`
+}
+
 // handleListModels returns the model catalog, optionally filtered by a query.
+// The current model is marked so a picker can show it.
 func (s *Server) handleListModels(cmd proto.Command) proto.Response {
-	models := provider.Models()
 	query := strings.ToLower(strings.TrimSpace(cmd.Text))
-	if query != "" {
-		filtered := models[:0]
-		for _, m := range models {
-			if strings.Contains(strings.ToLower(m.ID), query) || strings.Contains(strings.ToLower(m.Name), query) {
-				filtered = append(filtered, m)
-			}
+	s.mu.Lock()
+	current := s.cfg.Model
+	s.mu.Unlock()
+	out := make([]modelInfo, 0)
+	for _, m := range provider.Models() {
+		if query != "" && !strings.Contains(strings.ToLower(m.ID), query) && !strings.Contains(strings.ToLower(m.Name), query) {
+			continue
 		}
-		models = filtered
+		out = append(out, modelInfo{
+			ID:            m.ID,
+			Name:          m.Name,
+			Provider:      m.Provider,
+			ContextWindow: m.ContextWindow,
+			InPerM:        m.InPerM,
+			OutPerM:       m.OutPerM,
+			Current:       m.ID == current,
+		})
 	}
-	return okResponse(cmd, map[string]any{"models": models})
+	return okResponse(cmd, out)
+}
+
+// sessionInfo is one session row as the protocol carries it.
+type sessionInfo struct {
+	ID       string    `json:"id"`
+	Path     string    `json:"path"`
+	Name     string    `json:"name"`
+	Modified time.Time `json:"modified"`
+	Entries  int       `json:"entries"`
+	Current  bool      `json:"current"`
 }
 
 // handleSessionList lists sessions for the working directory, newest first.
 func (s *Server) handleSessionList(cmd proto.Command) proto.Response {
 	infos, err := session.List(session.DefaultDir(s.cwd))
 	if err != nil {
-		return okResponse(cmd, map[string]any{"sessions": []session.Info{}})
+		return okResponse(cmd, []sessionInfo{})
 	}
-	return okResponse(cmd, map[string]any{"sessions": infos})
+	s.mu.Lock()
+	path := s.path
+	s.mu.Unlock()
+	out := make([]sessionInfo, 0, len(infos))
+	for _, info := range infos {
+		out = append(out, sessionInfo{
+			ID:       info.ID,
+			Path:     info.Path,
+			Name:     info.Name,
+			Modified: info.Modified,
+			Entries:  info.Entries,
+			Current:  info.Path == path,
+		})
+	}
+	return okResponse(cmd, out)
+}
+
+// handleGetExtensions returns the extension host's supervision status, or an
+// empty list when there is no host.
+func (s *Server) handleGetExtensions(cmd proto.Command) proto.Response {
+	if s.ext == nil {
+		return okResponse(cmd, []ext.Status{})
+	}
+	return okResponse(cmd, s.ext.Status())
 }
 
 // handleGetCommands lists built-in commands and prompt templates.

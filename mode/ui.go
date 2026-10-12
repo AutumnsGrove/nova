@@ -12,25 +12,50 @@ import (
 )
 
 // ask resolves a permission question. With a UI handler it sends a confirm
-// request; without one it applies the policy's headless action.
+// request; without one it applies the policy's headless action. A tool the
+// user allowed for the session is approved without asking again.
 func (s *Server) ask(ctx context.Context, q agent.Question) (bool, error) {
+	if s.sessionAllowed(q.Tool) {
+		return true, nil
+	}
 	if !s.supportsUI("ui.confirm") {
 		return s.policy.Headless == permission.Allow, nil
 	}
 	allowByDefault := s.policy.Headless == permission.Allow
 	req := proto.UIRequest{
-		Type:    proto.FrameUIRequest,
-		ID:      s.newUIID(),
-		Method:  "ui.confirm",
-		Title:   "Allow " + q.Tool + "?",
-		Message: q.Reason,
-		Default: &allowByDefault,
+		Type:     proto.FrameUIRequest,
+		ID:       s.newUIID(),
+		Method:   "ui.confirm",
+		Title:    "Allow " + q.Tool + "?",
+		Message:  q.Reason,
+		Default:  &allowByDefault,
+		Remember: true,
 	}
 	resp, err := s.callUI(ctx, req)
 	if err != nil {
 		return false, err
 	}
+	if resp.OK && resp.Remember == "session" {
+		s.allowSession(q.Tool)
+	}
 	return resp.OK, nil
+}
+
+// sessionAllowed reports whether the user allowed tool for this server.
+func (s *Server) sessionAllowed(tool string) bool {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	return s.sessionAllow[tool]
+}
+
+// allowSession records a session-scoped allow rule for tool.
+func (s *Server) allowSession(tool string) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	if s.sessionAllow == nil {
+		s.sessionAllow = map[string]bool{}
+	}
+	s.sessionAllow[tool] = true
 }
 
 // callUI delivers a UI request and waits for its answer. The handler may answer

@@ -110,6 +110,9 @@ func (b uiBridge) Request(ctx context.Context, req proto.UIRequest) (proto.UIRes
 }
 
 func (b uiBridge) Notify(req proto.UIRequest) {
+	if !b.s.supportsUI("ui." + req.Method) {
+		return
+	}
 	b.s.uiMu.Lock()
 	h := b.s.uiHandler
 	b.s.uiMu.Unlock()

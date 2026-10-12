@@ -61,6 +61,8 @@ func (s *Server) dispatch(ctx context.Context, cmd proto.Command) proto.Response
 		return s.handleListModels(cmd)
 	case proto.CmdSessionList:
 		return s.handleSessionList(cmd)
+	case proto.CmdGetExtensions:
+		return s.handleGetExtensions(cmd)
 	case proto.CmdSessionTree:
 		return s.handleSessionTree(cmd)
 	case proto.CmdSessionNavigate:

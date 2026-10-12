@@ -115,6 +115,11 @@ type Server struct {
 	uiPending map[string]chan proto.UIResponse
 	uiCaps    map[string]bool
 	uiNext    int64
+
+	// sessionMu guards sessionAllow, the per-server allow rules added by a
+	// "remember: session" permission answer. They are never persisted.
+	sessionMu    sync.Mutex
+	sessionAllow map[string]bool
 }
 
 // New builds a server from the options. A missing API key is not an error; the

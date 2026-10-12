@@ -63,7 +63,20 @@ func run(args []string, stdout, stderr io.Writer, env []string) int {
 
 	problems := 0
 	for _, name := range names {
-		for _, comp := range strings.Split(name, "_") {
+		comps := strings.Split(name, "_")
+		// A package can serve several chunks: only enforce the ID shape on a
+		// test that cites at least one row of this spec, so another chunk's
+		// tests in the same package are ignored rather than flagged.
+		citesKnown := false
+		for _, comp := range comps {
+			if idRe.MatchString(comp) && known[comp] {
+				citesKnown = true
+			}
+		}
+		if !citesKnown {
+			continue
+		}
+		for _, comp := range comps {
 			if idRe.MatchString(comp) && !known[comp] {
 				fmt.Fprintf(stdout, "%s: test %s cites unknown matrix ID %s\n", specPath, name, comp)
 				problems++

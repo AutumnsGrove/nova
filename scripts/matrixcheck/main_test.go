@@ -89,14 +89,14 @@ func TestMatrixcheck_MCK03_UnknownIDCitedByTest(t *testing.T) {
 		"spec.md": specWithRows("AA01"),
 		"p/p_test.go": pkgTest(`
 func TestA_AA01_One(t *testing.T) {}
-func TestC_AA99_Stray(t *testing.T) {}
+func TestC_AA01_AA99_Stray(t *testing.T) {}
 `),
 	})
 	code, out, _ := runIn(t, dir, "spec.md", "./p")
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1", code)
 	}
-	if !strings.Contains(out, "AA99") || !strings.Contains(out, "TestC_AA99_Stray") {
+	if !strings.Contains(out, "AA99") || !strings.Contains(out, "TestC_AA01_AA99_Stray") {
 		t.Errorf("output should name AA99 and the test:\n%s", out)
 	}
 }

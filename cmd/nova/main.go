@@ -217,7 +217,7 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 	case o.mode == "json":
 		return mode.RunJSON(sigCtx, s, o.prompt, o.stdout), nil
 	case o.mode == "tui":
-		return 0, fmt.Errorf("nova: the TUI is not built yet; use --mode print|json|rpc")
+		return 0, startTUI(sigCtx, s)
 	case o.prompt != "":
 		text, err := buildPrompt(o.prompt, o.stdin, o.tty)
 		if err != nil {
@@ -228,8 +228,21 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 		}
 		return mode.RunPrint(sigCtx, s, text, o.stdout, o.stderr), nil
 	default:
+		if shouldStartTUI(o.mode, o.tty, writerIsTerminal(o.stdout)) {
+			return 0, startTUI(sigCtx, s)
+		}
 		return 0, fmt.Errorf("nova: no mode selected; use -p, --mode, or a subcommand")
 	}
+}
+
+// writerIsTerminal reports whether a writer is a character device.
+func writerIsTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 // buildPrompt reads the prompt, honouring "-" and piped stdin.

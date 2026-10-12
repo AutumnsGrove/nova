@@ -3,7 +3,6 @@
 package chat
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -87,10 +86,9 @@ func (u *userItem) Render(width int) string {
 // through the markdown renderer.
 type assistantItem struct {
 	*base
-	st       styles.Styles
-	md       *markdown
-	thinking string
-	done     bool
+	st   styles.Styles
+	md   *markdown
+	done bool
 }
 
 func newAssistantItem(st styles.Styles, r Renderer, id string) *assistantItem {
@@ -107,54 +105,6 @@ func (a *assistantItem) Render(width int) string {
 		return ""
 	}
 	return a.st.Assistant.Render(rendered)
-}
-
-// toolItem is a generic tool call card. C16 adds per-tool renderers; here every
-// tool renders the name, a one-line argument summary, its status, and output.
-type toolItem struct {
-	*base
-	st      styles.Styles
-	callID  string
-	name    string
-	args    string
-	status  string // running | done | error
-	output  string
-	result  string
-	isError bool
-}
-
-func newToolItem(st styles.Styles, id, callID string, call *proto.ToolCall) *toolItem {
-	return &toolItem{
-		base:   &base{id: id},
-		st:     st,
-		callID: callID,
-		name:   call.Name,
-		args:   summarizeArgs(call.Arguments),
-		status: "running",
-	}
-}
-
-func (t *toolItem) Render(width int) string {
-	dot, style := "●", t.st.Tool
-	if t.status == "error" || t.isError {
-		dot, style = "✖", t.st.ToolError
-	}
-	header := dot + " " + t.name
-	if t.args != "" {
-		header += "  " + t.args
-	}
-	if t.status == "running" {
-		header += "  …"
-	}
-	out := []string{style.Render(wrapPlain(header, width))}
-	body := t.output
-	if t.result != "" {
-		body = t.result
-	}
-	if strings.TrimSpace(body) != "" {
-		out = append(out, t.st.Muted.Render(wrapPlain(body, max(width-2, 1))))
-	}
-	return strings.Join(out, "\n")
 }
 
 // lineItem is a one-line entry: an error, a retry notice, a closing line, or
@@ -188,58 +138,6 @@ type compactionItem struct {
 func (c *compactionItem) Render(width int) string {
 	text := fmt.Sprintf("── compacted %s → %s tokens", shortTokens(c.before), shortTokens(c.after))
 	return c.st.Compaction.Render(wrapPlain(text, width))
-}
-
-// summarizeArgs renders a one-line summary of a tool call's arguments.
-func summarizeArgs(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil || len(m) == 0 {
-		return truncateRaw(string(raw))
-	}
-	for _, key := range []string{"path", "command", "pattern", "query", "url", "name"} {
-		if v, ok := m[key]; ok {
-			return key + ": " + compactValue(v)
-		}
-	}
-	for _, key := range sortedKeys(m) {
-		return key + ": " + compactValue(m[key])
-	}
-	return ""
-}
-
-// compactValue renders one argument value on a single line.
-func compactValue(v any) string {
-	s := fmt.Sprint(v)
-	if len(s) > 60 {
-		s = s[:57] + "..."
-	}
-	return strings.ReplaceAll(s, "\n", " ")
-}
-
-// truncateRaw shortens an unparsable argument string to one line.
-func truncateRaw(s string) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	if len(s) > 60 {
-		s = s[:57] + "..."
-	}
-	return s
-}
-
-// sortedKeys returns a map's keys in a stable order.
-func sortedKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	for i := 1; i < len(keys); i++ {
-		for j := i; j > 0 && keys[j] < keys[j-1]; j-- {
-			keys[j], keys[j-1] = keys[j-1], keys[j]
-		}
-	}
-	return keys
 }
 
 // shortTokens renders a token count compactly, e.g. 38k.

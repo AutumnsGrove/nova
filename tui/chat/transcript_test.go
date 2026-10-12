@@ -42,7 +42,7 @@ func renderItem(it list.Item, width int) string { return plain(it.Render(width))
 
 func findTool(tr *Transcript, callID string) *toolItem {
 	for _, it := range tr.Items() {
-		if ti, ok := it.(*toolItem); ok && ti.callID == callID {
+		if ti, ok := it.(*toolItem); ok && ti.call.ID == callID {
 			return ti
 		}
 	}
@@ -82,10 +82,13 @@ func TestTranscript_TRN02_ToolTurn(t *testing.T) {
 	if tool == nil {
 		t.Fatal("tool item missing")
 	}
-	if tool.status != "done" {
-		t.Fatalf("tool status = %q, want done", tool.status)
+	if tool.call.Running {
+		t.Fatal("tool still marked running")
 	}
-	if got := renderItem(tool, 80); !strings.Contains(got, "file contents") {
+	if tool.call.Content != "file contents" {
+		t.Fatalf("tool result = %q", tool.call.Content)
+	}
+	if got := renderItem(tool, 80); !strings.Contains(got, "read") {
 		t.Fatalf("tool render = %q", got)
 	}
 }
@@ -99,7 +102,7 @@ func TestTranscript_TRN03_ToolOrder(t *testing.T) {
 	var got []string
 	for _, it := range tr.Items() {
 		if ti, ok := it.(*toolItem); ok {
-			got = append(got, ti.callID)
+			got = append(got, ti.call.ID)
 		}
 	}
 	if strings.Join(got, ",") != "c1,c2,c3" {
@@ -112,7 +115,7 @@ func TestTranscript_TRN04_ToolError(t *testing.T) {
 	tr.Apply(proto.Event{Type: proto.EventToolCall, Run: "r1", Call: &proto.ToolCall{ID: "c1", Name: "bash"}})
 	tr.Apply(proto.Event{Type: proto.EventToolEnd, CallID: "c1", Result: &proto.ToolResult{Content: "boom", IsError: true}})
 	tool := findTool(tr, "c1")
-	if tool == nil || !tool.isError || tool.status != "error" {
+	if tool == nil || !tool.call.IsError {
 		t.Fatalf("tool error not marked: %+v", tool)
 	}
 }
@@ -203,7 +206,7 @@ func TestTranscript_TRN11_LoadStoredMessages(t *testing.T) {
 		t.Fatalf("loaded %d items, want 4", len(tr.Items()))
 	}
 	tool := findTool(tr, "c1")
-	if tool == nil || !strings.Contains(renderItem(tool, 80), "file data") {
+	if tool == nil || tool.call.Content != "file data" {
 		t.Fatalf("tool result not attached: %+v", tool)
 	}
 }
@@ -225,12 +228,15 @@ func TestTranscript_TRN13_ThinkingStoredNotRendered(t *testing.T) {
 	tr.Apply(proto.Event{Type: proto.EventThinkingStart, Run: "r1", Turn: intp(1)})
 	tr.Apply(proto.Event{Type: proto.EventThinkingDelta, Run: "r1", Turn: intp(1), Text: "secret thoughts"})
 	tr.Apply(proto.Event{Type: proto.EventThinkingEnd, Run: "r1", Turn: intp(1)})
-	a, ok := tr.Items()[0].(*assistantItem)
-	if !ok || a.thinking != "secret thoughts" {
-		t.Fatalf("thinking not stored: %+v", a)
+	th := tr.thinks[tr.key(proto.Event{Run: "r1", Turn: intp(1)})]
+	if th == nil || th.text != "secret thoughts" {
+		t.Fatalf("thinking not stored: %+v", th)
 	}
-	if got := renderItem(a, 80); strings.Contains(got, "secret thoughts") {
-		t.Fatalf("thinking was rendered: %q", got)
+	// The thinking text lives in its own item, never in the assistant text.
+	for _, it := range tr.Items() {
+		if a, ok := it.(*assistantItem); ok && strings.Contains(renderItem(a, 80), "secret thoughts") {
+			t.Fatalf("thinking leaked into the assistant item")
+		}
 	}
 }
 

@@ -9,37 +9,46 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/list"
+	"github.com/AutumnsGrove/nova/tui/render"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
 // Transcript is the ordered list of items shown in the main area. Items are
-// only ever appended or removed, so their order is stable.
+// only ever appended or inserted, so their order is stable.
 type Transcript struct {
-	st      styles.Styles
-	r       Renderer
-	width   int
-	items   []list.Item
-	seq     int
-	assists map[string]*assistantItem // by run/turn key
-	current *assistantItem
-	tools   map[string]*toolItem // by call id
-	queued  []*userItem
-	kinds   map[*userItem]string
+	st       styles.Styles
+	r        Renderer
+	registry *render.Registry
+	display  Display
+	width    int
+	now      time.Time
+	items    []list.Item
+	seq      int
+	assists  map[string]*assistantItem // by run/turn key
+	current  *assistantItem
+	thinks   map[string]*thinkingItem
+	tools    map[string]*toolItem // by call id
+	queued   []*userItem
+	kinds    map[*userItem]string
 }
 
 // NewTranscript returns an empty transcript.
 func NewTranscript(width int, r Renderer, st styles.Styles) *Transcript {
 	return &Transcript{
-		st:      st,
-		r:       r,
-		width:   width,
-		assists: map[string]*assistantItem{},
-		tools:   map[string]*toolItem{},
-		kinds:   map[*userItem]string{},
+		st:       st,
+		r:        r,
+		registry: render.NewRegistry(),
+		display:  DefaultDisplay(),
+		width:    width,
+		assists:  map[string]*assistantItem{},
+		thinks:   map[string]*thinkingItem{},
+		tools:    map[string]*toolItem{},
+		kinds:    map[*userItem]string{},
 	}
 }
 
@@ -48,6 +57,62 @@ func (t *Transcript) Items() []list.Item { return t.items }
 
 // SetWidth records the render width. Items pick it up on their next render.
 func (t *Transcript) SetWidth(width int) { t.width = width }
+
+// Display returns the current display preferences.
+func (t *Transcript) Display() Display { return t.display }
+
+// SetDisplay replaces the display preferences and refreshes every item that
+// depends on them.
+func (t *Transcript) SetDisplay(d Display) {
+	t.display = d
+	for _, th := range t.thinks {
+		th.touch()
+	}
+	for _, ti := range t.tools {
+		ti.touch()
+	}
+}
+
+// SetRegistry replaces the tool renderer registry.
+func (t *Transcript) SetRegistry(r *render.Registry) {
+	if r != nil {
+		t.registry = r
+	}
+}
+
+// SetNow advances the render clock. It returns the ids of items whose visible
+// timer changed, so the caller can invalidate them in the list.
+func (t *Transcript) SetNow(now time.Time) []string {
+	t.now = now
+	var changed []string
+	for _, th := range t.thinks {
+		if th.setNow(now) {
+			changed = append(changed, th.id)
+		}
+	}
+	for _, ti := range t.tools {
+		if ti.setNow(now) {
+			changed = append(changed, ti.id)
+		}
+	}
+	return changed
+}
+
+// NeedsTick reports whether a 250 ms tick should run: a thinking block is
+// streaming, or a tool call is running.
+func (t *Transcript) NeedsTick() bool {
+	for _, th := range t.thinks {
+		if !th.done {
+			return true
+		}
+	}
+	for _, ti := range t.tools {
+		if ti.call.Running {
+			return true
+		}
+	}
+	return false
+}
 
 // AddUser adds a user message that has already been accepted by the server.
 func (t *Transcript) AddUser(text string, atts []string) string {
@@ -86,16 +151,26 @@ func (t *Transcript) Apply(e proto.Event) []string {
 			a.touch()
 			return []string{a.id}
 		}
-	case proto.EventThinkingStart, proto.EventThinkingEnd:
-		if a := t.currentFor(e); a != nil {
-			a.touch()
-			return []string{a.id}
+	case proto.EventThinkingStart:
+		th := t.thinkingFor(e, true)
+		if th != nil {
+			return []string{th.id}
 		}
 	case proto.EventThinkingDelta:
-		if a := t.currentFor(e); a != nil {
-			a.thinking += e.Text
-			a.touch()
-			return []string{a.id}
+		if th := t.thinkingFor(e, true); th != nil {
+			th.text += e.Text
+			th.touch()
+			return []string{th.id}
+		}
+	case proto.EventThinkingEnd:
+		if th := t.thinkingFor(e, false); th != nil {
+			th.done = true
+			th.ms = e.Ms
+			if e.Tokens != nil {
+				th.tokens = e.Tokens
+			}
+			th.touch()
+			return []string{th.id}
 		}
 
 	case proto.EventToolCall:
@@ -106,7 +181,7 @@ func (t *Transcript) Apply(e proto.Event) []string {
 		if e.Call.ID == "" {
 			id = t.nextID("tool")
 		}
-		ti := newToolItem(t.st, id, e.Call.ID, e.Call)
+		ti := newToolItem(t.st, t.registry, &t.display, id, e.Call.ID, e.Call, t.now)
 		if e.Call.ID != "" {
 			t.tools[e.Call.ID] = ti
 		}
@@ -114,36 +189,42 @@ func (t *Transcript) Apply(e proto.Event) []string {
 		return []string{ti.id}
 	case proto.EventToolStart:
 		if ti := t.tool(e.CallID); ti != nil {
-			ti.status = "running"
+			ti.call.Running = true
+			ti.call.Started = t.now
 			ti.touch()
 			return []string{ti.id}
 		}
 	case proto.EventToolUpdate:
 		if ti := t.tool(e.CallID); ti != nil {
-			ti.output += e.Text
+			ti.call.Live += e.Text
 			ti.touch()
 			return []string{ti.id}
 		}
 	case proto.EventToolEnd:
 		if ti := t.tool(e.CallID); ti != nil {
+			ti.call.Running = false
+			ti.call.Ended = t.now
 			if e.Result != nil {
-				ti.result = e.Result.Content
-				ti.isError = e.Result.IsError
-			}
-			ti.status = "done"
-			if ti.isError {
-				ti.status = "error"
+				ti.call.Content = e.Result.Content
+				ti.call.IsError = e.Result.IsError
+				ti.call.Truncated = e.Result.Truncated
+				ti.call.Details = e.Result.Details
 			}
 			ti.touch()
 			return []string{ti.id}
 		}
 
 	case proto.EventMessageEnd:
+		var changed []string
+		if id := t.applyThinkingUsage(e); id != "" {
+			changed = append(changed, id)
+		}
 		if a := t.currentFor(e); a != nil {
 			a.done = true
 			a.touch()
-			return []string{a.id}
+			changed = append(changed, a.id)
 		}
+		return changed
 
 	case proto.EventCompaction:
 		ci := &compactionItem{base: &base{id: t.nextID("compaction")}, st: t.st, before: e.TokensBefore, after: e.TokensAfter}
@@ -164,6 +245,11 @@ func (t *Transcript) Apply(e proto.Event) []string {
 			t.remove(a)
 			changed = append(changed, a.id)
 			t.current = nil
+		}
+		if th := t.thinkingFor(e, false); th != nil {
+			t.remove(th)
+			delete(t.thinks, t.key(e))
+			changed = append(changed, th.id)
 		}
 		li := &lineItem{
 			base: &base{id: t.nextID("retry")},
@@ -202,10 +288,24 @@ func (t *Transcript) Apply(e proto.Event) []string {
 	return nil
 }
 
+// applyThinkingUsage fills a thinking item's tokens from the turn usage when
+// thinking_end did not carry a count. It returns the changed id, or "".
+func (t *Transcript) applyThinkingUsage(e proto.Event) string {
+	th := t.thinkingFor(e, false)
+	if th == nil || th.tokens != nil || e.Usage == nil || e.Usage.ReasoningTokens <= 0 {
+		return ""
+	}
+	n := e.Usage.ReasoningTokens
+	th.tokens = &n
+	th.touch()
+	return th.id
+}
+
 // Load rebuilds the transcript from stored messages.
 func (t *Transcript) Load(msgs []message.Message) {
 	t.items = nil
 	t.assists = map[string]*assistantItem{}
+	t.thinks = map[string]*thinkingItem{}
 	t.tools = map[string]*toolItem{}
 	t.queued = nil
 	t.kinds = map[*userItem]string{}
@@ -220,23 +320,27 @@ func (t *Transcript) Load(msgs []message.Message) {
 			if m.Content != "" {
 				a.md.append(m.Content)
 			}
-			a.thinking = m.Reasoning
 			a.done = true
 			t.append(a)
+			if m.Reasoning != "" {
+				th := newThinkingItem(t.st, t.r, &t.display, t.nextID("thinking"), time.Time{})
+				th.text = m.Reasoning
+				th.done = true
+				t.insertBefore(a, th)
+			}
 			for i := range m.ToolCalls {
 				call := &m.ToolCalls[i]
-				ti := newToolItem(t.st, "tool-"+call.ID, call.ID, &proto.ToolCall{
+				ti := newToolItem(t.st, t.registry, &t.display, "tool-"+call.ID, call.ID, &proto.ToolCall{
 					ID:        call.ID,
 					Name:      call.Function.Name,
 					Arguments: json.RawMessage(call.Function.Arguments),
-				})
+				}, time.Time{})
 				t.tools[call.ID] = ti
 				t.append(ti)
 			}
 		case message.RoleTool:
 			if ti := t.tools[m.ToolCallID]; ti != nil {
-				ti.result = m.Content
-				ti.status = "done"
+				ti.call.Content = m.Content
 				ti.touch()
 			} else {
 				li := &lineItem{base: &base{id: t.nextID("note")}, st: t.st, text: "tool result: " + m.Content, kind: "muted"}
@@ -255,6 +359,18 @@ func (t *Transcript) nextID(prefix string) string {
 // append adds an item to the end.
 func (t *Transcript) append(it list.Item) { t.items = append(t.items, it) }
 
+// insertBefore inserts it immediately before target, or appends it when target
+// is not present.
+func (t *Transcript) insertBefore(target, it list.Item) {
+	for i, existing := range t.items {
+		if existing == target {
+			t.items = append(t.items[:i], append([]list.Item{it}, t.items[i:]...)...)
+			return
+		}
+	}
+	t.append(it)
+}
+
 // remove deletes item from the transcript, preserving the order of the rest.
 func (t *Transcript) remove(item list.Item) {
 	for i, it := range t.items {
@@ -265,7 +381,7 @@ func (t *Transcript) remove(item list.Item) {
 	}
 }
 
-// key is the run/turn lookup key for an assistant item.
+// key is the run/turn lookup key for a turn's items.
 func (t *Transcript) key(e proto.Event) string {
 	turn := 0
 	if e.Turn != nil {
@@ -282,6 +398,26 @@ func (t *Transcript) currentFor(e proto.Event) *assistantItem {
 		}
 	}
 	return t.current
+}
+
+// thinkingFor returns the thinking item for an event, creating it (above the
+// assistant text) when create is true and it does not exist yet.
+func (t *Transcript) thinkingFor(e proto.Event, create bool) *thinkingItem {
+	key := t.key(e)
+	if th := t.thinks[key]; th != nil {
+		return th
+	}
+	if !create {
+		return nil
+	}
+	th := newThinkingItem(t.st, t.r, &t.display, t.nextID("thinking"), t.now)
+	t.thinks[key] = th
+	if a := t.assists[key]; a != nil {
+		t.insertBefore(a, th)
+	} else {
+		t.append(th)
+	}
+	return th
 }
 
 // tool returns a tool item by call id, dropping unknown ids.

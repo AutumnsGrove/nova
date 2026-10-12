@@ -91,8 +91,8 @@ func Build(t Theme, p colorprofile.Profile) Styles {
 		Completion:         b.fg("ink").Background(b.bg("bg")),
 		CompletionSelected: b.fg("bg").Background(b.bg("spark")).Bold(true),
 
-		DiffAdd:     b.fg("success"),
-		DiffRemove:  b.fg("error"),
+		DiffAdd:     b.bgfg("ink", "success"),
+		DiffRemove:  b.bgfg("ink", "error"),
 		DiffContext: b.fg("muted"),
 		DiffHunk:    b.fg("spark").Bold(true),
 	}
@@ -118,6 +118,19 @@ func (p painter) fg(token string) lipgloss.Style {
 // bg is fg for backgrounds.
 func (p painter) bg(token string) color.Color {
 	return p.color(token)
+}
+
+// bgfg returns a style with a foreground and a background, each omitted when
+// the profile has no colour.
+func (p painter) bgfg(fgToken, bgToken string) lipgloss.Style {
+	s := lipgloss.NewStyle()
+	if c := p.color(fgToken); c != nil {
+		s = s.Foreground(c)
+	}
+	if c := p.color(bgToken); c != nil {
+		s = s.Background(c)
+	}
+	return s
 }
 
 // color resolves a token to a profile-safe colour, or nil for no colour.

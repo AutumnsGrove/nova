@@ -166,20 +166,5 @@ func BenchmarkUI_PRF02_Deltas(b *testing.B) {
 	}
 }
 
-// TestPTY01_StartsAndQuits is the pseudo-terminal smoke test. It needs a real
-// pty, which the unit test environment does not provide; the harness is left
-// for the next C15 session.
-func TestPTY_PTY01_StartsAndQuits(t *testing.T) {
-	if os.Getenv("NOVA_PTY") == "" {
-		t.Skip("set NOVA_PTY=1 to run the PTY smoke tests")
-	}
-	t.Skip("PTY harness not implemented yet")
-}
-
-// TestPTY02_PromptRoundTrip is the pseudo-terminal prompt round trip.
-func TestPTY_PTY02_PromptRoundTrip(t *testing.T) {
-	if os.Getenv("NOVA_PTY") == "" {
-		t.Skip("set NOVA_PTY=1 to run the PTY smoke tests")
-	}
-	t.Skip("PTY harness not implemented yet")
-}
+// TestPTY_PTY01_StartsAndQuits and TestPTY_PTY02_PromptRoundTrip live in
+// pty_test.go with the real pseudo-terminal harness.

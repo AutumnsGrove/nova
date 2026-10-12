@@ -88,6 +88,7 @@ var allowedImports = []importRule{
 	{path: "charm.land/", allow: under("tui", "bundled")},
 	{path: "github.com/charmbracelet/", allow: under("tui", "bundled")},
 	{path: "github.com/alecthomas/chroma/v2", allow: under("tui", "bundled")},
+	{path: "golang.org/x/sys", allow: under("tui", "testkit", "bundled")},
 }
 
 func (r importRule) matches(imp string) bool {

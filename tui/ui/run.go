@@ -71,7 +71,7 @@ func runWith(ctx context.Context, srv *mode.Server, opt RunOptions, in io.Reader
 	if log, err := openLog(); err == nil {
 		defer log.Close()
 	}
-	progModel, err := tea.NewProgram(model, tea.WithContext(ctx)).Run()
+	progModel, err := tea.NewProgram(model, tea.WithContext(ctx), tea.WithInput(in), tea.WithOutput(out)).Run()
 	if m, ok := progModel.(*Model); ok && m.panicValue != nil {
 		logPanic(fmt.Sprint(m.panicValue))
 	}

@@ -1,0 +1,8 @@
+{"type":"message_start","run":"r1","turn":1,"role":"assistant"}
+{"type":"text_delta","run":"r1","turn":1,"text":"I will read the file."}
+{"type":"tool_call","run":"r1","turn":1,"call":{"id":"c1","name":"read","arguments":{"path":"main.go"}}}
+{"type":"tool_start","run":"r1","call_id":"c1"}
+{"type":"tool_update","run":"r1","call_id":"c1","text":"reading"}
+{"type":"tool_end","run":"r1","call_id":"c1","result":{"content":"package main","is_error":false}}
+{"type":"message_end","run":"r1","turn":1}
+{"type":"run_end","run":"r1","reason":"done","turns":1}

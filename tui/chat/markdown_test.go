@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/AutumnsGrove/nova/tui/styles"
+	"github.com/charmbracelet/colorprofile"
 )
 
 // fakeRenderer records every call and wraps the source in a marker so tests
@@ -217,6 +220,21 @@ func TestMarkdown_MDK14_PassThrough(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("block %q did not reach the renderer: %q", w, f.srcs)
+		}
+	}
+}
+
+// TestGlamourRenderer_RendersMarkdown is a smoke test for the production
+// renderer: it renders through glamour and never exceeds the width.
+func TestGlamourRenderer_RendersMarkdown(t *testing.T) {
+	r := NewGlamourRenderer(styles.Build(styles.Mono(), colorprofile.ASCII))
+	got := r.Markdown("# Heading\n\nsome text", 40)
+	if !strings.Contains(got, "Heading") {
+		t.Fatalf("glamour output = %q", got)
+	}
+	for _, line := range strings.Split(got, "\n") {
+		if ansi.StringWidth(line) > 40 {
+			t.Fatalf("glamour line %q exceeds width", line)
 		}
 	}
 }

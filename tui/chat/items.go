@@ -82,6 +82,9 @@ func (u *userItem) Render(width int) string {
 	return label + "  " + wrapPlain(body, max(width-5, 1))
 }
 
+// restyle swaps the theme and refreshes the item.
+func (u *userItem) restyle(st styles.Styles) { u.st = st; u.touch() }
+
 // assistantItem is one assistant message. Its text is rendered incrementally
 // through the markdown renderer.
 type assistantItem struct {
@@ -107,6 +110,9 @@ func (a *assistantItem) Render(width int) string {
 	return a.st.Assistant.Render(rendered)
 }
 
+// restyle swaps the theme and refreshes the item.
+func (a *assistantItem) restyle(st styles.Styles) { a.st = st; a.touch() }
+
 // lineItem is a one-line entry: an error, a retry notice, a closing line, or
 // an orphan tool result.
 type lineItem struct {
@@ -128,6 +134,9 @@ func (l *lineItem) Render(width int) string {
 	}
 }
 
+// restyle swaps the theme and refreshes the item.
+func (l *lineItem) restyle(st styles.Styles) { l.st = st; l.touch() }
+
 // compactionItem marks where the conversation was compacted.
 type compactionItem struct {
 	*base
@@ -139,6 +148,9 @@ func (c *compactionItem) Render(width int) string {
 	text := fmt.Sprintf("── compacted %s → %s tokens", shortTokens(c.before), shortTokens(c.after))
 	return c.st.Compaction.Render(wrapPlain(text, width))
 }
+
+// restyle swaps the theme and refreshes the item.
+func (c *compactionItem) restyle(st styles.Styles) { c.st = st; c.touch() }
 
 // shortTokens renders a token count compactly, e.g. 38k.
 func shortTokens(n int) string {

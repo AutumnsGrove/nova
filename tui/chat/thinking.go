@@ -172,3 +172,6 @@ func rightHint(left, right string, width int) string {
 	}
 	return left + strings.Repeat(" ", width-lw-rw) + right
 }
+
+// restyle swaps the theme and refreshes the item.
+func (th *thinkingItem) restyle(st styles.Styles) { th.st = st; th.touch() }

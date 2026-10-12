@@ -63,3 +63,6 @@ func (ti *toolItem) setNow(now time.Time) bool {
 	}
 	return false
 }
+
+// restyle swaps the theme and refreshes the item.
+func (ti *toolItem) restyle(st styles.Styles) { ti.st = st; ti.touch() }

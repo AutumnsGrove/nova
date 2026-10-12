@@ -388,3 +388,22 @@ func subsequence(before, after []string) bool {
 	}
 	return true
 }
+
+func TestTranscript_CRD13_RestoredMatchesLive(t *testing.T) {
+	live := newTestTranscript(80)
+	live.Apply(proto.Event{Type: proto.EventToolCall, Run: "r1", Call: &proto.ToolCall{ID: "c1", Name: "mystery", Arguments: json.RawMessage(`{"x":"y"}`)}})
+	live.Apply(proto.Event{Type: proto.EventToolEnd, CallID: "c1", Result: &proto.ToolResult{Content: "result"}})
+
+	restored := newTestTranscript(80)
+	restored.Load([]message.Message{
+		{Role: message.RoleAssistant, ToolCalls: []message.ToolCall{{ID: "c1", Function: message.FunctionCall{Name: "mystery", Arguments: `{"x":"y"}`}}}},
+		message.ToolResult("c1", "result"),
+	})
+	liveTool, restoredTool := findTool(live, "c1"), findTool(restored, "c1")
+	if liveTool == nil || restoredTool == nil {
+		t.Fatal("tool card missing")
+	}
+	if renderItem(liveTool, 80) != renderItem(restoredTool, 80) {
+		t.Fatalf("live %q != restored %q", renderItem(liveTool, 80), renderItem(restoredTool, 80))
+	}
+}

@@ -80,6 +80,17 @@ func (t *Transcript) SetRegistry(r *render.Registry) {
 	}
 }
 
+// SetStyles replaces the theme styles and refreshes every item, so a theme
+// switch is visible immediately.
+func (t *Transcript) SetStyles(st styles.Styles) {
+	t.st = st
+	for _, it := range t.items {
+		if rs, ok := it.(interface{ restyle(styles.Styles) }); ok {
+			rs.restyle(st)
+		}
+	}
+}
+
 // SetNow advances the render clock. It returns the ids of items whose visible
 // timer changed, so the caller can invalidate them in the list.
 func (t *Transcript) SetNow(now time.Time) []string {

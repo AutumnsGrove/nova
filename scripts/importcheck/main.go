@@ -82,7 +82,7 @@ type importRule struct {
 // allowedImports is the dependency allow-list (D46), one entry per module or
 // module family. Adding one is a documented decision.
 var allowedImports = []importRule{
-	{path: "gopkg.in/yaml.v3", allow: nonUI},
+	{path: "gopkg.in/yaml.v3", allow: all},
 	{path: "github.com/spf13/cobra", allow: under("cmd/nova")},
 	{path: "golang.org/x/net/html", allow: under("bundled/webfetch")},
 	{path: "charm.land/", allow: under("tui", "bundled")},
@@ -109,8 +109,9 @@ func under(prefixes ...string) func(string) bool {
 	}
 }
 
-// nonUI allows every package except the UI layers.
-func nonUI(rel string) bool { return !under("tui", "bundled")(rel) }
+// all allows every package. yaml.v3 is the one dependency shared by the core
+// and the UI (config and theme files), so it is allowed everywhere.
+func all(string) bool { return true }
 
 // listPackage is the subset of `go list -json` the rules need.
 type listPackage struct {

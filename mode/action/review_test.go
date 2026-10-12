@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -286,25 +287,30 @@ func TestAction_RVW09_WallClock(t *testing.T) {
 	opt := reviewOptions(state, g)
 	opt.After = clock.After
 	opt.WallClock = time.Second
+
+	var report *Report
+	var err error
 	done := make(chan struct{})
 	go func() {
-		defer close(done)
-		for i := 0; i < 100000; i++ {
-			clock.Advance(time.Second)
-			select {
-			case <-done:
-				return
-			default:
-			}
-		}
+		report, err = Review(context.Background(), s, opt)
+		close(done)
 	}()
-	report, err := Review(context.Background(), s, opt)
-	<-done
-	if err != nil {
-		t.Fatalf("Review: %v", err)
-	}
-	if !report.Partial {
-		t.Fatalf("report = %+v, want partial", report)
+	// Advance the fake clock until the review stops, so the timer is sure to
+	// be registered whatever the goroutine schedule is.
+	for {
+		select {
+		case <-done:
+			if err != nil {
+				t.Fatalf("Review: %v", err)
+			}
+			if !report.Partial {
+				t.Fatalf("report = %+v, want partial", report)
+			}
+			return
+		default:
+			clock.Advance(time.Second)
+			runtime.Gosched()
+		}
 	}
 }
 

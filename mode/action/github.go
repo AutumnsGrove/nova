@@ -31,10 +31,8 @@ type Pull struct {
 // File is one changed file in a pull request. Patch is absent for binary or
 // very large files.
 type File struct {
-	Filename         string `json:"filename"`
-	PreviousFilename string `json:"previous_filename"`
-	Status           string `json:"status"`
-	Patch            string `json:"patch"`
+	Filename string `json:"filename"`
+	Patch    string `json:"patch"`
 }
 
 // ReviewComment is one inline comment in a posted review.
@@ -52,8 +50,8 @@ type ReviewRequest struct {
 	Comments []ReviewComment `json:"comments"`
 }
 
-// Review is a posted review.
-type Review struct {
+// PostedReview is a review returned by the API.
+type PostedReview struct {
 	ID   int64  `json:"id"`
 	Body string `json:"body"`
 }
@@ -102,10 +100,8 @@ func sleep(ctx context.Context, d time.Duration) error {
 // Pull fetches one pull request.
 func (g *GitHub) Pull(ctx context.Context, repo string, number int) (*Pull, error) {
 	var pull Pull
-	if _, err := g.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/pulls/%d", repo, number), nil, &pull); err != nil {
-		return nil, err
-	}
-	return &pull, nil
+	_, err := g.do(ctx, http.MethodGet, fmt.Sprintf("/repos/%s/pulls/%d", repo, number), nil, &pull)
+	return &pull, err
 }
 
 // Files lists the pull request's files across pages, capped at 300. The bool
@@ -113,8 +109,8 @@ func (g *GitHub) Pull(ctx context.Context, repo string, number int) (*Pull, erro
 func (g *GitHub) Files(ctx context.Context, repo string, number int) ([]File, bool, error) {
 	var all []File
 	for page := 1; page <= 100; page++ {
-		path := fmt.Sprintf("/repos/%s/pulls/%d/files?per_page=100&page=%d", repo, number, page)
 		var files []File
+		path := fmt.Sprintf("/repos/%s/pulls/%d/files?per_page=100&page=%d", repo, number, page)
 		if _, err := g.do(ctx, http.MethodGet, path, nil, &files); err != nil {
 			return nil, false, err
 		}
@@ -131,28 +127,33 @@ func (g *GitHub) Files(ctx context.Context, repo string, number int) ([]File, bo
 	return all, false, nil
 }
 
+// list decodes a JSON array of T from a GET.
+func list[T any](g *GitHub, ctx context.Context, path string) ([]T, error) {
+	var out []T
+	_, err := g.do(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
 // Reviews lists the reviews already on a pull request.
-func (g *GitHub) Reviews(ctx context.Context, repo string, number int) ([]Review, error) {
-	var reviews []Review
-	path := fmt.Sprintf("/repos/%s/pulls/%d/reviews?per_page=100", repo, number)
-	if _, err := g.do(ctx, http.MethodGet, path, nil, &reviews); err != nil {
-		return nil, err
-	}
-	return reviews, nil
+func (g *GitHub) Reviews(ctx context.Context, repo string, number int) ([]PostedReview, error) {
+	return list[PostedReview](g, ctx, fmt.Sprintf("/repos/%s/pulls/%d/reviews?per_page=100", repo, number))
+}
+
+// ReviewComments lists the inline comments already on a pull request.
+func (g *GitHub) ReviewComments(ctx context.Context, repo string, number int) ([]ReviewComment, error) {
+	return list[ReviewComment](g, ctx, fmt.Sprintf("/repos/%s/pulls/%d/comments?per_page=100", repo, number))
 }
 
 // PostReview posts one review and returns it.
-func (g *GitHub) PostReview(ctx context.Context, repo string, number int, req ReviewRequest) (*Review, error) {
-	var review Review
+func (g *GitHub) PostReview(ctx context.Context, repo string, number int, req ReviewRequest) (*PostedReview, error) {
+	var review PostedReview
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, err
 	}
 	path := fmt.Sprintf("/repos/%s/pulls/%d/reviews", repo, number)
-	if _, err := g.do(ctx, http.MethodPost, path, body, &review); err != nil {
-		return nil, err
-	}
-	return &review, nil
+	_, err = g.do(ctx, http.MethodPost, path, body, &review)
+	return &review, err
 }
 
 // do sends one request, retrying 403/429 and 5xx as documented.
@@ -184,19 +185,16 @@ func (g *GitHub) do(ctx context.Context, method, path string, body []byte, out a
 			resp.Body.Close()
 			return resp, err
 		}
-		detail := readErrorBody(resp)
-		retryable := resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests ||
-			resp.StatusCode >= 500
-		if retryable && attempt < 3 {
-			delay := retryDelay(resp, attempt)
-			resp.Body.Close()
-			if err := g.Sleep(ctx, delay); err != nil {
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		retry := (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500) && attempt < 3
+		resp.Body.Close()
+		if retry {
+			if err := g.Sleep(ctx, retryDelay(resp, attempt)); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		resp.Body.Close()
-		return resp, &APIError{Status: resp.StatusCode, Method: method, Path: path, Body: detail}
+		return resp, &APIError{Status: resp.StatusCode, Method: method, Path: path, Body: strings.TrimSpace(string(detail))}
 	}
 }
 
@@ -209,10 +207,4 @@ func retryDelay(resp *http.Response, attempt int) time.Duration {
 		return 60 * time.Second
 	}
 	return time.Duration(1<<attempt) * time.Second
-}
-
-// readErrorBody returns a short, safe copy of an error body.
-func readErrorBody(resp *http.Response) string {
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	return strings.TrimSpace(string(data))
 }

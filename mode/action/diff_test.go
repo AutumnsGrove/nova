@@ -141,7 +141,15 @@ func FuzzParseDiff(f *testing.F) {
 	f.Add("@@ -1,1 +1,1 @@\r\n a\r\n")
 	f.Fuzz(func(t *testing.T, patch string) {
 		fd := ParseFileDiff("f", patch)
-		left, right := fd.Bounds()
+		left, right := 0, 0
+		for _, h := range fd.Hunks {
+			if end := h.OldStart + h.OldCount - 1; end > left {
+				left = end
+			}
+			if end := h.NewStart + h.NewCount - 1; end > right {
+				right = end
+			}
+		}
 		for line := range fd.Left {
 			if line < 0 || line > left {
 				t.Fatalf("left line %d outside bounds 0..%d", line, left)

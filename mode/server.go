@@ -63,6 +63,12 @@ type Options struct {
 	Mode        string   // tui | print | json | rpc | serve, for extensions
 	Tools       []string // explicit active tool set; nil means use the config
 	NoTools     bool     // register no tools at all
+
+	// ExtraTools are added to the tool pool before the active set is resolved,
+	// so a caller (the GitHub Action) can register mode-specific tools. A
+	// non-empty SystemPrompt replaces the assembled prompt.
+	ExtraTools   []tool.Tool
+	SystemPrompt string
 }
 
 // subscriber is one event consumer.
@@ -160,6 +166,9 @@ func New(opt Options) (*Server, error) {
 	}
 	s.tools = tools
 	s.pool = pool
+	for _, t := range opt.ExtraTools {
+		s.pool[t.Info().Name] = t
+	}
 	s.active = append([]string(nil), cfg.Tools.Active...)
 	if len(s.active) == 0 {
 		s.active = append([]string(nil), defaultToolNames...)
@@ -192,6 +201,9 @@ func New(opt Options) (*Server, error) {
 		Settings: compactionSettings(cfg, cfg.Model),
 	}
 	s.system = buildSystemPrompt(cfg, opt.CWD, home, tools, clock.Now())
+	if opt.SystemPrompt != "" {
+		s.system = opt.SystemPrompt
+	}
 
 	s.ext = s.buildExtensionHost()
 	extHooks := s.ext.Hooks()

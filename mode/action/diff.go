@@ -8,10 +8,7 @@ import (
 )
 
 // Hunk is one parsed @@ header from a unified diff.
-type Hunk struct {
-	OldStart, OldCount int
-	NewStart, NewCount int
-}
+type Hunk struct{ OldStart, OldCount, NewStart, NewCount int }
 
 // FileDiff maps the line numbers that appear in one file's patch: removed and
 // context lines on the left, added and context lines on the right. A comment is
@@ -37,9 +34,7 @@ func NewDiffFile(path, patch string) DiffFile {
 
 // Included reports whether this file's patch belongs in the diff sent to the
 // model. A missing patch (binary or too large) and a generated path do not.
-func (f DiffFile) Included() bool {
-	return f.Patch != "" && !generatedPath(f.Path)
-}
+func (f DiffFile) Included() bool { return f.Patch != "" && !generatedPath(f.Path) }
 
 var hunkRe = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 
@@ -47,14 +42,11 @@ var hunkRe = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 // a rename uses the new name, never the old one.
 func ParseFileDiff(path, patch string) *FileDiff {
 	fd := &FileDiff{Path: path, Left: map[int]bool{}, Right: map[int]bool{}}
-	var oldLine, newLine int
-	valid := false
+	oldLine, newLine, valid := 0, 0, false
 	for _, raw := range strings.Split(patch, "\n") {
 		line := strings.TrimSuffix(raw, "\r")
 		if strings.HasPrefix(line, "@@") {
-			var h Hunk
-			var ok bool
-			if h, ok = parseHunk(line); ok {
+			if h, ok := parseHunk(line); ok {
 				fd.Hunks = append(fd.Hunks, h)
 				oldLine, newLine, valid = h.OldStart, h.NewStart, true
 			}
@@ -65,19 +57,14 @@ func ParseFileDiff(path, patch string) *FileDiff {
 		}
 		switch {
 		case strings.HasPrefix(line, "+"):
-			fd.Right[newLine] = true
-			newLine++
+			fd.Right[newLine], newLine = true, newLine+1
 		case strings.HasPrefix(line, "-"):
-			fd.Left[oldLine] = true
-			oldLine++
+			fd.Left[oldLine], oldLine = true, oldLine+1
 		case strings.HasPrefix(line, `\`):
 			// "\ No newline at end of file" is not a line of either side.
 		case strings.HasPrefix(line, " "):
-			// A context line. An empty line is ignored, not a context line.
-			fd.Left[oldLine] = true
-			fd.Right[newLine] = true
-			oldLine++
-			newLine++
+			fd.Left[oldLine], fd.Right[newLine] = true, true
+			oldLine, newLine = oldLine+1, newLine+1
 		}
 	}
 	return fd
@@ -91,10 +78,10 @@ func parseHunk(line string) (Hunk, bool) {
 	}
 	h := Hunk{OldCount: 1, NewCount: 1}
 	h.OldStart, _ = strconv.Atoi(m[1])
+	h.NewStart, _ = strconv.Atoi(m[3])
 	if m[2] != "" {
 		h.OldCount, _ = strconv.Atoi(m[2])
 	}
-	h.NewStart, _ = strconv.Atoi(m[3])
 	if m[4] != "" {
 		h.NewCount, _ = strconv.Atoi(m[4])
 	}
@@ -109,22 +96,8 @@ func (f *FileDiff) Valid(line int, side string) bool {
 	return f.Right[line]
 }
 
-// Bounds returns the highest line number the patch maps on each side.
-func (f *FileDiff) Bounds() (left, right int) {
-	for _, h := range f.Hunks {
-		if end := h.OldStart + h.OldCount - 1; end > left {
-			left = end
-		}
-		if end := h.NewStart + h.NewCount - 1; end > right {
-			right = end
-		}
-	}
-	return left, right
-}
-
 // BuildDiffText concatenates the included patches up to maxBytes, stopping at a
-// file boundary, and returns the paths it left out (binary, generated, or cut
-// for size).
+// file boundary, and returns the paths it left out.
 func BuildDiffText(files []DiffFile, maxBytes int) (string, []string) {
 	var b strings.Builder
 	var omitted []string
@@ -145,23 +118,17 @@ func BuildDiffText(files []DiffFile, maxBytes int) (string, []string) {
 	return b.String(), omitted
 }
 
+// lockFiles are the generated lock files whose diffs are never reviewed.
+var lockFiles = map[string]bool{"go.sum": true, "package-lock.json": true, "yarn.lock": true, "Cargo.lock": true, "poetry.lock": true, "composer.lock": true, "Gemfile.lock": true, "pnpm-lock.yaml": true, "bun.lockb": true}
+
 // generatedPath reports whether a path is a lock file or lives under a vendored
 // or generated directory, so its diff is never sent to the model.
 func generatedPath(path string) bool {
 	clean := filepath.ToSlash(path)
-	for _, dir := range []string{"vendor/", "node_modules/"} {
-		if strings.HasPrefix(clean, dir) || strings.Contains(clean, "/"+dir) {
-			return true
-		}
+	if strings.HasPrefix(clean, "vendor/") || strings.HasPrefix(clean, "node_modules/") ||
+		strings.Contains(clean, "/vendor/") || strings.Contains(clean, "/node_modules/") {
+		return true
 	}
 	base := filepath.Base(clean)
-	if strings.HasSuffix(base, ".lock") {
-		return true
-	}
-	switch base {
-	case "go.sum", "package-lock.json", "yarn.lock", "Cargo.lock", "poetry.lock",
-		"composer.lock", "Gemfile.lock", "pnpm-lock.yaml", "bun.lockb":
-		return true
-	}
-	return false
+	return lockFiles[base] || strings.HasSuffix(base, ".lock")
 }

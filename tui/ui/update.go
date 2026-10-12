@@ -33,7 +33,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case client.EventMsg:
 		cmd := m.handleEvent(msg.Event)
-		return m, tea.Batch(cmd, m.client.Next())
+		return m, tea.Batch(cmd, m.client.Next(), m.scheduleTick())
 
 	case client.UIRequestMsg:
 		m.handleUIRequest(msg.UIRequest)
@@ -61,10 +61,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.applyEditor(msg)
 
 	case tickMsg:
+		m.ticking = false
+		for _, id := range m.transcript.SetNow(m.clock.Now()) {
+			m.list.Touch(id)
+		}
 		if m.quitArmed && !m.clock.Now().Before(m.quitAt) {
 			m.quitArmed = false
 		}
-		return m, nil
+		return m, m.scheduleTick()
 	}
 	return m, nil
 }
@@ -160,6 +164,7 @@ func (m *Model) finishAbort(resp proto.Response) {
 // handleEvent folds an event into the transcript and UI state. It returns an
 // extra command for events that need a follow-up request.
 func (m *Model) handleEvent(e proto.Event) tea.Cmd {
+	m.splashOff = true
 	var cmd tea.Cmd
 	switch e.Type {
 	case proto.EventRunStart:

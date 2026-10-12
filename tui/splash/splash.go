@@ -213,7 +213,11 @@ func plainSplash(width, height int, version string) string {
 
 // caption is the empty line plus the three caption lines under the mark.
 func caption(width int, version string) []string {
-	lines := []string{"", "nova " + version, "press any key"}
+	label := "nova"
+	if version != "" {
+		label += " " + version
+	}
+	lines := []string{"", label, "press any key"}
 	for i, l := range lines {
 		lines[i] = centre(l, width)
 	}

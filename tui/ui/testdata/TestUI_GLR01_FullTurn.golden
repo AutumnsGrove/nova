@@ -1,0 +1,75 @@
+--- width 40 ---
+✦  [1mnova[m  ~/proj                         
+[1myou[m  add a retry                        
+[2m▸ Thought for 12s · 3.4k tokens[m         
+● [1medit[m client.go +9 −2                  
+    [1m@@ -1,2 +1,2 @@[m                     
+1   -old                                
+  1 +new                                
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+                                        
+> [7m [m                                     
+ctx n/a · $0.000 · ctrl+o expand        
+--- width 80 ---
+✦  [1mnova[m  ~/proj                                                                 
+[1myou[m  add a retry                                                                
+[2m▸ Thought for 12s · 3.4k tokens                                 ctrl+o to expand[m
+● [1medit[m client.go +9 −2                                                          
+    [1m@@ -1,2 +1,2 @@[m                                                             
+1   -old                                                                        
+  1 +new                                                                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+> [7m [m                                                                             
+ctx n/a · $0.000 · ctrl+o expand                                                
+--- width 120 ---
+✦  [1mnova[m  ~/proj                                                                                                         
+[1myou[m  add a retry                                                                                                        
+[2m▸ Thought for 12s · 3.4k tokens                                                                         ctrl+o to expand[m
+● [1medit[m client.go +9 −2                                                                                                  
+    [1m@@ -1,2 +1,2 @@[m                                                                                                     
+1   -old                                                                                                                
+  1 +new                                                                                                                
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+> [7m [m                                                                                                                     
+ctx n/a · $0.000 · ctrl+o expand                                                                                        

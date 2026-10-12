@@ -6,7 +6,9 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -63,6 +65,10 @@ func (m *Model) submit(action string) tea.Cmd {
 	switch {
 	case strings.HasPrefix(raw, "/"):
 		name, args := splitCommand(raw)
+		if cmd, handled := m.localCommand(name, args); handled {
+			m.setEditorText("")
+			return cmd
+		}
 		if !m.knownCommand(name) && len(m.commands) > 0 {
 			m.notice = "unknown command: /" + name
 			return nil // leave the text in the editor
@@ -122,6 +128,96 @@ func (m *Model) knownCommand(name string) bool {
 // abort cancels the active run.
 func (m *Model) abort() tea.Cmd {
 	return m.client.Send(proto.Command{Type: proto.CmdAbort})
+}
+
+// tickInterval is the running-block refresh period.
+const tickInterval = 250 * time.Millisecond
+
+// scheduleTick returns a command that fires the next animation tick while a
+// thinking block or tool call is live.
+func (m *Model) scheduleTick() tea.Cmd {
+	if m.ticking || !m.transcript.NeedsTick() {
+		return nil
+	}
+	m.ticking = true
+	return m.clock.After(tickInterval)
+}
+
+// localCommand handles TUI-only slash commands before they reach the server.
+func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
+	switch name {
+	case "theme":
+		if strings.TrimSpace(args) == "" {
+			m.notice = "themes: " + m.themeList()
+			return nil, true
+		}
+		if m.setTheme(strings.TrimSpace(args)) {
+			m.notice = "theme: " + strings.TrimSpace(args)
+			return nil, true
+		}
+		m.notice = "unknown theme: " + strings.TrimSpace(args)
+		return nil, true
+	case "display":
+		return m.displayCommand(args), true
+	}
+	return nil, false
+}
+
+// displayCommand changes one display preference.
+func (m *Model) displayCommand(args string) tea.Cmd {
+	fields := strings.Fields(args)
+	if len(fields) < 2 {
+		m.notice = "usage: /display thinking|tools|lines|splash <value>"
+		return nil
+	}
+	key, val := fields[0], fields[1]
+	switch key {
+	case "thinking":
+		if !m.setToggle(&m.display.ExpandThinking, val) {
+			return nil
+		}
+	case "tools":
+		if !m.setToggle(&m.display.ExpandTools, val) {
+			return nil
+		}
+	case "lines":
+		n, err := strconv.Atoi(val)
+		if err != nil || n < 1 {
+			m.notice = "display lines: expected a positive number"
+			return nil
+		}
+		m.display.ThinkingPreviewLines = n
+	case "splash":
+		switch val {
+		case "on":
+			m.display.Splash = true
+		case "off":
+			m.display.Splash = false
+		default:
+			m.notice = "display splash: expected on or off"
+			return nil
+		}
+	default:
+		m.notice = "unknown display setting: " + key
+		return nil
+	}
+	m.transcript.SetDisplay(m.display)
+	m.expanded = m.display.ExpandTools
+	return nil
+}
+
+// setToggle applies expand or collapse to a flag.
+func (m *Model) setToggle(flag *bool, val string) bool {
+	switch val {
+	case "expand":
+		*flag = true
+	case "collapse":
+		*flag = false
+	default:
+		m.notice = "expected expand or collapse, got " + val
+		return false
+	}
+	return true
 }
 
 // editorStartMsg is produced after the temp file for ctrl+g is ready.

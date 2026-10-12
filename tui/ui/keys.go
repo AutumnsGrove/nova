@@ -12,10 +12,19 @@ import (
 // quitWindow is how long a second ctrl+c still quits.
 const quitWindow = 2 * time.Second
 
+// toggleExpanded flips both expansion flags together, as ctrl+o does.
+func (m *Model) toggleExpanded() {
+	m.display.ExpandThinking = !m.display.ExpandThinking
+	m.display.ExpandTools = !m.display.ExpandTools
+	m.expanded = m.display.ExpandTools
+	m.transcript.SetDisplay(m.display)
+}
+
 // handleKey routes one key press. Special keys are handled here; everything
 // else goes to the editor.
 func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	key := msg.Keystroke()
+	m.splashOff = true
 	if m.quitArmed && key != "ctrl+c" {
 		m.quitArmed = false
 	}
@@ -86,7 +95,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.list.ScrollBy(max(m.layout.Main.H, 1))
 		return nil
 	case "ctrl+o":
-		m.expanded = !m.expanded
+		m.toggleExpanded()
 		return nil
 	case "ctrl+l", "ctrl+t", "ctrl+r":
 		m.notice = "not available yet"

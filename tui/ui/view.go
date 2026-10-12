@@ -8,6 +8,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/AutumnsGrove/nova/tui/splash"
 )
 
 // View renders the whole UI. It is pure: it reads model state and returns a
@@ -59,8 +61,14 @@ func (m *Model) header() string {
 	return truncateJoin(parts, m.width, "  ")
 }
 
-// mainView is the transcript with the completion popup drawn over its bottom.
+// mainView is the transcript, the splash, or the completion popup drawn over
+// the transcript's bottom.
 func (m *Model) mainView() string {
+	if m.showSplash() {
+		if out, _, ok := splash.Render(m.layout.Main.W, m.layout.Main.H, m.st, m.profile, m.version); ok {
+			return out
+		}
+	}
 	view := m.list.View()
 	if !m.completion.active {
 		return view

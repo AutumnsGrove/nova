@@ -8,6 +8,7 @@ package ui
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 
+	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/chat"
@@ -104,6 +106,10 @@ type Model struct {
 	completion completion
 	state      stateData
 	pending    pendingSend
+	themes     []styles.Theme
+	display    chat.Display
+	splashOff  bool
+	ticking    bool
 	runActive  bool
 	expanded   bool
 	quitArmed  bool
@@ -141,11 +147,6 @@ func New(opt Options) *Model {
 	ed.Prompt = "> "
 	ed.CharLimit = 0
 	ed.Blur()
-	if opt.Profile <= colorprofile.ASCII || opt.Theme.Name == "mono" {
-		// The textarea's default styles hardcode colours; clear them so a
-		// mono or NO_COLOR profile emits no colour escapes.
-		ed.SetStyles(textarea.Styles{})
-	}
 	if opt.CWD == "" {
 		opt.CWD, _ = os.Getwd()
 	}
@@ -167,8 +168,57 @@ func New(opt Options) *Model {
 	}
 	m.width, m.height = opt.Width, opt.Height
 	m.editor.Focus()
+	m.themes = styles.LoadThemes(themeDirs(opt.CWD, home))
+	m.display = m.transcript.Display()
+	m.applyEditorStyles()
 	m.recompute()
 	return m
+}
+
+// applyEditorStyles clears the textarea's hardcoded colours for a mono or
+// no-colour profile, and restores them otherwise.
+func (m *Model) applyEditorStyles() {
+	if m.profile <= colorprofile.ASCII || m.theme.Name == "mono" {
+		m.editor.SetStyles(textarea.Styles{})
+		return
+	}
+	m.editor.SetStyles(textarea.DefaultDarkStyles())
+}
+
+// themeDirs are the user and project theme directories.
+func themeDirs(cwd, home string) []string {
+	return []string{
+		filepath.Join(config.UserConfigDir(home), "themes"),
+		filepath.Join(config.ProjectConfigDir(cwd), "themes"),
+	}
+}
+
+// setTheme switches the active theme and refreshes every rendered item.
+func (m *Model) setTheme(name string) bool {
+	for _, th := range m.themes {
+		if th.Name == name {
+			m.theme = th
+			m.st = styles.Build(th, m.profile)
+			m.transcript.SetStyles(m.st)
+			m.applyEditorStyles()
+			return true
+		}
+	}
+	return false
+}
+
+// themeList returns the theme names for a notice.
+func (m *Model) themeList() string {
+	names := make([]string, 0, len(m.themes))
+	for _, th := range m.themes {
+		names = append(names, th.Name)
+	}
+	return strings.Join(names, ", ")
+}
+
+// showSplash reports whether the splash should replace the transcript.
+func (m *Model) showSplash() bool {
+	return m.display.Splash && !m.splashOff && len(m.transcript.Items()) == 0
 }
 
 // Init issues the first commands: the initial state, commands, messages, and

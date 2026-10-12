@@ -1,0 +1,40 @@
+name: Nova review
+description: Review a pull request with Nova and post one comment review.
+inputs:
+  model:
+    description: Model id to review with.
+    required: false
+  max-comments:
+    description: Maximum number of inline comments.
+    required: false
+    default: "15"
+  max-cost:
+    description: Maximum model cost in USD (0 means unlimited).
+    required: false
+    default: "1.00"
+  openrouter-api-key:
+    description: OpenRouter API key. Omit on pull requests from forks.
+    required: false
+  github-token:
+    description: Token used to read the pull request and post the review.
+    required: true
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version: "1.26"
+    - name: Install Nova
+      shell: bash
+      run: go install -tags notui github.com/AutumnsGrove/nova/cmd/nova@${{ github.action_ref }}
+    - name: Review the pull request
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+      run: >-
+        nova action review
+        --model "${{ inputs.model }}"
+        --max-comments "${{ inputs.max-comments }}"
+        --max-cost "${{ inputs.max-cost }}"

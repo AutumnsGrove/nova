@@ -115,6 +115,8 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		logoutCommand(stdout, stderr),
 		docsCommand(stdout),
 		extCommand(stdin, stdout),
+		serveCommand(stderr),
+		actionCommand(stdout, stderr, exit),
 	)
 	return root
 }

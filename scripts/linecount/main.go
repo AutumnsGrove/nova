@@ -4,12 +4,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"go/scanner"
 	"go/token"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -85,9 +87,24 @@ func countPackage(dir string) (int, error) {
 		if err != nil {
 			return 0, fmt.Errorf("read %s: %w", path, err)
 		}
+		if isGenerated(data) {
+			// Generated files (mark_gen.go) have no hand-written budget.
+			continue
+		}
 		total += countCode(path, data)
 	}
 	return total, nil
+}
+
+// generatedRe matches the standard generated-code header on the first line.
+var generatedRe = regexp.MustCompile(`^// Code generated .* DO NOT EDIT\.$`)
+
+// isGenerated reports whether data starts with the generated-code header.
+func isGenerated(data []byte) bool {
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		data = data[:i]
+	}
+	return generatedRe.Match(bytes.TrimSpace(data))
 }
 
 // countCode returns the number of lines that contain at least one Go token.

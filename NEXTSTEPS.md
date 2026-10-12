@@ -5,19 +5,25 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C14 are done. `accept C14`, `accept C13`, `accept C12`, and `make ci` pass.
-`mode/serve` exposes the protocol over HTTP and SSE (bearer token, Host check, CORS, resume ring), and
-`nova action review` reviews a pull request and posts one `COMMENT` review. `mode.Build` now loads config
-and builds a server, so `cmd/nova` stays a thin flag parser.
+**State:** C00 through C14 are done, and C15 (the TUI foundation) is **partial**: `tui/layout`,
+`tui/styles`, `tui/list`, `tui/client`, and `tui/chat` are built and green (LYT, STY, VLS, CLT, MDK, TRN
+rows and both fuzz targets). `tui/ui` and `cmd/nova/tui.go` are **not started**. `make ci` passes on this
+tree; `accept C15` cannot run yet because `firstMissing` rejects the absent `tui/ui` package.
 
-**Next:** run **C15** (`docs/chunks/C15-tui-foundation.md`): the TUI foundation. It depends on C12.
-**C20** (`docs/chunks/C20-opencode-go.md`), the second launch provider, can also run now. The `/ext` and
+**Next:** finish **C15** — build `tui/ui` (`model.go`, `update.go`, `keys.go`, `view.go`, `editor.go`,
+`complete.go`, `history.go`, `run.go`) and `cmd/nova/tui.go`, then `go run ./scripts/accept C15`. The
+remaining rows are EDI01–EDI13, KEY01–KEY13, CPL01–CPL08, UIM01–UIM13, RUN01–RUN04, GLD01–GLD08,
+PRF01–PRF02, PTY01–PTY02. Start from the C15 entry under **Last session**.
+
+**C20** (`docs/chunks/C20-opencode-go.md`) can still run whenever; C15 does not block it. The `/ext` and
 trust-prompt UI is still C17.
 
-**Watch out:** `mode/action` is exactly at its 700-line budget, so any addition needs a matching cut. The
-fake clock's `After` timers are never cancelled, so leftover timers make `testkit.FakeClock.BlockUntil`
-unreliable; the supervision and wall-clock tests advance the clock in a loop instead. `proto.Event` has no
-`Turns` field, so C09 put the `run_end` turn count in `Turn *int`.
+**Watch out:** `go.mod` was bumped from `go 1.26` to `go 1.26.6` by `charm.land/catwalk v0.52.49`, and Go
+auto-downloads the `go1.26.9` toolchain; all TUI files carry `//go:build !notui`. `mode/action` is exactly
+at its 700-line budget, so any addition needs a matching cut. The fake clock's `After` timers are never
+cancelled, so leftover timers make `testkit.FakeClock.BlockUntil` unreliable; the supervision and wall-clock
+tests advance the clock in a loop instead. `proto.Event` has no `Turns` field, so C09 put the `run_end`
+turn count in `Turn *int`.
 
 **Everyday prompt:** *Read NEXTSTEPS.md and AGENTS.md, then do the first item under Start here.*
 
@@ -43,7 +49,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C12 | The server core, modes, and the nova command | done | C09, C10, C11 | 2026-10-10 | |
 | C13 | The extension host | done | C12 | 2026-10-10 | visible |
 | C14 | The serve mode and the GitHub Action | done | C12 | 2026-10-11 | visible |
-| C15 | TUI foundation | todo | C12 | | |
+| C15 | TUI foundation | partial | C12 | 2026-10-11 | |
 | C16 | TUI rendering: thinking block, tool cards, diffs, themes, splash | todo | C15 | | |
 | C17 | TUI dialogs, widgets, status, extension UI bridge | todo | C15, C13 | | |
 | C18 | Bundled extensions | todo | C13, C17 | | |
@@ -54,7 +60,58 @@ Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, 
 
 ## Last session
 
-### C14 — The serve mode and the GitHub Action — 2026-10-11 — pi — main — cost visible
+### C15 (partial) — TUI foundation — 2026-10-11 — pi — main — cost not visible
+
+Built the five lower packages of the TUI foundation in nine green commits. `make ci` passes; `accept C15`
+cannot run yet because `tui/ui` does not exist (`scripts/accept` treats a missing spec package as an error).
+Nothing is broken and the committed tree is green.
+
+**Built (all with tests, all green under `-race`):**
+- `tui/layout/layout.go` — pure rectangle computation (LYT01–LYT10, `TestProperty_LYT_Tiles`). Header at
+  `Height >= 12`, widgets/header/sidebar dropped under 8 lines, editor clamped to 1–8 and further limited
+  so main keeps 3 lines, sidebar only at `Width >= 120` (32 cols), width clamped to 20.
+- `tui/styles/{theme,styles,profile}.go` — the brand palette, `Build` derived entirely from tokens, colour
+  degradation via `colorprofile.Profile.Convert`, `DetectProfile` (STY01–STY07).
+- `tui/list/{list,item}.go` — virtualised list with `(ID, width, Version)` render cache, tail-follow,
+  anchor-based scrolling, `Touch`, `RenderCount` (VLS01–VLS14, `BenchmarkVLS14_Append` ≈ 48 ns/append).
+- `tui/client/client.go` — `mode.Client` → `tea.Cmd` adapter; an unexported `pipe` interface is the test
+  seam (CLT01–CLT04).
+- `tui/chat/{markdown,items,transcript,glamour}.go` — incremental markdown (blocks split at blank lines
+  outside fences, cheap open tail), all transcript items, `Apply`/`Load`, queued steering/follow-up, and a
+  glamour `Renderer` that degrades to `notty` (MDK01–MDK14, TRN01–TRN17, `FuzzMarkdownIncremental`,
+  `FuzzTranscriptApply`; HTML/glamour renderers included).
+- `go.mod`/`go.sum` — added the pinned stack (see **Spec corrections** for the two paths that do not exist).
+
+**Not started (the reason C15 is partial):**
+- `tui/ui` — the single `tea.Model`: `model.go`, `update.go`, `keys.go`, `view.go`, `editor.go`,
+  `complete.go`, `history.go`, `run.go`, plus the `testdata/*.golden` views and the PTY tests. Owes rows
+  EDI01–EDI13, KEY01–KEY13, CPL01–CPL08, UIM01–UIM13, RUN01–RUN04, GLD01–GLD08, PRF01–PRF02, PTY01–PTY02.
+- `cmd/nova/tui.go` — mode selection (RUN04).
+
+**Differed from spec / decisions worth recording:**
+- `colorprofile.Profile` comes from `github.com/charmbracelet/colorprofile`, not `charm.land`; there is no
+  `charm.land/colorprofile/v2` module (see **Spec corrections**).
+- `tui/client` keeps an unexported `pipe` interface so tests need no server; `FromPipe(*mode.Client)` is the
+  public adapter.
+- `tui/chat` owns a `markdown` type and a `Renderer` seam; the `Transcript` interface gained
+  `AddUser`/`QueueUser` so the UI can add the accepted prompt and queued steer/follow-up messages.
+- `tui/list` gained `BenchmarkVLS14_Append` and items with an empty `Render` count as zero lines.
+- The list's render cache is keyed by `(width, Version)`; `Touch` forces invalidation. `View` pads every
+  line to the width, so content assertions must trim trailing spaces.
+
+**Gotchas for the next agent:**
+- Read `tea.Model` in bubbletea v2: `View()` returns `tea.View` (`tea.NewView(string)`), not a string, and
+  keys arrive as `tea.KeyPressMsg` with `.String()`/`.Keystroke()`.
+- `bubbles/textarea.Model` has `Value() string`, value-receiver `Update(tea.Msg) (Model, tea.Cmd)`,
+  `View() string`, `Line()`, `LineCount()`, `SetValue`/`SetHeight`/`SetWidth`/`Focus`/`Blur`.
+- Keep `Update` free of I/O and return `tea.Cmd`s; `client.Client.Next()` must be re-issued after every
+  `EventMsg`/`UIRequestMsg`.
+- Run the fuzzers once (`go test -run '^$' -fuzz FuzzMarkdownIncremental`, `... FuzzTranscriptApply`) before
+  touching `tui/chat`; the block-boundary rule (a line without a newline is incomplete) was found by fuzz.
+
+**One command:** `go test ./tui/...` (all five packages pass; `make ci` also passes).
+
+
 
 Built `mode/serve` and `mode/action` in seven green commits. `go run ./scripts/accept C14` passes all nine
 steps and `make ci` exits 0; every matrix row has a named test.
@@ -1031,6 +1088,19 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   construction so `cmd/nova` stays thin.
 - C14 behaviour 30: `action.yml` uses `actions/setup-go@v5` and a folded `run:` scalar; later drafts should
   name the setup-go action version.
+- C15 Stack / First step: the spec lists `colorprofile` but the stack table omits it, and it names
+  `charm.land/colorprofile/v2`, which does not exist. The module is `github.com/charmbracelet/colorprofile`
+  (`charm.land/colorprofile@v0.4.3` declares the github path). Applied: import the github path; later drafts
+  should say so.
+- C15 Stack: `github.com/charmbracelet/ultraviolet` has no tagged releases; the pin is a pseudo-version
+  (`v0.0.0-20261008173134-6b8d4baf91b4`). Later drafts should pin a pseudo-version explicitly.
+- C15 First step: `charm.land/catwalk v0.52.49` requires Go >= 1.26.6 and pulls a large test-only tree
+  (prometheus, protobuf). Applied: `go.mod` bumped to `go 1.26.6`; the toolchain auto-downloads `go1.26.9`.
+- C15 Behaviour 2 vs LYT09: behaviour 1 drops the header at height 11 while widgets survive to height 8, so
+  "widgets, then header, then sidebar" is only true if widget *reduction* precedes the header dropping.
+  Implemented and tested that reading; later drafts should say it.
+- C15 markdown behaviour 16: a line without a trailing newline must not end a block (fuzz found the
+  whitespace-only case). Later drafts should state the completeness rule.
 
 ## Decisions to record
 
@@ -1098,6 +1168,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   in `docs/DECISIONS.md`.
 - The fake clock's timers are never cancelled, so supervision tests advance the clock in a loop; belongs
   in `docs/DECISIONS.md` (or fix `testkit.FakeClock` with a cancellable timer).
+- `tui/client` keeps an unexported `pipe` interface so the adapter can be tested without a `mode.Server`;
+  belongs in `docs/DECISIONS.md`.
+- Transcript items are appended (or removed) and never reordered; `Apply` returns the changed ids so the
+  list can touch only those items. Belongs in `docs/DECISIONS.md`.
+- A markdown block ends only at a complete blank line outside a fence; an unterminated final line is part
+  of the open tail. Belongs in `docs/DECISIONS.md`.
 
 ## Open questions for the human
 
@@ -1147,8 +1223,11 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C20: should OpenCode Go get a `nova login` paste-key flow at launch, or is config/env enough?
 - C20: the `provider/opencodego` catalog holds three representative models (one per dialect). Should the full
   Go list be catalogued, or is a curated small set the rule as for OpenRouter?
+- C15: is `charm.land/catwalk` worth its Go 1.26.6 floor and the large test-only dependency tree
+  (prometheus, protobuf), or should the golden tests use only `x/exp/golden` and the standard library?
 
 ## Cost
 
 Total: $0.00 recorded; the C00 through C20 session costs were not visible. C14 was one session of seven
-commits; its cost was not visible either.
+commits; its cost was not visible either. C15-so-far was one session of nine commits; its cost was not
+visible either.

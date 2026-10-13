@@ -283,7 +283,7 @@ func (h *Host) handleRegister(inst *instance, line []byte) {
 		h.deny(inst, proto.CodeBadRequest, "malformed register frame")
 		return
 	}
-	h.clearRegistrations(inst)
+	oldTools := append([]string(nil), inst.reg.tools...)
 	inst.mu.Lock()
 	inst.entryKinds = append([]string(nil), f.Entries...)
 	inst.mu.Unlock()
@@ -291,22 +291,38 @@ func (h *Host) handleRegister(inst *instance, line []byte) {
 	h.entryKinds[inst.manifest.Name] = append([]string(nil), f.Entries...)
 	h.mu.Unlock()
 	inst.reg.flags = append([]FlagSpec(nil), f.Flags...)
+	newNames := map[string]bool{}
+	var newOrder []string
 	for _, rt := range f.Tools {
 		if !inst.manifest.hasCapability("tools") {
 			h.deny(inst, proto.CodePermissionDenied, "tools capability not declared")
 			continue
 		}
 		t := &protocolTool{host: h, inst: inst, def: rt}
-		if err := h.registerTool(inst, t.Info(), t); err != nil {
+		if err := h.registerOrReplace(inst, t.Info(), t); err != nil {
 			h.logf("warn", inst.manifest.Name+": "+err.Error())
 			h.deny(inst, proto.CodeBadRequest, err.Error())
+			continue
+		}
+		newNames[rt.Name] = true
+		newOrder = append(newOrder, rt.Name)
+	}
+	// Drop only the tools the new frame left out, after their replacements are
+	// already registered.
+	for _, name := range oldTools {
+		if !newNames[name] {
+			h.reg.Unregister(name)
 		}
 	}
+	inst.mu.Lock()
+	inst.reg.tools = newOrder
+	inst.mu.Unlock()
 	if len(f.Commands) > 0 && !inst.manifest.hasCapability("commands") {
 		h.deny(inst, proto.CodePermissionDenied, "commands capability not declared")
 	} else {
 		inst.reg.command = append([]RegisterCommand(nil), f.Commands...)
 	}
+	inst.reg.hooks = nil
 	for _, hook := range f.Hooks {
 		if !hookNames[hook] {
 			h.deny(inst, proto.CodeBadRequest, "unknown hook "+hook)
@@ -322,6 +338,34 @@ func (h *Host) handleRegister(inst *instance, line []byte) {
 		h.deny(inst, proto.CodePermissionDenied, "providers capability not declared")
 	}
 	inst.markRegistered()
+}
+
+// registerOrReplace registers a tool, replacing one this instance already owns.
+// It never removes a tool before its replacement is in place, so a re-register
+// never leaves an empty window for a reader of the registry.
+func (h *Host) registerOrReplace(inst *instance, info tool.Info, t tool.Tool) error {
+	if _, exists := h.reg.Get(info.Name); exists {
+		owned := false
+		inst.mu.Lock()
+		for _, name := range inst.reg.tools {
+			if name == info.Name {
+				owned = true
+				break
+			}
+		}
+		inst.mu.Unlock()
+		if !owned {
+			return fmt.Errorf("ext: tool %q is already registered", info.Name)
+		}
+		return h.reg.Replace(t)
+	}
+	if err := h.reg.Register(t); err != nil {
+		return err
+	}
+	inst.mu.Lock()
+	inst.reg.tools = append(inst.reg.tools, info.Name)
+	inst.mu.Unlock()
+	return nil
 }
 
 // clearRegistrations removes an instance's tools and command/hook lists.

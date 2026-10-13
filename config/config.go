@@ -37,6 +37,20 @@ type Config struct {
 	Theme        string            `yaml:"theme"`
 	Keybindings  map[string]string `yaml:"keybindings"`
 	SystemPrompt string            `yaml:"system_prompt"` // text appended to the base prompt
+	Webfetch     WebfetchConfig    `yaml:"webfetch"`
+	Subagent     SubagentConfig    `yaml:"subagent"`
+}
+
+// WebfetchConfig bounds the bundled web_fetch tool.
+type WebfetchConfig struct {
+	AllowHosts   []string `yaml:"allow_hosts"`
+	AllowPrivate bool     `yaml:"allow_private"`
+}
+
+// SubagentConfig bounds the bundled subagent tool.
+type SubagentConfig struct {
+	MaxDepth      int `yaml:"max_depth"`      // default 1, capped at 3
+	MaxConcurrent int `yaml:"max_concurrent"` // default 4
 }
 
 // ProviderConfig holds per-provider settings.

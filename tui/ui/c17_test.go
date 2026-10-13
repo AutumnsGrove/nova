@@ -292,6 +292,40 @@ func TestUI_DLG09_QuitCancelsAll(t *testing.T) {
 	}
 }
 
+func TestUI_SSL04_NotWhileRunning(t *testing.T) {
+	m, f, _ := newModel(t)
+	m.runActive = true
+	key(m, ctrlKey('r'))
+	if sent(f, proto.CmdSessionList) {
+		t.Fatal("requested the session list while a run is active")
+	}
+	if !strings.Contains(m.notice, "active") {
+		t.Fatalf("notice = %q", m.notice)
+	}
+}
+
+func TestUI_WDG09_SidebarUnderEditor(t *testing.T) {
+	m, _, _ := newModel(t)
+	pushUI(m, proto.UIRequest{Method: "widget", Key: "side", Placement: "sidebar",
+		Content: []byte(`{"kind":"text","lines":["SIDEBAR"]}`)})
+	m.recompute()
+	if m.layout.Sidebar.W != 0 {
+		t.Fatal("a narrow terminal should not have a sidebar")
+	}
+	found := -1
+	for i, l := range strings.Split(m.render(), "\n") {
+		if strings.Contains(l, "SIDEBAR") {
+			found = i
+		}
+	}
+	if found < 0 {
+		t.Fatalf("the sidebar widget was not drawn:\n%s", m.render())
+	}
+	if found < m.layout.Editor.Y+m.layout.Editor.H {
+		t.Fatalf("the sidebar widget was drawn above the editor (row %d)", found)
+	}
+}
+
 func TestUI_STS04_NarrowDropsExtensionFirst(t *testing.T) {
 	m, _, _ := newModel(t)
 	pushUI(m, proto.UIRequest{Method: "status", Key: "ext",

@@ -1,7 +1,6 @@
 package mode
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -13,8 +12,8 @@ import (
 	bundledskills "github.com/AutumnsGrove/nova/bundled/skills"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/mode/providers"
 	"github.com/AutumnsGrove/nova/provider"
-	"github.com/AutumnsGrove/nova/provider/openrouter"
 	"github.com/AutumnsGrove/nova/session"
 	"github.com/AutumnsGrove/nova/tool"
 	"github.com/AutumnsGrove/nova/tools/bash"
@@ -32,20 +31,13 @@ func trustPath(home string) string {
 	return filepath.Join(config.UserConfigDir(home), "trust.json")
 }
 
-// buildProvider resolves the OpenRouter credential lazily, so a refreshed key
-// takes effect and a missing key is reported by the first request, not by New.
+// buildProvider builds the cross-provider router: OpenRouter plus OpenCode Go.
 func buildProvider(cfg *config.Config, home string) provider.Provider {
-	store := auth.NewFileStore(keyPath(home))
-	base := cfg.Provider.OpenRouter.BaseURL
-	if base == "" {
-		base = os.Getenv("NOVA_OPENROUTER_BASE_URL")
-	}
-	return openrouter.New(openrouter.Config{
-		BaseURL: base,
-		APIKeyFunc: func(context.Context) (string, error) {
-			key, _, err := auth.Resolve("", os.Getenv, store)
-			return key, err
-		},
+	return providers.Build(providers.Options{
+		Config: cfg,
+		Home:   home,
+		Getenv: os.Getenv,
+		Store:  auth.NewFileStore(keyPath(home)),
 	})
 }
 

@@ -56,6 +56,14 @@ type SubagentConfig struct {
 // ProviderConfig holds per-provider settings.
 type ProviderConfig struct {
 	OpenRouter OpenRouterConfig `yaml:"openrouter"`
+	OpenCodeGo OpenCodeGoConfig `yaml:"opencode_go"`
+}
+
+// OpenCodeGoConfig is the OpenCode Go preset's settings. The key is optional:
+// OPENCODE_GO_API_KEY is the other source.
+type OpenCodeGoConfig struct {
+	APIKey  string `yaml:"api_key"`
+	BaseURL string `yaml:"base_url"`
 }
 
 // OpenRouterConfig is the OpenRouter preset's settings. Routing is passed

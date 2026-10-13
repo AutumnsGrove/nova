@@ -6,11 +6,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/testkit"
 )
 
 // recordServer counts requests.
@@ -153,4 +159,46 @@ func openRouterModel() string {
 		}
 	}
 	return "openrouter/auto"
+}
+
+func TestProviders_TMO11_AgentRetriesTimedOutDialect(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"slow down"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"ok\"},\"index\":0}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\",\"index\":0}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := config.Defaults()
+	cfg.Provider.OpenCodeGo.BaseURL = srv.URL
+	p := Build(Options{Config: &cfg, Getenv: envFrom(nil)})
+
+	clock := testkit.NewFakeClock(time.Now())
+	var retries int
+	a := agent.New(agent.Config{
+		Provider: p, Model: "opencode-go/glm-5.3", Clock: clock,
+		Retry: agent.RetryPolicy{Max: 2, Base: time.Second, Jitter: 0},
+		Emit: func(ev proto.Event) {
+			if ev.Type == proto.EventRetry {
+				retries++
+			}
+		},
+	})
+	done := make(chan struct{})
+	go func() { defer close(done); _, _ = a.Run(context.Background(), nil, message.User("go")) }()
+	clock.BlockUntil(t, 1)
+	clock.Advance(time.Hour)
+	<-done
+	if retries != 1 {
+		t.Fatalf("retry events = %d, want 1", retries)
+	}
 }

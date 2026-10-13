@@ -110,7 +110,7 @@ func TestOpencodego_OPG08_UserAgent(t *testing.T) {
 	}
 }
 
-func TestOpencodego_SessionHeader(t *testing.T) {
+func TestOpencodego_OPG21_SessionHeader(t *testing.T) {
 	rs := newRecordServer(t)
 	p := New(Config{BaseURL: rs.URL, SessionID: "sess-1"})
 	_, _ = p.Stream(context.Background(), provider.Request{Model: "opencode-go/glm-5.3"}, nil)
@@ -178,7 +178,7 @@ func TestOpencodego_OPG20_BothCatalogs(t *testing.T) {
 	}
 }
 
-func TestOpencodego_Discovery_Refresh(t *testing.T) {
+func TestOpencodego_DSC01_DiscoveryRefresh(t *testing.T) {
 	modelsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[{"id":"glm-5.3"},{"id":"new-model"},{"id":"claude-new"}]}`))
 	}))
@@ -211,5 +211,14 @@ func TestOpencodego_Discovery_Refresh(t *testing.T) {
 	}
 	if err := LoadCache(cache); err != nil {
 		t.Fatalf("LoadCache: %v", err)
+	}
+}
+
+func TestOpencodego_OPG22_DefaultModel(t *testing.T) {
+	if DefaultModel != "opencode-go/deepseek-v4.1-flash" {
+		t.Fatalf("DefaultModel = %q", DefaultModel)
+	}
+	if _, ok := provider.GetModel(DefaultModel); !ok {
+		t.Fatalf("%s is not in the catalog", DefaultModel)
 	}
 }

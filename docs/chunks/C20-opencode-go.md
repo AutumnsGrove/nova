@@ -1,8 +1,8 @@
 ---
 chunk: C20
 title: "OpenCode Go, the second launch provider"
-packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./mode/providers]
-budgets: { ./provider/ssestream: 320, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 320, ./mode/providers: 320, ./config: 1250, ./auth: 500, ./mode: 1800 }
+packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./mode/providers, ./auth/opencode]
+budgets: { ./provider/ssestream: 320, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 440, ./config: 1450, ./auth: 500, ./mode: 1850 }
 depends: [C02, C03, C12]
 ---
 
@@ -413,6 +413,17 @@ type OpenCodeGoConfig struct {
 | TMO09 | `[DONE]` and clean close | `[DONE]`, then a body closing after one event | `io.EOF` both times |
 | TMO10 | no goroutine or connection leak | after every failure mode above | `testkit.NoLeaks` passes |
 | TMO11 | agent retries a timed-out dialect call | agent loop over a stalling OpenCode Go server | one `retry` event, then success; earlier usage kept |
+
+| LGN01 | device login full flow | fake Console | key returned; the old key revoked |
+| LGN02 | sign-in denied | `access_denied` | error naming denied |
+| LGN03 | device code expired | `expired_token` | error naming expired |
+| LGN04 | verification URL mapping | console alias host | host rewritten to opencode.ai |
+| LGN05 | default key name | any host | `nova-<host>`, sanitised, at most 60 |
+| LGN06 | device code request | fake Console | device and user code plus interval |
+| LGN07 | key store | save then load | mode 0600; missing is `auth.ErrNoKey` |
+| DSC01 | live discovery | fake models and models.dev | overlay registered; cache fresh; baseline kept |
+| OPG21 | session header | any request | `x-opencode-session` sent |
+| OPG22 | default model | `DefaultModel` | `opencode-go/deepseek-v4.1-flash`, in the catalog |
 
 ## Fuzz and property tests
 

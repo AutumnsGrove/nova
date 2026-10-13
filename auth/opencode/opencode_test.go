@@ -91,7 +91,7 @@ func testConfig(t *testing.T, server string) Config {
 	}
 }
 
-func TestOpencode_LoginFullFlow(t *testing.T) {
+func TestOpencode_LGN01_LoginFullFlow(t *testing.T) {
 	fc := newFakeConsole(t)
 	fc.pendingFor = 1
 	fc.keyName = "nova-test"
@@ -109,7 +109,7 @@ func TestOpencode_LoginFullFlow(t *testing.T) {
 	}
 }
 
-func TestOpencode_LoginDenied(t *testing.T) {
+func TestOpencode_LGN02_LoginDenied(t *testing.T) {
 	fc := newFakeConsole(t)
 	fc.deny = true
 	_, err := Login(context.Background(), testConfig(t, fc.URL))
@@ -118,7 +118,7 @@ func TestOpencode_LoginDenied(t *testing.T) {
 	}
 }
 
-func TestOpencode_LoginExpired(t *testing.T) {
+func TestOpencode_LGN03_LoginExpired(t *testing.T) {
 	fc := newFakeConsole(t)
 	fc.expired = true
 	_, err := Login(context.Background(), testConfig(t, fc.URL))
@@ -127,7 +127,7 @@ func TestOpencode_LoginExpired(t *testing.T) {
 	}
 }
 
-func TestOpencode_VerificationURLMapping(t *testing.T) {
+func TestOpencode_LGN04_VerificationURLMapping(t *testing.T) {
 	got, err := resolveVerificationURL("https://console.opencode.ai/console", "/console/device?user_code=X")
 	if err != nil {
 		t.Fatal(err)
@@ -137,14 +137,14 @@ func TestOpencode_VerificationURLMapping(t *testing.T) {
 	}
 }
 
-func TestOpencode_DefaultKeyName(t *testing.T) {
+func TestOpencode_LGN05_DefaultKeyName(t *testing.T) {
 	name := DefaultKeyName()
 	if !strings.HasPrefix(name, "nova-") || len(name) > 60 {
 		t.Fatalf("name = %q", name)
 	}
 }
 
-func TestOpencode_StoreRoundTrip(t *testing.T) {
+func TestOpencode_LGN07_StoreRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "opencode-go.json")
 	if err := SaveKey(path, "k"); err != nil {
 		t.Fatal(err)
@@ -165,7 +165,7 @@ func TestOpencode_StoreRoundTrip(t *testing.T) {
 	}
 }
 
-func TestOpencode_RequestDeviceCode(t *testing.T) {
+func TestOpencode_LGN06_RequestDeviceCode(t *testing.T) {
 	fc := newFakeConsole(t)
 	device, err := RequestDeviceCode(context.Background(), testConfig(t, fc.URL))
 	if err != nil {

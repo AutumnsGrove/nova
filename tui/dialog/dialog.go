@@ -114,11 +114,11 @@ func (o *Overlay) Compose(base string, w, h int, st styles.Styles) string {
 	if h <= 0 {
 		return ""
 	}
-	lines := normalize(base, w, h)
 	top := o.Top()
 	if top == nil {
-		return strings.Join(lines, "\n")
+		return strings.Join(normalizeKeep(base, w, h), "\n")
 	}
+	lines := normalize(base, w, h)
 	if w < minScreenW || h < minScreenH {
 		if s, ok := top.(smallScreener); ok {
 			row := (h - 1) / 2
@@ -143,6 +143,22 @@ func (o *Overlay) Compose(base string, w, h int, st styles.Styles) string {
 		lines[y] = splice(lines[y], ox, clipPad(box[i], bw), w)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// normalizeKeep is normalize without stripping ANSI, for a base with no dialog.
+func normalizeKeep(s string, w, h int) []string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	for len(lines) < h {
+		lines = append(lines, "")
+	}
+	for i := range lines {
+		line := ansi.Truncate(lines[i], max(w, 0), "")
+		lines[i] = line + strings.Repeat(" ", max(w-ansi.StringWidth(line), 0))
+	}
+	return lines
 }
 
 // normalize returns exactly h lines, each padded or clipped to width w.

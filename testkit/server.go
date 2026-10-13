@@ -52,6 +52,18 @@ type ServerTurn struct {
 	Raw []string
 }
 
+// knownStreamPath reports whether a POST path is one of the streaming
+// endpoints the scripted server can play: chat completions, Responses, or
+// Anthropic Messages.
+func knownStreamPath(path string) bool {
+	for _, suffix := range []string{"/chat/completions", "/responses", "/messages"} {
+		if strings.HasSuffix(path, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
 // RecordedRequest is what the server saw.
 type RecordedRequest struct {
 	Method, Path string
@@ -99,7 +111,7 @@ func (s *Server) Requests() []RecordedRequest {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/chat/completions") {
+	if r.Method != http.MethodPost || !knownStreamPath(r.URL.Path) {
 		http.NotFound(w, r)
 		return
 	}

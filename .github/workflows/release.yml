@@ -1,0 +1,80 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Accept every chunk
+        run: |
+          set -eu
+          for spec in docs/chunks/C*.md; do
+            chunk=$(basename "$spec" | cut -d- -f1)
+            echo "== accept $chunk =="
+            go run ./scripts/accept "$chunk"
+          done
+
+  build:
+    needs: accept
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [linux, darwin]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build both flavours
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME}"
+          commit="${GITHUB_SHA}"
+          date="$(date -u +%Y-%m-%d)"
+          ldflags="-s -w -X main.version=${version} -X main.commit=${commit} -X main.date=${date}"
+          mkdir -p dist
+          go build -trimpath -ldflags "$ldflags" -o dist/nova ./cmd/nova
+          go build -trimpath -tags notui -ldflags "$ldflags" -o dist/nova-min ./cmd/nova
+      - name: Package and checksum
+        run: ./scripts/package.sh "${GITHUB_REF_NAME}" "${{ matrix.os }}" "${{ matrix.arch }}" dist/nova dist/nova-min dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nova-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write checksums
+        run: |
+          set -eu
+          cd dist
+          sha256sum ./*.tar.gz | sort -k2 >checksums.txt
+          cat checksums.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt

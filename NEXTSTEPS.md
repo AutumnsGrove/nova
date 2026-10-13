@@ -5,12 +5,16 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C19 are done. `go run ./scripts/accept C19` and `make ci` both pass.
+**State:** C00 through C19 are done. C20 is **partial**: `go run ./scripts/accept C20` passes and the
+provider, dialects, routing, login, and live discovery all work, but the OpenCode Go **usage meters**
+(`/usage` panel and footer widget) are not built yet.
 
-**Next:** run **C20** (`docs/chunks/C20-opencode-go.md`) — OpenCode Go, the second launch provider (its
-Responses and Messages dialects). It depends on C02, C03, and C12. See the C19 note below for the one
-deliberate gap C18 left: `tui/ui/registry.go`'s `Registry` exists but the transcript does not consult it yet
-(no matrix row covers it).
+**Next:** finish **C20** (`docs/chunks/C20-opencode-go.md`). One workstream remains:
+**usage** — port `usage.ts` from `~/Documents/Projects/pi-extensions/extensions/opencode-go`: `GET
+{server}/api/go/status` (Bearer key, `x-org-id`) returns `access.meters.{fiveHour,week,month}` in
+micro-cents (1e-8 USD), with a fallback reset from `access.endsAt`. Add it as a package (suggest
+`./provider/opencodego/usage` or `./mode/providers/usage`), expose it through a `mode` command, render a
+`/usage` view and a footer widget, and add matrix rows (USG01...). Then `make ci`.
 
 **After C20:** run **C21** (`docs/chunks/C21-splash-sequence.md`), the redesigned splash. Its last step swaps the README logo for a generated animated GIF. The design was
 chosen by the human on 2026-10-13; the reference is `docs/mockups/splash/nova-splash-sequence.html`. Open it in a
@@ -62,10 +66,70 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C19 | Polish, first run, doctor, examples, release | done | C16, C17, C18 | 2026-10-13 | |
 | C20 | OpenCode Go, the second launch provider | todo | C02, C03, C12 | 2026-10-11 | |
 | C21 | Splash sequence: slash wordmark, outburst, star field | todo | C16 | 2026-10-13 | |
+| C20 | OpenCode Go, the second launch provider | partial | C02, C03, C12 | 2026-10-13 | |
 
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C20 (partial) — 2026-10-13 — pi — main — cost not visible
+
+Built most of C20 and expanded it, at the human's request, to match the pi `opencode-go` extension. `go run
+./scripts/accept C20` passes all nine steps, `go vet ./...` is clean, and every C20 matrix row has a named
+test. Built over nine green commits. **Not done:** the usage meters (`/usage` + footer widget).
+
+**Built:**
+- `provider/ssestream` (TMO01 to TMO10, `FuzzSSEStream`) — the shared POST + SSE transport: connect and
+  idle timeouts, the line cap, `[DONE]`, comment/blank/CRLF handling, `provider.Classify` errors.
+- `provider/responses` (RSP01 to RSP19) — the OpenAI Responses dialect: `input` items, `instructions`,
+  reasoning deltas, function calls assembled at the terminal event, usage mapping, incomplete/failed.
+- `provider/messages` (MSG01 to MSG17) — the Anthropic Messages dialect: content blocks, thinking,
+  `input_json_delta`, `x-api-key`/`anthropic-version`, stop-reason mapping.
+- `provider/opencodego` (OPG01 to OPG11, OPG20 to OPG22, DSC01) — the preset: `New` routes each model to its
+  dialect, a code-defined baseline catalog (default `opencode-go/deepseek-v4.1-flash`), `x-opencode-session`
+  and `nova/<version>` headers, and live model discovery (`GET /zen/go/v1/models` + models.dev metadata,
+  cached 12h in `~/.config/nova/opencode-go-models.json`).
+- `mode/providers` (OPG12 to OPG19, TMO11) — `Build`, the OpenRouter/OpenCode Go router, and
+  `ResolveOpenCodeGoKey`; `mode/wire.go` delegates to it and best-effort refreshes a stale model cache.
+- `auth/opencode` (LGN01 to LGN07) — the Console OAuth device flow, service-account key provisioning, and a
+  0600 key store; `nova login opencode-go` runs it.
+- `config`/`auth` — `provider.opencode_go.{api_key,base_url}` and `auth.ResolveNamed`.
+- `testkit.Server` now also plays `/responses` and `/messages`.
+
+**Satisfied matrix rows:** all of them: RSP01-19; MSG01-17; OPG01-22; TMO01-11; LGN01-07; DSC01.
+Fuzz/property: `FuzzSSEStream`, `FuzzResponsesStream`/`FuzzMessagesStream` (see gotchas).
+
+**Unsatisfied:**
+- **Usage meters** (`/usage` overlay and the footer `go 5h .. wk .. mo ..` widget): not started. No matrix
+  rows yet; add them with the code. Port from `usage.ts`.
+- `FuzzResponsesStream` and `FuzzMessagesStream` (named in the spec) are not written; only `FuzzSSEStream`
+  exists. Add them over `newTestStream`-style helpers.
+
+**Differed from spec / decisions worth recording:**
+- The human expanded C20 to include the pi login flow, live model discovery, and `x-opencode-session`; the
+  spec now lists `./auth/opencode` and the LGN/DSC/OPG21/OPG22 rows. The default model is
+  `opencode-go/deepseek-v4.1-flash`.
+- The Go key is stored in `~/.config/nova/opencode-go.json` (mode 0600) by `nova login opencode-go`, not in
+  `config.yaml`, because `config.SetUser` refuses a key-named field (CFW10). `ResolveOpenCodeGoKey` reads
+  config, then env, and `mode/providers.Build` falls back to the store.
+- Budgets raised (applied): C20 `./provider/opencodego` 320→560, `./mode/providers` 320→360,
+  `./auth/opencode` 440, `./config` 1250→1450, `./mode` 1800→1850.
+- `provider.NormalizeFinish` gained `stop_sequence` → `stop` (MSG11).
+
+**Gotchas for the next agent:**
+- `ssestream.Stream` keeps the caller's context separately from the request context: the idle timer cancels
+  the request context, so checking `caller.Err()` first is what distinguishes a caller cancel from an idle
+  timeout. Do not collapse the two.
+- `testkit.Server` only plays `/chat/completions`, `/responses`, and `/messages`; an idle-timeout test needs
+  a local `httptest` handler that writes one event then blocks.
+- `provider/opencodego` keeps `discovered` as a package global and `RegisterModels` rebuilds `Catalog` and
+  `EndpointTable`; discovery tests mutate that global, so keep them order-independent.
+- The `x-opencode-session` header is only sent when `Config.SessionID` is set; `mode/providers` does not set
+  it yet, so a real session id still needs threading through from the server.
+- `auth/opencode`'s device flow hits an undocumented Console API; the parser is defensive and the endpoint
+  can change.
+
+**One command:** `go run ./scripts/accept C20`.
 
 ### C19 — 2026-10-13 — pi — main — cost not visible
 
@@ -1207,6 +1271,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 - C21 (when built): mark C16 rows SPL01 to SPL11 `retired by C21` and lower or remove C16's `./tui/splash`
   budget (250); rewrite `docs/TUI.md` "Splash and logo" to match; note that `assets/logo/gen -go` has no consumer.
+- C20 was expanded (by the human) to add the pi login flow, live model discovery, and `x-opencode-session`.
+  Applied: `./auth/opencode` package and LGN01-LGN07/DSC01/OPG21/OPG22 rows; default model
+  `opencode-go/deepseek-v4.1-flash`. The spec still needs USG01... rows for the usage meters, and
+  `FuzzResponsesStream`/`FuzzMessagesStream` are named but not yet written.
+- C20 budgets raised (applied): `./provider/opencodego` 320→560, `./mode/providers` 320→360,
+  `./auth/opencode` 440, `./config` 1250→1450, `./mode` 1800→1850. Human should confirm.
 
 - C19 budgets were raised to the real counts (applied): `./cmd/nova` 500→1200, `./doctor` 300→400,
   `./config` 1000→1450, `./tui/firstrun` 250→300. To keep `make ci` green the done-chunk specs that share
@@ -1445,6 +1515,11 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C21: the splash is drawn procedurally on the character grid (two letter bitmaps and shaders) and the
   generated 97 by 49 cell data (`tui/splash/mark_gen.go`) is dropped. The splash plays once, then holds with
   the name shimmering. Belongs in `docs/DECISIONS.md` when C21 is built (it supersedes the C16 splash design).
+- C20: the OpenCode Go login ports the pi extension's Console device grant and service-account key
+  provisioning; the provisioned key lives in `~/.config/nova/opencode-go.json`, not `config.yaml`, because
+  CFW10 refuses a secret-named config key. Belongs in `docs/DECISIONS.md`.
+- C20: the Go model catalog is code-defined baseline plus a live overlay from `/zen/go/v1/models` enriched
+  by models.dev and cached 12h, rather than code-only. Belongs in `docs/DECISIONS.md`.
 
 - C19: the first-run flow is a standalone Bubble Tea program in `tui/firstrun`, run by `cmd/nova` before
   `mode.Build`, not a sub-model inside `tui/ui`; and `ext/sdk.EntryKind` declares session entry kinds for
@@ -1567,6 +1642,10 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   Windows Terminal, kitty) have not been checked. Look before release.
 - C21: confirm the C16 splash rows SPL01 to SPL11 may be retired, and the budgets `./tui/splash` 700 and
   `./tui/ui` 1950 (a +50 raise to the C15/C16/C17 budget).
+- C20: should `x-opencode-session` carry a real per-conversation id threaded from the server, or a random
+  id per process? Today `mode/providers` does not set it at all.
+- C20: confirm the budget raises (`./provider/opencodego` 560, `./mode/providers` 360, `./auth/opencode`
+  440, `./config` 1450, `./mode` 1850).
 
 - C19: confirm the budget raises (`./cmd/nova` 1200, `./doctor` 400, `./config` 1450, `./tui/firstrun` 300,
   C11 `./config` 1450, C12/C17 `./cmd/nova` 1200).
@@ -1648,4 +1727,6 @@ one commit; its cost was not visible either. C17 was one session that paused aft
 that added the pickers, the TUI bridge, and the trust wiring; its cost was not visible either. C18 was one
 session of thirteen commits (plus four regression fixes); its cost was not visible either. C19 was two
 sessions (about twenty-four commits) covering config, help/version, firstrun, doctor, docs, the skill, the
-examples, the favicon, and release/install; its cost was not visible either.
+examples, the favicon, and release/install; its cost was not visible either. C20 was one partial session
+(nine commits) covering the SSE transport, the Responses and Messages dialects, the OpenCode Go preset and
+router, the Console login, and live discovery; its cost was not visible either.

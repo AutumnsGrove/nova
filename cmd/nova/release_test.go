@@ -189,6 +189,13 @@ type fakeRelease struct {
 	requests []string
 }
 
+// setChecksums replaces the served checksums.txt safely.
+func (fr *fakeRelease) setChecksums(s string) {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	fr.checksums = s
+}
+
 // paths returns a copy of the request paths, safe to read after a run.
 func (fr *fakeRelease) paths() []string {
 	fr.mu.Lock()
@@ -211,7 +218,10 @@ func newFakeRelease(t *testing.T, version string) *fakeRelease {
 		case r.URL.Path == "/releases/latest":
 			fmt.Fprintf(w, `{"tag_name":%q}`, fr.version)
 		case strings.HasSuffix(r.URL.Path, "checksums.txt"):
-			fmt.Fprint(w, fr.checksums)
+			fr.mu.Lock()
+			checksums := fr.checksums
+			fr.mu.Unlock()
+			fmt.Fprint(w, checksums)
 		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
 			if fr.fail.Load() {
 				http.Error(w, "boom", http.StatusInternalServerError)
@@ -305,7 +315,7 @@ func TestInstall_ISH01_HappyPath(t *testing.T) {
 
 func TestInstall_ISH02_ChecksumMismatch(t *testing.T) {
 	fr := newFakeRelease(t, "v0.1.0")
-	fr.checksums = strings.Replace(fr.checksums, "0", "1", 1)
+	fr.setChecksums(strings.Replace(fr.checksums, "0", "1", 1))
 	if !strings.Contains(fr.checksums, "1") {
 		t.Skip("checksum did not contain a zero to corrupt")
 	}

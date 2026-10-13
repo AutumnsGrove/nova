@@ -32,8 +32,9 @@ func TestExamples_EXA01_AllShipAndPassCheck(t *testing.T) {
 			t.Errorf("example %s: %v", e.Name(), problems)
 		}
 	}
-	if seen != 4 {
-		t.Fatalf("found %d examples, want 4", seen)
+	// C19 added the ten example extensions, alongside the todo-like-sdk port.
+	if seen < 10 {
+		t.Fatalf("found %d examples, want at least 10", seen)
 	}
 }
 

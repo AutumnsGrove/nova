@@ -31,7 +31,7 @@ func TestCLI_CLI01_Help(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if !strings.Contains(out, "Usage:") {
+	if !strings.Contains(strings.ToUpper(out), "USAGE") {
 		t.Fatalf("stdout should carry usage:\n%s", out)
 	}
 }
@@ -41,7 +41,7 @@ func TestCLI_CLI02_UnknownFlag(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2", code)
 	}
-	if !strings.Contains(errOut, "unknown flag") {
+	if !strings.Contains(strings.ToLower(errOut), "unknown flag") {
 		t.Fatalf("stderr should name the flag:\n%s", errOut)
 	}
 }

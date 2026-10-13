@@ -24,8 +24,7 @@ import (
 	"github.com/AutumnsGrove/nova/session"
 )
 
-// version is stamped at build time with -ldflags.
-var version = "dev"
+// version is stamped at build time with -ldflags; see version.go.
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, stdinIsTerminal()))
@@ -42,8 +41,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, tty bool) int
 	exit := 0
 	root := newRoot(stdin, stdout, stderr, tty, &exit)
 	root.SetArgs(args)
-	if err := root.Execute(); err != nil {
-		fmt.Fprintln(stderr, err)
+	if err := execute(root, stderr); err != nil {
 		return 2
 	}
 	return exit
@@ -70,6 +68,8 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 	root := &cobra.Command{
 		Use:           "nova",
 		Short:         "Nova is a coding agent for the terminal",
+		Long:          helpLong(),
+		Example:       helpExamples,
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -90,6 +90,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
+	root.CompletionOptions.HiddenDefaultCmd = true
 	flags := root.Flags()
 	flags.StringVarP(&promptFlag, "prompt", "p", "", "run one prompt and exit (-p - reads stdin)")
 	flags.StringVar(&modeFlag, "mode", "", "print | json | rpc | tui")
@@ -117,6 +118,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		serveCommand(),
 		actionReview(stdout, exit),
 	)
+	applyGroups(root)
 	return root
 }
 
@@ -314,17 +316,6 @@ func splitList(value string) []string {
 		}
 	}
 	return out
-}
-
-func versionCommand(stdout io.Writer) *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the version",
-		RunE: func(*cobra.Command, []string) error {
-			fmt.Fprintln(stdout, version)
-			return nil
-		},
-	}
 }
 
 func modelsCommand(stdout io.Writer) *cobra.Command {

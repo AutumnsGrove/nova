@@ -83,7 +83,7 @@ type importRule struct {
 // module family. Adding one is a documented decision.
 var allowedImports = []importRule{
 	{path: "gopkg.in/yaml.v3", allow: all},
-	{path: "github.com/spf13/cobra", allow: under("cmd/nova")},
+	{path: "github.com/spf13/cobra", allow: under("cmd/nova", "tui/cli")},
 	{path: "golang.org/x/net/html", allow: under("bundled/webfetch")},
 	{path: "charm.land/", allow: under("tui", "bundled")},
 	{path: "github.com/charmbracelet/", allow: under("tui", "bundled")},

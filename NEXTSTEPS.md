@@ -12,7 +12,7 @@ Responses and Messages dialects). It depends on C02, C03, and C12. See the C19 n
 deliberate gap C18 left: `tui/ui/registry.go`'s `Registry` exists but the transcript does not consult it yet
 (no matrix row covers it).
 
-**After C20:** run **C21** (`docs/chunks/C21-splash-sequence.md`), the redesigned splash. The design was
+**After C20:** run **C21** (`docs/chunks/C21-splash-sequence.md`), the redesigned splash. Its last step swaps the README logo for a generated animated GIF. The design was
 chosen by the human on 2026-10-13; the reference is `docs/mockups/splash/nova-splash-sequence.html`. Open it in a
 browser first. C21 retires C16 rows SPL01 to SPL11 (see its "Retired rows").
 

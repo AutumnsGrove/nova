@@ -16,7 +16,7 @@ import (
 // fakeSession is a session with a switchable active branch.
 type fakeSession struct {
 	mu       sync.Mutex
-	branches [][]json.RawMessage // one snapshot list per branch
+	branches [][]json.RawMessage // one State list per branch
 	active   int
 	kept     []struct {
 		kind string
@@ -51,8 +51,8 @@ func (s *fakeSession) Entries(kind string) []json.RawMessage {
 	return out
 }
 
-func (s *fakeSession) push(snap snapshot) {
-	data, _ := encodeState(snap.Tasks, snap.Next)
+func (s *fakeSession) push(snap State) {
+	data, _ := Encode(State{V: stateVersion, Next: snap.Next, Tasks: snap.Tasks})
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.branches) == 0 {
@@ -61,8 +61,8 @@ func (s *fakeSession) push(snap snapshot) {
 	s.branches[s.active] = append(s.branches[s.active], data)
 }
 
-func (s *fakeSession) newBranch(snap snapshot) {
-	data, _ := encodeState(snap.Tasks, snap.Next)
+func (s *fakeSession) newBranch(snap State) {
+	data, _ := Encode(State{V: stateVersion, Next: snap.Next, Tasks: snap.Tasks})
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.branches = append(s.branches, []json.RawMessage{data})
@@ -140,8 +140,8 @@ func TestTasks_TSK01_CreateOne(t *testing.T) {
 	if isErr || !strings.Contains(res.Content, "t1 [todo] Fix the retry") {
 		t.Fatalf("create = %q isErr=%v", res.Content, isErr)
 	}
-	if len(e.tasks) != 1 || e.tasks[0].ID != "t1" {
-		t.Fatalf("tasks = %+v", e.tasks)
+	if len(e.state.Tasks) != 1 || e.state.Tasks[0].ID != "t1" {
+		t.Fatalf("tasks = %+v", e.state.Tasks)
 	}
 }
 
@@ -155,8 +155,8 @@ func TestTasks_TSK02_CreateMany(t *testing.T) {
 	if isErr {
 		t.Fatalf("create many failed: %s", res.Content)
 	}
-	if len(e.tasks) != 50 || e.tasks[0].ID != "t1" || e.tasks[49].ID != "t50" {
-		t.Fatalf("ids = %s..%s (%d)", e.tasks[0].ID, e.tasks[len(e.tasks)-1].ID, len(e.tasks))
+	if len(e.state.Tasks) != 50 || e.state.Tasks[0].ID != "t1" || e.state.Tasks[49].ID != "t50" {
+		t.Fatalf("ids = %s..%s (%d)", e.state.Tasks[0].ID, e.state.Tasks[len(e.state.Tasks)-1].ID, len(e.state.Tasks))
 	}
 }
 
@@ -170,8 +170,8 @@ func TestTasks_TSK03_TooManyInOneCall(t *testing.T) {
 	if !isErr || !strings.Contains(res.Content, "at most 50") {
 		t.Fatalf("result = %q", res.Content)
 	}
-	if len(e.tasks) != 0 {
-		t.Fatalf("nothing should be created, got %d", len(e.tasks))
+	if len(e.state.Tasks) != 0 {
+		t.Fatalf("nothing should be created, got %d", len(e.state.Tasks))
 	}
 }
 
@@ -196,8 +196,8 @@ func TestTasks_TSK05_Update(t *testing.T) {
 	e, _ := setup(&fakeSession{}, &fakeUI{})
 	mustCreate(t, e, "first")
 	call(t, e, `{"action":"update","id":"t1","title":"renamed","status":"doing","detail":"a note"}`)
-	if e.tasks[0].Title != "renamed" || e.tasks[0].Status != "doing" || e.tasks[0].Detail != "a note" {
-		t.Fatalf("task = %+v", e.tasks[0])
+	if e.state.Tasks[0].Title != "renamed" || e.state.Tasks[0].Status != "doing" || e.state.Tasks[0].Detail != "a note" {
+		t.Fatalf("task = %+v", e.state.Tasks[0])
 	}
 }
 
@@ -226,8 +226,8 @@ func TestTasks_TSK08_EmptyTitle(t *testing.T) {
 			t.Fatalf("title %q: result = %q", title, res.Content)
 		}
 	}
-	if len(e.tasks) != 0 {
-		t.Fatalf("nothing should be created, got %d", len(e.tasks))
+	if len(e.state.Tasks) != 0 {
+		t.Fatalf("nothing should be created, got %d", len(e.state.Tasks))
 	}
 }
 
@@ -249,8 +249,8 @@ func TestTasks_TSK10_Delete(t *testing.T) {
 	e, _ := setup(&fakeSession{}, &fakeUI{})
 	mustCreate(t, e, "one", "two")
 	call(t, e, `{"action":"delete","id":"t1"}`)
-	if len(e.tasks) != 1 || e.tasks[0].ID != "t2" {
-		t.Fatalf("tasks = %+v", e.tasks)
+	if len(e.state.Tasks) != 1 || e.state.Tasks[0].ID != "t2" {
+		t.Fatalf("tasks = %+v", e.state.Tasks)
 	}
 }
 
@@ -259,8 +259,8 @@ func TestTasks_TSK11_IDsNeverReused(t *testing.T) {
 	mustCreate(t, e, "one", "two")
 	call(t, e, `{"action":"delete","id":"t2"}`)
 	mustCreate(t, e, "three")
-	if e.tasks[len(e.tasks)-1].ID != "t3" {
-		t.Fatalf("new id = %q, want t3", e.tasks[len(e.tasks)-1].ID)
+	if e.state.Tasks[len(e.state.Tasks)-1].ID != "t3" {
+		t.Fatalf("new id = %q, want t3", e.state.Tasks[len(e.state.Tasks)-1].ID)
 	}
 }
 
@@ -272,8 +272,8 @@ func TestTasks_TSK12_ListAndClear(t *testing.T) {
 		t.Fatalf("list = %q", res.Content)
 	}
 	res, _ = call(t, e, `{"action":"clear"}`)
-	if len(e.tasks) != 0 || strings.Contains(res.Content, "t1") {
-		t.Fatalf("clear = %q, tasks=%d", res.Content, len(e.tasks))
+	if len(e.state.Tasks) != 0 || strings.Contains(res.Content, "t1") {
+		t.Fatalf("clear = %q, tasks=%d", res.Content, len(e.state.Tasks))
 	}
 }
 
@@ -313,7 +313,7 @@ func TestTasks_TSK16_SnapshotWritten(t *testing.T) {
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	if len(sess.kept) == 0 {
-		t.Fatal("no snapshot written")
+		t.Fatal("no State written")
 	}
 	last := sess.kept[len(sess.kept)-1]
 	if last.kind != stateKind || !last.keep {
@@ -326,8 +326,8 @@ func TestTasks_TSK17_StateRebuiltOnResume(t *testing.T) {
 	e, _ := setup(sess, &fakeUI{})
 	mustCreate(t, e, "one", "two")
 	e2, _ := setup(sess, &fakeUI{})
-	if len(e2.tasks) != 2 || e2.tasks[1].Title != "two" {
-		t.Fatalf("rebuilt = %+v", e2.tasks)
+	if len(e2.state.Tasks) != 2 || e2.state.Tasks[1].Title != "two" {
+		t.Fatalf("rebuilt = %+v", e2.state.Tasks)
 	}
 }
 
@@ -336,8 +336,8 @@ func TestTasks_TSK18_StateRebuiltOnReload(t *testing.T) {
 	e, _ := setup(sess, &fakeUI{})
 	mustCreate(t, e, "one")
 	e.rebuild()
-	if len(e.tasks) != 1 {
-		t.Fatalf("after rebuild = %+v", e.tasks)
+	if len(e.state.Tasks) != 1 {
+		t.Fatalf("after rebuild = %+v", e.state.Tasks)
 	}
 }
 
@@ -345,11 +345,11 @@ func TestTasks_TSK19_BranchNavigation(t *testing.T) {
 	sess := &fakeSession{}
 	e, obs := setup(sess, &fakeUI{})
 	mustCreate(t, e, "one")
-	// A second branch holds a different snapshot.
-	sess.newBranch(snapshot{V: 1, Next: 5, Tasks: []Task{{ID: "t5", Title: "branch task", Status: statusTodo}}})
+	// A second branch holds a different State.
+	sess.newBranch(State{V: 1, Next: 5, Tasks: []Task{{ID: "t5", Title: "branch task", Status: statusTodo}}})
 	obs(proto.Event{Type: proto.EventSessionChanged})
-	if len(e.tasks) != 1 || e.tasks[0].ID != "t5" {
-		t.Fatalf("after branch change = %+v", e.tasks)
+	if len(e.state.Tasks) != 1 || e.state.Tasks[0].ID != "t5" {
+		t.Fatalf("after branch change = %+v", e.state.Tasks)
 	}
 }
 
@@ -366,15 +366,15 @@ func TestTasks_TSK20_StateAfterCompaction(t *testing.T) {
 	sess.branches[sess.active] = branch
 	sess.mu.Unlock()
 	e.rebuild()
-	if len(e.tasks) != 1 || e.tasks[0].Title != "survivor" {
-		t.Fatalf("after compaction = %+v", e.tasks)
+	if len(e.state.Tasks) != 1 || e.state.Tasks[0].Title != "survivor" {
+		t.Fatalf("after compaction = %+v", e.state.Tasks)
 	}
 }
 
 func TestTasks_TSK21_NoSnapshotEmpty(t *testing.T) {
 	e, _ := setup(&fakeSession{}, &fakeUI{})
-	if len(e.tasks) != 0 {
-		t.Fatalf("tasks = %+v, want empty", e.tasks)
+	if len(e.state.Tasks) != 0 {
+		t.Fatalf("tasks = %+v, want empty", e.state.Tasks)
 	}
 	res, _ := call(t, e, `{"action":"list"}`)
 	if res.Content != "(no tasks)" {
@@ -393,11 +393,11 @@ func TestTasks_TSK22_ConcurrentCalls(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
-	if len(e.tasks) != 20 {
-		t.Fatalf("tasks = %d, want 20", len(e.tasks))
+	if len(e.state.Tasks) != 20 {
+		t.Fatalf("tasks = %d, want 20", len(e.state.Tasks))
 	}
 	seen := map[string]bool{}
-	for _, task := range e.tasks {
+	for _, task := range e.state.Tasks {
 		if seen[task.ID] {
 			t.Fatalf("duplicate id %s", task.ID)
 		}
@@ -455,8 +455,8 @@ func TestTasks_TSK26_TodosCommand(t *testing.T) {
 		t.Fatalf("command = %q, %v", out, err)
 	}
 	out, err = e.command(context.Background(), "clear")
-	if err != nil || len(e.tasks) != 0 {
-		t.Fatalf("clear = %q, %v tasks=%d", out, err, len(e.tasks))
+	if err != nil || len(e.state.Tasks) != 0 {
+		t.Fatalf("clear = %q, %v tasks=%d", out, err, len(e.state.Tasks))
 	}
 }
 
@@ -472,7 +472,7 @@ func TestTasks_TSK28_UnicodeTitles(t *testing.T) {
 	e, _ := setup(&fakeSession{}, &fakeUI{})
 	title := "récupérer les données 🚀"
 	mustCreate(t, e, title)
-	if e.tasks[0].Title != title {
-		t.Fatalf("title = %q", e.tasks[0].Title)
+	if e.state.Tasks[0].Title != title {
+		t.Fatalf("title = %q", e.state.Tasks[0].Title)
 	}
 }

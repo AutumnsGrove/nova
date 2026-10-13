@@ -32,8 +32,8 @@ func TestExamples_EXA01_AllShipAndPassCheck(t *testing.T) {
 			t.Errorf("example %s: %v", e.Name(), problems)
 		}
 	}
-	if seen != 3 {
-		t.Fatalf("found %d examples, want 3", seen)
+	if seen != 4 {
+		t.Fatalf("found %d examples, want 4", seen)
 	}
 }
 

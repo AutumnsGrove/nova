@@ -14,14 +14,14 @@ import (
 
 // Extension is the tasks bundled extension. It is safe for concurrent use.
 type Extension struct {
-	mu    sync.Mutex
-	env   *ext.Env
-	tasks []Task
-	next  int
+	mu  sync.Mutex
+	env *ext.Env
+	// state is the in-memory copy of the session snapshot.
+	state State
 }
 
 // New returns a fresh tasks extension.
-func New() *Extension { return &Extension{} }
+func New() *Extension { return &Extension{state: NewState()} }
 
 // Name is the extension name, matched by config extensions.disable.
 func (e *Extension) Name() string { return "tasks" }
@@ -49,7 +49,7 @@ func (e *Extension) Init(env *ext.Env) error {
 
 // tool builds the model-facing todo tool.
 func (e *Extension) tool() tool.Tool {
-	info := tool.Info{
+	return tool.New(tool.Info{
 		Name: "todo",
 		Description: "Manage a task list. Every call returns the whole list. " +
 			"More than one task may be doing; keep one in progress at a time.",
@@ -72,188 +72,30 @@ func (e *Extension) tool() tool.Tool {
 			"required": []string{"action"},
 		},
 		ReadOnly: false,
-	}
-	return tool.New(info, e.run)
+	}, e.run)
 }
 
-// createInput, updateInput, and deleteInput are the action payloads.
-type createInput struct {
-	Action string `json:"action"`
-	Title  string `json:"title"`
-	Detail string `json:"detail"`
-	Tasks  []struct {
-		Title  string `json:"title"`
-		Detail string `json:"detail"`
-	} `json:"tasks"`
-}
-
-type updateInput struct {
-	Action string  `json:"action"`
-	ID     string  `json:"id"`
-	Title  *string `json:"title"`
-	Status *string `json:"status"`
-	Detail *string `json:"detail"`
-}
-
+// run applies one action under the lock and persists a snapshot on a change.
 func (e *Extension) run(_ context.Context, args json.RawMessage, _ *tool.Context) (tool.Result, error) {
-	var head struct {
-		Action string `json:"action"`
-	}
-	if err := json.Unmarshal(args, &head); err != nil {
-		return tool.Errorf("invalid arguments: %v", err), nil
-	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	var err error
-	switch head.Action {
-	case "create":
-		err = e.create(args)
-	case "update":
-		err = e.update(args)
-	case "delete":
-		err = e.delete(args)
-	case "list":
-		// no change
-	case "clear":
-		e.tasks = nil
-		e.persistLocked()
-	default:
-		return tool.Errorf("unknown action %q; actions are create, update, delete, list, clear", head.Action), nil
-	}
+	next, text, changed, err := Apply(e.state, args)
 	if err != nil {
 		return tool.Errorf("%v", err), nil
 	}
-	return tool.Text("%s", e.resultLocked()), nil
+	if changed {
+		e.state = next
+		e.persistLocked()
+	}
+	return tool.Text("%s", text), nil
 }
 
-// create makes one task or a batch of up to maxPerCreate.
-func (e *Extension) create(args json.RawMessage) error {
-	var in createInput
-	if err := json.Unmarshal(args, &in); err != nil {
-		return err
-	}
-	titles := in.Tasks
-	if len(titles) == 0 {
-		titles = []struct {
-			Title  string `json:"title"`
-			Detail string `json:"detail"`
-		}{{Title: in.Title, Detail: in.Detail}}
-	}
-	if len(titles) > maxPerCreate {
-		return fmt.Errorf("too many tasks in one call: %d, at most %d", len(titles), maxPerCreate)
-	}
-	if len(e.tasks)+len(titles) > maxTasks {
-		return fmt.Errorf("too many tasks: %d, at most %d", len(e.tasks)+len(titles), maxTasks)
-	}
-	newTasks := make([]Task, 0, len(titles))
-	for _, t := range titles {
-		title := strings.TrimSpace(t.Title)
-		if title == "" {
-			return fmt.Errorf("title is required")
-		}
-		if len([]rune(title)) > maxTitle {
-			return fmt.Errorf("title is over %d characters", maxTitle)
-		}
-		if len([]rune(t.Detail)) > maxDetail {
-			return fmt.Errorf("detail is over %d characters", maxDetail)
-		}
-		newTasks = append(newTasks, Task{ID: e.newIDLocked(), Title: title, Status: statusTodo, Detail: t.Detail})
-	}
-	e.tasks = append(e.tasks, newTasks...)
-	e.persistLocked()
-	return nil
-}
-
-// update applies the provided fields to one task.
-func (e *Extension) update(args json.RawMessage) error {
-	var in updateInput
-	if err := json.Unmarshal(args, &in); err != nil {
-		return err
-	}
-	i := e.indexLocked(in.ID)
-	if i < 0 {
-		return fmt.Errorf("unknown task id %q", in.ID)
-	}
-	if in.Title != nil {
-		title := strings.TrimSpace(*in.Title)
-		if title == "" {
-			return fmt.Errorf("title is required")
-		}
-		if len([]rune(title)) > maxTitle {
-			return fmt.Errorf("title is over %d characters", maxTitle)
-		}
-		e.tasks[i].Title = title
-	}
-	if in.Status != nil {
-		if !validStatus(*in.Status) {
-			return fmt.Errorf("unknown status %q; statuses are %s", *in.Status, statuses())
-		}
-		e.tasks[i].Status = *in.Status
-	}
-	if in.Detail != nil {
-		if len([]rune(*in.Detail)) > maxDetail {
-			return fmt.Errorf("detail is over %d characters", maxDetail)
-		}
-		e.tasks[i].Detail = *in.Detail
-	}
-	e.persistLocked()
-	return nil
-}
-
-// delete removes a task.
-func (e *Extension) delete(args json.RawMessage) error {
-	var in struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(args, &in); err != nil {
-		return err
-	}
-	i := e.indexLocked(in.ID)
-	if i < 0 {
-		return fmt.Errorf("unknown task id %q", in.ID)
-	}
-	e.tasks = append(e.tasks[:i], e.tasks[i+1:]...)
-	e.persistLocked()
-	return nil
-}
-
-// newIDLocked allocates the next id, never reusing a number.
-func (e *Extension) newIDLocked() string {
-	e.next++
-	return fmt.Sprintf("t%d", e.next)
-}
-
-// indexLocked returns the index of id, or -1.
-func (e *Extension) indexLocked(id string) int {
-	for i, t := range e.tasks {
-		if t.ID == id {
-			return i
-		}
-	}
-	return -1
-}
-
-// resultLocked renders the whole list plus the one-at-a-time reminder.
-func (e *Extension) resultLocked() string {
-	out := listText(e.tasks)
-	doing := 0
-	for _, t := range e.tasks {
-		if t.Status == statusDoing {
-			doing++
-		}
-	}
-	if doing > 1 {
-		out += "\n" + fmt.Sprintf("note: %d tasks are doing; keep one in progress at a time", doing)
-	}
-	return out
-}
-
-// persistLocked appends a full snapshot to the session.
+// persistLocked appends the full snapshot and republishes the widget.
 func (e *Extension) persistLocked() {
 	if e.env == nil || e.env.Session == nil {
 		return
 	}
-	data, err := encodeState(e.tasks, e.next)
+	data, err := Encode(e.state)
 	if err != nil {
 		return
 	}
@@ -261,13 +103,12 @@ func (e *Extension) persistLocked() {
 	e.publishLocked()
 }
 
-// rebuild replaces the in-memory list from the last snapshot on the active
+// rebuild replaces the in-memory state from the last snapshot on the active
 // branch. No snapshot means an empty list.
 func (e *Extension) rebuild() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.tasks = nil
-	e.next = 0
+	e.state = NewState()
 	if e.env == nil || e.env.Session == nil {
 		return
 	}
@@ -275,26 +116,23 @@ func (e *Extension) rebuild() {
 	if len(entries) == 0 {
 		return
 	}
-	s, ok := decodeState(entries[len(entries)-1])
-	if !ok {
-		return
+	if s, ok := Decode(entries[len(entries)-1]); ok {
+		e.state = s
 	}
-	e.tasks = s.Tasks
-	e.next = s.Next
 }
 
 // command implements `/todos` and `/todos clear`.
 func (e *Extension) command(_ context.Context, args string) (string, error) {
 	if strings.TrimSpace(args) == "clear" {
 		e.mu.Lock()
-		e.tasks = nil
+		e.state.Tasks = nil
 		e.persistLocked()
 		e.mu.Unlock()
 		return "Tasks cleared.", nil
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.resultLocked(), nil
+	return resultText(e.state), nil
 }
 
 // publish sends the widget and status, taking the lock.
@@ -309,26 +147,27 @@ func (e *Extension) publishLocked() {
 	if e.env == nil || e.env.UI == nil {
 		return
 	}
-	if len(e.tasks) == 0 {
+	tasks := e.state.Tasks
+	if len(tasks) == 0 {
 		e.env.UI.Notify(proto.UIRequest{Method: "widget", Key: "tasks", Placement: "above_editor"})
 		e.env.UI.Notify(proto.UIRequest{Method: "status", Key: "tasks"})
 		return
 	}
 	done := 0
-	items := make([]map[string]any, 0, len(e.tasks))
-	for _, t := range e.tasks {
+	items := make([]map[string]any, 0, len(tasks))
+	for _, t := range tasks {
 		if t.Status == statusDone {
 			done++
 		}
 		items = append(items, map[string]any{"Text": t.Title, "State": t.Status, "Detail": t.Detail})
 	}
 	var content map[string]any
-	if done == len(e.tasks) {
-		content = map[string]any{"Kind": "text", "Lines": []string{fmt.Sprintf("☑ %d of %d tasks", done, len(e.tasks))}}
+	if done == len(tasks) {
+		content = map[string]any{"Kind": "text", "Lines": []string{fmt.Sprintf("☑ %d of %d tasks", done, len(tasks))}}
 	} else {
 		content = map[string]any{"Kind": "list", "Items": items}
 	}
 	data, _ := json.Marshal(content)
 	e.env.UI.Notify(proto.UIRequest{Method: "widget", Key: "tasks", Placement: "above_editor", Content: data})
-	e.env.UI.Notify(proto.UIRequest{Method: "status", Key: "tasks", Segments: []proto.UISegment{{Text: fmt.Sprintf("☐ %d of %d", done, len(e.tasks)), Style: "muted"}}})
+	e.env.UI.Notify(proto.UIRequest{Method: "status", Key: "tasks", Segments: []proto.UISegment{{Text: fmt.Sprintf("☐ %d of %d", done, len(tasks)), Style: "muted"}}})
 }

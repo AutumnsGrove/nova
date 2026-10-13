@@ -120,6 +120,13 @@ func (c *Call) Int(name string) int { n, _ := c.args[name].(float64); return int
 // Bool reads a boolean argument.
 func (c *Call) Bool(name string) bool { v, _ := c.args[name].(bool); return v }
 
+// Raw returns the arguments re-encoded as JSON, for a handler that wants to
+// share a decoder with the in-process implementation.
+func (c *Call) Raw() json.RawMessage {
+	raw, _ := json.Marshal(c.args)
+	return raw
+}
+
 // Command is one slash-command invocation.
 type Command struct {
 	ctx  context.Context

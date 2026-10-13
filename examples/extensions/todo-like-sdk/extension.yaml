@@ -1,0 +1,7 @@
+name: todo-like-sdk
+version: 0.1.0
+description: A subprocess port of the bundled tasks extension, using the Go SDK.
+nova: ">=0.1"
+run: ["./todo-like-sdk"]
+build: ["go", "build", "-o", "todo-like-sdk", "."]
+capabilities: [tools, commands, session:append_entry]

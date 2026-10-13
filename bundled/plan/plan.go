@@ -84,7 +84,9 @@ func (e *Extension) Init(env *ext.Env) error {
 			e.setOn(true)
 		}
 	}
-	e.publish()
+	if e.onLocked() {
+		e.publish()
+	}
 	return nil
 }
 

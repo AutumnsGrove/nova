@@ -43,7 +43,9 @@ func (e *Extension) Init(env *ext.Env) error {
 		}
 	})
 	e.rebuild()
-	e.publish()
+	if len(e.state.Tasks) > 0 {
+		e.publish()
+	}
 	return nil
 }
 

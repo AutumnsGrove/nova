@@ -26,7 +26,7 @@ func MergeOptions(base, over map[string]any) map[string]any {
 // An empty or unknown reason becomes "".
 func NormalizeFinish(s string) string {
 	switch s {
-	case "stop", "end_turn":
+	case "stop", "end_turn", "stop_sequence":
 		return "stop"
 	case "length", "max_tokens":
 		return "length"

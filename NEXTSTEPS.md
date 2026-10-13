@@ -12,6 +12,10 @@ Responses and Messages dialects). It depends on C02, C03, and C12. See the C19 n
 deliberate gap C18 left: `tui/ui/registry.go`'s `Registry` exists but the transcript does not consult it yet
 (no matrix row covers it).
 
+**After C20:** run **C21** (`docs/chunks/C21-splash-sequence.md`), the redesigned splash. The design was
+chosen by the human on 2026-10-13; the reference is `docs/mockups/splash/nova-splash-sequence.html`. Open it in a
+browser first. C21 retires C16 rows SPL01 to SPL11 (see its "Retired rows").
+
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
 files carry `//go:build !notui`, and `scripts/linecount` skips generated files (`tui/splash/mark_gen.go`).
 `mode/action` is exactly at its 700-line budget. The fake clock's `After` timers are never cancelled, so
@@ -57,6 +61,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C18 | Bundled extensions | done | C13, C17 | 2026-10-13 | not visible |
 | C19 | Polish, first run, doctor, examples, release | done | C16, C17, C18 | 2026-10-13 | |
 | C20 | OpenCode Go, the second launch provider | todo | C02, C03, C12 | 2026-10-11 | |
+| C21 | Splash sequence: slash wordmark, outburst, star field | todo | C16 | 2026-10-13 | |
 
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
@@ -1200,6 +1205,9 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
+- C21 (when built): mark C16 rows SPL01 to SPL11 `retired by C21` and lower or remove C16's `./tui/splash`
+  budget (250); rewrite `docs/TUI.md` "Splash and logo" to match; note that `assets/logo/gen -go` has no consumer.
+
 - C19 budgets were raised to the real counts (applied): `./cmd/nova` 500→1200, `./doctor` 300→400,
   `./config` 1000→1450, `./tui/firstrun` 250→300. To keep `make ci` green the done-chunk specs that share
   those packages were also raised (applied): C11 `./config` 1250→1450, C12 and C17 `./cmd/nova`
@@ -1434,6 +1442,10 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Decisions to record
 
+- C21: the splash is drawn procedurally on the character grid (two letter bitmaps and shaders) and the
+  generated 97 by 49 cell data (`tui/splash/mark_gen.go`) is dropped. The splash plays once, then holds with
+  the name shimmering. Belongs in `docs/DECISIONS.md` when C21 is built (it supersedes the C16 splash design).
+
 - C19: the first-run flow is a standalone Bubble Tea program in `tui/firstrun`, run by `cmd/nova` before
   `mode.Build`, not a sub-model inside `tui/ui`; and `ext/sdk.EntryKind` declares session entry kinds for
   replay. Both belong in `docs/DECISIONS.md`.
@@ -1544,6 +1556,17 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   indirect dependency and there is no stdlib pty.
 
 ## Open questions for the human
+
+- C21: the held end state keeps a faint shell ring on screen (30 percent opacity) as "keep everything on screen".
+  Say if the ring should disappear after the burst and leave only the star, spikes, stars, and name.
+- C21: terminals below 256 colours (and `NO_COLOR`) get a plain `nova` / `press any key`, not the slash
+  wordmark in one colour. The mockup's "No colour" toggle shows a mono version that reads fine; want that instead?
+- C21: should there be a reduced-motion setting (for example `display.motion: off`) that draws only the held
+  frame? Nothing in the spec adds one.
+- C21: the mockup draws `✦ ◆ ● ╱` as shapes. Their widths and look in real terminal fonts (macOS Terminal, iTerm2,
+  Windows Terminal, kitty) have not been checked. Look before release.
+- C21: confirm the C16 splash rows SPL01 to SPL11 may be retired, and the budgets `./tui/splash` 700 and
+  `./tui/ui` 1950 (a +50 raise to the C15/C16/C17 budget).
 
 - C19: confirm the budget raises (`./cmd/nova` 1200, `./doctor` 400, `./config` 1450, `./tui/firstrun` 300,
   C11 `./config` 1450, C12/C17 `./cmd/nova` 1200).

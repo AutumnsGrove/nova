@@ -195,6 +195,15 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 	if o.resume && o.mode != "tui" {
 		return 0, fmt.Errorf("nova: --resume needs the TUI (not built yet)")
 	}
+	if shouldStartTUI(o.mode, o.tty, writerIsTerminal(o.stdout)) {
+		ok, err := ensureTrust(cwd, home, o.stdin, o.stdout)
+		if err != nil {
+			return 0, err
+		}
+		if !ok {
+			return 0, nil
+		}
+	}
 	s, err := mode.Build(mode.BuildOptions{
 		CWD: cwd, Home: home, Mode: o.mode, Version: version, Flags: flags,
 		Yes: o.yes, Out: o.stdout, In: o.stdin, NoSession: o.noSession, Session: sessionPath,

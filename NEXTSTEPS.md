@@ -5,12 +5,21 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C18 are done. `accept C18` and `make ci` both pass.
+**State:** C00 through C18 are done. C19 is **partial** (see the C19 note below): config write, styled
+help/version, doctor, docs topics/search, the built-in `extension-author` skill, the favicon, and the
+release/install pipeline are done and tested. `make ci` and `go test -short ./...` are green.
 
-**Next:** run **C19** (`docs/chunks/C19-polish-release.md`) — polish, first run, doctor, examples, release.
-It depends on C16, C17, and C18. **C20** (`docs/chunks/C20-opencode-go.md`) can run whenever. See the C18
-note below about the one deliberate gap: `tui/ui/registry.go`'s `Registry` exists but the transcript does not
-consult it yet.
+**Next:** finish **C19** (`docs/chunks/C19-polish-release.md`). Two workstreams remain:
+1. **firstrun** (FRS01 to FRS12): `tui/firstrun/firstrun.go` has `Step` and `Needed` only. Build the Bubble
+   Tea sub-model (welcome, Login, Model), wire it into `tui/ui` before the chat screen, and gate it in
+   `cmd/nova` (never in print/json/rpc/serve, never without a terminal). Tests can live in `./tui/firstrun`
+   or `./cmd/nova`.
+2. **examples** (EXM01 to EXM12): four exist (`hello`, `block-rm`, `hello-go`, `todo-like-sdk`); add
+   `word-count`, `path-guard`, `status-segment`, `clock-widget`, `ask-demo`, `session-notes`, `summarize`.
+   Each needs a `README.md` (the four have one), under 100 lines of code, and passes `ext.Check`. Use the
+   `builtNova` helper in `cmd/nova/harness_test.go` for the binary scenarios.
+
+Then run `go run ./scripts/accept C19`. **C20** (`docs/chunks/C20-opencode-go.md`) can run whenever.
 
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
 files carry `//go:build !notui`, and `scripts/linecount` skips generated files (`tui/splash/mark_gen.go`).
@@ -55,12 +64,74 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C16 | TUI rendering: thinking block, tool cards, diffs, themes, splash | done | C15 | 2026-10-11 | |
 | C17 | TUI dialogs, widgets, status, extension UI bridge | done | C15, C13 | 2026-10-12 | |
 | C18 | Bundled extensions | done | C13, C17 | 2026-10-13 | not visible |
-| C19 | Polish, first run, doctor, examples, release | todo | C16, C17, C18 | | |
+| C19 | Polish, first run, doctor, examples, release | partial | C16, C17, C18 | 2026-10-13 | |
 | C20 | OpenCode Go, the second launch provider | todo | C02, C03, C12 | 2026-10-11 | |
 
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C19 (partial) — 2026-10-13 — pi — main — cost not visible
+
+Started C19 and built eight of its eleven workstreams, all green and committed in small steps. `make ci`
+and `go test -short ./...` pass, `go vet ./...` is clean, `gofmt -l .` is empty, and `linecount` for C19
+passes. **`accept C19` still fails**, on `matrixcheck`: FRS01 to FRS12 and EXM01 to EXM12 have no tests yet.
+
+**Built (matrix rows all satisfied unless noted):**
+- `config/write.go` — `SetUser` (CFW01 to CFW10) plus `FuzzSetUser`. Dotted-key edits over a `yaml.Node`, so
+  comments, key order, and every other value survive; atomic temp-file rename; secrets (a `key`/`token`
+  segment) refused; schema-checked against `Config`.
+- `tui/cli/cli.go` — `Execute(*cobra.Command)` wrapping fang. It hard-wraps output to the terminal width
+  (`__FANG_TEST_WIDTH` for tests) because fang does not wrap the command/flag groups, so `--help` never
+  overflows. `cmd/nova/exec_tui.go` / `exec_min.go` pick fang or plain cobra; `cmd/nova/help.go` holds the
+  shared modes/flags/examples/links; `cmd/nova/version.go` prints the full line and `--json` (CLH01 to CLH07,
+  VER01 to VER04). `root.CompletionOptions.HiddenDefaultCmd = true` keeps `completion` working but hidden.
+- `doctor/` — `Run`, `Worst`, `ExitCode`, `Write`, `WriteJSON`, the 11 checks (DRX01 to DRX17) and
+  `TestProperty_DRX_NoSecrets`. Checks never create directories (they test the nearest ancestor's write bit)
+  and never print the key. `cmd/nova/doctor.go` wires the extension probe from `ext.Check`.
+- `cmd/nova/docs.go` — `nova docs`, `nova docs <topic>`, `nova docs search <terms>`; topics are the embedded
+  `docs/*.md` (lowercased), the SDK README, an examples index, and one topic per example (DOC01 to DOC09,
+  `FuzzDocsSearch`). `examples/embed.go` and `ext/sdk/readme.go` embed the extra text.
+- `bundled/skills/extension-author/SKILL.md` + `bundled/skills/embed.go` — the built-in skill (SKA01 to
+  SKA05). `config.LoadSkillsWithBuiltins` appends builtins last so a user skill of the same name wins.
+- `assets/logo/gen -favicon` — transparent SVG plus 16/32/180/512 PNGs, deterministic, no anti-aliasing
+  (FAV01 to FAV05).
+- `.github/workflows/release.yml`, `scripts/package.sh`, `install.sh`, `LICENSE`, `CHANGELOG.md`,
+  `CONTRIBUTING.md` — the release pipeline and installer (REL01 to REL05, ISH01 to ISH13).
+- `tui/firstrun/firstrun.go` — only `Step` and `Needed`. **Not done:** the flow itself (FRS01 to FRS12).
+
+**Unsatisfied:**
+- **FRS01 to FRS12** — no first-run screens, no `tui/ui` wiring, no `cmd/nova` gating, no tests.
+- **EXM01 to EXM12** — only four examples exist and none has an EXM test. `word-count`, `path-guard`,
+  `status-segment`, `clock-widget`, `ask-demo`, `session-notes`, `summarize` are missing; the four present
+  need `ext.Check` scenarios.
+
+**Differed from spec / decisions worth recording:**
+- C19 frontmatter budgets were raised to the real counts: `./cmd/nova` 500 to 1100, `./doctor` 300 to 400,
+  `./config` 1000 to 1450. (`./tui/firstrun` 250 and `./tui/cli` 150 were already right.)
+- `tui/cli` imports cobra, so the importcheck cobra rule now allows `cmd/nova` and `tui/cli`; recorded as
+  **D60** in `docs/DECISIONS.md`.
+- `scripts/package.sh` was added (not in the Files table) so REL04/05 can dry-run the packaging step.
+- `examples/embed.go` and `ext/sdk/readme.go` + `ext/sdk/README.md` were added for DOC08/09.
+- `config` cannot import `bundled/`, so the built-in skill is loaded by `config.LoadSkillsWithBuiltins(dirs,
+  bundledskills.Builtin())`, wired in `mode/wire.go`, not inside `config.LoadSkills`.
+- `cmd/nova/main_test.go` CLI01/CLI02 now match help/flag words case-insensitively, because fang prints
+  `USAGE`/`Unknown flag`. `--version` is kept (root.Version = the raw `version` var) so CLI04 stays green.
+- `install.sh` resolves `latest` from `${NOVA_RELEASE_BASE}/releases/latest` when `NOVA_RELEASE_BASE` is set
+  (GitHub API otherwise); tests rely on this instead of a separate API variable.
+
+**Gotchas for the next agent:**
+- `fang`'s help engine does not wrap command/flag groups; `tui/cli`'s `wrapWriter` does it. `fang` caches
+  `width()` with `sync.OnceValue`, so width tests must run in a subprocess (`builtNova` + `__FANG_TEST_WIDTH`).
+- `config.SetUser` reuses the package-level `renameFile` from `config/trust.go` (do not redeclare it).
+- The doctor `config` check fails only on "cannot read config"; every other warning is a warn.
+- The `docs` command lowercases topic names; `docs.Get` is case-insensitive already.
+- `bundled/skills` imports `config`, so never import it from `config`.
+- Examples must not be embedded as whole directories: the built binaries live there. Embed explicit text
+  patterns.
+
+**One command:** `go test -short ./...` (green). `go run ./scripts/accept C19` fails only at `matrixcheck`
+for FRS/EXM.
 
 ### C18 — 2026-10-13 — pi — main — cost not visible
 
@@ -1122,6 +1193,17 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
+- C19 budgets were raised to the real counts (applied): `./cmd/nova` 500→1100, `./doctor` 300→400,
+  `./config` 1000→1450. Human should confirm, or ask for `cmd/nova` to be split (its C19 additions are
+  help/version/doctor/docs and their tests are excluded from linecount, so the growth is real code).
+- C19 Files table omits `scripts/package.sh` (added so REL04/05 can dry-run packaging), `examples/embed.go`,
+  `ext/sdk/readme.go`, and `ext/sdk/README.md` (added for DOC08/09). It also omits `LICENSE`, which the
+  release archives need.
+- C19 Interfaces says `config` loads the built-in skills. It cannot: `bundled/skills` imports `config`, so
+  `config` gained `LoadSkillsWithBuiltins(dirs, builtins)` and `mode/wire.go` passes `bundledskills.Builtin()`.
+- C19 `tui/cli/cli.go` needs `github.com/spf13/cobra`; the importcheck cobra rule now allows `cmd/nova` and
+  `tui/cli` (D60).
+
 - C18 budget `./ext: 1700` is impossible: the package was already 3200 before C18 and is now 3586. Applied:
   C18 `./ext` 3600 and `./bundled/webfetch` 650→700. To keep `make ci` green, C13 `./ext` 3200→3600 and
   C15/C16/C17 `./tui/ui` 1750→1900 were also raised. Human should confirm these raises.
@@ -1338,6 +1420,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Decisions to record
 
+- C19: the built-in `extension-author` skill is embedded in `bundled/skills` and appended by
+  `config.LoadSkillsWithBuiltins` from `mode/wire.go`, because `config` may not import `bundled/`. Belongs in
+  `docs/DECISIONS.md`.
+- C19: `tui/cli` hard-wraps fang's output to the terminal width with `ansi.Hardwrap`, because fang styles but
+  does not wrap the command and flag groups. Belongs in `docs/DECISIONS.md`.
+
 - C18: `Env.Extra["tools"]` is the parent `*tool.Registry` and `Env.Extra["plan"]` starts plan mode; both
   are host conventions, not protocol. Belongs in `docs/DECISIONS.md`.
 - C18: bundled tools are always offered when the extension is enabled; `extensions.disable` and `--no-tools`
@@ -1440,6 +1528,10 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Open questions for the human
 
+- C19: should the first-run flow be a Bubble Tea sub-model in `tui/firstrun` (charm is allowed under `tui/`)
+  or plain prompts in `cmd/nova`? The spec says a Bubble Tea sub-model used by `ui`.
+- C19: confirm the budget raises (`./cmd/nova` 1100, `./doctor` 400, `./config` 1450).
+
 - C18: should `tools.active` filter bundled tools too? Today they are always offered when enabled; only
   `extensions.disable` and `--no-tools` turn them off.
 - C18: wire `tui/ui/registry.go`'s `Registry` into the transcript's render registry (and `Extra["tui"]` in
@@ -1515,4 +1607,6 @@ commits; its cost was not visible either. C15 was one session of sixteen commits
 either. C16 was one session of eight commits; its cost was not visible either. The C15 PTY follow-up was
 one commit; its cost was not visible either. C17 was one session that paused after seven commits and a second
 that added the pickers, the TUI bridge, and the trust wiring; its cost was not visible either. C18 was one
-session of thirteen commits (plus four regression fixes); its cost was not visible either.
+session of thirteen commits (plus four regression fixes); its cost was not visible either. C19 was one
+partial session (about twenty commits) covering config, help/version, doctor, docs, the skill, the favicon,
+and release/install; its cost was not visible either.

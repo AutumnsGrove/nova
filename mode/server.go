@@ -218,8 +218,10 @@ func New(opt Options) (*Server, error) {
 	}
 
 	s.ext = s.buildExtensionHost()
-	for _, b := range bundled.Enabled(cfg) {
-		_ = s.ext.AddBundled(b)
+	if !opt.NoTools {
+		for _, b := range bundled.Enabled(cfg) {
+			_ = s.ext.AddBundled(b)
+		}
 	}
 	extHooks := s.ext.Hooks()
 

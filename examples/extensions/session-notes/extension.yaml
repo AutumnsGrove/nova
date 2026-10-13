@@ -1,0 +1,7 @@
+name: session-notes
+version: 0.1.0
+description: Keep notes in the session so they survive reload and resume.
+nova: ">=0.1"
+run: ["./session-notes"]
+build: ["go", "build", "-o", "session-notes", "."]
+capabilities: [commands, session:append_entry, session:read]

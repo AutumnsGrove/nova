@@ -1,0 +1,16 @@
+name: word-count
+version: 0.1.0
+description: Count the words in a file.
+nova: ">=0.1"
+tools:
+  - name: word_count
+    description: Count the words in a file.
+    parameters:
+      type: object
+      properties:
+        path: { type: string, description: "File to count" }
+      required: [path]
+    exec: ["wc", "-w", "{{.path}}"]
+    read_only: true
+    timeout_ms: 5000
+    render: "{{.path}}: {{.output}}"

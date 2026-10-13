@@ -1,0 +1,7 @@
+name: status-segment
+version: 0.1.0
+description: Shows a turn counter in the footer.
+nova: ">=0.1"
+run: ["./status-segment"]
+build: ["go", "build", "-o", "status-segment", "."]
+capabilities: [hooks:turn_end, ui:status]

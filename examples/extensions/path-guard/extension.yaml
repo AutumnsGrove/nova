@@ -1,0 +1,7 @@
+name: path-guard
+version: 0.1.0
+description: Blocks write and edit calls that leave the working directory.
+nova: ">=0.1"
+run: ["./path-guard"]
+build: ["go", "build", "-o", "path-guard", "."]
+capabilities: [hooks:tool_call]

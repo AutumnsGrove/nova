@@ -1,0 +1,7 @@
+name: ask-demo
+version: 0.1.0
+description: A command that asks the user for a choice and a note.
+nova: ">=0.1"
+run: ["./ask-demo"]
+build: ["go", "build", "-o", "ask-demo", "."]
+capabilities: [commands, ui:select, ui:input]

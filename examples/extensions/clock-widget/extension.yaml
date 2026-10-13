@@ -1,0 +1,7 @@
+name: clock-widget
+version: 0.1.0
+description: Shows the current time in a text widget.
+nova: ">=0.1"
+run: ["./clock-widget"]
+build: ["go", "build", "-o", "clock-widget", "."]
+capabilities: [hooks:turn_end, ui:widget]

@@ -215,6 +215,15 @@ func (h *Host) AppendEntry(kind string, data any, keep bool) error {
 	return h.send(map[string]any{"type": "append_entry", "kind": kind, "data": json.RawMessage(raw), "keep": keep})
 }
 
+// EntryKind declares a session entry kind during registration, so the host
+// replays the session's entries of that kind on reload and resume. Call it
+// once at startup; AppendEntry adds the kind on its own after that.
+func (h *Host) EntryKind(kind string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.entries = append(h.entries, kind)
+}
+
 // Entries returns the entries of kind replayed by the host.
 func (h *Host) Entries(kind string) []json.RawMessage {
 	h.mu.Lock()

@@ -1,0 +1,7 @@
+name: summarize
+version: 0.1.0
+description: Summarize text with a nested model call.
+nova: ">=0.1"
+run: ["./summarize"]
+build: ["go", "build", "-o", "summarize", "."]
+capabilities: [commands, model:complete]

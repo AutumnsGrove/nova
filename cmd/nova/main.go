@@ -174,7 +174,8 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 	if o.resume && o.mode != "tui" {
 		return 0, fmt.Errorf("nova: --resume needs the TUI (not built yet)")
 	}
-	if shouldStartTUI(o.mode, o.tty, writerIsTerminal(o.stdout)) {
+	tuiMode := shouldStartTUI(o.mode, o.tty, writerIsTerminal(o.stdout))
+	if tuiMode {
 		ok, err := ensureTrust(cwd, home, o.stdin, o.stdout)
 		if err != nil {
 			return 0, err
@@ -182,6 +183,14 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 		if !ok {
 			return 0, nil
 		}
+		if o.tty && writerIsTerminal(o.stdout) && !mode.HasProviderKey(home) {
+			if err := maybeFirstRun(ctx, home, o.stdin, o.stdout); err != nil {
+				return 0, err
+			}
+		}
+	} else if requiresKey(o.prompt, o.mode) && !mode.HasProviderKey(home) {
+		fmt.Fprintln(o.stderr, "no API key: run `nova login` or set OPENROUTER_API_KEY")
+		return 1, nil
 	}
 	s, err := mode.Build(mode.BuildOptions{
 		CWD: cwd, Home: home, Mode: o.mode, Version: version, Flags: flags,
@@ -252,6 +261,19 @@ func buildPrompt(flag string, stdin io.Reader, tty bool) (string, error) {
 		}
 	}
 	return flag, nil
+}
+
+// requiresKey reports whether a non-TUI invocation needs a credential before
+// it can do anything: print, json, rpc, and serve all talk to the provider.
+func requiresKey(prompt, mode string) bool {
+	if prompt != "" {
+		return true
+	}
+	switch mode {
+	case "print", "json", "rpc", "serve":
+		return true
+	}
+	return false
 }
 
 // resolveCWD validates an explicit --cwd.

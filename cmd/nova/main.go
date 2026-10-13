@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/AutumnsGrove/nova/auth"
+	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/mode"
 	"github.com/AutumnsGrove/nova/provider"
@@ -357,12 +358,38 @@ func sessionsCommand(stdout, stderr io.Writer) *cobra.Command {
 func loginCommand(stdout, stderr io.Writer) *cobra.Command {
 	var noBrowser bool
 	cmd := &cobra.Command{
-		Use:   "login",
-		Short: "Log in to OpenRouter",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Use:   "login [provider]",
+		Short: "Log in to OpenRouter (default) or opencode-go",
+		RunE: func(cmd *cobra.Command, args []string) error {
 			home, err := os.UserHomeDir()
 			if err != nil {
 				return err
+			}
+			provider := "openrouter"
+			if len(args) > 0 {
+				provider = args[0]
+			}
+			switch provider {
+			case "opencode-go", "opencodego":
+				cfg := opencode.Config{Out: stderr}
+				if v := os.Getenv("OPENCODE_CONSOLE_SERVER"); v != "" {
+					cfg.Server = v
+				}
+				if !noBrowser {
+					cfg.OpenBrowser = openBrowser
+				}
+				key, err := opencode.Login(cmd.Context(), cfg)
+				if err != nil {
+					return err
+				}
+				if err := opencode.SaveKey(opencode.DefaultKeyPath(home), key); err != nil {
+					return err
+				}
+				fmt.Fprintln(stdout, "logged in to OpenCode Go")
+				return nil
+			case "openrouter", "":
+			default:
+				return fmt.Errorf("nova: unknown provider %q", provider)
 			}
 			opts := auth.LoginOptions{Out: stderr}
 			if v := os.Getenv("NOVA_AUTH_URL"); v != "" {

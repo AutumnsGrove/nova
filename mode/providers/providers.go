@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/AutumnsGrove/nova/auth"
+	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/opencodego"
@@ -43,6 +44,11 @@ func Build(opt Options) provider.Provider {
 	})
 
 	goKey, _, _ := ResolveOpenCodeGoKey(opt.Config, getenv)
+	if goKey == "" && opt.Home != "" {
+		if stored, err := opencode.LoadKey(opencode.DefaultKeyPath(opt.Home)); err == nil {
+			goKey = stored
+		}
+	}
 	goBase := opt.Config.Provider.OpenCodeGo.BaseURL
 	if goBase == "" {
 		goBase = getenv("NOVA_OPENCODE_GO_BASE_URL")

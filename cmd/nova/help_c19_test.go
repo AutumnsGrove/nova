@@ -86,7 +86,7 @@ func TestHelp_CLH05_Subcommands(t *testing.T) {
 		"models":   "List the model catalog",
 		"sessions": "List sessions",
 		"login":    "Log in to OpenRouter",
-		"docs":     "Print embedded documentation",
+		"docs":     "Print an embedded document",
 		"ext":      "Install, list, update, remove, and check extensions",
 		"serve":    "Serve the protocol",
 	}

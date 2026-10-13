@@ -4,6 +4,7 @@ package providers
 
 import (
 	"context"
+	"path/filepath"
 
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/auth/opencode"
@@ -52,6 +53,20 @@ func Build(opt Options) provider.Provider {
 	goBase := opt.Config.Provider.OpenCodeGo.BaseURL
 	if goBase == "" {
 		goBase = getenv("NOVA_OPENCODE_GO_BASE_URL")
+	}
+	// Load the cached live model overlay, then refresh it in the background when
+	// it is stale. Discovery never blocks startup and never fails it.
+	cachePath := ""
+	if opt.Home != "" {
+		cachePath = filepath.Join(opt.Home, ".config", "nova", "opencode-go-models.json")
+		_ = opencodego.LoadCache(cachePath)
+	}
+	if goKey != "" && cachePath != "" && !opencodego.CacheFresh(cachePath, 0) {
+		go func() {
+			_ = opencodego.Refresh(context.Background(), opencodego.DiscoveryConfig{
+				BaseURL: goBase, APIKey: goKey, CachePath: cachePath,
+			})
+		}()
 	}
 	openCodeGo := opencodego.New(opencodego.Config{APIKey: goKey, BaseURL: goBase})
 

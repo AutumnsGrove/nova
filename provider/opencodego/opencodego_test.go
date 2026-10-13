@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/openrouter"
@@ -173,5 +175,41 @@ func TestOpencodego_OPG20_BothCatalogs(t *testing.T) {
 	}
 	if !providers["openrouter"] || !providers[ProviderName] {
 		t.Fatalf("providers = %v", providers)
+	}
+}
+
+func TestOpencodego_Discovery_Refresh(t *testing.T) {
+	modelsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"glm-5.3"},{"id":"new-model"},{"id":"claude-new"}]}`))
+	}))
+	t.Cleanup(modelsSrv.Close)
+	devSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"opencode-go":{"models":{"new-model":{"name":"New Model","limit":{"context":100000,"output":8000},"cost":{"input":1.0,"output":2.0}}}}}`))
+	}))
+	t.Cleanup(devSrv.Close)
+	cache := filepath.Join(t.TempDir(), "cache.json")
+
+	if err := Refresh(context.Background(), DiscoveryConfig{
+		BaseURL: modelsSrv.URL, ModelsDevURL: devSrv.URL, CachePath: cache,
+	}); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if _, ok := provider.GetModel("opencode-go/new-model"); !ok {
+		t.Fatal("the live model was not registered")
+	}
+	if m, _ := provider.GetModel("opencode-go/new-model"); m.ContextWindow != 100000 || m.InPerM != 1.0 || m.OutPerM != 2.0 {
+		t.Fatalf("live metadata = %+v", m)
+	}
+	if APIFor("opencode-go/claude-new") != DialectMessages {
+		t.Fatalf("claude-new routed to %q", APIFor("opencode-go/claude-new"))
+	}
+	if _, ok := provider.GetModel("opencode-go/glm-5.3"); !ok {
+		t.Fatal("the baseline model disappeared")
+	}
+	if !CacheFresh(cache, time.Hour) {
+		t.Fatal("the cache is not fresh")
+	}
+	if err := LoadCache(cache); err != nil {
+		t.Fatalf("LoadCache: %v", err)
 	}
 }

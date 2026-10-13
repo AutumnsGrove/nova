@@ -5,21 +5,12 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C18 are done. C19 is **partial** (see the C19 note below): config write, styled
-help/version, doctor, docs topics/search, the built-in `extension-author` skill, the favicon, and the
-release/install pipeline are done and tested. `make ci` and `go test -short ./...` are green.
+**State:** C00 through C19 are done. `go run ./scripts/accept C19` and `make ci` both pass.
 
-**Next:** finish **C19** (`docs/chunks/C19-polish-release.md`). Two workstreams remain:
-1. **firstrun** (FRS01 to FRS12): `tui/firstrun/firstrun.go` has `Step` and `Needed` only. Build the Bubble
-   Tea sub-model (welcome, Login, Model), wire it into `tui/ui` before the chat screen, and gate it in
-   `cmd/nova` (never in print/json/rpc/serve, never without a terminal). Tests can live in `./tui/firstrun`
-   or `./cmd/nova`.
-2. **examples** (EXM01 to EXM12): four exist (`hello`, `block-rm`, `hello-go`, `todo-like-sdk`); add
-   `word-count`, `path-guard`, `status-segment`, `clock-widget`, `ask-demo`, `session-notes`, `summarize`.
-   Each needs a `README.md` (the four have one), under 100 lines of code, and passes `ext.Check`. Use the
-   `builtNova` helper in `cmd/nova/harness_test.go` for the binary scenarios.
-
-Then run `go run ./scripts/accept C19`. **C20** (`docs/chunks/C20-opencode-go.md`) can run whenever.
+**Next:** run **C20** (`docs/chunks/C20-opencode-go.md`) — OpenCode Go, the second launch provider (its
+Responses and Messages dialects). It depends on C02, C03, and C12. See the C19 note below for the one
+deliberate gap C18 left: `tui/ui/registry.go`'s `Registry` exists but the transcript does not consult it yet
+(no matrix row covers it).
 
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
 files carry `//go:build !notui`, and `scripts/linecount` skips generated files (`tui/splash/mark_gen.go`).
@@ -64,20 +55,20 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C16 | TUI rendering: thinking block, tool cards, diffs, themes, splash | done | C15 | 2026-10-11 | |
 | C17 | TUI dialogs, widgets, status, extension UI bridge | done | C15, C13 | 2026-10-12 | |
 | C18 | Bundled extensions | done | C13, C17 | 2026-10-13 | not visible |
-| C19 | Polish, first run, doctor, examples, release | partial | C16, C17, C18 | 2026-10-13 | |
+| C19 | Polish, first run, doctor, examples, release | done | C16, C17, C18 | 2026-10-13 | |
 | C20 | OpenCode Go, the second launch provider | todo | C02, C03, C12 | 2026-10-11 | |
 
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
 
-### C19 (partial) — 2026-10-13 — pi — main — cost not visible
+### C19 — 2026-10-13 — pi — main — cost not visible
 
-Started C19 and built eight of its eleven workstreams, all green and committed in small steps. `make ci`
-and `go test -short ./...` pass, `go vet ./...` is clean, `gofmt -l .` is empty, and `linecount` for C19
-passes. **`accept C19` still fails**, on `matrixcheck`: FRS01 to FRS12 and EXM01 to EXM12 have no tests yet.
+Finished C19. `go run ./scripts/accept C19` passes all nine steps, `make ci` exits 0, every one of the
+~100 matrix rows has a named test, and the acceptance's favicon determinism check is clean. Built over about
+twenty-four green commits across two sessions (the first stopped after doctor/docs/skill/favicon/release).
 
-**Built (matrix rows all satisfied unless noted):**
+**Built:**
 - `config/write.go` — `SetUser` (CFW01 to CFW10) plus `FuzzSetUser`. Dotted-key edits over a `yaml.Node`, so
   comments, key order, and every other value survive; atomic temp-file rename; secrets (a `key`/`token`
   segment) refused; schema-checked against `Config`.
@@ -86,6 +77,11 @@ passes. **`accept C19` still fails**, on `matrixcheck`: FRS01 to FRS12 and EXM01
   overflows. `cmd/nova/exec_tui.go` / `exec_min.go` pick fang or plain cobra; `cmd/nova/help.go` holds the
   shared modes/flags/examples/links; `cmd/nova/version.go` prints the full line and `--json` (CLH01 to CLH07,
   VER01 to VER04). `root.CompletionOptions.HiddenDefaultCmd = true` keeps `completion` working but hidden.
+- `tui/firstrun/` (FRS01 to FRS12) — the Bubble Tea flow: welcome, Login (OpenRouter login or a masked
+  paste), and a Model picker with the catalog default highlighted. `Flow.Update`/`View` are driven directly
+  in tests, so no terminal is needed. `cmd/nova/firstrun_tui.go` runs it before `mode.Build` when the TUI is
+  on a terminal and no key resolves; `firstrun_notui.go` is a no-op. `cmd/nova/main.go` gates print/json/rpc
+  with the no-key message and exit 1, and keeps the empty-prompt usage error (exit 2) ahead of that.
 - `doctor/` — `Run`, `Worst`, `ExitCode`, `Write`, `WriteJSON`, the 11 checks (DRX01 to DRX17) and
   `TestProperty_DRX_NoSecrets`. Checks never create directories (they test the nearest ancestor's write bit)
   and never print the key. `cmd/nova/doctor.go` wires the extension probe from `ext.Check`.
@@ -94,27 +90,36 @@ passes. **`accept C19` still fails**, on `matrixcheck`: FRS01 to FRS12 and EXM01
   `FuzzDocsSearch`). `examples/embed.go` and `ext/sdk/readme.go` embed the extra text.
 - `bundled/skills/extension-author/SKILL.md` + `bundled/skills/embed.go` — the built-in skill (SKA01 to
   SKA05). `config.LoadSkillsWithBuiltins` appends builtins last so a user skill of the same name wins.
+- `examples/extensions/` (EXM01 to EXM12) — ten examples, each with a README, under 100 lines, passing
+  `ext.Check`. `cmd/nova/examples_c19_test.go` runs the declarative tools, both hooks, the UI frames, the
+  command form, session replay, `Complete`, and the Go SDK build. `ext/sdk` gained `EntryKind` so an
+  extension can declare a session entry kind at register time for replay.
 - `assets/logo/gen -favicon` — transparent SVG plus 16/32/180/512 PNGs, deterministic, no anti-aliasing
   (FAV01 to FAV05).
 - `.github/workflows/release.yml`, `scripts/package.sh`, `install.sh`, `LICENSE`, `CHANGELOG.md`,
   `CONTRIBUTING.md` — the release pipeline and installer (REL01 to REL05, ISH01 to ISH13).
-- `tui/firstrun/firstrun.go` — only `Step` and `Needed`. **Not done:** the flow itself (FRS01 to FRS12).
 
-**Unsatisfied:**
-- **FRS01 to FRS12** — no first-run screens, no `tui/ui` wiring, no `cmd/nova` gating, no tests.
-- **EXM01 to EXM12** — only four examples exist and none has an EXM test. `word-count`, `path-guard`,
-  `status-segment`, `clock-widget`, `ask-demo`, `session-notes`, `summarize` are missing; the four present
-  need `ext.Check` scenarios.
+**Satisfied matrix rows:** all of them: CFW01-10; CLH01-07; VER01-04; FRS01-12; DRX01-17; DOC01-09;
+SKA01-05; EXM01-12; FAV01-05; REL01-05; ISH01-13. Fuzz/property: `FuzzSetUser`, `FuzzDocsSearch`,
+`TestProperty_DRX_NoSecrets`.
+
+**Unsatisfied:** none.
 
 **Differed from spec / decisions worth recording:**
-- C19 frontmatter budgets were raised to the real counts: `./cmd/nova` 500 to 1100, `./doctor` 300 to 400,
-  `./config` 1000 to 1450. (`./tui/firstrun` 250 and `./tui/cli` 150 were already right.)
+- C19 budgets final: `./cmd/nova` 1200, `./doctor` 400, `./config` 1450, `./tui/firstrun` 300,
+  `./tui/cli` 150. The shared done-chunk specs were raised to match: C11 `./config` 1450, C12/C17
+  `./cmd/nova` 1200. Human should confirm these raises, or ask for `cmd/nova` to be split.
 - `tui/cli` imports cobra, so the importcheck cobra rule now allows `cmd/nova` and `tui/cli`; recorded as
   **D60** in `docs/DECISIONS.md`.
-- `scripts/package.sh` was added (not in the Files table) so REL04/05 can dry-run the packaging step.
-- `examples/embed.go` and `ext/sdk/readme.go` + `ext/sdk/README.md` were added for DOC08/09.
+- firstrun is a standalone Bubble Tea program run by `cmd/nova` before `mode.Build`, not a sub-model inside
+  `tui/ui`. That keeps `tui/ui` (already at 1900) from growing and makes the flow testable without a
+  terminal; the spec said "a sub-model used by ui".
+- `scripts/package.sh` was added (not in the Files table) so REL04/05 can dry-run packaging. `examples/embed.go`,
+  `ext/sdk/readme.go`, `ext/sdk/README.md`, and `LICENSE` were added for DOC08/09 and the archives.
 - `config` cannot import `bundled/`, so the built-in skill is loaded by `config.LoadSkillsWithBuiltins(dirs,
   bundledskills.Builtin())`, wired in `mode/wire.go`, not inside `config.LoadSkills`.
+- `ext/sdk` gained `EntryKind`. The host replays register-declared kinds after a reload, but a fresh start
+  still needs `HostOptions.EntryKinds` (HST14), so EXM10 passes it.
 - `cmd/nova/main_test.go` CLI01/CLI02 now match help/flag words case-insensitively, because fang prints
   `USAGE`/`Unknown flag`. `--version` is kept (root.Version = the raw `version` var) so CLI04 stays green.
 - `install.sh` resolves `latest` from `${NOVA_RELEASE_BASE}/releases/latest` when `NOVA_RELEASE_BASE` is set
@@ -123,15 +128,17 @@ passes. **`accept C19` still fails**, on `matrixcheck`: FRS01 to FRS12 and EXM01
 **Gotchas for the next agent:**
 - `fang`'s help engine does not wrap command/flag groups; `tui/cli`'s `wrapWriter` does it. `fang` caches
   `width()` with `sync.OnceValue`, so width tests must run in a subprocess (`builtNova` + `__FANG_TEST_WIDTH`).
+- `tui/firstrun.Flow` is the model; `View()` returns `tea.View` (bubbletea v2), so tests read `.Content`.
 - `config.SetUser` reuses the package-level `renameFile` from `config/trust.go` (do not redeclare it).
 - The doctor `config` check fails only on "cannot read config"; every other warning is a warn.
 - The `docs` command lowercases topic names; `docs.Get` is case-insensitive already.
 - `bundled/skills` imports `config`, so never import it from `config`.
 - Examples must not be embedded as whole directories: the built binaries live there. Embed explicit text
-  patterns.
+  patterns; each Go example has its own `.gitignore`.
+- The no-key gate for print/json/rpc runs before `mode.Build`; keep the empty-prompt check ahead of it for
+  the print path.
 
-**One command:** `go test -short ./...` (green). `go run ./scripts/accept C19` fails only at `matrixcheck`
-for FRS/EXM.
+**One command:** `go run ./scripts/accept C19`.
 
 ### C18 — 2026-10-13 — pi — main — cost not visible
 
@@ -1193,16 +1200,21 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
-- C19 budgets were raised to the real counts (applied): `./cmd/nova` 500→1100, `./doctor` 300→400,
-  `./config` 1000→1450. To keep `make ci` green the done-chunk specs that share those packages were also
-  raised (applied): C11 `./config` 1250→1450, C12 and C17 `./cmd/nova` 680/720→1100. Human should confirm,
-  or ask for `cmd/nova` to be split (its C19 additions are help/version/doctor/docs and their tests are
-  excluded from linecount, so the growth is real code).
+- C19 budgets were raised to the real counts (applied): `./cmd/nova` 500→1200, `./doctor` 300→400,
+  `./config` 1000→1450, `./tui/firstrun` 250→300. To keep `make ci` green the done-chunk specs that share
+  those packages were also raised (applied): C11 `./config` 1250→1450, C12 and C17 `./cmd/nova`
+  680/720→1200. Human should confirm, or ask for `cmd/nova` to be split (its C19 additions are
+  help/version/doctor/docs/firstrun and their tests are excluded from linecount, so the growth is real code).
 - C19 Files table omits `scripts/package.sh` (added so REL04/05 can dry-run packaging), `examples/embed.go`,
   `ext/sdk/readme.go`, and `ext/sdk/README.md` (added for DOC08/09). It also omits `LICENSE`, which the
   release archives need.
 - C19 Interfaces says `config` loads the built-in skills. It cannot: `bundled/skills` imports `config`, so
   `config` gained `LoadSkillsWithBuiltins(dirs, builtins)` and `mode/wire.go` passes `bundledskills.Builtin()`.
+- C19 Interfaces says firstrun is "a Bubble Tea sub-model used by ui". It is a standalone Bubble Tea program
+  in `tui/firstrun`, run by `cmd/nova` before `mode.Build`, so `tui/ui` does not grow and the flow is testable.
+- C19 does not list `ext/sdk`; it gained `EntryKind` so an example can declare a session entry kind at
+  register time. (The host replays register-declared kinds after a reload; a fresh start still needs
+  `HostOptions.EntryKinds`.)
 - C19 `tui/cli/cli.go` needs `github.com/spf13/cobra`; the importcheck cobra rule now allows `cmd/nova` and
   `tui/cli` (D60).
 
@@ -1422,6 +1434,9 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Decisions to record
 
+- C19: the first-run flow is a standalone Bubble Tea program in `tui/firstrun`, run by `cmd/nova` before
+  `mode.Build`, not a sub-model inside `tui/ui`; and `ext/sdk.EntryKind` declares session entry kinds for
+  replay. Both belong in `docs/DECISIONS.md`.
 - C19: the built-in `extension-author` skill is embedded in `bundled/skills` and appended by
   `config.LoadSkillsWithBuiltins` from `mode/wire.go`, because `config` may not import `bundled/`. Belongs in
   `docs/DECISIONS.md`.
@@ -1530,9 +1545,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Open questions for the human
 
-- C19: should the first-run flow be a Bubble Tea sub-model in `tui/firstrun` (charm is allowed under `tui/`)
-  or plain prompts in `cmd/nova`? The spec says a Bubble Tea sub-model used by `ui`.
-- C19: confirm the budget raises (`./cmd/nova` 1100, `./doctor` 400, `./config` 1450).
+- C19: confirm the budget raises (`./cmd/nova` 1200, `./doctor` 400, `./config` 1450, `./tui/firstrun` 300,
+  C11 `./config` 1450, C12/C17 `./cmd/nova` 1200).
 
 - C18: should `tools.active` filter bundled tools too? Today they are always offered when enabled; only
   `extensions.disable` and `--no-tools` turn them off.
@@ -1609,6 +1623,6 @@ commits; its cost was not visible either. C15 was one session of sixteen commits
 either. C16 was one session of eight commits; its cost was not visible either. The C15 PTY follow-up was
 one commit; its cost was not visible either. C17 was one session that paused after seven commits and a second
 that added the pickers, the TUI bridge, and the trust wiring; its cost was not visible either. C18 was one
-session of thirteen commits (plus four regression fixes); its cost was not visible either. C19 was one
-partial session (about twenty commits) covering config, help/version, doctor, docs, the skill, the favicon,
-and release/install; its cost was not visible either.
+session of thirteen commits (plus four regression fixes); its cost was not visible either. C19 was two
+sessions (about twenty-four commits) covering config, help/version, firstrun, doctor, docs, the skill, the
+examples, the favicon, and release/install; its cost was not visible either.

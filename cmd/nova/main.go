@@ -117,6 +117,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		extCommand(stdin, stdout),
 		serveCommand(),
 		actionReview(stdout, exit),
+		doctorCommand(stdout, exit),
 	)
 	applyGroups(root)
 	return root

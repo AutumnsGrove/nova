@@ -101,6 +101,26 @@ func TestHelp_CLH05_Subcommands(t *testing.T) {
 	}
 }
 
+func TestHelp_CLH06_UnknownSuggests(t *testing.T) {
+	code, _, errOut := runCLI(t, "doctr")
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errOut, "doctor") {
+		t.Fatalf("stderr should suggest doctor:\n%s", errOut)
+	}
+}
+
+func TestHelp_CLH07_UnknownNoSuggestion(t *testing.T) {
+	code, _, errOut := runCLI(t, "zzzz")
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if strings.Contains(strings.ToLower(errOut), "did you mean") {
+		t.Fatalf("stderr should not suggest anything:\n%s", errOut)
+	}
+}
+
 // withVersion sets the link-time build variables for one test and restores them.
 func withVersion(t *testing.T, v, c, d string) {
 	t.Helper()

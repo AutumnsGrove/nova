@@ -199,7 +199,9 @@ func TestMarkdown_MDK13_VeryLongMessage(t *testing.T) {
 	start := time.Now()
 	m.append(big)
 	_ = m.String()
-	if elapsed := time.Since(start); elapsed > time.Second {
+	// 3s leaves room for -race overhead; a real regression is an order of
+	// magnitude slower than the ~0.2s this takes without instrumentation.
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
 		t.Fatalf("1 MiB took %s", elapsed)
 	}
 }

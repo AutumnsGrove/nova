@@ -434,7 +434,9 @@ func TestWebfetch_WFT30_HugePageFast(t *testing.T) {
 	body := "<html><body>" + strings.Repeat("<p>paragraph text</p>", 250000) + "</body></html>"
 	start := time.Now()
 	_ = htmlToMarkdown([]byte(body), nil)
-	if time.Since(start) > 2*time.Second {
+	// 5s leaves room for -race and a loaded runner; the real conversion is
+	// well under a second.
+	if time.Since(start) > 5*time.Second {
 		t.Fatalf("conversion took %s", time.Since(start))
 	}
 }

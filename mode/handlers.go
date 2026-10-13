@@ -9,10 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/mode/providers"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
@@ -69,6 +71,50 @@ func (s *Server) handleListModels(cmd proto.Command) proto.Response {
 		})
 	}
 	return okResponse(cmd, out)
+}
+
+// usageInfo is one OpenCode Go meter as the protocol carries it.
+type usageInfo struct {
+	Kind     string  `json:"kind"`
+	Label    string  `json:"label"`
+	Short    string  `json:"short"`
+	Percent  float64 `json:"percent"`
+	UsedUSD  float64 `json:"used_usd"`
+	LimitUSD float64 `json:"limit_usd"`
+	ResetsAt string  `json:"resets_at,omitempty"`
+}
+
+// handleGetUsage fetches the OpenCode Go usage meters for the footer and the
+// /usage view. A missing key is not an error: the response says so.
+func (s *Server) handleGetUsage(cmd proto.Command) proto.Response {
+	key, _, _ := providers.ResolveOpenCodeGoKey(s.cfg, os.Getenv)
+	if key == "" {
+		if stored, err := opencode.LoadKey(opencode.DefaultKeyPath(s.home)); err == nil {
+			key = stored
+		}
+	}
+	if key == "" {
+		return okResponse(cmd, map[string]any{
+			"meters": []usageInfo{}, "footer": "",
+			"error": "Not signed in. Run `nova login opencode-go`.",
+		})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	meters, err := opencode.FetchUsage(ctx, opencode.Config{Server: os.Getenv("OPENCODE_CONSOLE_SERVER")}, key, "")
+	if err != nil {
+		return okResponse(cmd, map[string]any{
+			"meters": []usageInfo{}, "footer": "", "error": opencode.DescribeUsageError(err),
+		})
+	}
+	out := make([]usageInfo, 0, len(meters))
+	for _, m := range meters {
+		out = append(out, usageInfo{
+			Kind: string(m.Kind), Label: m.Label, Short: m.Short, Percent: m.Percent,
+			UsedUSD: m.UsedUSD, LimitUSD: m.LimitUSD, ResetsAt: m.ResetsAt,
+		})
+	}
+	return okResponse(cmd, map[string]any{"meters": out, "footer": opencode.FooterStatus(meters, time.Now())})
 }
 
 // sessionInfo is one session row as the protocol carries it.

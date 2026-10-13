@@ -1,8 +1,8 @@
 ---
 chunk: C20
 title: "OpenCode Go, the second launch provider"
-packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./mode/providers, ./auth/opencode]
-budgets: { ./provider/ssestream: 320, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 440, ./config: 1450, ./auth: 500, ./mode: 1850 }
+packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./mode/providers, ./auth/opencode, ./mode]
+budgets: { ./provider/ssestream: 320, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1450, ./auth: 500, ./mode: 1950 }
 depends: [C02, C03, C12]
 ---
 
@@ -424,6 +424,29 @@ type OpenCodeGoConfig struct {
 | DSC01 | live discovery | fake models and models.dev | overlay registered; cache fresh; baseline kept |
 | OPG21 | session header | any request | `x-opencode-session` sent |
 | OPG22 | default model | `DefaultModel` | `opencode-go/deepseek-v4.1-flash`, in the catalog |
+
+| USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |
+| USG02 | percent clamped | used over limit | percent 100 |
+| USG03 | month reset fallback | no month `resetsAt`, `access.endsAt` set | month resets at `endsAt` |
+| USG04 | missing window skipped | only `fiveHour` | one meter |
+| USG05 | micro-cents to dollars | 100,000,000 micro-cents | $1.00 |
+| USG06 | malformed payload | not JSON | no meters, no panic |
+| USG07 | fetch sends auth | key and org | `Authorization: Bearer` and `x-org-id` |
+| USG08 | unauthorized | 401 | `unauthorized` error |
+| USG09 | http failure | 500 | `http` error naming the status |
+| USG10 | no subscription | no `access` | `no_subscription` error |
+| USG11 | unrecognized | `access` with no meters | `unrecognized` error |
+| USG12 | network failure | server closed | `network` error |
+| USG13 | format USD | 0.15 and 12 | `$0.150` and `$12.00` |
+| USG14 | format percent | 62.5 and 31 | `62.5%` and `31%` |
+| USG15 | format bar | ratio 0.5, width 18 | 9 filled, 9 empty |
+| USG16 | format countdown | future and past | `1h 12m` and `resets now` |
+| USG17 | format meter row | one meter | aligned `label bar pct money countdown` |
+| USG18 | describe error | each kind | friendly text |
+| USG19 | footer status | three meters | `go 5h 62% (1h 12m) · wk 31% · mo 44%` |
+| USG20 | no key | no credential | no request; "not signed in" |
+| USG21 | `get_usage` command | server with a key and a fake Console | meters and the footer string |
+| USG22 | `get_usage` without a key | no credential | empty meters and a sign-in message |
 
 ## Fuzz and property tests
 

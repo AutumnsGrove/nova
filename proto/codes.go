@@ -50,6 +50,7 @@ const (
 	CmdListModels      = "list_models"
 	CmdSessionList     = "session.list"
 	CmdGetExtensions   = "get_extensions"
+	CmdGetUsage        = "get_usage"
 	CmdRunCommand      = "run_command"
 	CmdBash            = "bash"
 	CmdShutdown        = "shutdown"

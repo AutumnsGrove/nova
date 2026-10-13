@@ -16,6 +16,9 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
+	"image"
+	"image/color"
+	"image/png"
 	"math"
 	"os"
 	"path/filepath"
@@ -374,7 +377,17 @@ func render(g *grid, p palette) string {
 func main() {
 	out := flag.String("out", "assets/logo", "output directory")
 	goFile := flag.String("go", "", "write the full mark's cells as a Go file at this path")
+	favicon := flag.Bool("favicon", false, "write the favicon SVG and PNGs")
 	flag.Parse()
+
+	if *favicon {
+		if err := writeFavicons(*out); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Printf("favicon: svg plus PNGs at 16, 32, 180, 512 in %s\n", *out)
+		return
+	}
 
 	full, min := buildFull(), buildMin()
 	if *goFile != "" {
@@ -429,4 +442,77 @@ func writeGo(path string, g *grid) error {
 		return fmt.Errorf("format generated file: %w", err)
 	}
 	return os.WriteFile(path, src, 0o644)
+}
+
+// ---------- favicon ----------
+
+// buildFavicon is the 16 px mark: a short-armed star plus one warm companion
+// cell, simplified so it still reads as a nova at favicon sizes.
+func buildFavicon() *grid {
+	g := newGrid(7)
+	g.starMin(0, 0, 6, roleSpark, roleCore)
+	g.put(6, 4, 1, roleWarm, false)
+	return g
+}
+
+// faviconColors are the four roles at full opacity, the tile colour, and the
+// PNG background for the large sizes.
+var faviconColors = map[role]color.NRGBA{
+	roleSpark: {R: 0x62, G: 0xc6, B: 0xff, A: 0xff},
+	roleInk:   {R: 0xf2, G: 0xf6, B: 0xfb, A: 0xff},
+	roleCore:  {R: 0xff, G: 0xf4, B: 0xcf, A: 0xff},
+	roleWarm:  {R: 0xff, G: 0x9a, B: 0x5c, A: 0xff},
+}
+
+var faviconTile = color.NRGBA{R: 0x0b, G: 0x64, B: 0xc0, A: 0xff}
+
+// writeFavicons writes the favicon SVG and the four PNG sizes.
+func writeFavicons(outDir string) error {
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return fmt.Errorf("favicon: %w", err)
+	}
+	g := buildFavicon()
+	svg := render(g, palette{fill: [numRoles]string{"#62c6ff", "#f2f6fb", "#fff4cf", "#ff9a5c"}})
+	if err := os.WriteFile(filepath.Join(outDir, "nova-favicon.svg"), []byte(svg), 0o644); err != nil {
+		return fmt.Errorf("favicon svg: %w", err)
+	}
+	for _, size := range []int{16, 32, 180, 512} {
+		img := rasterize(g, size, size >= 180)
+		path := filepath.Join(outDir, fmt.Sprintf("nova-favicon-%d.png", size))
+		f, err := os.Create(path)
+		if err != nil {
+			return fmt.Errorf("favicon png %d: %w", size, err)
+		}
+		if err := png.Encode(f, img); err != nil {
+			f.Close()
+			return fmt.Errorf("favicon png %d: %w", size, err)
+		}
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("favicon png %d: %w", size, err)
+		}
+	}
+	return nil
+}
+
+// rasterize samples the grid with nearest neighbour, one output pixel per grid
+// cell, so there is no anti-aliasing. Large sizes sit on the tile colour.
+func rasterize(g *grid, size int, tile bool) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, size, size))
+	span := g.half*2 + 1
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			i := x*span/size - g.half
+			j := y*span/size - g.half
+			c, ok := g.m[fmt.Sprintf("%d,%d", i, j)]
+			var col color.NRGBA
+			switch {
+			case ok:
+				col = faviconColors[c.r]
+			case tile:
+				col = faviconTile
+			}
+			img.SetNRGBA(x, y, col)
+		}
+	}
+	return img
 }

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 86 86" width="512" height="512">
+<title>Nova</title>
+<g fill="#62c6ff">
+<rect x="45.6" y="40.6" width="4.75" height="4.75" opacity="1.00"/>
+<rect x="35.6" y="40.6" width="4.75" height="4.75" opacity="1.00"/>
+<rect x="40.6" y="45.6" width="4.75" height="4.75" opacity="1.00"/>
+<rect x="40.6" y="35.6" width="4.75" height="4.75" opacity="1.00"/>
+<rect x="50.6" y="40.6" width="4.75" height="4.75" opacity="0.80"/>
+<rect x="30.6" y="40.6" width="4.75" height="4.75" opacity="0.80"/>
+<rect x="40.6" y="50.6" width="4.75" height="4.75" opacity="0.80"/>
+<rect x="40.6" y="30.6" width="4.75" height="4.75" opacity="0.80"/>
+<rect x="55.6" y="40.6" width="4.75" height="4.75" opacity="0.60"/>
+<rect x="25.6" y="40.6" width="4.75" height="4.75" opacity="0.60"/>
+<rect x="40.6" y="55.6" width="4.75" height="4.75" opacity="0.60"/>
+<rect x="40.6" y="25.6" width="4.75" height="4.75" opacity="0.60"/>
+<rect x="60.6" y="40.6" width="4.75" height="4.75" opacity="0.42"/>
+<rect x="20.6" y="40.6" width="4.75" height="4.75" opacity="0.42"/>
+<rect x="40.6" y="60.6" width="4.75" height="4.75" opacity="0.42"/>
+<rect x="40.6" y="20.6" width="4.75" height="4.75" opacity="0.42"/>
+<rect x="65.6" y="40.6" width="4.75" height="4.75" opacity="0.25"/>
+<rect x="15.6" y="40.6" width="4.75" height="4.75" opacity="0.25"/>
+<rect x="40.6" y="65.6" width="4.75" height="4.75" opacity="0.25"/>
+<rect x="40.6" y="15.6" width="4.75" height="4.75" opacity="0.25"/>
+<rect x="70.6" y="40.6" width="4.75" height="4.75" opacity="0.11"/>
+<rect x="10.6" y="40.6" width="4.75" height="4.75" opacity="0.11"/>
+<rect x="40.6" y="70.6" width="4.75" height="4.75" opacity="0.11"/>
+<rect x="40.6" y="10.6" width="4.75" height="4.75" opacity="0.11"/>
+<rect x="45.6" y="45.6" width="4.75" height="4.75" opacity="0.62"/>
+<rect x="35.6" y="45.6" width="4.75" height="4.75" opacity="0.62"/>
+<rect x="45.6" y="35.6" width="4.75" height="4.75" opacity="0.62"/>
+<rect x="35.6" y="35.6" width="4.75" height="4.75" opacity="0.62"/>
+<rect x="50.6" y="50.6" width="4.75" height="4.75" opacity="0.32"/>
+<rect x="30.6" y="50.6" width="4.75" height="4.75" opacity="0.32"/>
+<rect x="50.6" y="30.6" width="4.75" height="4.75" opacity="0.32"/>
+<rect x="30.6" y="30.6" width="4.75" height="4.75" opacity="0.32"/>
+</g>
+<g fill="#fff4cf">
+<rect x="40.6" y="40.6" width="4.75" height="4.75" opacity="1.00"/>
+</g>
+<g fill="#ff9a5c">
+<rect x="70.6" y="60.6" width="4.75" height="4.75" opacity="1.00"/>
+</g>
+</svg>

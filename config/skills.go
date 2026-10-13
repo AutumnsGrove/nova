@@ -87,6 +87,32 @@ func LoadSkills(dirs []string) ([]Skill, []Warning) {
 	return skills, warnings
 }
 
+// ParseSkill validates one SKILL.md and returns the skill. A non-empty reason
+// means it is skipped. It is exported so the built-in skills, embedded outside
+// this package, parse exactly like on-disk ones.
+func ParseSkill(dirName, dir, content string) (Skill, string) {
+	return parseSkill(dirName, dir, content)
+}
+
+// LoadSkillsWithBuiltins loads directory skills and then appends the built-in
+// skills, which have the lowest precedence: a user or project skill of the same
+// name keeps its place and the built-in is dropped.
+func LoadSkillsWithBuiltins(dirs []string, builtins []Skill) ([]Skill, []Warning) {
+	skills, warnings := LoadSkills(dirs)
+	seen := make(map[string]bool, len(skills)+len(builtins))
+	for _, s := range skills {
+		seen[s.Name] = true
+	}
+	for _, b := range builtins {
+		if seen[b.Name] {
+			continue
+		}
+		seen[b.Name] = true
+		skills = append(skills, b)
+	}
+	return skills, warnings
+}
+
 // parseSkill validates one SKILL.md. A non-empty reason means it is skipped.
 func parseSkill(dirName, dir, content string) (Skill, string) {
 	doc, body, present, err := parseFrontMatter(content)

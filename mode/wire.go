@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/auth"
+	bundledskills "github.com/AutumnsGrove/nova/bundled/skills"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/provider"
@@ -116,10 +117,10 @@ func buildSystemPrompt(cfg *config.Config, cwd, home string, registry *tool.Regi
 	trust := config.NewTrustStore(trustPath(home))
 	contextFiles, _ := config.LoadContext(cwd, home, config.ContextOptions{Trusted: trust.IsTrusted})
 	root := findRoot(cwd)
-	skills, _ := config.LoadSkills([]string{
+	skills, _ := config.LoadSkillsWithBuiltins([]string{
 		config.SkillsDir(config.ProjectConfigDir(root)),
 		config.SkillsDir(config.UserConfigDir(home)),
-	})
+	}, bundledskills.Builtin())
 	return config.BuildSystemPrompt(config.PromptInput{
 		Base:    basePrompt,
 		Context: contextFiles,

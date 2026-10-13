@@ -96,13 +96,14 @@ test. Built over nine green commits. **Not done:** the usage meters (`/usage` + 
 - `config`/`auth` — `provider.opencode_go.{api_key,base_url}` and `auth.ResolveNamed`.
 - `testkit.Server` now also plays `/responses` and `/messages`.
 
-**Satisfied matrix rows:** all of them: RSP01-19; MSG01-17; OPG01-22; TMO01-11; LGN01-07; DSC01.
+**Satisfied matrix rows:** all of them: RSP01-19; MSG01-17; OPG01-22; TMO01-11; LGN01-07; DSC01; USG01-22.
 Fuzz/property: `FuzzSSEStream`, `FuzzResponsesStream`/`FuzzMessagesStream` (see gotchas).
 
 **Unsatisfied:**
-- **TUI usage** — the `/usage` overlay and the footer `go 5h .. wk .. mo ..` widget are not built. The data
-  layer (`auth/opencode/usage.go`, USG01 to USG20) and the `get_usage` command (USG21 to USG22) are done;
-  only the `tui/ui` rendering and the periodic `ui.status` publish remain.
+- **TUI usage** — the `/usage` overlay and the footer `go 5h .. wk .. mo ..` widget are not built. USG23
+  to USG26 are the rows; the data layer (`auth/opencode/usage.go`, USG01 to USG20) and the `get_usage`
+  command (USG21 to USG22) are done and tested. Only the `tui/ui` rendering and the periodic `ui.status`
+  publish remain, so `accept C20` is red on USG23 to USG26 until they land.
 - `FuzzResponsesStream` and `FuzzMessagesStream` (named in the spec) are not written; only `FuzzSSEStream`
   exists. Add them over `newTestStream`-style helpers.
 

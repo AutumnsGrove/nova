@@ -447,6 +447,10 @@ type OpenCodeGoConfig struct {
 | USG20 | no key | no credential | no request; "not signed in" |
 | USG21 | `get_usage` command | server with a key and a fake Console | meters and the footer string |
 | USG22 | `get_usage` without a key | no credential | empty meters and a sign-in message |
+| USG23 | `/usage` overlay | `get_usage` returns meters | one row per meter; esc closes |
+| USG24 | footer widget | session start, then every 5 min | `ui.status` under `opencode-go` with the footer |
+| USG25 | refresh cadence | fake clock advances 5 min | exactly one refetch |
+| USG26 | refresh without a key | no credential | no `ui.status` published, no request |
 
 ## Fuzz and property tests
 

@@ -188,7 +188,7 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 				return 0, err
 			}
 		}
-	} else if requiresKey(o.prompt, o.mode) && !mode.HasProviderKey(home) {
+	} else if requiresKey(o.mode) && !mode.HasProviderKey(home) {
 		fmt.Fprintln(o.stderr, "no API key: run `nova login` or set OPENROUTER_API_KEY")
 		return 1, nil
 	}
@@ -222,6 +222,10 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 		}
 		if strings.TrimSpace(text) == "" {
 			return 0, fmt.Errorf("nova: empty prompt")
+		}
+		if !mode.HasProviderKey(home) {
+			fmt.Fprintln(o.stderr, "no API key: run `nova login` or set OPENROUTER_API_KEY")
+			return 1, nil
 		}
 		return mode.RunPrint(sigCtx, s, text, o.stdout, o.stderr), nil
 	default:
@@ -263,12 +267,11 @@ func buildPrompt(flag string, stdin io.Reader, tty bool) (string, error) {
 	return flag, nil
 }
 
-// requiresKey reports whether a non-TUI invocation needs a credential before
-// it can do anything: print, json, rpc, and serve all talk to the provider.
-func requiresKey(prompt, mode string) bool {
-	if prompt != "" {
-		return true
-	}
+// requiresKey reports whether a non-TUI mode needs a credential before it can
+// do anything: print, json, rpc, and serve all talk to the provider. The
+// default print mode (an empty --mode with a prompt) is checked after the
+// prompt is read, so an empty prompt is still a usage error.
+func requiresKey(mode string) bool {
 	switch mode {
 	case "print", "json", "rpc", "serve":
 		return true

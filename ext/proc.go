@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/AutumnsGrove/nova/agent"
 )
 
 // Instance states.
@@ -51,6 +53,15 @@ type instance struct {
 	registerCh chan struct{}
 	crashCh    chan struct{}
 	doneCh     chan struct{}
+
+	// Bundled extensions run in-process and contribute Go hooks and
+	// observers rather than protocol frames.
+	bundled     Bundled
+	env         *Env
+	envHooks    agent.Hooks
+	bundleHooks map[string]bool
+	cmdRun      map[string]InProcCommand
+	events      []eventObserver
 }
 
 // registration is what one instance currently contributes.

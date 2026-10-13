@@ -9,9 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
+	"github.com/AutumnsGrove/nova/usage"
 )
 
 // defaultCompleteMax caps nested model calls per extension per run.
@@ -70,6 +72,14 @@ type HostOptions struct {
 	Run         CommandRunner
 	Clock       Clock
 	Log         func(level, msg string)
+
+	// Config, Ledger, Extra, Spawn, and HasUI are handed to bundled
+	// extensions through Env. They may be nil.
+	Config *config.Config
+	Ledger *usage.Ledger
+	Extra  map[string]any
+	Spawn  func(ctx context.Context, r SpawnRequest) (*SpawnResult, error)
+	HasUI  func(capability string) bool
 }
 
 // RegisterTool is a tool an extension declares in register.
@@ -115,6 +125,7 @@ type Host struct {
 	hookErrAt      map[string]time.Time
 	entryKinds     map[string][]string
 	manifestHashes map[string]string
+	bundled        []Bundled
 	started        bool
 }
 
@@ -149,8 +160,18 @@ func NewHost(opt HostOptions) *Host {
 func (h *Host) Registry() *tool.Registry { return h.reg }
 
 // Start loads and starts every enabled extension. Errors are per extension.
+// Bundled extensions start first, so their tool names are reserved before a
+// third-party extension can claim them.
 func (h *Host) Start(ctx context.Context) []error {
 	var errs []error
+	h.mu.Lock()
+	bundled := append([]Bundled(nil), h.bundled...)
+	h.mu.Unlock()
+	for _, b := range bundled {
+		if err := h.startBundled(b); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	for _, dir := range h.opt.Dirs {
 		m, err := LoadManifest(dir)
 		if err != nil {
@@ -473,6 +494,16 @@ func (h *Host) RunCommand(ctx context.Context, name, args string) (string, error
 	h.mu.Unlock()
 	if target == nil {
 		return "", fmt.Errorf("ext: no extension command named %q", name)
+	}
+	target.mu.Lock()
+	bundled := target.bundled
+	cmd, hasCmd := target.cmdRun[name]
+	target.mu.Unlock()
+	if bundled != nil {
+		if !hasCmd {
+			return "", fmt.Errorf("ext: no extension command named %q", name)
+		}
+		return h.runBundledCommand(target, cmd, ctx, args)
 	}
 	reply, err := target.conn.request(ctx, &outFrame{Type: "command", Name: name, Args: args}, defaultToolCallTimeout)
 	if err != nil {

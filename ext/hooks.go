@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -92,12 +93,40 @@ func (inst *instance) declaresHook(hook string) bool {
 	if inst.state != stateRunning {
 		return false
 	}
+	if inst.bundleHooks[hook] {
+		return true
+	}
 	for _, name := range inst.reg.hooks {
 		if name == hook {
 			return true
 		}
 	}
 	return false
+}
+
+// bundleHook snapshots a bundled instance's hooks. ok is false for a subprocess
+// extension.
+func (inst *instance) bundleHook() (agent.Hooks, bool) {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	if inst.bundled == nil {
+		return agent.Hooks{}, false
+	}
+	return inst.envHooks, true
+}
+
+// callBundledHook runs a bundled hook with panic recovery. It reports false
+// when the hook panicked, so the caller can ignore a zero result.
+func (h *Host) callBundledHook(inst *instance, hook string, fn func()) (ok bool) {
+	ok = true
+	defer func() {
+		if rec := recover(); rec != nil {
+			h.reportHookErr(inst, hook, fmt.Errorf("panic: %v", rec))
+			ok = false
+		}
+	}()
+	fn()
+	return ok
 }
 
 // callHook sends one protocol hook and decodes its result. It reports false on
@@ -154,6 +183,25 @@ func (h *Host) hookToolCall(ctx context.Context, c agent.ToolCall) *agent.CallDe
 	args := c.Arguments
 	changed := false
 	for _, inst := range h.hookInstances("tool_call") {
+		if fns, bundled := inst.bundleHook(); bundled {
+			if fns.ToolCall == nil {
+				continue
+			}
+			var dec *agent.CallDecision
+			if !h.callBundledHook(inst, "tool_call", func() {
+				dec = fns.ToolCall(ctx, agent.ToolCall{ID: c.ID, Name: c.Name, Arguments: args})
+			}) || dec == nil {
+				continue
+			}
+			if dec.Block {
+				return &agent.CallDecision{Block: true, Reason: dec.Reason}
+			}
+			if len(dec.Arguments) > 0 {
+				args = dec.Arguments
+				changed = true
+			}
+			continue
+		}
 		var res toolCallResult
 		if !h.callHook(ctx, inst, "tool_call", toolCallEvent{Tool: c.Name, Arguments: args, CallID: c.ID}, &res) {
 			continue
@@ -182,6 +230,18 @@ func (h *Host) hookToolCall(ctx context.Context, c agent.ToolCall) *agent.CallDe
 func (h *Host) hookToolResult(ctx context.Context, c agent.ToolCall, r tool.Result) tool.Result {
 	out := r
 	for _, inst := range h.hookInstances("tool_result") {
+		if fns, bundled := inst.bundleHook(); bundled {
+			if fns.ToolResult == nil {
+				continue
+			}
+			var next tool.Result
+			if h.callBundledHook(inst, "tool_result", func() {
+				next = fns.ToolResult(ctx, c, out)
+			}) {
+				out = next
+			}
+			continue
+		}
 		event := hookWire{Tool: c.Name, Result: &toolResult{Content: out.Content, IsError: out.IsError, Details: out.Details}}
 		var res struct {
 			Result *toolResult `json:"result"`
@@ -198,6 +258,18 @@ func (h *Host) hookToolResult(ctx context.Context, c agent.ToolCall, r tool.Resu
 func (h *Host) hookTransformContext(ctx context.Context, msgs []message.Message) []message.Message {
 	out := msgs
 	for _, inst := range h.hookInstances("transform_context") {
+		if fns, bundled := inst.bundleHook(); bundled {
+			if fns.TransformContext == nil {
+				continue
+			}
+			var next []message.Message
+			if h.callBundledHook(inst, "transform_context", func() {
+				next = fns.TransformContext(ctx, out)
+			}) && next != nil {
+				out = next
+			}
+			continue
+		}
 		event := hookWire{Messages: out}
 		var res hookWire
 		if !h.callHook(ctx, inst, "transform_context", event, &res) || res.Messages == nil {
@@ -212,6 +284,18 @@ func (h *Host) hookTransformContext(ctx context.Context, msgs []message.Message)
 func (h *Host) hookBeforeProviderRequest(ctx context.Context, req *provider.Request) {
 	current := *req
 	for _, inst := range h.hookInstances("before_provider_request") {
+		if fns, bundled := inst.bundleHook(); bundled {
+			if fns.BeforeProviderRequest == nil {
+				continue
+			}
+			local := current
+			if h.callBundledHook(inst, "before_provider_request", func() {
+				fns.BeforeProviderRequest(ctx, &local)
+			}) {
+				current = local
+			}
+			continue
+		}
 		event := hookWire{Request: &current}
 		var res hookWire
 		if !h.callHook(ctx, inst, "before_provider_request", event, &res) || res.Request == nil {
@@ -226,6 +310,18 @@ func (h *Host) hookBeforeProviderRequest(ctx context.Context, req *provider.Requ
 func (h *Host) hookMessageEnd(ctx context.Context, m message.Message) message.Message {
 	out := m
 	for _, inst := range h.hookInstances("message_end") {
+		if fns, bundled := inst.bundleHook(); bundled {
+			if fns.MessageEnd == nil {
+				continue
+			}
+			var next message.Message
+			if h.callBundledHook(inst, "message_end", func() {
+				next = fns.MessageEnd(ctx, out)
+			}) {
+				out = next
+			}
+			continue
+		}
 		event := hookWire{Message: &out}
 		var res hookWire
 		if !h.callHook(ctx, inst, "message_end", event, &res) || res.Message == nil {
@@ -244,6 +340,23 @@ func (h *Host) hookTurnEnd(ctx context.Context, t agent.Turn) agent.TurnDecision
 		results = append(results, toolResult{Content: r.Content, IsError: r.IsError, Details: r.Details})
 	}
 	for _, inst := range h.hookInstances("turn_end") {
+		if fns, bundled := inst.bundleHook(); bundled {
+			if fns.TurnEnd == nil {
+				continue
+			}
+			var res agent.TurnDecision
+			if !h.callBundledHook(inst, "turn_end", func() { res = fns.TurnEnd(ctx, t) }) {
+				continue
+			}
+			if res.End {
+				decision.End = true
+			}
+			if res.Continue {
+				decision.Continue = true
+			}
+			decision.Inject = append(decision.Inject, res.Inject...)
+			continue
+		}
 		event := hookWire{Turn: t.Index, Message: &t.Message, Results: results}
 		var res hookWire
 		if !h.callHook(ctx, inst, "turn_end", event, &res) {
@@ -263,6 +376,13 @@ func (h *Host) hookTurnEnd(ctx context.Context, t agent.Turn) agent.TurnDecision
 // hookAgentEnd runs every agent_end observer. Observers cannot change a run.
 func (h *Host) hookAgentEnd(ctx context.Context, r *agent.Result) {
 	for _, inst := range h.hookInstances("agent_end") {
+		if fns, bundled := inst.bundleHook(); bundled {
+			if fns.AgentEnd == nil {
+				continue
+			}
+			h.callBundledHook(inst, "agent_end", func() { fns.AgentEnd(ctx, r) })
+			continue
+		}
 		event := map[string]any{"reason": r.Reason, "turns": r.Turns, "answer": r.Answer}
 		_ = h.callHook(ctx, inst, "agent_end", event, &map[string]any{})
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AutumnsGrove/nova/bundled/subagent"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/proto"
@@ -19,6 +20,10 @@ import (
 // buildExtensionHost constructs the host that loads subprocess extensions. It
 // is not started here; New starts it in the background.
 func (s *Server) buildExtensionHost() *ext.Host {
+	extra := map[string]any{"tools": s.tools}
+	for k, v := range s.opt.Extra {
+		extra[k] = v
+	}
 	return ext.NewHost(ext.HostOptions{
 		Dirs:        extensionDirs(s.cfg, s.cwd, s.home),
 		Disabled:    s.cfg.Extensions.Disable,
@@ -35,7 +40,36 @@ func (s *Server) buildExtensionHost() *ext.Host {
 		Env:         os.Environ,
 		ScrubEnv:    s.cfg.Extensions.ScrubEnv,
 		PassEnv:     s.cfg.Extensions.PassEnv,
+		Config:      s.cfg,
+		Ledger:      s.ledger,
+		Extra:       extra,
+		Spawn:       s.spawn,
+		HasUI:       s.supportsUI,
 	})
+}
+
+// spawn runs a child agent loop for the bundled subagent extension. The child
+// inherits the permission policy, the approval path, and the parent's
+// tool_call and tool_result hooks.
+func (s *Server) spawn(ctx context.Context, r ext.SpawnRequest) (*ext.SpawnResult, error) {
+	hooks := s.ext.Hooks()
+	sp := &subagent.Spawner{
+		Provider:   s.prov,
+		Model:      s.model,
+		Registry:   s.tools,
+		Policy:     &s.policy,
+		Ask:        s.ask,
+		ToolCall:   hooks.ToolCall,
+		ToolResult: hooks.ToolResult,
+		WorkDir:    s.cwd,
+		Roots:      []string{s.cwd},
+		SessionID:  s.sessionID(),
+		Complete:   s.complete,
+		Ledger:     s.ledger,
+		MaxDepth:   s.cfg.Subagent.MaxDepth,
+		Emit:       s.emit,
+	}
+	return sp.Spawn(ctx, r)
 }
 
 // startExtensions starts the host in the background and reports a per-extension

@@ -25,6 +25,7 @@ func newExtServer(t *testing.T, dirs []string) *Server {
 	t.Helper()
 	cfg := config.Defaults()
 	cfg.Extensions.Dirs = dirs
+	cfg.Extensions.Disable = bundledNames()
 	s, err := New(Options{Config: &cfg, CWD: t.TempDir(), Home: t.TempDir(), NoSession: true})
 	if err != nil {
 		t.Fatal(err)

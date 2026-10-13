@@ -14,6 +14,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/auth"
+	"github.com/AutumnsGrove/nova/bundled"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/ext"
@@ -24,6 +25,7 @@ import (
 	"github.com/AutumnsGrove/nova/provider/openrouter"
 	"github.com/AutumnsGrove/nova/session"
 	"github.com/AutumnsGrove/nova/tool"
+	"github.com/AutumnsGrove/nova/usage"
 )
 
 // Clock is the time seam, so tests can drive time with a fake clock.
@@ -69,6 +71,9 @@ type Options struct {
 	// non-empty SystemPrompt replaces the assembled prompt.
 	ExtraTools   []tool.Tool
 	SystemPrompt string
+	// Extra is passed to bundled extensions through ext.Env.Extra. The TUI
+	// puts its widget registry under "tui".
+	Extra map[string]any
 }
 
 // subscriber is one event consumer.
@@ -97,6 +102,7 @@ type Server struct {
 	compactor *compaction.Compactor
 	system    string
 	ext       *ext.Host
+	ledger    *usage.Ledger
 
 	mu      sync.Mutex
 	subs    map[int64]*subscriber
@@ -158,6 +164,7 @@ func New(opt Options) (*Server, error) {
 		think:     cfg.Thinking,
 		limit:     cfg.ContextLimit,
 		uiPending: map[string]chan proto.UIResponse{},
+		ledger:    usage.NewLedger(provider.GetModel),
 	}
 	s.prov = opt.Provider
 	if s.prov == nil {
@@ -211,6 +218,9 @@ func New(opt Options) (*Server, error) {
 	}
 
 	s.ext = s.buildExtensionHost()
+	for _, b := range bundled.Enabled(cfg) {
+		_ = s.ext.AddBundled(b)
+	}
 	extHooks := s.ext.Hooks()
 
 	s.agent = agent.New(agent.Config{

@@ -24,6 +24,10 @@ func writeFile(path, content string) error {
 }
 
 // testServer builds a server with a scripted provider and a temp session.
+// bundledNames lists the bundled extensions, so an older test can keep its
+// server free of them and stay deterministic.
+func bundledNames() []string { return []string{"tasks", "ask", "plan", "subagent", "webfetch"} }
+
 func testServer(t *testing.T, turns ...testkit.Turn) (*Server, *testkit.Provider) {
 	t.Helper()
 	cwd := t.TempDir()
@@ -33,6 +37,7 @@ func testServer(t *testing.T, turns ...testkit.Turn) (*Server, *testkit.Provider
 	cfg.Model = "test/model"
 	cfg.Tools.Active = []string{"read"}
 	cfg.Compaction.Enabled = boolPtr(false)
+	cfg.Extensions.Disable = bundledNames()
 	s, err := New(Options{
 		Config:   &cfg,
 		CWD:      cwd,

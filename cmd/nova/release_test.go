@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -181,8 +183,17 @@ type fakeRelease struct {
 	os, arch  string
 	archive   []byte
 	checksums string
-	requests  []string
-	fail      bool
+	fail      atomic.Bool
+
+	mu       sync.Mutex
+	requests []string
+}
+
+// paths returns a copy of the request paths, safe to read after a run.
+func (fr *fakeRelease) paths() []string {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	return append([]string(nil), fr.requests...)
 }
 
 func newFakeRelease(t *testing.T, version string) *fakeRelease {
@@ -193,14 +204,16 @@ func newFakeRelease(t *testing.T, version string) *fakeRelease {
 	fr.checksums = fmt.Sprintf("%s  nova_%s_%s_%s.tar.gz\n%s  nova-min_%s_%s_%s.tar.gz\n",
 		sum, version, fr.os, fr.arch, sum, version, fr.os, fr.arch)
 	fr.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fr.mu.Lock()
 		fr.requests = append(fr.requests, r.URL.Path)
+		fr.mu.Unlock()
 		switch {
 		case r.URL.Path == "/releases/latest":
 			fmt.Fprintf(w, `{"tag_name":%q}`, fr.version)
 		case strings.HasSuffix(r.URL.Path, "checksums.txt"):
 			fmt.Fprint(w, fr.checksums)
 		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
-			if fr.fail {
+			if fr.fail.Load() {
 				http.Error(w, "boom", http.StatusInternalServerError)
 				return
 			}
@@ -325,8 +338,8 @@ func TestInstall_ISH04_VersionOverride(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("expected a failure for a missing version:\n%s", out)
 	}
-	if !containsPath(fr.requests, "/releases/download/v9.9.9/") {
-		t.Fatalf("did not request v9.9.9: %v", fr.requests)
+	if !containsPath(fr.paths(), "/releases/download/v9.9.9/") {
+		t.Fatalf("did not request v9.9.9: %v", fr.paths())
 	}
 }
 
@@ -336,8 +349,8 @@ func TestInstall_ISH05_MinFlavour(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if !containsPath(fr.requests, "nova-min_v0.1.0_"+fr.os+"_"+fr.arch+".tar.gz") {
-		t.Fatalf("did not request the min archive: %v", fr.requests)
+	if !containsPath(fr.paths(), "nova-min_v0.1.0_"+fr.os+"_"+fr.arch+".tar.gz") {
+		t.Fatalf("did not request the min archive: %v", fr.paths())
 	}
 }
 
@@ -411,7 +424,7 @@ func TestInstall_ISH10_TempCleaned(t *testing.T) {
 
 func TestInstall_ISH11_DownloadFailure(t *testing.T) {
 	fr := newFakeRelease(t, "v0.1.0")
-	fr.fail = true
+	fr.fail.Store(true)
 	installDir := t.TempDir()
 	_, code := runInstall(t, fr, installDir, t.TempDir())
 	if code == 0 {

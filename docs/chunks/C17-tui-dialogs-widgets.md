@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./tui/ui, ./cmd/nova]
-budgets: { ./tui/dialog: 1650, ./tui/widget: 300, ./tui/trust: 150, ./mode: 1850, ./tui/ui: 1900, ./cmd/nova: 720 }
+budgets: { ./tui/dialog: 1650, ./tui/widget: 300, ./tui/trust: 150, ./mode: 1850, ./tui/ui: 1900, ./cmd/nova: 1100 }
 depends: [C15, C13]
 ---
 

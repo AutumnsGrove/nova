@@ -227,7 +227,10 @@ func TestSupervise_SUP10_RestartLimit(t *testing.T) {
 		},
 	})
 	h.Start(context.Background())
-	for i := 0; i < 40; i++ {
+	// Pump the fake clock while the real process crashes and restarts. A fixed
+	// iteration count is racy under -race; wait for the disabled state instead.
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) && stateOf(h, "echo") != stateDisabled {
 		clk.Advance(time.Second)
 		time.Sleep(5 * time.Millisecond)
 	}

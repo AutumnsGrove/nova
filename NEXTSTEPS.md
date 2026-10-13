@@ -128,6 +128,8 @@ Fuzz/property: `FuzzSSEStream`, `FuzzResponsesStream`/`FuzzMessagesStream` (see 
   it yet, so a real session id still needs threading through from the server.
 - `auth/opencode`'s device flow hits an undocumented Console API; the parser is defensive and the endpoint
   can change.
+- `ext/supervise_test.go`'s SUP10 was flaky under `-race` (a fixed 40-iteration clock pump); it now waits
+  for the disabled state on a real deadline. Unrelated to C20 but needed for `make ci` to pass.
 
 **One command:** `go run ./scripts/accept C20`.
 

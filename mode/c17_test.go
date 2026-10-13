@@ -244,3 +244,40 @@ func writeSession(t *testing.T, path, name string) {
 		t.Fatal(err)
 	}
 }
+
+// TestUI_UXB09_ExtensionFormRoundTrip drives a form request from an extension
+// bridge through a real server and a client, and checks the answers come back.
+func TestUI_UXB09_ExtensionFormRoundTrip(t *testing.T) {
+	s, _ := testServer(t)
+	c := NewPipe(s, "ui.form")
+	defer c.Close()
+
+	req := proto.UIRequest{
+		Type: proto.FrameUIRequest, ID: "form-1", Method: "form", Title: "Ask",
+		Questions: []proto.UIQuestion{{ID: "q1", Prompt: "Say something", Kind: "text"}},
+	}
+	type result struct {
+		resp proto.UIResponse
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		resp, err := uiBridge{s}.Request(context.Background(), req)
+		done <- result{resp, err}
+	}()
+
+	got := <-c.Requests()
+	if got.ID != "form-1" || got.Method != "form" {
+		t.Fatalf("extension request = %+v", got)
+	}
+	c.Answer(proto.UIResponse{Type: proto.FrameUIResponse, ID: got.ID, OK: true,
+		Answers: []proto.UIAnswer{{ID: "q1", Value: "hello"}}})
+
+	r := <-done
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	if len(r.resp.Answers) != 1 || r.resp.Answers[0].ID != "q1" || r.resp.Answers[0].Value != "hello" {
+		t.Fatalf("extension got answers = %+v", r.resp.Answers)
+	}
+}

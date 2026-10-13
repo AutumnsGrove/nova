@@ -28,6 +28,13 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	if m.quitArmed && key != "ctrl+c" {
 		m.quitArmed = false
 	}
+	if m.overlay.Len() > 0 {
+		r, d := m.overlay.HandleKey(msg)
+		if r.Done {
+			return m.finishDialog(d, m.popIntent(), r)
+		}
+		return nil
+	}
 	if m.completion.active {
 		switch key {
 		case "up":
@@ -61,7 +68,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			return m.abort()
 		}
 		if m.quitArmed && m.clock.Now().Before(m.quitAt) {
-			return tea.Quit
+			return tea.Batch(m.cancelAllDialogs(), tea.Quit)
 		}
 		m.quitArmed = true
 		m.quitAt = m.clock.Now().Add(quitWindow)
@@ -97,14 +104,22 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+o":
 		m.toggleExpanded()
 		return nil
-	case "ctrl+l", "ctrl+t", "ctrl+r":
-		m.notice = "not available yet"
-		return nil
+	case "?":
+		if strings.TrimSpace(m.editor.Value()) == "" {
+			return m.openHelp()
+		}
+	case "ctrl+l":
+		return m.requestModelPicker()
+	case "ctrl+r":
+		return m.requestSessionList()
+	case "ctrl+t":
+		return m.cycleThinking()
 	case "ctrl+g":
 		return m.openEditor()
 	}
 	var cmd tea.Cmd
 	m.editor, cmd = m.editor.Update(msg)
+	m.lastInput = m.clock.Now()
 	m.recompute()
 	return tea.Batch(cmd, m.afterEditorChange())
 }

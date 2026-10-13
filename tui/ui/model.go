@@ -21,9 +21,11 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/chat"
 	"github.com/AutumnsGrove/nova/tui/client"
+	"github.com/AutumnsGrove/nova/tui/dialog"
 	"github.com/AutumnsGrove/nova/tui/layout"
 	"github.com/AutumnsGrove/nova/tui/list"
 	"github.com/AutumnsGrove/nova/tui/styles"
+	"github.com/AutumnsGrove/nova/tui/widget"
 )
 
 // Clock is the time seam. After returns a command that yields a tick message.
@@ -117,6 +119,17 @@ type Model struct {
 	notice     string
 	panicValue any
 
+	// The dialog bridge and the extension UI slots.
+	overlay    *dialog.Overlay
+	widgets    *widget.Store
+	queuedReqs []proto.UIRequest
+	answered   map[string]bool
+	caps       map[string]bool
+	intents    []string
+	lastInput  time.Time
+	title      string
+	await      string
+
 	// rendered is the last layout, recomputed on resize.
 	layout layout.Regions
 }
@@ -165,6 +178,10 @@ func New(opt Options) *Model {
 		list:       list.New(),
 		editor:     ed,
 		pasted:     map[string]string{},
+		overlay:    dialog.NewOverlay(),
+		widgets:    widget.NewStore(),
+		answered:   map[string]bool{},
+		caps:       capabilitySet(capabilities),
 	}
 	m.width, m.height = opt.Width, opt.Height
 	m.editor.Focus()
@@ -238,16 +255,27 @@ func (m *Model) Transcript() *chat.Transcript { return m.transcript }
 // recompute recalculates the layout and resizes the list and editor.
 func (m *Model) recompute() {
 	lines := m.editor.LineCount()
+	aboveH, belowH := 0, 0
+	if m.widgets != nil {
+		aboveH = m.widgets.Height("above_editor", m.width, widgetMaxLines)
+		belowH = m.widgets.Height("below_editor", m.width, widgetMaxLines) +
+			m.widgets.Height("sidebar", m.width, widgetMaxLines)
+	}
 	m.layout = layout.Compute(layout.Inputs{
 		Width:       m.width,
 		Height:      m.height,
 		EditorLines: lines,
+		AboveLines:  aboveH,
+		BelowLines:  belowH,
 	})
 	main, editor := m.layout.Main, m.layout.Editor
 	m.list.Resize(main.W, main.H)
 	m.editor.SetWidth(max(editor.W-3, 1))
 	m.editor.SetHeight(max(editor.H, 1))
 }
+
+// widgetMaxLines caps one widget placement, matching the widget package.
+const widgetMaxLines = 8
 
 // setState decodes a get_state response.
 func (m *Model) setState(resp proto.Response) {

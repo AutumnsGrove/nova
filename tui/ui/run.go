@@ -32,8 +32,21 @@ type RunOptions struct {
 	NoColor bool
 }
 
-// capabilities are the fire-and-forget UI methods the C15 client can show.
-var capabilities = []string{"notify", "status", "widget", "title", "set_editor_text"}
+// capabilities are the UI methods the C17 client can answer. The server will
+// not send a method the client did not declare.
+var capabilities = []string{
+	"ui.confirm", "ui.select", "ui.input", "ui.form",
+	"ui.notify", "ui.status", "ui.widget", "ui.title", "ui.set_editor_text",
+}
+
+// capabilitySet turns a capability list into a set keyed by its "ui." name.
+func capabilitySet(caps []string) map[string]bool {
+	out := make(map[string]bool, len(caps))
+	for _, c := range caps {
+		out[c] = true
+	}
+	return out
+}
 
 // Run starts the interactive UI against an in-process server.
 func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error {

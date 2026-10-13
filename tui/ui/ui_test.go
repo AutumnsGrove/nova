@@ -27,6 +27,7 @@ type fakeClient struct {
 	sends     []proto.Command
 	nexts     int
 	responses map[string]proto.Response
+	answers   []proto.UIResponse
 }
 
 func (f *fakeClient) Send(cmd proto.Command) tea.Cmd {
@@ -39,8 +40,10 @@ func (f *fakeClient) Send(cmd proto.Command) tea.Cmd {
 	}
 }
 
-func (f *fakeClient) Next() tea.Cmd                     { return func() tea.Msg { f.nexts++; return nil } }
-func (f *fakeClient) AnswerUI(proto.UIResponse) tea.Cmd { return func() tea.Msg { return nil } }
+func (f *fakeClient) Next() tea.Cmd { return func() tea.Msg { f.nexts++; return nil } }
+func (f *fakeClient) AnswerUI(resp proto.UIResponse) tea.Cmd {
+	return func() tea.Msg { f.answers = append(f.answers, resp); return nil }
+}
 
 // echoRenderer passes markdown through unchanged.
 type echoRenderer struct{}
@@ -601,9 +604,9 @@ func TestUI_KEY12_UpInMultiLine(t *testing.T) {
 
 func TestUI_KEY13_UnavailableKey(t *testing.T) {
 	m, _, _ := newModel(t)
-	update(m, ctrlKey('l'))
-	if !strings.Contains(m.notice, "not available") {
-		t.Fatalf("notice = %q", m.notice)
+	update(m, tea.KeyPressMsg{Code: tea.KeyF12})
+	if m.notice != "" || m.editor.Value() != "" {
+		t.Fatalf("an unbound key changed state: notice=%q editor=%q", m.notice, m.editor.Value())
 	}
 }
 

@@ -36,12 +36,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, m.client.Next(), m.scheduleTick())
 
 	case client.UIRequestMsg:
-		m.handleUIRequest(msg.UIRequest)
-		return m, m.client.Next()
+		cmd := m.handleUIRequest(msg.UIRequest)
+		return m, tea.Batch(cmd, m.client.Next())
 
 	case client.ClosedMsg:
 		m.notice = "connection closed"
-		return m, tea.Quit
+		return m, tea.Batch(m.cancelAllDialogs(), tea.Quit)
 
 	case commandsLoadedMsg:
 		m.commands = msg.commands
@@ -85,6 +85,22 @@ func (m *Model) handleResponse(resp proto.Response) tea.Cmd {
 	case proto.CmdGetMessages:
 		if resp.OK {
 			m.messages(resp)
+		}
+	case proto.CmdListModels:
+		if resp.OK {
+			m.openModelPicker(resp)
+		}
+	case proto.CmdSessionList:
+		if resp.OK {
+			m.openSessionList(resp)
+		}
+	case proto.CmdSessionTree:
+		if resp.OK {
+			m.openTree(resp)
+		}
+	case proto.CmdGetExtensions:
+		if resp.OK {
+			m.openExtensions(resp)
 		}
 	case proto.CmdPrompt, proto.CmdSteer, proto.CmdFollowUp:
 		return m.finishSend(resp)
@@ -186,6 +202,8 @@ func (m *Model) handleEvent(e proto.Event) tea.Cmd {
 		if e.FollowUp != nil {
 			m.state.FollowUp = *e.FollowUp
 		}
+	case proto.EventUIExpired:
+		m.expireDialog(e.ID)
 	case proto.EventStateChanged:
 		m.decodeStateEvent(e.State)
 	case proto.EventSessionChanged:
@@ -209,18 +227,6 @@ func (m *Model) decodeStateEvent(raw json.RawMessage) {
 		m.state.Thinking = s.Thinking
 		m.state.EffectiveLimit = s.EffectiveLimit
 		m.runActive = s.Running
-	}
-}
-
-// handleUIRequest handles a UI request the client declared it can answer.
-func (m *Model) handleUIRequest(req proto.UIRequest) {
-	switch req.Method {
-	case "notify":
-		m.notice = req.Text
-	case "set_editor_text":
-		m.setEditorText(req.Text)
-	case "status", "widget", "title":
-		// Widgets and status segments arrive in C17.
 	}
 }
 

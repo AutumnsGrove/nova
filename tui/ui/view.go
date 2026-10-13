@@ -25,20 +25,14 @@ func (m *Model) View() (v tea.View) {
 	v = tea.NewView(m.render())
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
+	v.WindowTitle = m.title
 	return v
 }
 
-// render builds the region stack and normalises it to exactly the screen size.
+// render builds the region stack, normalises it to exactly the screen size,
+// draws toasts, and composes any dialog over it.
 func (m *Model) render() string {
-	var lines []string
-	if m.layout.Header.H > 0 {
-		lines = append(lines, m.header())
-	}
-	lines = append(lines, fitLines(strings.Split(m.mainView(), "\n"), m.layout.Main.H)...)
-	lines = append(lines, fitLines(strings.Split(m.editorView(), "\n"), m.layout.Editor.H)...)
-	if m.layout.Footer.H > 0 {
-		lines = append(lines, m.footer())
-	}
+	lines := m.baseLines()
 	if len(lines) > m.height {
 		lines = lines[:m.height]
 	}
@@ -48,7 +42,41 @@ func (m *Model) render() string {
 	for i := range lines {
 		lines[i] = padLine(lines[i], m.width)
 	}
-	return strings.Join(lines, "\n")
+	m.drawToasts(lines)
+	return m.overlay.Compose(strings.Join(lines, "\n"), m.width, m.height, m.st)
+}
+
+// baseLines stacks the header, transcript, widgets, editor, and footer.
+func (m *Model) baseLines() []string {
+	var lines []string
+	if m.layout.Header.H > 0 {
+		lines = append(lines, m.header())
+	}
+	lines = append(lines, fitLines(strings.Split(m.mainView(), "\n"), m.layout.Main.H)...)
+	if m.layout.Above.H > 0 {
+		lines = append(lines, fitLines(m.widgets.Lines("above_editor", m.width, m.layout.Above.H, m.st), m.layout.Above.H)...)
+	}
+	lines = append(lines, fitLines(strings.Split(m.editorView(), "\n"), m.layout.Editor.H)...)
+	if m.layout.Below.H > 0 {
+		below := m.widgets.Lines("below_editor", m.width, m.layout.Below.H, m.st)
+		below = append(below, m.widgets.Lines("sidebar", m.width, m.layout.Below.H, m.st)...)
+		lines = append(lines, fitLines(below, m.layout.Below.H)...)
+	}
+	if m.layout.Footer.H > 0 {
+		lines = append(lines, m.footer())
+	}
+	return lines
+}
+
+// drawToasts overwrites the blank rows just above the footer with toasts.
+func (m *Model) drawToasts(lines []string) {
+	toasts := m.widgets.Toasts(m.clock.Now(), m.width, m.st)
+	top := len(lines) - m.layout.Footer.H - len(toasts)
+	for i, t := range toasts {
+		if y := top + i; y >= 0 && y < len(lines) {
+			lines[y] = padLine(t, m.width)
+		}
+	}
 }
 
 // header is the one-line session banner.
@@ -92,8 +120,30 @@ func (m *Model) editorView() string {
 	return m.editor.View()
 }
 
-// footer is the one-line status bar.
+// footer is the one-line status bar with built-in and extension segments.
 func (m *Model) footer() string {
+	builtin := m.builtinSegments()
+	ext := m.widgets.Footer(m.width, m.st)
+	if ext == "" {
+		return m.st.Footer.Render(truncateJoin(builtin, m.width, " · "))
+	}
+	// Extension segments sit between the context and cost segments.
+	all := make([]string, 0, len(builtin)+1)
+	for i, seg := range builtin {
+		all = append(all, seg)
+		if i == 1 {
+			all = append(all, ext)
+		}
+	}
+	if ansi.StringWidth(strings.Join(all, " · ")) <= m.width {
+		return m.st.Footer.Render(strings.Join(all, " · "))
+	}
+	// Too narrow: drop the extension segments before any built-in.
+	return m.st.Footer.Render(truncateJoin(builtin, m.width, " · "))
+}
+
+// builtinSegments are the footer's own segments, in order.
+func (m *Model) builtinSegments() []string {
 	var segs []string
 	if m.state.EffectiveLimit > 0 {
 		pct := float64(m.state.ContextTokens) / float64(m.state.EffectiveLimit) * 100
@@ -106,7 +156,7 @@ func (m *Model) footer() string {
 		segs = append(segs, fmt.Sprintf("%d queued", q))
 	}
 	segs = append(segs, m.hint())
-	return m.st.Footer.Render(truncateJoin(segs, m.width, " · "))
+	return segs
 }
 
 // hint is the most relevant key for the current state.

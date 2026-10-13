@@ -146,6 +146,19 @@ func (m *Model) scheduleTick() tea.Cmd {
 // localCommand handles TUI-only slash commands before they reach the server.
 func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 	switch name {
+	case "model":
+		if strings.TrimSpace(args) == "" {
+			return m.requestModelPicker(), true
+		}
+		return nil, false
+	case "resume", "sessions":
+		return m.requestSessionList(), true
+	case "tree":
+		return m.requestTree(), true
+	case "ext":
+		return m.requestExtensions(), true
+	case "help":
+		return m.openHelp(), true
 	case "theme":
 		if strings.TrimSpace(args) == "" {
 			m.notice = "themes: " + m.themeList()

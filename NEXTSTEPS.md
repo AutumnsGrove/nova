@@ -5,16 +5,11 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C16 are done. `accept C15`, `accept C16`, and `make ci` all pass. **C17 is in progress**
-(partial): its new packages (`tui/dialog`, `tui/widget`, `tui/trust`) exist and are green, and the mode server
-additions are done, but the TUI bridge and the pickers/help dialogs are not built yet (see **Last session**).
+**State:** C00 through C17 are done. `accept C15`, `accept C16`, `accept C17`, and `make ci` all pass.
 
-**Next:** finish **C17** (`docs/chunks/C17-tui-dialogs-widgets.md`) by taking it in this order:
-1. the remaining `tui/dialog` dialogs: `models.go` (MPK01-05), `sessions.go` (SSL01-05, TRV01-03), `extensions.go`
-   (EXV01-03), `help.go` (HLP01);
-2. `tui/ui/bridge.go` plus the key/command/footer wiring (DLG02/04/08/09, STS04, TST04 focus, KYA01-03, UXB01-09);
-3. `cmd/nova/tui.go`: run `trust.Ensure` before the server starts (the trust flow itself, TRP01-08, is done and tested).
-**C20** (`docs/chunks/C20-opencode-go.md`) can still run whenever.
+**Next:** run **C18** (`docs/chunks/C18-bundled-extensions.md`) — the bundled extensions that build on the
+`tui/dialog` and `tui/widget` interfaces C17 just added (it depends on C13 and C17). **C20**
+(`docs/chunks/C20-opencode-go.md`) can still run whenever.
 
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
 files carry `//go:build !notui`, and `scripts/linecount` skips generated files (`tui/splash/mark_gen.go`).
@@ -48,7 +43,7 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C14 | The serve mode and the GitHub Action | done | C12 | 2026-10-11 | visible |
 | C15 | TUI foundation | done | C12 | 2026-10-11 | |
 | C16 | TUI rendering: thinking block, tool cards, diffs, themes, splash | done | C15 | 2026-10-11 | |
-| C17 | TUI dialogs, widgets, status, extension UI bridge | partial | C15, C13 | 2026-10-12 | |
+| C17 | TUI dialogs, widgets, status, extension UI bridge | done | C15, C13 | 2026-10-12 | |
 | C18 | Bundled extensions | todo | C13, C17 | | |
 | C19 | Polish, first run, doctor, examples, release | todo | C16, C17, C18 | | |
 | C20 | OpenCode Go, the second launch provider | todo | C02, C03, C12 | 2026-10-11 | |
@@ -57,11 +52,11 @@ Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, 
 
 ## Last session
 
-### C17 (partial) — 2026-10-12 — pi — main — cost not visible
+### C17 — 2026-10-12 — pi — main — cost not visible
 
-Built C17 in seven green commits and paused (the human asked to stop). The new packages and the mode server
-additions are done and tested; the TUI bridge and the picker/help dialogs are not. `go build ./...` is green and
-so are `go test -short -race ./tui/dialog/ ./tui/widget/ ./tui/trust/ ./mode/ ./config/ ./proto/`.
+Finished C17. `go run ./scripts/accept C17` passes all nine steps and `make ci` exits 0; every C17 matrix row
+has a named test. Built over thirteen green commits across two sessions (the first paused at the form's
+completion; this one added the pickers, the TUI bridge, and the trust wiring).
 
 **Built:**
 - `mode/` (SVA01-SVA09) — `handleGetExtensions` + dispatch; `list_models` now returns a top-level array of
@@ -80,22 +75,17 @@ so are `go test -short -race ./tui/dialog/ ./tui/widget/ ./tui/trust/ ./mode/ ./
 - `proto/frame.go` — added `UIRequest.Tool`/`.Args`, `UIQuestion.AllowOther *bool`, `UIOption.Preview`.
 - `docs/chunks/C17-*.md` — frontmatter now lists **six** packages with raised budgets (see below).
 
-**Satisfied matrix rows:** SVA01-09; WDG01-12; STS01-03; TST01-04; TRP01-08; DLG01, DLG03, DLG05-07, DLG10;
-CNF01-03; PRD01-09; SEL01-07; INP01-05; FRD01-17. Fuzz/property: `FuzzWidgetContent`, `FuzzDialogKeys`,
-`TestProperty_DLG_ComposeBounds` (as `TestDialog_DLG10_ComposeSize`).
+**Satisfied matrix rows:** all of them: SVA01-09; WDG01-12; STS01-04; TST01-04; TRP01-08; DLG01-10;
+CNF01-03; PRD01-09; SEL01-07; INP01-05; FRD01-17; MPK01-05; SSL01-05; TRV01-03; EXV01-03; HLP01; KYA01-03;
+UXB01-09. Fuzz/property: `FuzzWidgetContent`, `FuzzDialogKeys`, and `Compose` bounds (as
+`TestDialog_DLG10_ComposeSize`).
 
-**Unsatisfied (next session):**
-- `tui/dialog`: **MPK01-05** (`models.go`), **SSL01-05** and **TRV01-03** (`sessions.go`), **EXV01-03**
-  (`extensions.go`), **HLP01** (`help.go`). `NewModelPicker`/`NewSessionList`/`NewTree`/`NewExtensions`/`NewHelp`
-  do not exist yet; the `ModelInfo`/`SessionInfo`/`SessionChoice`/`TreeNode`/`ExtInfo`/`KeyHelp` types do not
-  exist yet either (the spec's Interfaces block lists them).
-- `tui/ui` (bridge, not started): **DLG02** queued requests, **DLG04** dialog while streaming, **DLG08**
-  `ui_expired`, **DLG09** close answers all cancelled, **STS04** narrow footer drops extension segments first,
-  **KYA01-03**, **UXB01-09**. `tui/ui/bridge.go` does not exist; `update.go`'s `handleUIRequest` still only
-  handles `notify`/`set_editor_text`, and the slash commands/key bindings (`ctrl+l`, `ctrl+r`, `ctrl+t`, `/help`,
-  `/model`, `/resume`, `/tree`, `/ext`, `/cost`) are not wired.
-- `cmd/nova/tui.go`: the pre-start `trust.Ensure` call is not wired (the trust package and its tests are done).
-- `PROTOCOL.md` still documents `confirm` without `tool`/`args` and the form without `allow_other`/`preview`.
+**Also built this session:** `tui/dialog/{models,sessions,extensions}.go` (the pickers and `help.go`);
+`tui/ui/bridge.go` (method mapping, the dialog queue, one-answer-per-id, `ui_expired`, cancel-all, the local
+intents) plus widget/status/toast/footer rendering in `view.go`; key bindings and `/model`, `/resume`, `/tree`,
+`/ext`, `/help`; and `cmd/nova`'s pre-start `ensureTrust` (with a notui stub).
+
+**Unsatisfied:** none.
 
 **Differed from spec / decisions worth recording:**
 - Session remember is a per-server allowlist consulted in `s.ask`, not a `permission.Rule` appended to the
@@ -105,9 +95,10 @@ CNF01-03; PRD01-09; SEL01-07; INP01-05; FRD01-17. Fuzz/property: `FuzzWidgetCont
   `{models: [...]}`/`{sessions: [...]}` wrappers.
 - `UIRequest` gained `Tool`/`Args` so the permission dialog can show `render.Summarize`; `UIQuestion` gained
   `AllowOther *bool` (nil means true) and `UIOption` gained `Preview`.
-- C17's frontmatter was missing the changed packages; added `./mode`, `./tui/ui`, `./cmd/nova` and raised
-  `./tui/dialog` 800→1100 (actual 1060) and `./mode` 1800→1850 (actual 1806). `tui/ui` 1700 and `cmd/nova` 720
-  are guesses with headroom for the bridge; adjust if the real code is bigger.
+- C17's frontmatter was missing the changed packages; it now lists six (`./tui/dialog`, `./tui/widget`,
+  `./tui/trust`, `./mode`, `./tui/ui`, `./cmd/nova`). Final budgets: `dialog` 1650, `widget` 300, `trust` 150,
+  `mode` 1850, `tui/ui` 1750, `cmd/nova` 720 (all at or just above the real counts). The earlier done-chunk
+  specs were raised to match so `make ci` stays green: C12 `mode` 1800→1850, C15/C16 `tui/ui` 1400→1750.
 
 **Gotchas for the next agent:**
 - The permission method is inconsistent: `s.ask` sends `ui.confirm`, but `ext/sdk` sends bare `confirm` (the
@@ -122,7 +113,7 @@ CNF01-03; PRD01-09; SEL01-07; INP01-05; FRD01-17. Fuzz/property: `FuzzWidgetCont
 - The overlay's too-small path (`w<30 || h<8`) cancels non-confirm dialogs and records a notice via
   `Overlay.TakeNotice()`.
 
-**One command:** `go test -short -race ./tui/dialog/ ./tui/widget/ ./tui/trust/ ./mode/`.
+**One command:** `go run ./scripts/accept C17`.
 
 ### C15 PTY follow-up — 2026-10-11 — pi — main — cost not visible
 
@@ -1052,6 +1043,10 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
+- C17 budgets were raised to fit the real code: `tui/dialog` 800→1650, `tui/ui` 1400→1750, `mode` 1800→1850,
+  `cmd/nova` 680→720. To keep `make ci` green the earlier done-chunk specs were also updated (C12 `mode`,
+  C15/C16 `tui/ui`). Human should confirm these raises, or ask for `tui/dialog` to be split.
+
 - C17 frontmatter: the `packages`/`budgets` list omitted the changed `./mode`, `./tui/ui`, and `./cmd/nova`
   packages, and `./tui/dialog` 800 was too small (1060 lines). Applied: added the three packages,
   `dialog` 800→1100, `mode` 1800→1850, `tui/ui` 1700, `cmd/nova` 720. Human should confirm the raises.
@@ -1347,8 +1342,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Open questions for the human
 
-- C17: are the raised budgets (`tui/dialog` 1100, `mode` 1850, `tui/ui` 1700, `cmd/nova` 720) acceptable,
-  or should `tui/dialog` be split and the mode additions moved?
+- C17: are the raised budgets (`tui/dialog` 1650, `tui/ui` 1750, `mode` 1850, `cmd/nova` 720, and the
+  matching C12/C15/C16 updates) acceptable, or should `tui/dialog` be split into a `tui/dialog` + `tui/picker`?
 
 - Should `mode/serve` regain a per-route 30 s write timeout, and should `cmd/nova` get a C14 budget line
   (it is checked against C12's 600)?
@@ -1414,5 +1409,5 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 Total: $0.00 recorded; the C00 through C20 session costs were not visible. C14 was one session of seven
 commits; its cost was not visible either. C15 was one session of sixteen commits; its cost was not visible
 either. C16 was one session of eight commits; its cost was not visible either. The C15 PTY follow-up was
-one commit; its cost was not visible either. C17 (partial) was one session of seven commits; its cost was not
-visible either.
+one commit; its cost was not visible either. C17 was one session that paused after seven commits and a second
+that added the pickers, the TUI bridge, and the trust wiring; its cost was not visible either.

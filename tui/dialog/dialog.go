@@ -176,6 +176,24 @@ func clipPad(s string, width int) string {
 	return s + strings.Repeat(" ", max(width-ansi.StringWidth(s), 0))
 }
 
+// window returns the [start,end) rows that keep cursor visible in a list of n
+// rows, given the current scroll offset.
+func window(cursor, scroll, rows, n int) (int, int) {
+	if cursor < scroll {
+		scroll = cursor
+	}
+	if cursor >= scroll+rows {
+		scroll = cursor - rows + 1
+	}
+	if scroll > n-rows {
+		scroll = n - rows
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+	return scroll, min(scroll+rows, n)
+}
+
 // centerLine centres s in a line of width.
 func centerLine(s string, width int) string {
 	s = ansi.Truncate(s, width, "…")

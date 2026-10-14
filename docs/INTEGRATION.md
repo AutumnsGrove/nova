@@ -9,7 +9,7 @@ These programs embed Nova as a **library**. None of them import `tui/` or `bundl
 (the only packages that use `charm.land`); a consumer depends on
 `github.com/AutumnsGrove/nova` and compiles none of the UI. Note that the shared
 `go.mod` may still list the charm modules; they are not built into the consumer.
-The loop is `agent.New(cfg).Run(...)` (see `docs/chunks/C09-agent-loop.md`); the old
+The loop is `agent.New(cfg).Run(...)` (see `docs/archive/chunks/C09-agent-loop.md`); the old
 `agent.Run(ctx, cfg, history)` function is kept as a compatibility wrapper.
 
 - **Adapter-first, no big bang.** Each project keeps its existing types and adds

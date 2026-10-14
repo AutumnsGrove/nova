@@ -191,7 +191,7 @@ The first screen of a new session is a short animation drawn on the character gr
 rather than a downscale of the mark: a slash-filled `nova` wordmark slides in on the
 left while a star on the right ignites and throws off a shell of gas that cools from
 blue to orange, over a field of twinkling stars. It is specified in
-[`chunks/C21-splash-sequence.md`](chunks/C21-splash-sequence.md); the design reference
+[`archive/chunks/C21-splash-sequence.md`](archive/chunks/C21-splash-sequence.md); the design reference
 is [`mockups/splash/`](mockups/splash/README.md).
 
 The tier is the largest of Full (96 by 21), Compact (64 by 13), Thin (46 by 10), and

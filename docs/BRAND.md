@@ -74,7 +74,7 @@ The terminal splash is no longer a downscale of the full mark. It is a short ani
 grid: a slash-filled `nova` wordmark on the left, a star on the right that ignites as the name slides in, a
 shell of ejected gas that cools from blue to orange, and a field of twinkling stars, held on screen with the name
 still shimmering. It uses the same four palette roles. The mockups are in [`mockups/splash/`](mockups/splash/README.md)
-and the build is specified in [`chunks/C21-splash-sequence.md`](chunks/C21-splash-sequence.md). The README banner
+and the build is specified in [`archive/chunks/C21-splash-sequence.md`](archive/chunks/C21-splash-sequence.md). The README banner
 is an animated GIF of the same `splash.Cells` render, regenerated with
 `go run ./tui/splash/splashgif` whenever `tui/splash` moves pixels; the full and minimal marks above still
 serve icons and avatars.

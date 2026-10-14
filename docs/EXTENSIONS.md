@@ -272,5 +272,5 @@ Official or recommended extensions, installed on request.
 ## Bundled extension specs
 
 Each bundled extension has a chunk spec with a test matrix (see
-[`IMPLEMENTATION.md`](IMPLEMENTATION.md)). Their behaviour is defined by those
+[`archive/chunks/C18-bundled-extensions.md`](archive/chunks/C18-bundled-extensions.md)). Their behaviour is defined by those
 specs, not by this table.

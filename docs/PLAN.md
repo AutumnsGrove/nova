@@ -1,12 +1,11 @@
 # Nova — Plan
 
-The roadmap. Reasons are in [`DECISIONS.md`](DECISIONS.md), structure in
-[`ARCHITECTURE.md`](ARCHITECTURE.md), and the build process in
-[`IMPLEMENTATION.md`](IMPLEMENTATION.md).
+The vision and the roadmap. Reasons are in [`DECISIONS.md`](DECISIONS.md), structure in
+[`ARCHITECTURE.md`](ARCHITECTURE.md), and how to work on Nova in [`AGENTS.md`](../AGENTS.md).
 
-Status: **building.** The backend is done and tested through C13; all twenty-one chunks (C00 to C20) are
-specified in full, each with a test matrix. An M0 prototype exists at the repository root
-([`SPIKE.md`](SPIKE.md)) and is the starting point for several chunks.
+Status: **iterating.** The initial build-out (milestones M1 to M7 below, chunks C00 to C23) is finished. Work now
+arrives as [GitHub issues](https://github.com/AutumnsGrove/nova/issues) and is done test-first. The chunk plan and
+specs are archived in [`archive/`](archive/); the milestone table below is a record of how the build went.
 
 ## 1. Vision
 
@@ -64,11 +63,11 @@ documentation, write an extension, and load it with `/reload`.
 6. **Spend is never lost, and every run ends cleanly.** One `run_start`, one `run_end`.
 7. **The core is UI-free**, enforced by a check, and takes dependencies only deliberately (an allow-list, D46).
 8. **Everything has a budget**, in lines, in time, and in context.
-9. **Specs carry the edge cases.** An agent fills in a matrix; it does not invent one.
+9. **Tests carry the edge cases.** They are written down before the code and watched failing, not added afterwards.
 
 ## 5. Roadmap
 
-Each milestone is a set of chunks from [`IMPLEMENTATION.md`](IMPLEMENTATION.md).
+Each milestone was a set of chunks from [`archive/IMPLEMENTATION.md`](archive/IMPLEMENTATION.md). M1 to M7 are done; M8 is the open one.
 
 | Milestone | Chunks | Result |
 |---|---|---|

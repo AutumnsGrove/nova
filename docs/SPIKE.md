@@ -95,7 +95,7 @@ starts, each becomes the basis for its milestone package rather than a throwaway
 
 ## How the prototype is used
 
-The chunk specs in `docs/chunks/` say, per file, what to keep and what to change. Several list
+The chunk specs in `docs/archive/chunks/` say, per file, what to keep and what to change. Several list
 known prototype defects (the loop recovers panics only in parallel mode, `bash` leaves child
 processes running, `edit` applies edits sequentially, and others). Those defects are the reason
 the specs carry test matrices.

@@ -1,4 +1,4 @@
-.PHONY: test test-full race fmt vet build build-notui accept ci importcheck matrixcheck-all linecount-all
+.PHONY: test test-full race race-splash fmt vet build build-notui accept ci importcheck matrixcheck-all linecount-all
 
 test:
 	go test -short -p 2 ./...
@@ -6,8 +6,16 @@ test:
 test-full:
 	go test -p 2 ./...
 
+# splashgif rasterises 150 frames for every test, so -race there costs minutes
+# and finds nothing (the package is pure rendering). Keep it out of the fast
+# gate; the ci workflow runs `race-splash` in a parallel job.
+slow-pkg = /tui/splash/splashgif
+
 race:
-	go test -race -p 2 ./...
+	go test -race -p 2 $$(go list ./... | grep -v '$(slow-pkg)')
+
+race-splash:
+	go test -race -p 2 ./tui/splash/splashgif
 
 fmt:
 	gofmt -l .

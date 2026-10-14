@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/splash"
 )
 
 // pasteLimit is the character count above which a paste is attached as a
@@ -134,13 +135,37 @@ func (m *Model) abort() tea.Cmd {
 const tickInterval = 250 * time.Millisecond
 
 // scheduleTick returns a command that fires the next animation tick while a
-// thinking block or tool call is live.
+// thinking block, a tool call, or the splash is live. One tick chain serves
+// both, so at most one timer is ever pending.
 func (m *Model) scheduleTick() tea.Cmd {
-	if m.ticking || !m.transcript.NeedsTick() {
+	if m.ticking || !m.needsTick() {
 		return nil
 	}
 	m.ticking = true
-	return m.clock.After(tickInterval)
+	return m.clock.After(m.tickPeriod())
+}
+
+// needsTick reports whether anything on screen is animating.
+func (m *Model) needsTick() bool {
+	return m.transcript.NeedsTick() || m.splashAnimated()
+}
+
+// tickPeriod is the shorter of the thinking and splash periods.
+func (m *Model) tickPeriod() time.Duration {
+	if m.splashAnimated() {
+		return splashTick
+	}
+	return tickInterval
+}
+
+// splashAnimated reports whether an animated splash is showing. It draws a
+// throwaway frame, so it is pure: nothing here mutates the model.
+func (m *Model) splashAnimated() bool {
+	if !m.showSplash() {
+		return false
+	}
+	_, tier, ok := splash.Render(m.layout.Main.W, m.layout.Main.H, m.st, m.profile, m.version, 0)
+	return ok && splash.Animated(tier)
 }
 
 // localCommand handles TUI-only slash commands before they reach the server.

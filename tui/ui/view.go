@@ -93,7 +93,7 @@ func (m *Model) header() string {
 // the transcript's bottom.
 func (m *Model) mainView() string {
 	if m.showSplash() {
-		if out, _, ok := splash.Render(m.layout.Main.W, m.layout.Main.H, m.st, m.profile, m.version); ok {
+		if out, _, ok := splash.Render(m.layout.Main.W, m.layout.Main.H, m.st, m.profile, m.version, m.splashAt); ok {
 			return out
 		}
 	}

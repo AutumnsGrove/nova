@@ -62,6 +62,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.ticking = false
+		if m.showSplash() {
+			m.splashAt = m.clock.Now().Sub(m.splashStart)
+		}
 		for _, id := range m.transcript.SetNow(m.clock.Now()) {
 			m.list.Touch(id)
 		}

@@ -106,21 +106,23 @@ type Model struct {
 	pasted     map[string]string
 	pasteSeq   int
 
-	commands   []commandInfo
-	completion completion
-	state      stateData
-	pending    pendingSend
-	themes     []styles.Theme
-	display    chat.Display
-	splashOff  bool
-	ticking    bool
-	usageArmed bool
-	runActive  bool
-	expanded   bool
-	quitArmed  bool
-	quitAt     time.Time
-	notice     string
-	panicValue any
+	commands    []commandInfo
+	completion  completion
+	state       stateData
+	pending     pendingSend
+	themes      []styles.Theme
+	display     chat.Display
+	splashOff   bool
+	splashStart time.Time
+	splashAt    time.Duration
+	ticking     bool
+	usageArmed  bool
+	runActive   bool
+	expanded    bool
+	quitArmed   bool
+	quitAt      time.Time
+	notice      string
+	panicValue  any
 
 	// The dialog bridge and the extension UI slots.
 	overlay    *dialog.Overlay
@@ -172,24 +174,25 @@ func New(opt Options) *Model {
 	registry.Bundled()
 	transcript.SetRegistry(registry.renderers)
 	m := &Model{
-		client:     opt.Client,
-		clock:      opt.Clock,
-		renderer:   opt.Renderer,
-		st:         st,
-		theme:      opt.Theme,
-		profile:    opt.Profile,
-		cwd:        opt.CWD,
-		home:       home,
-		version:    opt.Version,
-		transcript: transcript,
-		registry:   registry,
-		list:       list.New(),
-		editor:     ed,
-		pasted:     map[string]string{},
-		overlay:    dialog.NewOverlay(),
-		widgets:    widget.NewStore(),
-		answered:   map[string]bool{},
-		caps:       capabilitySet(capabilities),
+		client:      opt.Client,
+		clock:       opt.Clock,
+		renderer:    opt.Renderer,
+		st:          st,
+		theme:       opt.Theme,
+		profile:     opt.Profile,
+		cwd:         opt.CWD,
+		home:        home,
+		version:     opt.Version,
+		transcript:  transcript,
+		registry:    registry,
+		list:        list.New(),
+		editor:      ed,
+		pasted:      map[string]string{},
+		overlay:     dialog.NewOverlay(),
+		widgets:     widget.NewStore(),
+		answered:    map[string]bool{},
+		caps:        capabilitySet(capabilities),
+		splashStart: opt.Clock.Now(),
 	}
 	m.width, m.height = opt.Width, opt.Height
 	m.editor.Focus()
@@ -255,6 +258,7 @@ func (m *Model) Init() tea.Cmd {
 		m.client.Send(proto.Command{Type: proto.CmdGetMessages}),
 		m.client.Send(proto.Command{Type: proto.CmdGetUsage}),
 		m.scheduleUsage(),
+		m.scheduleTick(),
 		m.client.Next(),
 	)
 }
@@ -352,3 +356,6 @@ func (m *Model) scheduleUsage() tea.Cmd {
 
 // tickMsg is delivered by Clock.After.
 type tickMsg struct{}
+
+// splashTick is the splash's animation period, about 15 frames a second.
+const splashTick = 66 * time.Millisecond

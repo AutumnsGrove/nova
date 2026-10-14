@@ -146,14 +146,15 @@ func TestUI_SPL13_NotShownWhenNotEmpty(t *testing.T) {
 
 func TestUI_SPL14_ResizeRerenders(t *testing.T) {
 	m := colorModel(t, 120, 60)
+	m.splashAt = 4 * time.Second // past assembly, so the word is drawn
 	out := m.render()
-	if !strings.ContainsAny(out, "▀▄█") {
-		t.Fatal("large splash has no half-block mark")
+	if !strings.Contains(out, "╱") {
+		t.Fatal("large splash has no slash wordmark")
 	}
-	update(m, tea.WindowSizeMsg{Width: 40, Height: 18})
+	update(m, tea.WindowSizeMsg{Width: 30, Height: 18})
 	small := m.render()
-	if !strings.Contains(small, "*") {
-		t.Fatal("small splash has no ASCII star")
+	if !strings.Contains(small, "press any key") {
+		t.Fatal("small splash has no plain prompt")
 	}
 }
 

@@ -35,6 +35,9 @@ const (
 	// which.
 	intentProvidersLogin  = "providers-login"
 	intentProvidersLogout = "providers-logout"
+	// intentProvidersAfterLogin follows a saved credential: it decides whether
+	// the model picker is needed.
+	intentProvidersAfterLogin = "providers-after-login"
 )
 
 // capable reports whether the client declared a UI method in hello.

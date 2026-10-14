@@ -77,9 +77,12 @@ func (m *Model) requestProviders(intent string) tea.Cmd {
 }
 
 // onProviders routes a list_providers response by what asked for it.
-func (m *Model) onProviders(resp proto.Response) {
+func (m *Model) onProviders(resp proto.Response) tea.Cmd {
 	intent := m.await
 	switch intent {
+	case intentProvidersAfterLogin:
+		m.await = ""
+		return m.afterLogin(decodeProviders(resp))
 	case intentProvidersLogin, intentProvidersLogout:
 		m.await = ""
 		title, next := "Select provider to configure:", intentLogin
@@ -97,6 +100,21 @@ func (m *Model) onProviders(resp proto.Response) {
 		}
 		m.pushDialog(dialog.NewProviderPicker(title, items), next)
 	}
+	return nil
+}
+
+// afterLogin offers the model picker only when the current model is not served
+// by a signed-in provider. A first sign-in lands on a model choice; refreshing
+// a key for the provider already in use does not interrupt. When the server
+// cannot say which provider is current, the picker opens, the safer error.
+func (m *Model) afterLogin(rows []providerRow) tea.Cmd {
+	for _, r := range rows {
+		if r.Current && r.Ready {
+			m.notice += "; /model to choose a model"
+			return nil
+		}
+	}
+	return m.requestModelPicker()
 }
 
 // methodLabels names a provider's methods for the picker.
@@ -303,9 +321,11 @@ func (m *Model) onCredSaved(msg credSavedMsg) tea.Cmd {
 		return nil
 	}
 	m.notice = "logged in to " + msg.name + "; credentials saved to " + msg.path
+	// Whether to offer a model depends on whether the current one now works,
+	// which only the server can say, so ask before deciding.
 	return tea.Batch(
 		m.client.Send(proto.Command{Type: proto.CmdGetCommands}),
-		m.requestModelPicker(),
+		m.requestProviders(intentProvidersAfterLogin),
 	)
 }
 

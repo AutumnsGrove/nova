@@ -128,7 +128,7 @@ func (m *Model) handleResponse(resp proto.Response) tea.Cmd {
 	case proto.CmdGetUsage:
 		m.openUsage(resp)
 	case proto.CmdListProviders:
-		m.onProviders(resp)
+		return m.onProviders(resp)
 	case proto.CmdPrompt, proto.CmdSteer, proto.CmdFollowUp:
 		return m.finishSend(resp)
 	case proto.CmdAbort:

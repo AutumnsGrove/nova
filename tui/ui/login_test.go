@@ -15,7 +15,6 @@ import (
 
 	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/proto"
-	"github.com/AutumnsGrove/nova/tui/client"
 )
 
 // fakeStore is an in-memory credential store for the UI tests.
@@ -349,25 +348,102 @@ func TestUI_SGN29_DevicePollCompletes(t *testing.T) {
 	}
 }
 
-func TestUI_SGN34_DefaultModelOpensPicker(t *testing.T) {
+// pump runs a command and feeds every message it yields back into the model,
+// following the commands those updates return, so a test can drive a chain of
+// request, response, and follow-up request to its end.
+func pump(m *Model, cmd tea.Cmd) {
+	for depth := 0; cmd != nil && depth < 20; depth++ {
+		msg := do(cmd)
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, c := range batch {
+				pump(m, c)
+			}
+			return
+		}
+		if msg == nil {
+			return
+		}
+		cmd = update(m, msg)
+	}
+}
+
+// sentTypes lists the command types the fake client has received.
+func sentTypes(f *fakeClient) []string {
+	var out []string
+	for _, c := range f.sends {
+		out = append(out, c.Type)
+	}
+	return out
+}
+
+// loginWithKey signs in to a fake API-key provider through the dialog and
+// returns the command the save produced.
+func loginWithKey(t *testing.T, m *Model, id string) tea.Cmd {
+	t.Helper()
+	m.setEditorText("/login " + id + " api_key")
+	drive(m, update(m, enterKey))
+	typeKeys(m, "sk-test")
+	return drive(m, update(m, enterKey))
+}
+
+func registerKeyProvider(t *testing.T, id string) {
+	t.Helper()
 	store := &fakeStore{}
 	providerauth.Register(providerauth.Provider{
-		ID: "fake-model-c22", Name: "Fake Model", Methods: []providerauth.Method{providerauth.APIKey},
+		ID: id, Name: "Fake Model", Methods: []providerauth.Method{providerauth.APIKey},
 		DefaultModel: "fake/model",
 		Save:         store.save, Load: store.load, Delete: store.delete,
 	})
-	m, _, _ := newModel(t)
-	m.setEditorText("/login fake-model-c22 api_key")
-	drive(m, update(m, enterKey))
-	typeKeys(m, "sk-test")
-	execAll(drive(m, update(m, enterKey)))
-	if m.await != intentModels {
-		t.Fatalf("await = %q, want models", m.await)
-	}
-	resp := proto.Response{Command: proto.CmdListModels, OK: true, Data: json.RawMessage(`[{"id":"fake/model","name":"Fake Model","provider":"fake"}]`)}
-	update(m, client.ResponseMsg{Response: resp})
+}
+
+// modelsResponse is a canned list_models answer with one model.
+func modelsResponse() proto.Response {
+	return proto.Response{Command: proto.CmdListModels, OK: true,
+		Data: json.RawMessage(`[{"id":"fake/model","name":"Fake Model","provider":"fake"}]`)}
+}
+
+func TestUI_SGN34_DefaultModelOpensPicker(t *testing.T) {
+	// The server cannot say which provider serves the current model, so the
+	// safe choice is to open the picker.
+	registerKeyProvider(t, "fake-model-c22")
+	m, f, _ := newModel(t)
+	f.responses[proto.CmdListModels] = modelsResponse()
+	pump(m, loginWithKey(t, m, "fake-model-c22"))
 	if v := m.render(); !strings.Contains(v, "Fake Model") {
-		t.Fatalf("model picker did not open:\n%s", v)
+		t.Fatalf("model picker did not open; sent %v:\n%s", sentTypes(f), v)
+	}
+}
+
+func TestUI_SGN49_NoPickerWhenTheCurrentModelIsReady(t *testing.T) {
+	registerKeyProvider(t, "fake-keep-c22")
+	m, f, _ := newModel(t)
+	f.responses[proto.CmdListProviders] = providersResponse(
+		`{"id":"openrouter","name":"OpenRouter","methods":["api_key"],"ready":true,"source":"env","current":true}`,
+		`{"id":"fake-keep-c22","name":"Fake Model","methods":["api_key"],"ready":true,"source":"store"}`)
+	pump(m, loginWithKey(t, m, "fake-keep-c22"))
+	for _, typ := range sentTypes(f) {
+		if typ == proto.CmdListModels {
+			t.Fatalf("the model picker was requested although the current model works; sent %v", sentTypes(f))
+		}
+	}
+	if m.overlay.Len() != 0 {
+		t.Fatal("a dialog opened after a login that needed no model choice")
+	}
+	if !strings.Contains(m.notice, "/model") {
+		t.Fatalf("notice = %q, want a hint to use /model", m.notice)
+	}
+}
+
+func TestUI_SGN50_PickerWhenTheCurrentModelIsNotReady(t *testing.T) {
+	registerKeyProvider(t, "fake-need-c22")
+	m, f, _ := newModel(t)
+	f.responses[proto.CmdListModels] = modelsResponse()
+	f.responses[proto.CmdListProviders] = providersResponse(
+		`{"id":"openrouter","name":"OpenRouter","methods":["api_key"],"ready":false,"current":true}`,
+		`{"id":"fake-need-c22","name":"Fake Model","methods":["api_key"],"ready":true,"source":"store"}`)
+	pump(m, loginWithKey(t, m, "fake-need-c22"))
+	if v := m.render(); !strings.Contains(v, "Fake Model") {
+		t.Fatalf("model picker did not open; sent %v:\n%s", sentTypes(f), v)
 	}
 }
 
@@ -432,7 +508,8 @@ func TestUI_SGN33_LoginRefreshesCatalog(t *testing.T) {
 	drive(m, update(m, enterKey))
 	typeKeys(m, "sk-test")
 	batch := drive(m, update(m, enterKey))
-	execAll(batch)
+	// list_models now follows the list_providers answer, so drive the chain.
+	pump(m, batch)
 	foundCommands, foundModels := false, false
 	for _, c := range f.sends {
 		if c.Type == proto.CmdGetCommands {

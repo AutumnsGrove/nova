@@ -319,6 +319,8 @@ func NewSecretInput(title, placeholder string) Dialog
 | SGN46 | a config key shows as ready | `list_providers` answers a `config`-sourced row | the picker row reads `ready (config)` |
 | SGN47 | the picker fits its widest row | a ready row with a long note | the whole note is visible at the dialog's own width |
 | SGN48 | the picker width is capped | a very long row, 60 columns available | the width never exceeds 60 |
+| SGN49 | no picker when the current model works | login while the server reports the current provider ready | no `list_models`, no dialog, and a notice that points to `/model` |
+| SGN50 | picker when the current model does not work | login while the current provider is not ready | the model picker opens |
 
 ## Fuzz and property tests
 

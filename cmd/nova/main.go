@@ -22,6 +22,7 @@ import (
 	"github.com/AutumnsGrove/nova/mode"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
+	"github.com/AutumnsGrove/nova/update"
 )
 
 // version is stamped at build time with -ldflags; see version.go.
@@ -118,6 +119,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		serveCommand(),
 		actionReview(stdout, exit),
 		doctorCommand(stdout, exit),
+		updateCommand(stdout, stderr, exit, update.Run),
 	)
 	applyGroups(root)
 	return root

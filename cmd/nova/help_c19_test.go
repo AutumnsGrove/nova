@@ -14,7 +14,7 @@ import (
 var helpTokens = []string{
 	"tui", "print", "json", "rpc",
 	"--session", "--continue", "--resume", "--no-session", "--prompt", "--mode",
-	"models", "sessions", "login", "logout", "version", "docs", "ext", "serve",
+	"models", "sessions", "login", "logout", "version", "docs", "ext", "serve", "update",
 	"nova -p", "nova --mode rpc",
 	"github.com/AutumnsGrove/nova",
 }

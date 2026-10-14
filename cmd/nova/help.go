@@ -31,6 +31,7 @@ const helpExamples = "  nova                         start the TUI in this direc
 	"  nova -p \"explain this repo\"   one prompt, print the answer\n" +
 	"  nova --mode rpc              speak the JSON-RPC protocol\n" +
 	"  nova doctor                  check the installation\n" +
+	"  nova update                  refresh from a checkout or a release\n" +
 	"  nova docs extensions         read the extension author's guide\n" +
 	"\n" +
 	"  # " + helpLinks
@@ -51,7 +52,7 @@ func applyGroups(root *cobra.Command) {
 		switch cmd.Name() {
 		case "models", "sessions", "docs":
 			cmd.GroupID = "run"
-		case "login", "logout", "doctor", "version":
+		case "login", "logout", "doctor", "version", "update":
 			cmd.GroupID = "setup"
 		case "ext", "serve":
 			cmd.GroupID = "extend"

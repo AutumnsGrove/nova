@@ -75,7 +75,7 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 | `run_command` | `name`, `args` | execute a slash command |
 | `bash` | `command` | run a user shell command and record it in the session |
 | `shutdown` | | graceful close |
-| `list_providers` | | every provider with `id`, `name`, `methods`, `ready`, and `source` (`config`, `env`, `store`, or empty) |
+| `list_providers` | | every provider with `id`, `name`, `methods`, `ready`, and `source` (`config`, `env`, `store`, or empty), `current` (it serves the current model), and `default_model` (what to switch to after signing in). `ready` counts a key from the loaded config |
 | `login` | `name`, `args?`, `text?` | sign the server host in. `args` is the method (`api_key`, `subscription`, `device`) and may be omitted when the provider has one. An `api_key` login takes the key in `text`, saves it, and answers `{provider, saved}`. An interactive one answers `{provider, method, url, code, prompt}` and finishes with one `login_end` event. A second login for the same provider is `busy` |
 | `login_submit` | `name`, `text` | give an open sign-in a pasted redirect URL (the loopback callback cannot reach a remote server). `not_found` when none is open; `bad_request` leaves it open for a retry |
 | `login_cancel` | `name` | abandon an open sign-in. No `login_end` follows |

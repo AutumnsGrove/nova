@@ -25,29 +25,32 @@ type providerRow struct {
 	Methods []string `json:"methods"`
 	Ready   bool     `json:"ready"`
 	Source  string   `json:"source"`
-}
-
-// configKey returns the key a provider has in the loaded config, if the
-// config has a place for one.
-func (s *Server) configKey(id string) string {
-	if id == "opencode-go" {
-		return s.cfg.Provider.OpenCodeGo.APIKey
-	}
-	return ""
+	// Current marks the provider that serves the current model, so a client can
+	// tell whether the model it is using is signed in without knowing the catalog.
+	Current bool `json:"current"`
+	// DefaultModel is the model to switch to after signing in to this provider.
+	DefaultModel string `json:"default_model,omitempty"`
 }
 
 // handleListProviders answers every registered provider and whether the
 // server host is already signed in to it.
 func (s *Server) handleListProviders(cmd proto.Command) proto.Response {
 	all := providerauth.All()
+	s.mu.Lock()
+	model := s.cfg.Model
+	s.mu.Unlock()
+	serving, _ := providerauth.ForModel(model)
 	rows := make([]providerRow, 0, len(all))
 	for _, p := range all {
-		st := providerauth.Resolve(p, s.configKey(p.ID), os.Getenv, s.home)
+		st := providerauth.Resolve(p, p.ConfigKeyFrom(s.cfg), os.Getenv, s.home)
 		methods := make([]string, 0, len(p.Methods))
 		for _, m := range p.Methods {
 			methods = append(methods, string(m))
 		}
-		rows = append(rows, providerRow{ID: p.ID, Name: p.Name, Methods: methods, Ready: st.Ready, Source: st.Source})
+		rows = append(rows, providerRow{
+			ID: p.ID, Name: p.Name, Methods: methods, Ready: st.Ready, Source: st.Source,
+			Current: p.ID == serving.ID, DefaultModel: p.DefaultModel,
+		})
 	}
 	return okResponse(cmd, rows)
 }
@@ -246,7 +249,7 @@ func (s *Server) handleLogout(cmd proto.Command) proto.Response {
 	if err := p.Delete(s.home); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return failResponse(cmd, proto.CodeInternal, "logout: "+err.Error())
 	}
-	st := providerauth.Resolve(p, s.configKey(p.ID), os.Getenv, s.home)
+	st := providerauth.Resolve(p, p.ConfigKeyFrom(s.cfg), os.Getenv, s.home)
 	return okResponse(cmd, map[string]any{"provider": p.ID, "remaining": st.Source})
 }
 

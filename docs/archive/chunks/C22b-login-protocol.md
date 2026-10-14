@@ -105,6 +105,9 @@ is one `login_end` event.
 | LGP23 | close cancels flows | open a flow, then `Server.Close` | the session is closed; `NoLeaks` passes |
 | LGP24 | no secret on the wire | api_key login and a failing save, scanning every frame | the key string appears in no response or event |
 | LGP25 | login_end decodes | encode then decode `login_end` | round-trips as an `Event` |
+| LGP26 | list honours the config key | OpenCode Go key set in the loaded config | `ready` with source `config` |
+| LGP27 | list marks the current provider | current model from OpenCode Go, then an unknown id | `current` is OpenCode Go, then OpenRouter (the router's fallback) |
+| LGP28 | list carries the default model | `list_providers` | each row has its provider's `default_model` |
 
 ## Fuzz and property tests
 

@@ -13,6 +13,8 @@ import (
 
 	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/provider/opencodego"
+	"github.com/AutumnsGrove/nova/provider/openrouter"
 	"github.com/AutumnsGrove/nova/testkit"
 )
 
@@ -194,11 +196,13 @@ func wantCode(t *testing.T, resp proto.Response, code string) {
 }
 
 type listedProvider struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Methods []string `json:"methods"`
-	Ready   bool     `json:"ready"`
-	Source  string   `json:"source"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Methods      []string `json:"methods"`
+	Ready        bool     `json:"ready"`
+	Source       string   `json:"source"`
+	Current      bool     `json:"current"`
+	DefaultModel string   `json:"default_model"`
 }
 
 func listRows(t *testing.T, s *Server) map[string]listedProvider {
@@ -606,5 +610,38 @@ func TestProperty_LGP_OneLoginEnd(t *testing.T) {
 		noLoginEnd(t, events)
 		cancel()
 		_ = s.Close()
+	}
+}
+
+func TestLogin_LGP26_ListHonoursConfigKey(t *testing.T) {
+	s, _ := testServer(t)
+	s.cfg.Provider.OpenCodeGo.APIKey = "from-config"
+	r := listRows(t, s)["opencode-go"]
+	if !r.Ready || r.Source != "config" {
+		t.Fatalf("opencode-go row = %+v, want ready from config", r)
+	}
+}
+
+func TestLogin_LGP27_ListMarksTheCurrentProvider(t *testing.T) {
+	s, _ := testServer(t)
+	s.cfg.Model = opencodego.DefaultModel
+	rows := listRows(t, s)
+	if !rows["opencode-go"].Current || rows["openrouter"].Current {
+		t.Fatalf("current flags = opencode-go:%v openrouter:%v", rows["opencode-go"].Current, rows["openrouter"].Current)
+	}
+	// A model the catalog does not know is served by OpenRouter, as the
+	// request router would route it.
+	s.cfg.Model = "nobody/unknown"
+	rows = listRows(t, s)
+	if !rows["openrouter"].Current || rows["opencode-go"].Current {
+		t.Fatalf("unknown model: openrouter current=%v opencode-go current=%v", rows["openrouter"].Current, rows["opencode-go"].Current)
+	}
+}
+
+func TestLogin_LGP28_ListCarriesTheDefaultModel(t *testing.T) {
+	s, _ := testServer(t)
+	rows := listRows(t, s)
+	if rows["openrouter"].DefaultModel != openrouter.DefaultModel || rows["opencode-go"].DefaultModel != opencodego.DefaultModel {
+		t.Fatalf("default models = %q, %q", rows["openrouter"].DefaultModel, rows["opencode-go"].DefaultModel)
 	}
 }

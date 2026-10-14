@@ -72,8 +72,8 @@ type Flow struct { /* private */ }
 // the old Login used. It returns the flow and the URL to open.
 func Begin(opts BeginOptions) (*Flow, string, error)
 
-// Submit hands the flow a pasted redirect URL or bare authorization code. It
-// fails on a malformed value and leaves Wait blocked.
+// Submit hands the flow the redirect URL the browser landed on. It fails on a
+// value without a matching code and state, and leaves Wait blocked.
 func (f *Flow) Submit(pasted string) error
 
 // Wait blocks until the callback or a Submit, then exchanges the code. It
@@ -316,7 +316,7 @@ func NewSecretInput(title, placeholder string) Dialog
 
 | Name | Asserts |
 |---|---|
-| `FuzzRedirect` | any pasted redirect or bare code: never panics; only a URL with a matching code and state returns no error |
+| `FuzzRedirect` | any pasted string: never panics; only a redirect URL with a matching code and state returns no error |
 | `TestProperty_SGN_Secrets` | for a seeded sweep of keys, no rendered dialog, notice, or session line contains the key |
 | `TestProperty_SGN_Registry` | registering N fake providers, `All` is stable and `Get` finds exactly the registered ones |
 

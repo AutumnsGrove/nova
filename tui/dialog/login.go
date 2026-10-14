@@ -21,6 +21,100 @@ type ProviderInfo struct {
 	Source  string
 }
 
+// flowDialog shows a running sign-in: the prompt, the page to open, an
+// optional user code, and, for OAuth on a remote machine, an input for the
+// redirect URL. Value is the pasted redirect; Retry asks for the same flow
+// again after a failure.
+type flowDialog struct {
+	prompt string
+	url    string
+	code   string
+	paste  bool
+	input  []rune
+	err    string
+}
+
+// NewFlowDialog builds the dialog shown while an OAuth or device flow runs.
+// paste adds the input row for a pasted redirect URL.
+func NewFlowDialog(prompt, url, code string, paste bool) Dialog {
+	return &flowDialog{prompt: prompt, url: url, code: code, paste: paste}
+}
+
+// ID is empty for a local dialog.
+func (d *flowDialog) ID() string { return "" }
+
+// Fail records a failure so the dialog shows it and offers a retry.
+func (d *flowDialog) Fail(msg string) { d.err = msg }
+
+// Paste inserts pasted text, joining newlines with spaces.
+func (d *flowDialog) Paste(text string) {
+	text = strings.ReplaceAll(text, "\r\n", " ")
+	text = strings.ReplaceAll(text, "\n", " ")
+	d.input = append(d.input, []rune(text)...)
+}
+
+// HandleKey implements the flow keys.
+func (d *flowDialog) HandleKey(k tea.KeyPressMsg) Result {
+	key := k.Keystroke()
+	if key == "esc" || key == "ctrl+c" {
+		return Result{Done: true, Cancelled: true}
+	}
+	if d.err != "" {
+		if key == "enter" {
+			return Result{Done: true, Retry: true}
+		}
+		return Result{}
+	}
+	if !d.paste {
+		return Result{}
+	}
+	switch key {
+	case "enter":
+		if text := strings.TrimSpace(string(d.input)); text != "" {
+			return Result{Done: true, Value: text}
+		}
+	case "backspace":
+		if len(d.input) > 0 {
+			d.input = d.input[:len(d.input)-1]
+		}
+	case "ctrl+u":
+		d.input = nil
+	default:
+		if r := []rune(key); len(r) == 1 && r[0] >= ' ' {
+			d.input = append(d.input, r[0])
+		}
+	}
+	return Result{}
+}
+
+// Tick does nothing for a flow dialog.
+func (d *flowDialog) Tick(time.Time) bool { return false }
+
+// Size returns the desired box size.
+func (d *flowDialog) Size(maxW, maxH int) (int, int) {
+	return min(max(len(d.url)+8, 52), maxW), min(11, maxH)
+}
+
+// View renders the framed flow dialog.
+func (d *flowDialog) View(w, h int, st styles.Styles) string {
+	body := []string{safe(d.prompt)}
+	if d.url != "" {
+		body = append(body, st.Muted.Render("Approve access in your browser. If it did not open, visit:"))
+		body = append(body, safe(d.url))
+	}
+	if d.code != "" {
+		body = append(body, "code: "+safe(d.code))
+	}
+	if d.paste {
+		body = append(body, st.Muted.Render("If the browser runs on another machine, paste the URL it was redirected to:"))
+		body = append(body, "> "+safe(string(d.input))+"▏")
+	}
+	if d.err != "" {
+		body = append(body, st.Error.Render("error: "+safe(d.err)), "enter retry · esc close")
+	}
+	return frame("Sign in", body, "esc cancel", w, max(h, 6), st)
+}
+
 // listItem is one row of a generic list picker.
 type listItem struct {
 	value string

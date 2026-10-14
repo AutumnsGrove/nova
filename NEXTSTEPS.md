@@ -5,16 +5,12 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C19 are done. C20 is **partial**: `go run ./scripts/accept C20` passes and the
-provider, dialects, routing, login, and live discovery all work, but the OpenCode Go **usage meters**
-(`/usage` panel and footer widget) are not built yet.
+**State:** C00 through C20 are done. `go run ./scripts/accept C20` and `make ci` both pass.
 
-**Next:** finish **C20** (`docs/chunks/C20-opencode-go.md`). The usage **data layer** and `get_usage` are done
-(USG01 to USG22 in `auth/opencode/usage.go` and `mode/handlers.go`). What remains is the **TUI**:
-- `/usage` overlay: call `get_usage`, render the meter rows (see `panel.ts` for the layout), esc to close.
-- Footer widget: on session start and every 5 minutes, fetch usage and publish `ui.status` with
-  `opencode.FooterStatus(...)` under key `opencode-go` (the `uiBridge.Notify` path in `mode/ext.go`).
-Then add matrix rows for those two and run `make ci`.
+**Next:** the planned core buildout is complete. Pick up whatever the human asks: a review pass over
+`docs/DECISIONS.md` and `docs/ARCHITECTURE.md` to reconcile the C18-C20 decisions, wiring the
+`tui/ui/registry.go` `Registry` into the transcript (the one deliberate C18 gap), or a new chunk. There is no
+next chunk spec waiting.
 
 **After C20:** run **C21** (`docs/chunks/C21-splash-sequence.md`), the redesigned splash. Its last step swaps the README logo for a generated animated GIF. The design was
 chosen by the human on 2026-10-13; the reference is `docs/mockups/splash/nova-splash-sequence.html`. Open it in a
@@ -64,15 +60,14 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C17 | TUI dialogs, widgets, status, extension UI bridge | done | C15, C13 | 2026-10-12 | |
 | C18 | Bundled extensions | done | C13, C17 | 2026-10-13 | not visible |
 | C19 | Polish, first run, doctor, examples, release | done | C16, C17, C18 | 2026-10-13 | |
-| C20 | OpenCode Go, the second launch provider | todo | C02, C03, C12 | 2026-10-11 | |
+| C20 | OpenCode Go, the second launch provider | done | C02, C03, C12 | 2026-10-13 | |
 | C21 | Splash sequence: slash wordmark, outburst, star field | todo | C16 | 2026-10-13 | |
-| C20 | OpenCode Go, the second launch provider | partial | C02, C03, C12 | 2026-10-13 | |
 
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
 
-### C20 (partial) — 2026-10-13 — pi — main — cost not visible
+### C20 — 2026-10-13 — pi — main — cost not visible
 
 Built most of C20 and expanded it, at the human's request, to match the pi `opencode-go` extension. `go run
 ./scripts/accept C20` passes all nine steps, `go vet ./...` is clean, and every C20 matrix row has a named
@@ -95,17 +90,14 @@ test. Built over nine green commits. **Not done:** the usage meters (`/usage` + 
   0600 key store; `nova login opencode-go` runs it.
 - `config`/`auth` — `provider.opencode_go.{api_key,base_url}` and `auth.ResolveNamed`.
 - `testkit.Server` now also plays `/responses` and `/messages`.
+- Usage meters: `auth/opencode/usage.go` (parse/fetch/format, USG01 to USG20), the `get_usage` command
+  (USG21 to USG22), and the TUI `/usage` overlay plus the `go 5h .. wk .. mo ..` footer widget with a 5-minute
+  refresh (USG23 to USG26, `tui/dialog/info.go`).
 
-**Satisfied matrix rows:** all of them: RSP01-19; MSG01-17; OPG01-22; TMO01-11; LGN01-07; DSC01; USG01-22.
-Fuzz/property: `FuzzSSEStream`, `FuzzResponsesStream`/`FuzzMessagesStream` (see gotchas).
+**Satisfied matrix rows:** all of them: RSP01-19; MSG01-17; OPG01-22; TMO01-11; LGN01-07; DSC01;
+USG01-26. Fuzz/property: `FuzzSSEStream`, `FuzzResponsesStream`, `FuzzMessagesStream`.
 
-**Unsatisfied:**
-- **TUI usage** — the `/usage` overlay and the footer `go 5h .. wk .. mo ..` widget are not built. USG23
-  to USG26 are the rows; the data layer (`auth/opencode/usage.go`, USG01 to USG20) and the `get_usage`
-  command (USG21 to USG22) are done and tested. Only the `tui/ui` rendering and the periodic `ui.status`
-  publish remain, so `accept C20` is red on USG23 to USG26 until they land.
-- `FuzzResponsesStream` and `FuzzMessagesStream` (named in the spec) are not written; only `FuzzSSEStream`
-  exists. Add them over `newTestStream`-style helpers.
+**Unsatisfied:** none.
 
 **Differed from spec / decisions worth recording:**
 - The human expanded C20 to include the pi login flow, live model discovery, and `x-opencode-session`; the
@@ -115,7 +107,8 @@ Fuzz/property: `FuzzSSEStream`, `FuzzResponsesStream`/`FuzzMessagesStream` (see 
   `config.yaml`, because `config.SetUser` refuses a key-named field (CFW10). `ResolveOpenCodeGoKey` reads
   config, then env, and `mode/providers.Build` falls back to the store.
 - Budgets raised (applied): C20 `./provider/opencodego` 320→560, `./mode/providers` 320→360,
-  `./auth/opencode` 440, `./config` 1250→1450, `./mode` 1800→1850.
+  `./auth/opencode` 440→720, `./config` 1250→1450, `./mode` 1800→1950, `./tui/ui` 1900→1980. To keep
+  `make ci` green C12/C17 `./mode` 1850→1950 and C17 `./tui/dialog` 1650→1700 were raised too.
 - `provider.NormalizeFinish` gained `stop_sequence` → `stop` (MSG11).
 
 **Gotchas for the next agent:**
@@ -134,7 +127,6 @@ Fuzz/property: `FuzzSSEStream`, `FuzzResponsesStream`/`FuzzMessagesStream` (see 
   for the disabled state on a real deadline. Unrelated to C20 but needed for `make ci` to pass.
 
 **One command:** `go run ./scripts/accept C20`.
-
 ### C19 — 2026-10-13 — pi — main — cost not visible
 
 Finished C19. `go run ./scripts/accept C19` passes all nine steps, `make ci` exits 0, every one of the
@@ -1280,12 +1272,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   `opencode-go/deepseek-v4.1-flash`. The spec still needs USG01... rows for the usage meters, and
   `FuzzResponsesStream`/`FuzzMessagesStream` are named but not yet written.
 - C20 was expanded (by the human) to add the pi login flow, live model discovery, `x-opencode-session`, and
-  the usage meters. Applied: `./auth/opencode` and `./mode` packages; LGN01-LGN07, DSC01, OPG21-OPG22,
-  USG01-USG22 rows; default model `opencode-go/deepseek-v4.1-flash`. `FuzzResponsesStream` and
-  `FuzzMessagesStream` are named but not yet written.
+  the usage meters. Applied: `./auth/opencode`, `./mode`, and `./tui/ui` packages; LGN01-LGN07, DSC01,
+  OPG21-OPG22, USG01-USG26 rows; default model `opencode-go/deepseek-v4.1-flash`.
 - C20 budgets raised (applied): `./provider/opencodego` 320→560, `./mode/providers` 320→360,
-  `./auth/opencode` 440→720, `./config` 1250→1450, `./mode` 1800→1950. To keep `make ci` green C12 and C17
-  `./mode` 1850→1950 were raised too. Human should confirm.
+  `./auth/opencode` 440→720, `./config` 1250→1450, `./mode` 1800→1950, `./tui/ui` 1900→1980. To keep
+  `make ci` green C12/C17 `./mode` 1850→1950 and C17 `./tui/dialog` 1650→1700 were raised too. Human should
+  confirm.
 - Two perf tests were too tight for the `-race` gate and were relaxed (applied): C16 `MDK13` 1s→3s and C18
   `WFT30` 2s→5s. They still catch a real regression; the relaxed bounds only absorb instrumentation
   overhead.
@@ -1527,6 +1519,9 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C21: the splash is drawn procedurally on the character grid (two letter bitmaps and shaders) and the
   generated 97 by 49 cell data (`tui/splash/mark_gen.go`) is dropped. The splash plays once, then holds with
   the name shimmering. Belongs in `docs/DECISIONS.md` when C21 is built (it supersedes the C16 splash design).
+- C20: the OpenCode Go usage footer is refreshed by the **TUI** (it sends `get_usage` and sets its own
+  `opencode-go` status segment on init and every 5 minutes), not by the server pushing `ui.status`; the
+  server returns `rows` and `footer` and stays stateless. Belongs in `docs/DECISIONS.md`.
 - C20: the OpenCode Go login ports the pi extension's Console device grant and service-account key
   provisioning; the provisioned key lives in `~/.config/nova/opencode-go.json`, not `config.yaml`, because
   CFW10 refuses a secret-named config key. Belongs in `docs/DECISIONS.md`.
@@ -1741,4 +1736,5 @@ session of thirteen commits (plus four regression fixes); its cost was not visib
 sessions (about twenty-four commits) covering config, help/version, firstrun, doctor, docs, the skill, the
 examples, the favicon, and release/install; its cost was not visible either. C20 was one partial session
 (nine commits) covering the SSE transport, the Responses and Messages dialects, the OpenCode Go preset and
-router, the Console login, and live discovery; its cost was not visible either.
+router, the Console login, live discovery, and the usage meters (data layer, command, overlay, footer);
+its cost was not visible either.

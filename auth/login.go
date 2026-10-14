@@ -54,31 +54,48 @@ type LoginOptions struct {
 	Listen string
 }
 
-// Login runs OpenRouter's OAuth PKCE flow and returns the API key. It binds a
-// single-use loopback listener, prints the authorization URL, and waits for one
-// callback. The listener and any server goroutines are closed on every path.
-func Login(ctx context.Context, opts LoginOptions) (string, error) {
+// BeginOptions configures Begin. It is the same type as LoginOptions, so a
+// caller can hand a LoginOptions straight to Begin.
+type BeginOptions = LoginOptions
+
+// Flow is one PKCE sign-in in progress. Begin binds the callback listener and
+// builds the authorization URL; Wait blocks for the loopback callback or a
+// value passed to Submit, then exchanges the code for a key.
+type Flow struct {
+	flow     *loginFlow
+	opts     LoginOptions
+	verifier string
+	server   *http.Server
+	closed   atomic.Bool
+}
+
+// Begin starts a PKCE flow. It binds a single-use loopback listener, prints the
+// authorization URL, opens the browser when one is configured, and returns the
+// flow and the URL. The listener and its goroutine are released by Close, which
+// Wait and Login call on every path.
+func Begin(opts BeginOptions) (*Flow, string, error) {
 	opts = opts.withDefaults()
 
 	ln, err := net.Listen("tcp", opts.Listen)
 	if err != nil {
-		return "", fmt.Errorf("auth: listen for callback: %w", err)
+		return nil, "", fmt.Errorf("auth: listen for callback: %w", err)
 	}
-	defer ln.Close()
 
 	verifier, err := NewVerifier()
 	if err != nil {
-		return "", err
+		_ = ln.Close()
+		return nil, "", err
 	}
 	state, err := NewState()
 	if err != nil {
-		return "", err
+		_ = ln.Close()
+		return nil, "", err
 	}
 	challenge := Challenge(verifier)
 
-	flow := &loginFlow{state: state, result: make(chan callbackResult, 1)}
+	lflow := &loginFlow{state: state, result: make(chan callbackResult, 1)}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/callback", flow.callback)
+	mux.HandleFunc("/callback", lflow.callback)
 	srv := &http.Server{Handler: mux}
 	go func() { _ = srv.Serve(ln) }()
 
@@ -91,24 +108,73 @@ func Login(ctx context.Context, opts LoginOptions) (string, error) {
 			fmt.Fprintf(opts.Out, "Could not open a browser: %v\n", err)
 		}
 	}
+	return &Flow{flow: lflow, opts: opts, verifier: verifier, server: srv}, authURL, nil
+}
 
-	waitCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
+// Submit hands the flow the redirect URL the browser landed on. It fails on a
+// value without a matching code and state, and leaves Wait blocked.
+func (f *Flow) Submit(pasted string) error {
+	pasted = strings.TrimSpace(pasted)
+	if pasted == "" {
+		return errors.New("auth: the pasted redirect is empty")
+	}
+	u, err := url.Parse(pasted)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return errors.New("auth: not a valid redirect URL")
+	}
+	res := f.flow.parse(u.Query())
+	if res.err != nil {
+		return res.err
+	}
+	if f.flow.handled.Swap(true) {
+		return errors.New("auth: the login already finished")
+	}
+	f.flow.result <- callbackResult{code: res.code}
+	return nil
+}
+
+// Wait blocks until the loopback callback arrives or Submit delivers a code,
+// then exchanges the code for an API key.
+func (f *Flow) Wait(ctx context.Context) (string, error) {
+	waitCtx, cancel := context.WithTimeout(ctx, f.opts.Timeout)
 	defer cancel()
 
 	select {
 	case <-waitCtx.Done():
-		srv.Close()
+		f.Close()
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return "", ctxErr
 		}
-		return "", fmt.Errorf("auth: timed out after %s waiting for the callback", opts.Timeout)
-	case res := <-flow.result:
-		srv.Close()
+		return "", fmt.Errorf("auth: timed out after %s waiting for the callback", f.opts.Timeout)
+	case res := <-f.flow.result:
+		f.Close()
 		if res.err != nil {
 			return "", res.err
 		}
-		return exchange(waitCtx, opts.HTTPClient, opts.ExchangeURL, res.code, verifier, "S256")
+		return exchange(waitCtx, f.opts.HTTPClient, f.opts.ExchangeURL, res.code, f.verifier, "S256")
 	}
+}
+
+// Close releases the loopback listener. It is safe to call more than once.
+func (f *Flow) Close() error {
+	if f.closed.Swap(true) {
+		return nil
+	}
+	if f.server != nil {
+		return f.server.Close()
+	}
+	return nil
+}
+
+// Login runs OpenRouter's OAuth PKCE flow to completion and returns the API
+// key. It is Begin followed by Wait: the one-shot behaviour the CLI uses.
+func Login(ctx context.Context, opts LoginOptions) (string, error) {
+	flow, _, err := Begin(opts)
+	if err != nil {
+		return "", err
+	}
+	defer flow.Close()
+	return flow.Wait(ctx)
 }
 
 // withDefaults fills the zero values of o.

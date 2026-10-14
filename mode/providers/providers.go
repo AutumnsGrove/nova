@@ -44,11 +44,20 @@ func Build(opt Options) provider.Provider {
 		},
 	})
 
-	goKey, _, _ := ResolveOpenCodeGoKey(opt.Config, getenv)
-	if goKey == "" && opt.Home != "" {
-		if stored, err := opencode.LoadKey(opencode.DefaultKeyPath(opt.Home)); err == nil {
-			goKey = stored
+	// The OpenCode Go key is resolved per request, so a credential saved by
+	// /login at runtime is used by the next request with no restart.
+	goKeyFunc := func(context.Context) (string, error) {
+		if k, _, err := ResolveOpenCodeGoKey(opt.Config, getenv); err == nil {
+			return k, nil
 		}
+		if opt.Home != "" {
+			if stored, err := opencode.LoadKey(opencode.DefaultKeyPath(opt.Home)); err == nil {
+				return stored, nil
+			}
+		}
+		// No key is not an error here: the request goes out unauthenticated,
+		// exactly as it did before the key became lazy, and the server answers.
+		return "", nil
 	}
 	goBase := opt.Config.Provider.OpenCodeGo.BaseURL
 	if goBase == "" {
@@ -61,14 +70,14 @@ func Build(opt Options) provider.Provider {
 		cachePath = filepath.Join(opt.Home, ".config", "nova", "opencode-go-models.json")
 		_ = opencodego.LoadCache(cachePath)
 	}
-	if goKey != "" && cachePath != "" && !opencodego.CacheFresh(cachePath, 0) {
+	if starter, _ := goKeyFunc(context.Background()); starter != "" && cachePath != "" && !opencodego.CacheFresh(cachePath, 0) {
 		go func() {
 			_ = opencodego.Refresh(context.Background(), opencodego.DiscoveryConfig{
-				BaseURL: goBase, APIKey: goKey, CachePath: cachePath,
+				BaseURL: goBase, APIKey: starter, CachePath: cachePath,
 			})
 		}()
 	}
-	openCodeGo := opencodego.New(opencodego.Config{APIKey: goKey, BaseURL: goBase})
+	openCodeGo := opencodego.New(opencodego.Config{APIKeyFunc: goKeyFunc, BaseURL: goBase})
 
 	return &router{openRouter: openRouter, openCodeGo: openCodeGo}
 }

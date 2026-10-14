@@ -60,7 +60,8 @@ type Tokens struct {
 	OrgID   string
 }
 
-// Login runs the full flow and returns the provisioned API key.
+// Login runs the full flow and returns the provisioned API key. It is
+// RequestDeviceCode, print, open, Complete.
 func Login(ctx context.Context, cfg Config) (string, error) {
 	cfg = withDefaults(cfg)
 	device, err := RequestDeviceCode(ctx, cfg)
@@ -71,6 +72,14 @@ func Login(ctx context.Context, cfg Config) (string, error) {
 	if cfg.OpenBrowser != nil {
 		_ = cfg.OpenBrowser(device.VerificationURL)
 	}
+	return Complete(ctx, cfg, device)
+}
+
+// Complete finishes a device login after RequestDeviceCode returned: it polls
+// for the token, resolves the org, and provisions the API key. It is the
+// blocking half a UI can run in the background while it shows the code.
+func Complete(ctx context.Context, cfg Config, device DeviceCode) (string, error) {
+	cfg = withDefaults(cfg)
 	tokens, err := PollToken(ctx, cfg, device)
 	if err != nil {
 		return "", err

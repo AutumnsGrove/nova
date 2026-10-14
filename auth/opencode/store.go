@@ -3,6 +3,7 @@ package opencode
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -29,6 +30,14 @@ func SaveKey(path, key string) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// DeleteKey removes a stored key. Deleting a missing key is not an error.
+func DeleteKey(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("opencode: delete key: %w", err)
+	}
+	return nil
 }
 
 // LoadKey reads the stored key, returning auth.ErrNoKey when none is stored.

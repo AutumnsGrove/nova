@@ -112,7 +112,7 @@ The command is a thin consumer:
 // cmd/nova
 type updateFunc func(context.Context, update.Options) (update.Result, error)
 
-func updateCommand(stderr io.Writer, exit *int, run updateFunc) *cobra.Command
+func updateCommand(stdout, stderr io.Writer, exit *int, run updateFunc) *cobra.Command
 ```
 
 ## Behaviour
@@ -157,12 +157,12 @@ func updateCommand(stderr io.Writer, exit *int, run updateFunc) *cobra.Command
     versions, that the release is current, or, for `Check` in a checkout, the root and how to
     rebuild.
 15. The command maps flags and environment to `Options`: `--source <dir>` forces `Source`,
-    `--release` forces `Release`, a positional argument is a release tag, `--check` sets
-    `Check`, `--force` sets `Force`, and `--flavour` sets `Flavour` (default
-    `buildFlavour()`). `NOVA_RELEASE_BASE`, `NOVA_API_URL`, `NOVA_VERSION`, and
-    `NOVA_FLAVOUR` override the corresponding fields when the flag is not set. `Target` is
-    `os.Executable()`. A failure prints `nova update: <error>` to stderr and exits 1; success
-    exits 0.
+    `--release [tag]` forces `Release` (no tag means the latest), `--check` sets `Check`,
+    `--force` sets `Force`, and `--flavour` sets `Flavour` (default `buildFlavour()`).
+    `--source` and `--release` together are an error. `NOVA_RELEASE_BASE`, `NOVA_API_URL`,
+    `NOVA_VERSION`, and `NOVA_FLAVOUR` override the corresponding fields when the flag is not
+    set. `Target` is `os.Executable()`. A failure prints `nova update: <error>` to stderr and
+    exits 1; success exits 0.
 
 ## Matrix
 
@@ -197,6 +197,7 @@ func updateCommand(stderr io.Writer, exit *int, run updateFunc) *cobra.Command
 | UPD27 | command help | `nova update --help` | documents the flags |
 | UPD28 | command exit codes | run error, then success | 1, then 0 |
 | UPD29 | flags and environment map to Options | `--check --source X --flavour min` and `NOVA_*` | each field set |
+| UPD30 | conflicting modes | `--source` and `--release` together | an error; no run |
 
 ## Fuzz and property tests
 

@@ -1,6 +1,7 @@
 package messages
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -345,4 +346,23 @@ func TestMessages_MSG17_IdleTimeout(t *testing.T) {
 	if resp == nil || resp.Message.Content != "hi" {
 		t.Fatalf("partial = %+v", resp)
 	}
+}
+
+// roundTripFunc adapts a function to http.RoundTripper.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// FuzzMessagesStream feeds arbitrary bytes as a Messages SSE body.
+func FuzzMessagesStream(f *testing.F) {
+	f.Add([]byte("data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"x\"}}\n\n"))
+	f.Add([]byte("data: {\"type\":\"message_stop\"}\n\n"))
+	f.Add([]byte("not sse at all"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(data)), Header: http.Header{}}, nil
+		})}
+		p := New(Config{BaseURL: "http://example.invalid", HTTPClient: client})
+		_, _ = p.Stream(context.Background(), provider.Request{Model: "m"}, nil)
+	})
 }

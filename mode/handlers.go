@@ -108,13 +108,16 @@ func (s *Server) handleGetUsage(cmd proto.Command) proto.Response {
 		})
 	}
 	out := make([]usageInfo, 0, len(meters))
+	rows := make([]string, 0, len(meters))
+	now := time.Now()
 	for _, m := range meters {
 		out = append(out, usageInfo{
 			Kind: string(m.Kind), Label: m.Label, Short: m.Short, Percent: m.Percent,
 			UsedUSD: m.UsedUSD, LimitUSD: m.LimitUSD, ResetsAt: m.ResetsAt,
 		})
+		rows = append(rows, opencode.FormatMeterRow(m, 18, now))
 	}
-	return okResponse(cmd, map[string]any{"meters": out, "footer": opencode.FooterStatus(meters, time.Now())})
+	return okResponse(cmd, map[string]any{"meters": out, "rows": rows, "footer": opencode.FooterStatus(meters, now)})
 }
 
 // sessionInfo is one session row as the protocol carries it.

@@ -23,6 +23,7 @@ const (
 	intentTree       = "tree"
 	intentExtensions = "extensions"
 	intentHelp       = "help"
+	intentUsage      = "usage"
 )
 
 // capable reports whether the client declared a UI method in hello.
@@ -270,6 +271,12 @@ func (m *Model) requestModelPicker() tea.Cmd {
 	return m.client.Send(proto.Command{Type: proto.CmdListModels})
 }
 
+// requestUsage asks the server for the OpenCode Go usage meters.
+func (m *Model) requestUsage() tea.Cmd {
+	m.await = intentUsage
+	return m.client.Send(proto.Command{Type: proto.CmdGetUsage})
+}
+
 // openModelPicker shows the catalog from a list_models response.
 func (m *Model) openModelPicker(resp proto.Response) {
 	if m.await != intentModels {
@@ -293,6 +300,36 @@ func (m *Model) openModelPicker(resp proto.Response) {
 		models = append(models, dialog.ModelInfo(r))
 	}
 	m.pushDialog(dialog.NewModelPicker(models, m.state.Model), intentModels)
+}
+
+// openUsage sets the footer status from a get_usage response and, when the
+// /usage command asked for it, shows the meter overlay.
+func (m *Model) openUsage(resp proto.Response) {
+	var data struct {
+		Rows   []string `json:"rows"`
+		Footer string   `json:"footer"`
+		Error  string   `json:"error"`
+	}
+	_ = json.Unmarshal(resp.Data, &data)
+	if data.Footer != "" {
+		m.widgets.SetStatus("opencode-go", []widget.Segment{{Text: data.Footer, Style: "accent"}})
+	} else {
+		m.widgets.SetStatus("opencode-go", nil)
+	}
+	if m.await != intentUsage {
+		return
+	}
+	m.await = ""
+	var lines []string
+	switch {
+	case data.Error != "":
+		lines = append(lines, data.Error)
+	case len(data.Rows) == 0:
+		lines = append(lines, "No usage data yet.")
+	default:
+		lines = data.Rows
+	}
+	m.pushDialog(dialog.NewInfo("OpenCode Go — usage", lines), intentUsage)
 }
 
 // openSessionList shows the resume picker from a session.list response.

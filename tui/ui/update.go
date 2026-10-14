@@ -69,6 +69,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitArmed = false
 		}
 		return m, m.scheduleTick()
+
+	case usageTickMsg:
+		m.usageArmed = false
+		return m, tea.Batch(
+			m.client.Send(proto.Command{Type: proto.CmdGetUsage}),
+			m.scheduleUsage(),
+		)
 	}
 	return m, nil
 }
@@ -102,6 +109,8 @@ func (m *Model) handleResponse(resp proto.Response) tea.Cmd {
 		if resp.OK {
 			m.openExtensions(resp)
 		}
+	case proto.CmdGetUsage:
+		m.openUsage(resp)
 	case proto.CmdPrompt, proto.CmdSteer, proto.CmdFollowUp:
 		return m.finishSend(resp)
 	case proto.CmdAbort:

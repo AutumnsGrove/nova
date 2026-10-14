@@ -112,6 +112,7 @@ type Model struct {
 	display    chat.Display
 	splashOff  bool
 	ticking    bool
+	usageArmed bool
 	runActive  bool
 	expanded   bool
 	quitArmed  bool
@@ -245,6 +246,8 @@ func (m *Model) Init() tea.Cmd {
 		m.client.Send(proto.Command{Type: proto.CmdGetState}),
 		m.client.Send(proto.Command{Type: proto.CmdGetCommands}),
 		m.client.Send(proto.Command{Type: proto.CmdGetMessages}),
+		m.client.Send(proto.Command{Type: proto.CmdGetUsage}),
+		m.scheduleUsage(),
 		m.client.Next(),
 	)
 }
@@ -319,6 +322,25 @@ func (m *Model) messages(resp proto.Response) {
 // syncList pushes the transcript into the list.
 func (m *Model) syncList() {
 	m.list.SetItems(m.transcript.Items())
+}
+
+// usageTickMsg fires when the OpenCode Go usage should refresh.
+type usageTickMsg struct{}
+
+// usageRefreshInterval is how often the footer usage is refetched.
+const usageRefreshInterval = 5 * time.Minute
+
+// scheduleUsage arms the next usage refresh, once.
+func (m *Model) scheduleUsage() tea.Cmd {
+	if m.usageArmed {
+		return nil
+	}
+	m.usageArmed = true
+	after := m.clock.After(usageRefreshInterval)
+	return func() tea.Msg {
+		after()
+		return usageTickMsg{}
+	}
 }
 
 // tickMsg is delivered by Clock.After.

@@ -1,6 +1,7 @@
 package responses
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -379,4 +380,23 @@ func TestResponses_RSP19_IdleTimeout(t *testing.T) {
 	if resp == nil || resp.Message.Content != "hi" {
 		t.Fatalf("partial = %+v", resp)
 	}
+}
+
+// roundTripFunc adapts a function to http.RoundTripper.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// FuzzResponsesStream feeds arbitrary bytes as a Responses SSE body.
+func FuzzResponsesStream(f *testing.F) {
+	f.Add([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"x\"}\n\n"))
+	f.Add([]byte("data: {\"type\":\"response.completed\",\"response\":{\"usage\":{}}}\n\n"))
+	f.Add([]byte("not sse at all"))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(data)), Header: http.Header{}}, nil
+		})}
+		p := New(Config{BaseURL: "http://example.invalid", HTTPClient: client})
+		_, _ = p.Stream(context.Background(), provider.Request{Model: "m"}, nil)
+	})
 }

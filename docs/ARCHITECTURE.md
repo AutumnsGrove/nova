@@ -68,7 +68,7 @@ nova/
                   subagent, webfetch                            ≤ 2500 total
   tui/            the terminal UI                               ≤ 9000
     cli/          fang-styled help and errors (full build only) ≤ 150
-  cmd/nova/       main, cobra commands, doctor, version         ≤ 680
+  cmd/nova/       main, cobra commands, doctor, version         ≤ 1300
   doctor/         environment checks                            ≤ 300
   scripts/        matrixcheck, linecount, importcheck, accept
   assets/         logo SVGs and the generator

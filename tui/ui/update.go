@@ -79,6 +79,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.client.Send(proto.Command{Type: proto.CmdGetUsage}),
 			m.scheduleUsage(),
 		)
+
+	case providersLoadedMsg:
+		m.onProvidersLoaded(msg)
+		return m, nil
+
+	case loginBegunMsg:
+		return m, m.onLoginBegun(msg)
+
+	case loginDoneMsg:
+		return m, m.onLoginDone(msg)
+
+	case credSavedMsg:
+		return m, m.onCredSaved(msg)
+
+	case logoutDoneMsg:
+		m.onLogoutDone(msg)
+		return m, nil
 	}
 	return m, nil
 }

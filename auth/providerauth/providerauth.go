@@ -64,6 +64,8 @@ type BeginFunc func(ctx context.Context, cfg Config) (Session, error)
 type Config struct {
 	Home string
 	Env  func(string) string
+	// OpenBrowser opens the sign-in page. A nil function means print only.
+	OpenBrowser func(string) error
 }
 
 // getenv is Config.Env with a nil guard.

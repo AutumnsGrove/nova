@@ -45,6 +45,7 @@ func beginOpenRouterOAuth(_ context.Context, cfg Config) (Session, error) {
 		AuthURL:     cfg.getenv("NOVA_AUTH_URL"),
 		ExchangeURL: cfg.getenv("NOVA_EXCHANGE_URL"),
 		Out:         io.Discard,
+		OpenBrowser: cfg.OpenBrowser,
 	})
 	if err != nil {
 		return nil, err

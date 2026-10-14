@@ -2,6 +2,8 @@ package providerauth
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"os"
 	"testing"
 )
@@ -118,6 +120,44 @@ func TestProviderauth_SGN21_StoreRoundTripsAt0600(t *testing.T) {
 	c, ok, err := p.Load(home)
 	if err != nil || !ok || c.Key != "go-key" {
 		t.Fatalf("Load = (%+v, %v, %v)", c, ok, err)
+	}
+}
+
+func TestProviderauth_SGN24_BrowserOpens(t *testing.T) {
+	p, _ := Get("openrouter")
+	var got string
+	session, err := p.Begin[OAuth](context.Background(), Config{
+		Home:        t.TempDir(),
+		OpenBrowser: func(u string) error { got = u; return nil },
+	})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer session.Close()
+	if got == "" || got != session.URL() {
+		t.Fatalf("browser opened %q, URL %q", got, session.URL())
+	}
+}
+
+func TestProperty_SGN_Registry(t *testing.T) {
+	r := rand.New(rand.NewSource(7))
+	ids := map[string]bool{}
+	for i := 0; i < 25; i++ {
+		id := fmt.Sprintf("prop-%d-c22", r.Intn(100000))
+		Register(Provider{ID: id, Name: id})
+		ids[id] = true
+	}
+	counts := map[string]int{}
+	for _, p := range All() {
+		counts[p.ID]++
+	}
+	for id := range ids {
+		if counts[id] != 1 {
+			t.Fatalf("%s appears %d times", id, counts[id])
+		}
+		if _, ok := Get(id); !ok {
+			t.Fatalf("Get(%s) missed", id)
+		}
 	}
 }
 

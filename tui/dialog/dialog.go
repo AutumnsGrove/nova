@@ -19,10 +19,12 @@ import (
 )
 
 // Result is one key's outcome. Done reports the dialog closed; Value is the
-// dialog's answer, defined by each constructor.
+// dialog's answer, defined by each constructor. Retry asks the caller to run
+// the same flow again (a failed sign-in the user chose to retry).
 type Result struct {
 	Done      bool
 	Cancelled bool
+	Retry     bool
 	Value     any
 }
 

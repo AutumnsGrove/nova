@@ -6,6 +6,7 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
@@ -116,13 +118,21 @@ type Model struct {
 	splashStart time.Time
 	splashAt    time.Duration
 	ticking     bool
-	usageArmed  bool
-	runActive   bool
-	expanded    bool
-	quitArmed   bool
-	quitAt      time.Time
-	notice      string
-	panicValue  any
+
+	// The in-app sign-in flow.
+	loginProvider string
+	loginMethod   providerauth.Method
+	loginSession  providerauth.Session
+	loginCancel   context.CancelFunc
+	loginErr      string
+	loginGen      int
+	usageArmed    bool
+	runActive     bool
+	expanded      bool
+	quitArmed     bool
+	quitAt        time.Time
+	notice        string
+	panicValue    any
 
 	// The dialog bridge and the extension UI slots.
 	overlay    *dialog.Overlay

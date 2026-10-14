@@ -199,6 +199,13 @@ func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 		return nil, true
 	case "display":
 		return m.displayCommand(args), true
+	case "login":
+		return m.loginCommand(args), true
+	case "logout":
+		if id := strings.TrimSpace(args); id != "" {
+			return m.logoutCommand(id), true
+		}
+		return m.openLogoutPicker(), true
 	}
 	return nil, false
 }

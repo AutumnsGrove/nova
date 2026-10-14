@@ -36,7 +36,7 @@ func openCodeGoProvider() Provider {
 // beginOpenCodeGoDevice asks the Console for a device and user code.
 func beginOpenCodeGoDevice(ctx context.Context, cfg Config) (Session, error) {
 	server := cfg.getenv("OPENCODE_CONSOLE_SERVER")
-	device, err := opencode.RequestDeviceCode(ctx, opencode.Config{Server: server, Out: io.Discard})
+	device, err := opencode.RequestDeviceCode(ctx, opencode.Config{Server: server, Out: io.Discard, OpenBrowser: cfg.OpenBrowser})
 	if err != nil {
 		return nil, err
 	}

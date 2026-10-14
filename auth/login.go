@@ -66,6 +66,7 @@ type Flow struct {
 	opts     LoginOptions
 	verifier string
 	server   *http.Server
+	listener net.Listener
 	closed   atomic.Bool
 }
 
@@ -108,7 +109,7 @@ func Begin(opts BeginOptions) (*Flow, string, error) {
 			fmt.Fprintf(opts.Out, "Could not open a browser: %v\n", err)
 		}
 	}
-	return &Flow{flow: lflow, opts: opts, verifier: verifier, server: srv}, authURL, nil
+	return &Flow{flow: lflow, opts: opts, verifier: verifier, server: srv, listener: ln}, authURL, nil
 }
 
 // Submit hands the flow the redirect URL the browser landed on. It fails on a
@@ -160,10 +161,17 @@ func (f *Flow) Close() error {
 	if f.closed.Swap(true) {
 		return nil
 	}
+	var err error
 	if f.server != nil {
-		return f.server.Close()
+		err = f.server.Close()
 	}
-	return nil
+	// Begin starts Serve in a goroutine, so a fast cancellation can run Close
+	// before Serve has tracked the listener. Closing the listener here too
+	// guarantees the port is released on every path.
+	if f.listener != nil {
+		_ = f.listener.Close()
+	}
+	return err
 }
 
 // Login runs OpenRouter's OAuth PKCE flow to completion and returns the API

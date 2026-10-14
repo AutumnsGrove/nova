@@ -283,6 +283,26 @@ func TestLogin_LOG07_ContextCancelled(t *testing.T) {
 	assertListenerClosed(t, h.callbackURL)
 }
 
+// TestLogin_LOG07_CloseReleasesUntrackedListener checks Close closes the
+// callback listener even when Serve has not tracked it yet: Begin starts Serve
+// in a goroutine, so a cancellation that lands early can reach Close first.
+func TestLogin_LOG07_CloseReleasesUntrackedListener(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A server that never served ln is the state a fast cancel reaches.
+	f := &Flow{server: &http.Server{}, listener: ln}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	conn, err := net.DialTimeout("tcp", ln.Addr().String(), 100*time.Millisecond)
+	if err == nil {
+		conn.Close()
+		t.Fatalf("listener at %s still accepts after Close", ln.Addr())
+	}
+}
+
 // TestLogin_LOG08_Exchange401 checks a non-2xx exchange error names the status.
 func TestLogin_LOG08_Exchange401(t *testing.T) {
 	fx := newFakeExchange(t, http.StatusUnauthorized, `{"error":"invalid"}`)

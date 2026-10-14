@@ -18,7 +18,7 @@ func writeCheckout(t *testing.T, root string) {
 	if err := os.MkdirAll(filepath.Join(root, "cmd", "nova"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gomod := "module github.com/AumnsGrove/nova\n\ngo 1.26\n"
+	gomod := "module github.com/AutumnsGrove/nova\n\ngo 1.26\n"
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(gomod), 0o644); err != nil {
 		t.Fatal(err)
 	}

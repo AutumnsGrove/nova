@@ -61,7 +61,7 @@ type Result struct {
 	Message string
 }
 
-const defaultBaseURL = "https://github.com/AumnsGrove/nova"
+const defaultBaseURL = "https://github.com/AutumnsGrove/nova"
 
 // Run performs the update described by opt.
 func Run(ctx context.Context, opt Options) (Result, error) {
@@ -125,7 +125,7 @@ func isCheckout(dir string) bool {
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module ")) == "github.com/AumnsGrove/nova"
+			return strings.TrimSpace(strings.TrimPrefix(line, "module ")) == "github.com/AutumnsGrove/nova"
 		}
 	}
 	return false

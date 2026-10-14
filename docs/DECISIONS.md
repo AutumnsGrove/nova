@@ -141,7 +141,8 @@ compile them. That is cosmetic. Nothing UI-related is built into their binary.
 
 Recorded when the build-out closed (2026-10-14, issue #8). D72 and D73 change how work is done; D74 to D95
 are decisions the chunk agents made while building and queued as "Decisions to record". Their original notes,
-with the surrounding context, are in [`archive/NEXTSTEPS.md`](archive/NEXTSTEPS.md).
+with the surrounding context, are in [`archive/NEXTSTEPS.md`](archive/NEXTSTEPS.md). Later decisions (D96 onward)
+are made as work arrives and cite their issue.
 
 | # | Decision | Choice | Rationale | Rejected |
 |---|---|---|---|---|
@@ -169,6 +170,7 @@ with the surrounding context, are in [`archive/NEXTSTEPS.md`](archive/NEXTSTEPS.
 | D93 | TUI structure | `tui/client` keeps an unexported `pipe` interface so the adapter is testable without a `mode.Server`. Transcript items are appended or removed, never reordered, and `Apply` returns the changed ids. `tui/ui` owns its `Client`, `Clock`, `Renderer`, and `Init` commands, and `Update` builds commands and never calls the pipe synchronously. The TUI starts when `ui.Interactive(mode, stdinTTY, stdoutTTY)` says so, and the `notui` build supplies a stub. `render.Call.Now` is the render clock. A markdown block ends only at a complete blank line outside a fence. | Lets the list touch only changed items, and keeps `Update` free of I/O. | — |
 | D94 | Spec tooling | `matrixcheck` enforces the ID shape only on a test that cites a row of the current spec, so one package can serve several chunks. `scripts/linecount` skips generated files (`// Code generated ... DO NOT EDIT.`). | The M0 prototype occupied several future package paths. | — |
 | D95 | `serve` is single-user | Multi-user `serve` is out of scope: one trusted agent behind one bearer token. A `login` over the protocol writes the server host's credential store for the whole process (D76). | — | — |
+| D96 | A run is registered before `prompt` replies | `agent.Agent.Start` registers a run synchronously (`Running` is true and `Abort` can cancel it) and then executes it in the background; `mode` starts every prompt, follow-up, and template run through it. `Agent.Run` still blocks. | `Abort` was a no-op until the run goroutine reached its registration, so an `abort` sent right after `prompt` could be lost and the run would never end (issue #13). `Start` also removes the gap between the `Running()` check and the start, which `ErrBusy` now covers. | `go server.run(...)` with a retry in the caller (the Action only); a pending-abort flag on the agent |
 
 ## Superseded decisions at a glance
 

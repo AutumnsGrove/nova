@@ -52,7 +52,7 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 
 | Command | Fields | Notes |
 |---|---|---|
-| `prompt` | `text`, `attachments?` | starts a run. If one is running: error `busy`, unless `queue` is set |
+| `prompt` | `text`, `attachments?` | starts a run. If one is running: error `busy`, unless `queue` is set. The response is sent once the run exists, so an `abort` sent right after it always cancels that run |
 | `steer` | `text` | queue a steering message for the current run |
 | `follow_up` | `text` | queue a message to run after the current work |
 | `abort` | | cancel the current run; queued messages come back in the response |

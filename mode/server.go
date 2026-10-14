@@ -6,6 +6,7 @@ package mode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -402,10 +403,20 @@ func (s *Server) beforeTurn(ctx context.Context, msgs []message.Message) ([]mess
 	return s.history(), nil
 }
 
-// run executes one agent run in its own goroutine.
-func (s *Server) run(text string) {
-	history := s.history()
-	_, _ = s.agent.Run(context.Background(), history, message.User(text))
+// startRun registers an agent run and starts it in the background. The run
+// exists when this returns, so a following abort always has something to
+// cancel; the outcome arrives as events ending in one run_end.
+func (s *Server) startRun(text string) error {
+	return s.agent.Start(context.Background(), s.history(), message.User(text))
+}
+
+// startFailure turns a startRun error into a response: a run already in
+// progress is busy, anything else is a configuration problem.
+func startFailure(cmd proto.Command, err error) proto.Response {
+	if errors.Is(err, agent.ErrBusy) {
+		return failResponse(cmd, proto.CodeBusy, "a run is already in progress")
+	}
+	return failResponse(cmd, proto.CodeInternal, err.Error())
 }
 
 // Close releases the session. It is idempotent.

@@ -233,7 +233,9 @@ func (s *Server) handleRunCommand(cmd proto.Command) proto.Response {
 			if s.agent.Running() {
 				return failResponse(cmd, proto.CodeBusy, "a run is already in progress")
 			}
-			go s.run(text)
+			if err := s.startRun(text); err != nil {
+				return startFailure(cmd, err)
+			}
 			return okResponse(cmd, nil)
 		}
 	}

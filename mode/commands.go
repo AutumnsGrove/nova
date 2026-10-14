@@ -119,7 +119,9 @@ func (s *Server) handlePrompt(cmd proto.Command) proto.Response {
 		}
 		return okResponse(cmd, nil)
 	}
-	go s.run(cmd.Text)
+	if err := s.startRun(cmd.Text); err != nil {
+		return startFailure(cmd, err)
+	}
 	return okResponse(cmd, nil)
 }
 
@@ -142,7 +144,9 @@ func (s *Server) handleFollowUp(cmd proto.Command) proto.Response {
 		}
 		return okResponse(cmd, nil)
 	}
-	go s.run(cmd.Text)
+	if err := s.startRun(cmd.Text); err != nil {
+		return startFailure(cmd, err)
+	}
 	return okResponse(cmd, nil)
 }
 

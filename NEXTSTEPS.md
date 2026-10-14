@@ -5,8 +5,9 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C22 are done; `accept C22` and `make ci` both pass. **C22b (the protocol login command)
-is the next chunk; it is not specified yet.**
+**State:** C00 through C23 are done; `accept C23` and `make ci` both pass. C23 (`nova update`) was added at the
+human's request on a `feat/self-update` worktree. **C22b (the protocol login command) is the next chunk; it is
+not specified yet.**
 
 **Next:** build **C22b**, the protocol `login`/`logout` command so a `serve`/`rpc` client can sign in the server
 host. The seam is `auth/providerauth`: the server can call `All`/`Resolve` and a provider's `Begin`/`Save`, and
@@ -22,7 +23,8 @@ no consumer and is left in place. `mode/action` is exactly at its 700-line budge
 timers are never cancelled, so leftover timers make `testkit.FakeClock.BlockUntil` unreliable.
 `proto.Event` has no `Turns` field, so C09 put the `run_end` turn count in `Turn *int`. C21 raised
 `./tui/ui` to 1950 in C15/C16/C17 and `./tui/splash/splashgif` to 460; the splash GIF is 1.2 MB and any
-change to `tui/splash` that moves pixels requires regenerating it or `SQN48` fails.
+change to `tui/splash` that moves pixels requires regenerating it or `SQN48` fails. The shared `./cmd/nova`
+budget is now 1300 (raised for C23 in C12/C17/C19 and `docs/ARCHITECTURE.md`); the package was 1159 code lines.
 
 **C18 conventions to know before touching bundled code:** `ext.Host.AddBundled` must be called before `Start`
 so bundled tool names are reserved before third-party ones. `Env.Extra["tools"]` is the parent
@@ -66,10 +68,46 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C21 | Splash sequence: slash wordmark, outburst, star field | done | C16 | 2026-10-13 | not visible |
 | C22 | In-app login: provider picker, OAuth, and API keys | done | C17, C20 | 2026-10-13 | not visible |
 | C22b | Login over the protocol (serve/rpc) | todo | C22 | 2026-10-13 | |
+| C23 | The update command: refresh from a checkout or the latest release | done | C19 | 2026-10-14 | not visible |
 
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C23 — 2026-10-14 — pi — feat/self-update worktree — cost not visible
+
+Added `nova update`, at the human's request: it refreshes the running binary, rebuilding from the local checkout
+when the cwd is one and installing the latest GitHub release anywhere else. Built in a git worktree
+(`/Users/autumn/Documents/Projects/nova-self-update`, branch `feat/self-update`) because another agent was on
+`main`. Eleven commits. `go run ./scripts/accept C23` passes all nine steps, `make ci` is green, and every UPD
+row has a named test.
+
+**Built:**
+- `update/` (new top-level package, 450 budget): `Run`, `Detect`, `Options`/`Result`. `release.go` resolves the
+  latest tag from the API, downloads `nova_<tag>_<os>_<arch>.tar.gz` (or `nova-min_...`), verifies
+  `checksums.txt` with SHA-256, and extracts only the exact `nova` member. `source.go` runs
+  `go build -o <staged> [-tags notui] ./cmd/nova` with `CGO_ENABLED=0` in the checkout. `install.go` stages the
+  new binary beside the target, runs `<staged> version` as a sanity check, then renames it over the target
+  (mode 0755).
+- `cmd/nova/update.go`: `nova update [--check] [--force] [--source <dir>] [--release[=<tag>]] [--flavour
+  full|min]`, grouped under Setup. It reads `NOVA_RELEASE_BASE`, `NOVA_API_URL`, `NOVA_VERSION`, and
+  `NOVA_FLAVOUR`, and targets `os.Executable()`.
+- `docs/chunks/C23-update-command.md` (UPD01 to UPD30); shared `./cmd/nova` budget raised 1200→1300.
+
+**Could not satisfy:** none.
+
+**Differed from the spec:** the command is `update`, not `self-update` (human). `--release` is a string flag
+with `NoOptDefVal=latest`, so a tag needs `--release=v1.2.3` (a spaced tag becomes a positional and
+`cobra.NoArgs` rejects it). The version sanity check runs for a source build too, not only a release.
+
+**Sharp edges:** the fresh worktree had no compiled example binaries, so `go test -short ./cmd/nova` failed
+until `TestExamples_EXM04` (non-short) built them; `make ci` runs the non-short suite and is fine, but a bare
+`accept` on a fresh checkout can fail at `test-short` for an unrelated reason. I first wrote the module org as
+`AumnsGrove` in the new files and the package tests still passed because the fixture used the same typo; the
+real path is `AutumnsGrove`. Watch for self-consistent typos.
+
+**Prove it:** `go run ./scripts/accept C23`; smoke `go run ./cmd/nova update --check` in the checkout, then
+`go run ./cmd/nova update --source .`.
 
 ### C22 — 2026-10-13 — pi — main — cost not visible
 
@@ -1374,6 +1412,11 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
+- C23 (applied): raised the shared `./cmd/nova` budget 1200→1300 in C12/C17/C19 and `docs/ARCHITECTURE.md`
+  (the package is 1159 lines before C23), and added the `update/` package line to `docs/ARCHITECTURE.md`.
+  The C23 interface block also gained `stdout` on `updateCommand`. Human should confirm the budget.
+- C23 (applied, from the human): the command is `nova update`, not `nova self-update`.
+
 - C22 (applied): the interface block needed `dialog.NewFlowDialog`, `dialog.Result.Retry`, and
   `providerauth.Config.OpenBrowser`, all added during the build. Budgets raised: C22 `./tui/ui` 2150→2350 and
   C15/C16/C17/C20/C21 `./tui/ui` →2350 (the package is 2252). Human should confirm, or ask for the login
@@ -1636,6 +1679,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Decisions to record
 
+- C23: `nova update` reuses install.sh's release layout and environment variable names, but is Go and replaces
+  `os.Executable()` rather than `$HOME/.local/bin`. A source build uses the checkout as it is (no `git pull`).
+  Belongs in `docs/DECISIONS.md`.
+- C23: the mode is auto-detected from the cwd (a checkout rebuilds from source, otherwise a release), and
+  `--source`/`--release` override it. Belongs in `docs/DECISIONS.md`.
+
 - C21: the splash is drawn procedurally on the character grid (two letter bitmaps and shaders) and the
   generated 97 by 49 cell data (`tui/splash/mark_gen.go`) is dropped. The splash plays once, then holds with
   the name shimmering. Belongs in `docs/DECISIONS.md` when C21 is built (it supersedes the C16 splash design).
@@ -1735,6 +1784,10 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   indirect dependency and there is no stdlib pty.
 
 ## Open questions for the human
+
+- C23: should `nova update` `git pull` a source checkout before rebuilding, or keep using the tree as it is?
+  Today it is as-is. Also: is replacing `os.Executable()` the right target, or should `NOVA_INSTALL_DIR` be
+  honoured like install.sh?
 
 - C22: should the TUI pass the loaded config into `providerauth.Resolve` so a hand-edited
   `provider.opencode_go.api_key` shows as ready in `/login`? Today the picker sees env and store only.
@@ -1846,4 +1899,6 @@ router, the Console login, live discovery, and the usage meters (data layer, com
 its cost was not visible either. C21 was one session of four commits covering the grid sequence, the UI tick
 chain, the GIF generator, and the README banner; its cost was not visible either. C22 was one session of six
 commits covering the provider registry, the steppable auth flows, the login dialogs, and the `/login`/`/logout`
-TUI state machine; its cost was not visible either.
+TUI state machine; its cost was not visible either. C23 was one session of eleven commits (the spec and budget
+raise, the `update` package, the `nova update` command) on a `feat/self-update` worktree; its cost was not
+visible either.

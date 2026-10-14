@@ -70,6 +70,7 @@ nova/
     cli/          fang-styled help and errors (full build only) ≤ 150
   cmd/nova/       main, cobra commands, doctor, version         ≤ 1300
   doctor/         environment checks                            ≤ 300
+  update/         replace the binary from a checkout or release ≤ 450
   scripts/        matrixcheck, linecount, importcheck, accept
   assets/         logo SVGs and the generator
   docs/
@@ -99,7 +100,7 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
   imports `permission` because it decodes the policy.
 - `session` imports `message`, `provider`, `proto`. `compaction` imports `session`, `provider`, `message`.
 - `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.
-- `mode` wires everything (including `serve` and `action`). `cmd/nova` only parses flags and calls `mode` and `ext`.
+- `mode` wires everything (including `serve` and `action`). `cmd/nova` only parses flags and calls `mode`, `ext`, and `update`.
 - `testkit` is test support: any package's `_test.go` may import it, but production
   code may not (D48).
 - **`tui/` and `bundled/*` are the only packages allowed to import `charm.land/*`.**

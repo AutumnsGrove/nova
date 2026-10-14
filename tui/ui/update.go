@@ -90,8 +90,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.onCredSaved(msg)
 
 	case logoutDoneMsg:
-		m.onLogoutDone(msg)
-		return m, nil
+		return m, m.onLogoutDone(msg)
 	}
 	return m, nil
 }

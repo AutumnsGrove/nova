@@ -321,6 +321,11 @@ func NewSecretInput(title, placeholder string) Dialog
 | SGN48 | the picker width is capped | a very long row, 60 columns available | the width never exceeds 60 |
 | SGN49 | no picker when the current model works | login while the server reports the current provider ready | no `list_models`, no dialog, and a notice that points to `/model` |
 | SGN50 | picker when the current model does not work | login while the current provider is not ready | the model picker opens |
+| SGN51 | logout switches the model | the provider serving the current model is signed out and another is ready | `set_model` to the other provider's default model, and a notice naming it |
+| SGN52 | logout with nothing to switch to | the only provider is signed out | no `set_model`, and a notice that points to `/login` |
+| SGN53 | logout of another provider | the provider signed out does not serve the current model | the model is left alone |
+| SGN54 | logout while an env key remains | the provider still resolves from the environment | the model is left alone; the notice names `env` |
+| SGN55 | logout while a config key remains | the server still resolves a key from its config | the notice names `config`; the model is left alone |
 
 ## Fuzz and property tests
 

@@ -42,6 +42,7 @@ type credSavedMsg struct {
 
 // logoutDoneMsg reports the outcome of deleting a credential.
 type logoutDoneMsg struct {
+	id        string
 	name      string
 	remaining providerauth.Status
 	err       error
@@ -83,6 +84,9 @@ func (m *Model) onProviders(resp proto.Response) tea.Cmd {
 	case intentProvidersAfterLogin:
 		m.await = ""
 		return m.afterLogin(decodeProviders(resp))
+	case intentProvidersAfterLogout:
+		m.await = ""
+		return m.afterLogout(decodeProviders(resp))
 	case intentProvidersLogin, intentProvidersLogout:
 		m.await = ""
 		title, next := "Select provider to configure:", intentLogin
@@ -339,19 +343,55 @@ func (m *Model) logoutCommand(id string) tea.Cmd {
 	home := m.home
 	return func() tea.Msg {
 		err := p.Delete(home)
-		return logoutDoneMsg{name: p.Name, remaining: providerauth.Resolve(p, "", os.Getenv, home), err: err}
+		return logoutDoneMsg{id: p.ID, name: p.Name, remaining: providerauth.Resolve(p, "", os.Getenv, home), err: err}
 	}
 }
 
-// onLogoutDone reports the deletion and any source that remains.
-func (m *Model) onLogoutDone(msg logoutDoneMsg) {
+// onLogoutDone reports the deletion and any source that remains. When nothing
+// remains it asks the server whether the current model was just left without a
+// provider, so the notice can say what to do about it.
+func (m *Model) onLogoutDone(msg logoutDoneMsg) tea.Cmd {
 	if msg.err != nil {
 		m.notice = "could not log out: " + msg.err.Error()
-		return
+		return nil
 	}
 	if msg.remaining.Ready {
 		m.notice = "logged out of " + msg.name + "; still configured from " + msg.remaining.Source
-		return
+		return nil
 	}
 	m.notice = "logged out of " + msg.name
+	m.loggedOutID = msg.id
+	return m.requestProviders(intentProvidersAfterLogout)
+}
+
+// afterLogout handles a model that was served by the provider just signed out
+// of. It switches to the first other signed-in provider's default model, or
+// says that the next prompt needs a login. A model served by any other
+// provider is left alone.
+func (m *Model) afterLogout(rows []providerRow) tea.Cmd {
+	id := m.loggedOutID
+	m.loggedOutID = ""
+	var current *providerRow
+	for i := range rows {
+		if rows[i].ID == id && rows[i].Ready {
+			// The server still resolves a key (from its config, which the local
+			// check cannot see), so the provider keeps working.
+			m.notice += "; still configured from " + rows[i].Source
+			return nil
+		}
+		if rows[i].Current {
+			current = &rows[i]
+		}
+	}
+	if current == nil || current.ID != id || current.Ready {
+		return nil
+	}
+	for _, r := range rows {
+		if r.ID != id && r.Ready && r.DefaultModel != "" {
+			m.notice += "; switched to " + r.DefaultModel + " (" + r.Name + ")"
+			return m.client.Send(proto.Command{Type: proto.CmdSetModel, Model: r.DefaultModel})
+		}
+	}
+	m.notice += "; run /login before the next prompt"
+	return nil
 }

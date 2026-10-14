@@ -120,6 +120,7 @@ type Model struct {
 	ticking     bool
 
 	// The in-app sign-in flow.
+	loggedOutID   string
 	loginProvider string
 	loginMethod   providerauth.Method
 	loginSession  providerauth.Session

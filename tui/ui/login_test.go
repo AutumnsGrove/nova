@@ -566,3 +566,95 @@ func TestUI_SGN40_LoginDuringRun(t *testing.T) {
 		t.Fatal("the run state was disturbed")
 	}
 }
+
+// logoutOf signs a fake provider out through /logout and drives the chain.
+func logoutOf(t *testing.T, m *Model, id string) {
+	t.Helper()
+	m.setEditorText("/logout " + id)
+	pump(m, update(m, enterKey))
+}
+
+func setModelSends(f *fakeClient) []string {
+	var out []string
+	for _, c := range f.sends {
+		if c.Type == proto.CmdSetModel {
+			out = append(out, c.Model)
+		}
+	}
+	return out
+}
+
+func TestUI_SGN51_LogoutSwitchesToAnotherReadyProvider(t *testing.T) {
+	fakeRegister(t, "fake-out-a-c22", []providerauth.Method{providerauth.APIKey}, &fakeStore{ready: true, key: "k"}, nil)
+	m, f, _ := newModel(t)
+	f.responses[proto.CmdListProviders] = providersResponse(
+		`{"id":"fake-out-a-c22","name":"Fake A","methods":["api_key"],"ready":false,"current":true,"default_model":"a/model"}`,
+		`{"id":"fake-out-b-c22","name":"Fake B","methods":["api_key"],"ready":true,"source":"env","default_model":"b/model"}`)
+	logoutOf(t, m, "fake-out-a-c22")
+	if got := setModelSends(f); len(got) != 1 || got[0] != "b/model" {
+		t.Fatalf("set_model sends = %v, want [b/model]", got)
+	}
+	if !strings.Contains(m.notice, "switched to b/model") || !strings.Contains(m.notice, "Fake B") {
+		t.Fatalf("notice = %q, want it to say what the model became", m.notice)
+	}
+}
+
+func TestUI_SGN52_LogoutWithNothingToSwitchTo(t *testing.T) {
+	fakeRegister(t, "fake-out-c-c22", []providerauth.Method{providerauth.APIKey}, &fakeStore{ready: true, key: "k"}, nil)
+	m, f, _ := newModel(t)
+	f.responses[proto.CmdListProviders] = providersResponse(
+		`{"id":"fake-out-c-c22","name":"Fake C","methods":["api_key"],"ready":false,"current":true,"default_model":"c/model"}`)
+	logoutOf(t, m, "fake-out-c-c22")
+	if got := setModelSends(f); len(got) != 0 {
+		t.Fatalf("set_model sent with no ready provider: %v", got)
+	}
+	if !strings.Contains(m.notice, "logged out of Fake fake-out-c-c22") || !strings.Contains(m.notice, "/login") {
+		t.Fatalf("notice = %q, want a hint to sign in again", m.notice)
+	}
+}
+
+func TestUI_SGN53_LogoutOfAnotherProviderKeepsTheModel(t *testing.T) {
+	fakeRegister(t, "fake-out-d-c22", []providerauth.Method{providerauth.APIKey}, &fakeStore{ready: true, key: "k"}, nil)
+	m, f, _ := newModel(t)
+	// The provider logged out is not the one serving the current model.
+	f.responses[proto.CmdListProviders] = providersResponse(
+		`{"id":"fake-out-d-c22","name":"Fake D","methods":["api_key"],"ready":false,"default_model":"d/model"}`,
+		`{"id":"openrouter","name":"OpenRouter","methods":["api_key"],"ready":true,"source":"env","current":true,"default_model":"or/model"}`)
+	logoutOf(t, m, "fake-out-d-c22")
+	if got := setModelSends(f); len(got) != 0 {
+		t.Fatalf("the model was changed although the current provider still works: %v", got)
+	}
+}
+
+func TestUI_SGN54_LogoutWhileStillConfiguredKeepsTheModel(t *testing.T) {
+	t.Setenv("FAKE_OUT_E_KEY", "from-env")
+	providerauth.Register(providerauth.Provider{
+		ID: "fake-out-e-c22", Name: "Fake E", Methods: []providerauth.Method{providerauth.APIKey},
+		EnvVars: []string{"FAKE_OUT_E_KEY"},
+		Save:    (&fakeStore{}).save, Load: (&fakeStore{}).load, Delete: (&fakeStore{}).delete,
+	})
+	m, f, _ := newModel(t)
+	logoutOf(t, m, "fake-out-e-c22")
+	if got := setModelSends(f); len(got) != 0 {
+		t.Fatalf("set_model sent although the env key still works: %v", got)
+	}
+	if !strings.Contains(m.notice, "still configured from env") {
+		t.Fatalf("notice = %q", m.notice)
+	}
+}
+
+func TestUI_SGN55_LogoutSaysWhenAConfigKeyRemains(t *testing.T) {
+	fakeRegister(t, "fake-out-f-c22", []providerauth.Method{providerauth.APIKey}, &fakeStore{ready: true, key: "k"}, nil)
+	m, f, _ := newModel(t)
+	// Locally nothing remains, but the server still resolves a key from its
+	// config, so the provider keeps working and the notice must say so.
+	f.responses[proto.CmdListProviders] = providersResponse(
+		`{"id":"fake-out-f-c22","name":"Fake F","methods":["api_key"],"ready":true,"source":"config","current":true,"default_model":"f/model"}`)
+	logoutOf(t, m, "fake-out-f-c22")
+	if !strings.Contains(m.notice, "still configured from config") {
+		t.Fatalf("notice = %q, want it to name the remaining config key", m.notice)
+	}
+	if got := setModelSends(f); len(got) != 0 {
+		t.Fatalf("model changed although the provider still works: %v", got)
+	}
+}

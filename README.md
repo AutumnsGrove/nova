@@ -7,13 +7,12 @@
 > A minimal, pi-and-crush-inspired agent harness in Go — built to be embedded in
 > Go applications (her-go, polaris, ivy) or run standalone as a CLI/TUI.
 
-**Status: building.** The backend is done and tested through C13 — the agent loop, the
-core tools, sessions, compaction, config, the JSONL protocol, the server and every mode,
-and the extension host. The TUI (C15–C17), bundled extensions (C18), release polish
-(C19), and the serve/Action work (C14) are next. All twenty-one implementation chunks
-are specified in full, each with a test matrix. An early M0 prototype also sits at the
-repository root (see [`docs/SPIKE.md`](docs/SPIKE.md)); it is exploratory and its API is
-not frozen.
+**Status: iterating.** The initial build-out is finished: the agent loop, the core tools, sessions,
+compaction, config, the JSONL protocol, every mode (TUI, print, JSON, RPC, serve, the GitHub Action), the
+extension host and bundled extensions, two launch providers (OpenRouter and OpenCode Go), in-app login, release
+packaging, and `nova update`. Work now is making it better: bugs, TUI and UX polish, provider work, and hardening
+the framework. It is tracked as [GitHub issues](https://github.com/AutumnsGrove/nova/issues) and done
+test-first (see [Working on Nova](#working-on-nova)).
 
 ## What Nova is
 
@@ -43,11 +42,24 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full tree and line bu
 
 ```
 message/ provider/ auth/ tool/ tools/ permission/ proto/ agent/ session/
-compaction/ usage/ config/ mode/ ext/ testkit/      the backend (no UI dependencies)
-bundled/                                           in-tree extensions (use charm.land)
-tui/                                               the terminal UI (charm.land)
+compaction/ usage/ config/ mode/ ext/ update/ doctor/ testkit/   the backend (no UI dependencies)
+bundled/                                                        in-tree extensions (use charm.land)
+tui/                                                            the terminal UI (charm.land)
 cmd/nova/  scripts/  assets/  docs/
 ```
+
+## Working on Nova
+
+Work arrives as issues and is done **test-first**: write the failing test, make it pass, then run the gate.
+
+```
+make ci            # fmt, vet, build (full and -tags notui), race tests, import rules, solved-area guards
+make test          # the fast loop: go test -short
+```
+
+[`AGENTS.md`](AGENTS.md) is the guide for anyone, human or agent, changing the code: how a change goes, the
+test-driven rules, the repo map, the hard rules, and the definition of done. [`CONTRIBUTING.md`](CONTRIBUTING.md)
+is the short version.
 
 ## North star
 
@@ -78,15 +90,14 @@ wheel.
 | [`docs/EXTENSIONS.md`](docs/EXTENSIONS.md) | Extension tiers, manifest, install over git, bundled and suggested extensions. |
 | [`docs/TUI.md`](docs/TUI.md) | The terminal UI: stack, layout, components, themes, splash. |
 | [`docs/TESTING.md`](docs/TESTING.md) | Test layers, the failure-mode catalog, the matrix rule, definition of done. |
-| [`docs/IMPLEMENTATION.md`](docs/IMPLEMENTATION.md) | The chunk plan and how agents build it. |
-| [`docs/chunks/`](docs/chunks/) | One spec per chunk (C00 to C19), each with a test matrix. |
-| [`NEXTSTEPS.md`](NEXTSTEPS.md) | Where every session starts: status, what is next, notes from the last agent. Hand-edited. |
-| [`AGENTS.md`](AGENTS.md) | Instructions for the agents that implement the chunks. |
+| [`AGENTS.md`](AGENTS.md) | The guide for working on Nova: workflow, test-driven rules, repo map, hard rules, definition of done. |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | The short version for contributors. |
+| [`CHANGELOG.md`](CHANGELOG.md) | What changed, release by release. |
+| [`docs/archive/`](docs/archive/) | The finished build-out: the chunk specs (C00 to C23), each with a test matrix that still guards its area, the build plan, and the hand-off log. |
 | [`docs/BRAND.md`](docs/BRAND.md) | The two logo marks, the palette, and how to regenerate them. |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | The ecosystem survey and what we borrow from where. |
 | [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | How her-go, polaris, and ivy embed Nova. |
-| [`docs/SPIKE.md`](docs/SPIKE.md) | What the M0 prototype proves, and its known limitations. |
-| [`docs/BRAND.md`](docs/BRAND.md) | The two logo marks, the palette, and how to regenerate them. |
+| [`docs/SPIKE.md`](docs/SPIKE.md) | Historical: what the early M0 prototype proved, and its limitations. |
 
 ## Name
 

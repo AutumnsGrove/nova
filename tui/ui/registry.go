@@ -55,6 +55,14 @@ func (r *Registry) CommandDialog(command string) (func(args string, st any) dial
 	return build, ok
 }
 
+// Lookup returns the renderer for a tool name, or the generic renderer.
+func (r *Registry) Lookup(tool string) render.Renderer {
+	if r == nil || r.renderers == nil {
+		return nil
+	}
+	return r.renderers.Lookup(tool)
+}
+
 // funcRenderer adapts a header function to render.Renderer.
 type funcRenderer struct {
 	header func(c render.Call) string

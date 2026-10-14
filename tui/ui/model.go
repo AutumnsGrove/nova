@@ -24,6 +24,7 @@ import (
 	"github.com/AutumnsGrove/nova/tui/dialog"
 	"github.com/AutumnsGrove/nova/tui/layout"
 	"github.com/AutumnsGrove/nova/tui/list"
+	"github.com/AutumnsGrove/nova/tui/render"
 	"github.com/AutumnsGrove/nova/tui/styles"
 	"github.com/AutumnsGrove/nova/tui/widget"
 )
@@ -98,6 +99,7 @@ type Model struct {
 	editorLines   int
 
 	transcript *chat.Transcript
+	registry   *Registry
 	list       *list.List
 	editor     textarea.Model
 	history    history
@@ -165,6 +167,10 @@ func New(opt Options) *Model {
 		opt.CWD, _ = os.Getwd()
 	}
 	home, _ := os.UserHomeDir()
+	transcript := chat.NewTranscript(opt.Width, opt.Renderer, st)
+	registry := NewRegistry(render.NewRegistry())
+	registry.Bundled()
+	transcript.SetRegistry(registry.renderers)
 	m := &Model{
 		client:     opt.Client,
 		clock:      opt.Clock,
@@ -175,7 +181,8 @@ func New(opt Options) *Model {
 		cwd:        opt.CWD,
 		home:       home,
 		version:    opt.Version,
-		transcript: chat.NewTranscript(opt.Width, opt.Renderer, st),
+		transcript: transcript,
+		registry:   registry,
 		list:       list.New(),
 		editor:     ed,
 		pasted:     map[string]string{},

@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/nova-mark-dark.svg">
-    <img alt="Nova" src="assets/logo/nova-mark-light.svg" width="280">
-  </picture>
+  <img alt="Nova: a slash-lettered nova wordmark on the left and a star igniting on the right, over a field of stars" src="assets/splash/nova-splash.gif" width="672">
 </p>
 
 # Nova

@@ -75,6 +75,14 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 | `run_command` | `name`, `args` | execute a slash command |
 | `bash` | `command` | run a user shell command and record it in the session |
 | `shutdown` | | graceful close |
+| `list_providers` | | every provider with `id`, `name`, `methods`, `ready`, and `source` (`config`, `env`, `store`, or empty) |
+| `login` | `name`, `args?`, `text?` | sign the server host in. `args` is the method (`api_key`, `subscription`, `device`) and may be omitted when the provider has one. An `api_key` login takes the key in `text`, saves it, and answers `{provider, saved}`. An interactive one answers `{provider, method, url, code, prompt}` and finishes with one `login_end` event. A second login for the same provider is `busy` |
+| `login_submit` | `name`, `text` | give an open sign-in a pasted redirect URL (the loopback callback cannot reach a remote server). `not_found` when none is open; `bad_request` leaves it open for a retry |
+| `login_cancel` | `name` | abandon an open sign-in. No `login_end` follows |
+| `logout` | `name` | delete the stored credential; answers `{provider, remaining}`, the source that still signs the host in |
+
+The server never opens a browser for `login`: its host is usually headless, so the client opens `url`
+where the user is. The credential is never echoed in a response or an event.
 
 ## Events
 
@@ -105,6 +113,7 @@ extension_error  { extension, hook?, message }
 ui_expired       { id }                              // a ui_request timed out; close its dialog
 session_changed  { session, leaf }
 state_changed    { ... }                            // model, thinking level, context limit
+login_end        { id, error? }                     // an interactive sign-in finished; id is the provider id
 ```
 
 `usage` is `{prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, cost_usd}`.

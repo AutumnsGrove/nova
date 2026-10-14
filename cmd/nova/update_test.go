@@ -12,6 +12,11 @@ import (
 // runUpdateCommand runs the update command in-process with a fake runner.
 func runUpdateCommand(t *testing.T, run updateFunc, args ...string) (int, string, string) {
 	t.Helper()
+	// The test binary lives in a go-build directory, which update refuses as a
+	// target, so these tests run as if installed in a normal place.
+	old := executable
+	executable = func() (string, error) { return "/usr/local/bin/nova", nil }
+	t.Cleanup(func() { executable = old })
 	var out, errOut bytes.Buffer
 	exit := 0
 	cmd := updateCommand(&out, &errOut, &exit, run)

@@ -198,6 +198,14 @@ func updateCommand(stdout, stderr io.Writer, exit *int, run updateFunc) *cobra.C
 | UPD28 | command exit codes | run error, then success | 1, then 0 |
 | UPD29 | flags and environment map to Options | `--check --source X --flavour min` and `NOVA_*` | each field set |
 | UPD30 | conflicting modes | `--source` and `--release` together | an error; no run |
+| UPD31 | fresh install | release run whose target does not exist, in an existing directory | the binary is installed there |
+| UPD32 | unwritable directory | target in a read-only directory | an error naming the target path |
+| UPD33 | `--target` | `--target /opt/tools/nova` | the runner sees that target |
+| UPD34 | `NOVA_INSTALL_DIR` | the variable set, no flag | the target is `<dir>/nova` |
+| UPD35 | precedence | flag, env, and a running binary together, then pairs | flag beats env beats the running binary |
+| UPD36 | `go run` guard | the running binary is under a `go-build` temp directory, no flag or env | exit 1, no run, a message naming `go run`, `--target`, and `NOVA_INSTALL_DIR` |
+| UPD37 | explicit target wins the guard | the same temp binary with `--target` | the run proceeds with that target |
+| UPD38 | the target is named | `--check` | stdout has a `target: <path>` line |
 
 ## Fuzz and property tests
 

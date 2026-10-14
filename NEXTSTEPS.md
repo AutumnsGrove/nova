@@ -5,16 +5,14 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C20 are done. `go run ./scripts/accept C20` and `make ci` both pass.
+**State:** C00 through C20 are done; `accept C20` and `make ci` both pass. **C21 is next.**
 
-**Next:** the planned core buildout is complete. Pick up whatever the human asks: a review pass over
-`docs/DECISIONS.md` and `docs/ARCHITECTURE.md` to reconcile the C18-C20 decisions, wiring the
-`tui/ui/registry.go` `Registry` into the transcript (the one deliberate C18 gap), or a new chunk. There is no
-next chunk spec waiting.
-
-**After C20:** run **C21** (`docs/chunks/C21-splash-sequence.md`), the redesigned splash. Its last step swaps the README logo for a generated animated GIF. The design was
-chosen by the human on 2026-10-13; the reference is `docs/mockups/splash/nova-splash-sequence.html`. Open it in a
-browser first. C21 retires C16 rows SPL01 to SPL11 (see its "Retired rows").
+**Next:** run **C21** (`docs/chunks/C21-splash-sequence.md`), the redesigned splash. Its last step swaps the
+README logo for a generated animated GIF. The design was chosen by the human on 2026-10-13; the reference is
+`docs/mockups/splash/nova-splash-sequence.html`. Open it in a browser first. C21 retires C16 rows SPL01 to
+SPL11 (see its "Retired rows"). Two optional cleanups after that: reconcile the C18-C20 decisions into
+`docs/DECISIONS.md`, and wire the `tui/ui/registry.go` `Registry` into the transcript (the one deliberate
+C18 gap).
 
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
 files carry `//go:build !notui`, and `scripts/linecount` skips generated files (`tui/splash/mark_gen.go`).

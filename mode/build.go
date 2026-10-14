@@ -54,6 +54,7 @@ func Build(o BuildOptions) (*Server, error) {
 			fmt.Fprintf(o.Stderr, "warning: %s: %s\n", w.Source, w.Message)
 		}
 	}
+	applyInteractiveDefault(cfg, o.Interactive, o.Yes)
 	if o.Yes {
 		cfg.Permissions.Headless = permission.Allow
 		if o.Stderr != nil {
@@ -75,6 +76,21 @@ func Build(o BuildOptions) (*Server, error) {
 		Tools: o.Tools, NoTools: o.NoTools, Interactive: o.Interactive,
 		ExtraTools: o.ExtraTools, SystemPrompt: o.SystemPrompt,
 	})
+}
+
+// applyInteractiveDefault makes the interactive TUI run tools without asking,
+// as pi does, because bash, write, and edit are all annotated destructive and
+// would otherwise prompt on every call. An explicit permissions.default in the
+// config (for example "ask") wins, and --yes forces allow over an unset or "ask"
+// default. Headless modes are untouched: there an Ask still becomes Headless.
+func applyInteractiveDefault(cfg *config.Config, interactive, yes bool) {
+	if !interactive {
+		return
+	}
+	d := cfg.Permissions.Default
+	if d == "" || (yes && d == permission.Ask) {
+		cfg.Permissions.Default = permission.Allow
+	}
 }
 
 // HasProviderKey reports whether an OpenRouter key is available. An empty home

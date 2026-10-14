@@ -24,6 +24,7 @@ type inputDialog struct {
 	buf         []rune
 	cursor      int
 	done        bool
+	secret      bool
 	value       string
 }
 
@@ -33,6 +34,12 @@ func NewInput(req proto.UIRequest) Dialog {
 		id: req.ID, title: req.Title, placeholder: req.Placeholder,
 		buf: []rune(req.Text), cursor: len([]rune(req.Text)),
 	}
+}
+
+// NewSecretInput builds a masked single-line input for a credential. The text
+// is rendered as bullets and never appears in a view.
+func NewSecretInput(title, placeholder string) Dialog {
+	return &inputDialog{title: title, placeholder: placeholder, secret: true}
 }
 
 // ID returns the request id.
@@ -108,12 +115,16 @@ func (d *inputDialog) Size(maxW, maxH int) (int, int) {
 
 // View renders the framed dialog.
 func (d *inputDialog) View(w, h int, st styles.Styles) string {
-	shown := string(d.buf)
-	if shown == "" && d.placeholder != "" {
+	runes := []rune(string(d.buf))
+	pos := min(d.cursor, len(runes))
+	var shown string
+	switch {
+	case len(runes) == 0 && d.placeholder != "":
 		shown = st.Dim.Render(safe(d.placeholder))
-	} else {
-		runes := []rune(shown)
-		pos := min(d.cursor, len(runes))
+	case d.secret:
+		bullets := []rune(strings.Repeat("•", len(runes)))
+		shown = string(bullets[:pos]) + "▏" + string(bullets[pos:])
+	default:
 		shown = string(runes[:pos]) + "▏" + string(runes[pos:])
 	}
 	row := "> " + shown

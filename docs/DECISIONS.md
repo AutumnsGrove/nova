@@ -139,7 +139,7 @@ compile them. That is cosmetic. Nothing UI-related is built into their binary.
 
 ### After the build-out
 
-Recorded when the build-out closed (2026-10-14, issue #8). D72 and D73 change how work is done; D74 to D94
+Recorded when the build-out closed (2026-10-14, issue #8). D72 and D73 change how work is done; D74 to D95
 are decisions the chunk agents made while building and queued as "Decisions to record". Their original notes,
 with the surrounding context, are in [`archive/NEXTSTEPS.md`](archive/NEXTSTEPS.md).
 
@@ -168,6 +168,7 @@ with the surrounding context, are in [`archive/NEXTSTEPS.md`](archive/NEXTSTEPS.
 | D92 | Extension replay and install | Replay kinds are declared in the `register` frame's `entries` list and remembered per extension across a reload. `Installer.Install` refuses an already-installed name; `Installer.Update` handles updates. | — | — |
 | D93 | TUI structure | `tui/client` keeps an unexported `pipe` interface so the adapter is testable without a `mode.Server`. Transcript items are appended or removed, never reordered, and `Apply` returns the changed ids. `tui/ui` owns its `Client`, `Clock`, `Renderer`, and `Init` commands, and `Update` builds commands and never calls the pipe synchronously. The TUI starts when `ui.Interactive(mode, stdinTTY, stdoutTTY)` says so, and the `notui` build supplies a stub. `render.Call.Now` is the render clock. A markdown block ends only at a complete blank line outside a fence. | Lets the list touch only changed items, and keeps `Update` free of I/O. | — |
 | D94 | Spec tooling | `matrixcheck` enforces the ID shape only on a test that cites a row of the current spec, so one package can serve several chunks. `scripts/linecount` skips generated files (`// Code generated ... DO NOT EDIT.`). | The M0 prototype occupied several future package paths. | — |
+| D95 | `serve` is single-user | Multi-user `serve` is out of scope: one trusted agent behind one bearer token. A `login` over the protocol writes the server host's credential store for the whole process (D76). | — | — |
 
 ## Superseded decisions at a glance
 

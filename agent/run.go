@@ -33,20 +33,50 @@ func (a *Agent) Run(ctx context.Context, history []message.Message, prompt messa
 	return a.run(ctx, history, &prompt)
 }
 
+// Start registers a run and executes it in a background goroutine. Unlike
+// calling Run in a goroutine, the run exists by the time Start returns: Running
+// reports true and Abort can cancel it. That matters to a caller that answers a
+// prompt and may be asked to abort straight away, because Abort is a no-op
+// until a run is registered. Config errors and ErrBusy are returned here; the
+// run's own outcome arrives through Emit, ending in one run_end.
+func (a *Agent) Start(ctx context.Context, history []message.Message, prompt message.Message) error {
+	r, release, err := a.begin(ctx)
+	if err != nil {
+		return err
+	}
+	go func() {
+		defer release()
+		_, _ = r.execute(history, &prompt)
+	}()
+	return nil
+}
+
 // run is Run with an optional prompt; the compatibility function passes nil so
 // history is the whole transcript.
 func (a *Agent) run(ctx context.Context, history []message.Message, prompt *message.Message) (*Result, error) {
+	r, release, err := a.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	return r.execute(history, prompt)
+}
+
+// begin validates the config and registers a run, so Running and Abort see it
+// from this point. The returned release ends the registration and must be
+// called exactly once, after the run finishes.
+func (a *Agent) begin(ctx context.Context) (*run, func(), error) {
 	if a.cfg.Provider == nil {
-		return nil, errors.New("agent: Provider is required")
+		return nil, nil, errors.New("agent: Provider is required")
 	}
 	if a.cfg.Model == "" {
-		return nil, errors.New("agent: Model is required")
+		return nil, nil, errors.New("agent: Model is required")
 	}
 
 	a.mu.Lock()
 	if a.running {
 		a.mu.Unlock()
-		return nil, ErrBusy
+		return nil, nil, ErrBusy
 	}
 	a.running = true
 	a.runCount++
@@ -54,15 +84,19 @@ func (a *Agent) run(ctx context.Context, history []message.Message, prompt *mess
 	runCtx, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
 	a.mu.Unlock()
-	defer func() {
+	release := func() {
 		cancel()
 		a.mu.Lock()
 		a.running = false
 		a.cancel = nil
 		a.mu.Unlock()
-	}()
+	}
+	return &run{a: a, cfg: a.cfg, ctx: runCtx, id: a.runID}, release, nil
+}
 
-	r := &run{a: a, cfg: a.cfg, ctx: runCtx, id: a.runID}
+// execute runs the loop for a registered run.
+func (r *run) execute(history []message.Message, prompt *message.Message) (*Result, error) {
+	a := r.a
 	if a.cfg.System != "" {
 		r.messages = append(r.messages, message.System(a.cfg.System))
 	}

@@ -179,21 +179,93 @@ func TestSplashgif_SQN47_Deterministic(t *testing.T) {
 	}
 }
 
+// Go's math package is not bit-identical across architectures: of the 150
+// frames a handful can differ by one unit in a cell colour, and quantising the
+// fresh render onto the committed palette keeps that noise from swelling into
+// every frame. A stale GIF differs in kind (whole frames, glyphs, or colours
+// move), so it lands far outside these bounds.
+const (
+	gifMaxChannelDiff  = 16     // per channel, out of 255
+	gifMaxDiffFraction = 0.0001 // at most 0.01% of pixels may differ at all
+)
+
 func TestSplashgif_SQN48_CommittedGIFIsCurrent(t *testing.T) {
-	want, err := build()
-	if err != nil {
-		t.Fatal(err)
+	g, got := decodeCommitted(t)
+	pal := g.Image[0].Palette
+	want := composite(mapToPalette(freshFrames(t), pal), g.Config.Width, g.Config.Height)
+	if len(got) != len(want) {
+		t.Fatalf("frame count = %d, want %d", len(got), len(want))
 	}
-	wantFrames := composite(want.Image, want.Config.Width, want.Config.Height)
-	_, got := decodeCommitted(t)
-	if len(got) != len(wantFrames) {
-		t.Fatalf("frame count = %d, want %d", len(got), len(wantFrames))
-	}
+	total, diff, maxd := 0, 0, 0
 	for i := range got {
-		if !bytes.Equal(got[i].Pix, wantFrames[i].Pix) {
-			t.Fatalf("frame %d differs from a fresh render", i)
+		for p := 0; p < len(got[i].Pix); p += 4 {
+			total++
+			d := channelDiff(got[i].Pix[p:p+3], want[i].Pix[p:p+3])
+			if d > 0 {
+				diff++
+			}
+			if d > maxd {
+				maxd = d
+			}
 		}
 	}
+	if maxd > gifMaxChannelDiff {
+		t.Fatalf("a pixel differs by %d per channel, want at most %d", maxd, gifMaxChannelDiff)
+	}
+	if budget := int(gifMaxDiffFraction * float64(total)); diff > budget {
+		t.Fatalf("%d of %d pixels differ, want at most %d", diff, total, budget)
+	}
+}
+
+// freshFrames renders every frame the way the committed GIF should have been.
+func freshFrames(t *testing.T) []*image.RGBA {
+	t.Helper()
+	st := truecolor()
+	b := bg()
+	frames := make([]*image.RGBA, frameCount)
+	for i := range frames {
+		cells, tier, ok := splash.Cells(cols, rows, st, colorprofile.TrueColor, "", time.Duration(i)*step)
+		if !ok || tier != splash.Full {
+			t.Fatalf("frame %d is not the Full tier", i)
+		}
+		frames[i] = raster(cells, b)
+	}
+	return frames
+}
+
+// mapToPalette quantises frames onto pal. Both sides of the comparison then
+// share one palette, so a fresh median-cut palette cannot turn one changed
+// source colour into a different mapping for the whole animation.
+func mapToPalette(frames []*image.RGBA, pal color.Palette) []*image.Paletted {
+	out := make([]*image.Paletted, len(frames))
+	for i, f := range frames {
+		p := image.NewPaletted(f.Bounds(), pal)
+		for y := f.Rect.Min.Y; y < f.Rect.Max.Y; y++ {
+			for x := f.Rect.Min.X; x < f.Rect.Max.X; x++ {
+				p.SetColorIndex(x, y, uint8(nearest(pal, f.RGBAAt(x, y))))
+			}
+		}
+		out[i] = p
+	}
+	return out
+}
+
+// channelDiff is the largest per-channel absolute difference of two RGB pixels.
+func channelDiff(a, b []uint8) int {
+	d := 0
+	for i := 0; i < 3; i++ {
+		if x := absDiff(a[i], b[i]); x > d {
+			d = x
+		}
+	}
+	return d
+}
+
+func absDiff(a, b uint8) int {
+	if a > b {
+		return int(a - b)
+	}
+	return int(b - a)
 }
 
 func TestSplashgif_SQN49_READMEUsesGIF(t *testing.T) {

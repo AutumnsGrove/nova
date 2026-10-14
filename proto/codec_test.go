@@ -467,3 +467,18 @@ func readAll(r *Reader) ([][]byte, error) {
 		out = append(out, line)
 	}
 }
+
+func TestProto_LGP25_LoginEndDecodesAsEvent(t *testing.T) {
+	var buf bytes.Buffer
+	ev := Event{Type: EventLoginEnd, ID: "openrouter", Error: &Error{Code: CodeProviderError, Message: "denied"}}
+	if err := NewWriter(&buf).Write(ev); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	f, err := Decode(bytes.TrimSpace(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if f.Event == nil || f.Event.ID != "openrouter" || f.Event.Error == nil || f.Event.Error.Code != CodeProviderError {
+		t.Fatalf("login_end decoded as %+v", f)
+	}
+}

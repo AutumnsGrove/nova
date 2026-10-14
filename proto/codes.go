@@ -54,6 +54,11 @@ const (
 	CmdRunCommand      = "run_command"
 	CmdBash            = "bash"
 	CmdShutdown        = "shutdown"
+	CmdListProviders   = "list_providers"
+	CmdLogin           = "login"
+	CmdLoginSubmit     = "login_submit"
+	CmdLoginCancel     = "login_cancel"
+	CmdLogout          = "logout"
 )
 
 // Event names. They are not commands, so Decode maps them to Event.
@@ -82,6 +87,7 @@ const (
 	EventUIExpired      = "ui_expired"
 	EventSessionChanged = "session_changed"
 	EventStateChanged   = "state_changed"
+	EventLoginEnd       = "login_end"
 )
 
 // eventNames is the set Decode sends to Event rather than Command.
@@ -93,5 +99,5 @@ var eventNames = map[string]bool{
 	EventMessageEnd: true, EventTurnEnd: true, EventUsage: true, EventRetry: true,
 	EventCompaction: true, EventQueueUpdate: true, EventRunEnd: true, EventError: true,
 	EventExtensionError: true, EventUIExpired: true, EventSessionChanged: true,
-	EventStateChanged: true,
+	EventStateChanged: true, EventLoginEnd: true,
 }

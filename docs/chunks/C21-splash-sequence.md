@@ -230,9 +230,12 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 33. The palette has at most 256 colours and the background is exact in every frame. Each frame after the first
     is cropped to the rectangle that changed from the one before it and uses disposal "do not dispose", so the
     file stays small. The committed file is at most **2.5 MB**.
-34. The output is deterministic: the same code gives the same bytes twice. The committed GIF is current: decoding
-    it and regenerating the frames in memory gives identical pixels, frame by frame (compare pixels, not file
-    bytes, so a Go release that changes the GIF encoder cannot break the build).
+34. The output is deterministic on one machine: the same code gives the same bytes twice. The committed GIF is
+    current: decoding it and regenerating the frames in memory matches frame by frame within a small tolerance
+    (quantise the fresh render onto the committed palette; allow at most 16 per channel and 0.01% of pixels to
+    differ). The tolerance absorbs the one-unit float noise between architectures -- Go's `math` package is not
+    bit-identical across platforms -- and is far tighter than any real staleness (compare pixels, not file bytes,
+    so a Go release that changes the GIF encoder cannot break the build).
 35. The README's first block (the centred `<picture>` of the mark) is replaced by one centred `<img>` of
     `assets/splash/nova-splash.gif` with `width="672"` and alt text that describes the scene, for example
     `Nova: a slash-lettered nova wordmark on the left and a star igniting on the right, over a field of stars`.
@@ -291,7 +294,7 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 | SQN45 | palette and background | every frame | at most 256 colours; the corner pixel is the theme `bg` |
 | SQN46 | size | stat the committed file | at most 2.5 MB |
 | SQN47 | generator is deterministic | run it twice in memory | identical bytes |
-| SQN48 | committed GIF is current | regenerate the frames in memory and compare to the decoded committed file | identical pixels in every frame |
+| SQN48 | committed GIF is current | regenerate the frames in memory, quantise them onto the committed palette, and compare to the decoded committed file | every frame matches within 16 per channel and 0.01% of pixels |
 | SQN49 | README uses the GIF | read `README.md` | the first block is an `<img>` of `assets/splash/nova-splash.gif` with `width="672"` and non-empty alt text; the file exists; the old `<picture>` of the mark is gone from the top |
 | SQN50 | every glyph can be drawn | collect every rune `Cells` can emit across all tiers and times | each has a shape or an entry in the embedded font |
 | SQN51 | slashes join | a vertical run of two `╱` cells | the line's end pixel in the lower cell touches the start pixel in the cell above |

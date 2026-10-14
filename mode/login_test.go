@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"sync"
 	"testing"
@@ -505,5 +506,105 @@ func TestLogin_LGP24_NoSecretOnTheWire(t *testing.T) {
 		if strings.Contains(f, secret) {
 			t.Fatalf("the credential leaked into a frame: %s", f)
 		}
+	}
+}
+
+func FuzzLoginCommand(f *testing.F) {
+	f.Add(proto.CmdLogin, "fuzzlogin", "", "key")
+	f.Add(proto.CmdLogin, "fuzzlogin", "subscription", "")
+	f.Add(proto.CmdLoginSubmit, "fuzzlogin", "", "http://localhost/cb")
+	f.Add(proto.CmdLoginCancel, "", "", "")
+	f.Add(proto.CmdLogout, "openrouter", "", "")
+	f.Add(proto.CmdListProviders, "", "", "")
+	known := map[string]bool{
+		proto.CodeBadRequest: true, proto.CodeBusy: true, proto.CodeNotFound: true,
+		proto.CodeProviderError: true, proto.CodeInternal: true, proto.CodeUnsupported: true,
+	}
+	f.Fuzz(func(t *testing.T, typ, name, args, text string) {
+		registerFake(t, "fuzzlogin", []providerauth.Method{providerauth.APIKey, providerauth.OAuth})
+		s, _ := testServer(t)
+		switch typ {
+		case proto.CmdLogin, proto.CmdLoginSubmit, proto.CmdLoginCancel, proto.CmdLogout, proto.CmdListProviders:
+		default:
+			t.Skip()
+		}
+		resp := s.Handle(context.Background(), proto.Command{Type: typ, Name: name, Args: args, Text: text})
+		if resp.Type != proto.FrameResponse || resp.Command != typ {
+			t.Fatalf("malformed response %+v", resp)
+		}
+		if !resp.OK && (resp.Error == nil || !known[resp.Error.Code]) {
+			t.Fatalf("response %+v has no stable error code", resp)
+		}
+	})
+}
+
+// registerSequenced registers a provider whose every Begin hands out a fresh
+// session, so a property test can open, cancel, and reopen flows.
+func registerSequenced(t *testing.T, id string) *[]*fakeSession {
+	t.Helper()
+	var mu sync.Mutex
+	sessions := &[]*fakeSession{}
+	store := &fakeStore{}
+	providerauth.Register(providerauth.Provider{
+		ID: id, Name: id, Methods: []providerauth.Method{providerauth.OAuth},
+		Begin: map[providerauth.Method]providerauth.BeginFunc{
+			providerauth.OAuth: func(context.Context, providerauth.Config) (providerauth.Session, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				fs := newFakeSession()
+				*sessions = append(*sessions, fs)
+				return fs, nil
+			},
+		},
+		Save: store.save, Load: store.load, Delete: store.remove,
+	})
+	return sessions
+}
+
+func TestProperty_LGP_OneLoginEnd(t *testing.T) {
+	const id = "lgpprop"
+	for seed := int64(1); seed <= 20; seed++ {
+		sessions := registerSequenced(t, id)
+		s, _ := testServer(t)
+		events, cancel := s.Subscribe(256)
+		rng := rand.New(rand.NewSource(seed))
+		active := false
+		for step := 0; step < 40; step++ {
+			switch rng.Intn(4) {
+			case 0:
+				resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdLogin, Name: id})
+				if active {
+					wantCode(t, resp, proto.CodeBusy)
+				} else if !resp.OK {
+					t.Fatalf("seed %d step %d: login = %+v", seed, step, resp)
+				} else {
+					active = true
+				}
+			case 1:
+				resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdLoginSubmit, Name: id, Text: "x"})
+				if active != resp.OK {
+					t.Fatalf("seed %d step %d: submit ok=%v with active=%v", seed, step, resp.OK, active)
+				}
+			case 2:
+				resp := s.Handle(context.Background(), loginCmd(proto.CmdLoginCancel, id))
+				if active != resp.OK {
+					t.Fatalf("seed %d step %d: cancel ok=%v with active=%v", seed, step, resp.OK, active)
+				}
+				active = false
+			case 3:
+				if !active {
+					continue
+				}
+				(*sessions)[len(*sessions)-1].finish(providerauth.Credential{Method: providerauth.OAuth, Key: "k"}, nil)
+				if ev := waitLoginEnd(t, events); ev.ID != id || ev.Error != nil {
+					t.Fatalf("seed %d: login_end = %+v", seed, ev)
+				}
+				active = false
+			}
+		}
+		// Whatever was cancelled or left open must not have produced a login_end.
+		noLoginEnd(t, events)
+		cancel()
+		_ = s.Close()
 	}
 }

@@ -126,6 +126,11 @@ type Server struct {
 	// "remember: session" permission answer. They are never persisted.
 	sessionMu    sync.Mutex
 	sessionAllow map[string]bool
+
+	// logins holds the interactive sign-ins in progress, one per provider id,
+	// guarded by mu. loginWG counts their goroutines so Close can wait.
+	logins  map[string]*loginFlow
+	loginWG sync.WaitGroup
 }
 
 // New builds a server from the options. A missing API key is not an error; the
@@ -413,6 +418,7 @@ func (s *Server) Close() error {
 	s.closed = true
 	store := s.store
 	s.mu.Unlock()
+	s.closeLogins()
 	if store != nil {
 		_ = store.Close()
 	}

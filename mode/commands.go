@@ -85,6 +85,16 @@ func (s *Server) dispatch(ctx context.Context, cmd proto.Command) proto.Response
 		return s.handleRunCommand(cmd)
 	case proto.CmdShutdown:
 		return s.handleShutdown(cmd)
+	case proto.CmdListProviders:
+		return s.handleListProviders(cmd)
+	case proto.CmdLogin:
+		return s.handleLogin(cmd)
+	case proto.CmdLoginSubmit:
+		return s.handleLoginSubmit(cmd)
+	case proto.CmdLoginCancel:
+		return s.handleLoginCancel(cmd)
+	case proto.CmdLogout:
+		return s.handleLogout(cmd)
 	default:
 		return failResponse(cmd, proto.CodeUnsupported, "unsupported command "+cmd.Type)
 	}

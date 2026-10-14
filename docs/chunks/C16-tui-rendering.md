@@ -1,8 +1,8 @@
 ---
 chunk: C16
 title: "TUI rendering: thinking block, tool cards, diffs, themes, splash"
-packages: [./tui/render, ./tui/diff, ./tui/splash, ./tui/chat, ./tui/styles, ./tui/ui]
-budgets: { ./tui/render: 700, ./tui/diff: 400, ./tui/splash: 250, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 1900 }
+packages: [./tui/render, ./tui/diff, ./tui/chat, ./tui/styles, ./tui/ui]
+budgets: { ./tui/render: 700, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 1950 }
 depends: [C15]
 ---
 
@@ -39,8 +39,7 @@ there (`chat` 1300 lines, `styles` 450).
 | `tui/render/highlight.go` | create | chroma highlighting by file name |
 | `tui/diff/diff.go` | create | the unified diff view |
 | `tui/styles/themeyaml.go` | create | load user themes |
-| `tui/splash/splash.go` | create | render the mark |
-| `tui/splash/mark_gen.go` | generated | the cell data, by `go generate` |
+| `tui/splash/splash.go` | create | render the mark (replaced by C21; `mark_gen.go` is deleted there) |
 | `assets/logo/gen/main.go` | change | `-go <file>` writes the cell data as Go |
 | `tui/ui/*.go` | change | tick timers, `/theme`, `/display`, splash, expansion |
 | `tui/*/*_test.go`, `tui/*/testdata/` | create | golden files |
@@ -296,17 +295,6 @@ type Display struct {
 | DSP03 | `/display lines 0` | | notice; unchanged |
 | DSP04 | `/display splash off` | | splash hidden |
 | DSP05 | `ctrl+o` flips both flags | | both |
-| SPL01 | picks the largest level that fits | sizes 120 by 60, 100 by 30, 60 by 20, 30 by 15 | Full, Half, Quarter, Plain |
-| SPL02 | margin respected | exactly the minimum size | next smaller level |
-| SPL03 | too small | 20 by 10 | `ok` false; empty output |
-| SPL04 | never exceeds the bounds | property over sizes | width and height within bounds |
-| SPL05 | half-blocks pair rows | | two cell rows per terminal row |
-| SPL06 | colour by role with opacity blending | truecolor | expected colours |
-| SPL07 | 16-colour and `NoColor` | | plain ASCII star; no colour |
-| SPL08 | text under the mark | | `nova`, version, `press any key` |
-| SPL09 | deterministic | twice | identical |
-| SPL10 | golden at four sizes | | matches |
-| SPL11 | generated file is current | regenerate and compare | identical |
 | SPL12 | dismissed by a key and by the first event | | gone; not shown again |
 | SPL13 | not shown when the transcript is not empty | | hidden |
 | SPL14 | re-renders on resize | | new level |
@@ -316,6 +304,26 @@ type Display struct {
 | GLR04 | each theme | golden | matches |
 | PRR01 | transcript with 2,000 tool cards scrolls | benchmark | under 5 ms per frame |
 | PRR02 | streaming thinking of 100 KiB | benchmark | under 1 ms per delta |
+
+## Retired rows
+
+C21 replaced the cell-grid splash with a sequence drawn on the character grid. Rows **SPL01 to SPL11**
+below are retired by C21 (SQN01 to SQN06, SQN30 to SQN32, and SQN40 cover their intent), and their tests
+and the `./tui/splash` budget were removed here. SPL12 to SPL14 stay and must still pass.
+
+| ID | Case | Retired by |
+|---|---|---|
+| SPL01 | picks the largest level that fits | C21 |
+| SPL02 | margin respected | C21 |
+| SPL03 | too small | C21 |
+| SPL04 | never exceeds the bounds | C21 |
+| SPL05 | half-blocks pair rows | C21 |
+| SPL06 | colour by role with opacity blending | C21 |
+| SPL07 | 16-colour and `NoColor` | C21 |
+| SPL08 | text under the mark | C21 |
+| SPL09 | deterministic | C21 |
+| SPL10 | golden at four sizes | C21 |
+| SPL11 | generated file is current | C21 |
 
 ## Fuzz and property tests
 
@@ -334,6 +342,5 @@ type Display struct {
 ## Acceptance
 
 ```
-go generate ./tui/splash && git diff --exit-code tui/splash
 go run ./scripts/accept C16
 ```

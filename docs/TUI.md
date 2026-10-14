@@ -185,13 +185,25 @@ Shipped themes: `nova-dark`, `nova-light`, and `mono` (no colour, for dumb termi
 
 ## Splash and logo
 
-The first screen of a new session shows the **full mark** rendered from its cell
-grid, one cell per half-block character so two cell rows fit in one terminal row
-(`▀ ▄ █`). The cell data is generated from `assets/logo/gen` into a Go file
-(`tui/splash/mark_gen.go`) so the TUI does not parse SVG. On a terminal without
-truecolor it falls back to a plain-ASCII star. The header uses the **minimal mark** as
-a one-line glyph, `✦`, and the splash is dismissed by the first keypress. The splash
-is skipped in a narrow terminal.
+The first screen of a new session is a short animation drawn on the character grid
+rather than a downscale of the mark: a slash-filled `nova` wordmark slides in on the
+left while a star on the right ignites and throws off a shell of gas that cools from
+blue to orange, over a field of twinkling stars. It is specified in
+[`chunks/C21-splash-sequence.md`](chunks/C21-splash-sequence.md); the design reference
+is [`mockups/splash/`](mockups/splash/README.md).
+
+The tier is the largest of Full (96 by 21), Compact (64 by 13), Thin (46 by 10), and
+Lockup (40 by 5) that fits the transcript area. A terminal below 256 colours, the
+`mono` theme, and an area under 40 columns fall back to the static Plain tier: `nova`
+and `press any key`, centred. After the 8 second sequence nothing fades; the word keeps
+shimmering, the stars keep twinkling, and the companion keeps orbiting until the first
+keypress or event dismisses the splash. The UI drives it with a 66 ms tick that shares
+the thinking block's tick chain, so only one timer is ever pending. The header uses the
+**minimal mark** as a one-line glyph, `✦`.
+
+The README banner is the same `splash.Cells` render rasterised to an animated GIF, so
+it cannot drift from the terminal. Regenerate it with `go run ./tui/splash/splashgif`
+whenever a change to `tui/splash` moves pixels.
 
 ## Modes the TUI degrades to
 

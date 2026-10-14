@@ -5,19 +5,23 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C20 are done; `accept C20` and `make ci` both pass. **C21 is next.**
+**State:** C00 through C21 are done; `accept C21` and `make ci` both pass. **All specified chunks are built;
+there is no next chunk in `docs/chunks`.**
 
-**Next:** run **C21** (`docs/chunks/C21-splash-sequence.md`), the redesigned splash. Its last step swaps the
-README logo for a generated animated GIF. The design was chosen by the human on 2026-10-13; the reference is
-`docs/mockups/splash/nova-splash-sequence.html`. Open it in a browser first. C21 retires C16 rows SPL01 to
-SPL11 (see its "Retired rows"). The C18-C20 decisions are recorded as D61 to D69, and the bundled render
-registry is now wired into the transcript.
+**Next:** this is the final chunk. Human review of the accumulated *Open questions for the human* (especially
+the budget raises below) is the next step, then release polish. The one artefact to eyeball is the README
+GIF: regenerate it with `go run ./tui/splash/splashgif` whenever `tui/splash` moves pixels, and look at the
+splash in a few real terminals (macOS Terminal, iTerm2, kitty) before release, because the mockup draws the
+glyphs as shapes and their look in a terminal font is unchecked.
 
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
-files carry `//go:build !notui`, and `scripts/linecount` skips generated files (`tui/splash/mark_gen.go`).
-`mode/action` is exactly at its 700-line budget. The fake clock's `After` timers are never cancelled, so
-leftover timers make `testkit.FakeClock.BlockUntil` unreliable. `proto.Event` has no `Turns` field, so C09
-put the `run_end` turn count in `Turn *int`.
+files carry `//go:build !notui`, and `scripts/linecount` skips generated files. `tui/splash/mark_gen.go` is
+gone (C21), so `scripts/linecount`'s generated-file skip has no current user; `assets/logo/gen -go` also has
+no consumer and is left in place. `mode/action` is exactly at its 700-line budget. The fake clock's `After`
+timers are never cancelled, so leftover timers make `testkit.FakeClock.BlockUntil` unreliable.
+`proto.Event` has no `Turns` field, so C09 put the `run_end` turn count in `Turn *int`. C21 raised
+`./tui/ui` to 1950 in C15/C16/C17 and `./tui/splash/splashgif` to 460; the splash GIF is 1.2 MB and any
+change to `tui/splash` that moves pixels requires regenerating it or `SQN48` fails.
 
 **C18 conventions to know before touching bundled code:** `ext.Host.AddBundled` must be called before `Start`
 so bundled tool names are reserved before third-party ones. `Env.Extra["tools"]` is the parent
@@ -58,11 +62,67 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C18 | Bundled extensions | done | C13, C17 | 2026-10-13 | not visible |
 | C19 | Polish, first run, doctor, examples, release | done | C16, C17, C18 | 2026-10-13 | |
 | C20 | OpenCode Go, the second launch provider | done | C02, C03, C12 | 2026-10-13 | |
-| C21 | Splash sequence: slash wordmark, outburst, star field | todo | C16 | 2026-10-13 | |
+| C21 | Splash sequence: slash wordmark, outburst, star field | done | C16 | 2026-10-13 | not visible |
 
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C21 — 2026-10-13 — pi — main — cost not visible
+
+Built C21 over four green commits. `go run ./scripts/accept C21` passes all nine steps, `make ci` passes,
+`matrixcheck-all` and `linecount-all` are clean, and every SQN row has a named test.
+
+**Built:**
+- `tui/splash` (`canvas.go`, `font.go`, `sequence.go`, `splash.go`) — the animated grid scene. `Render`/`Cells`
+  now take a `time.Duration` and return `(Tier, ok)`; `Sequence` is 8 s. Tiers Full 96×21, Compact 64×13,
+  Thin 46×10, Lockup 40×5, Plain; `Animated` is false only for Plain. The two 6×6/5×5 letter bitmaps expand
+  each pixel to `╱╱`. Hidden rows: `TestSplash_SQN01` to `SQN32`, `SQN40`, `SQN41`, plus `FuzzRender` and
+  `TestProperty_SQN_Bounds`. `mark_gen.go` and its `go:generate` line are deleted; the goldens are new.
+- `tui/ui` — `splashStart`/`splashAt` on `Model`, `splashTick = 66 ms`, and one shared tick chain
+  (`needsTick`/`tickPeriod`/`splashAnimated`). `mainView` passes `splashAt` to `Render`; a throwaway
+  `Render(..., 0)` decides whether a tick is needed, so `Update` stays I/O-free. `SQN33` to `SQN39` are in
+  `tui/ui/splash_sqn_test.go`.
+- `tui/splash/splashgif` — rasterises `splash.Cells` at 7×14 px per cell into `assets/splash/nova-splash.gif`
+  (672×294, 150 frames, 8 cs + a 158 cs hold). A deterministic median-cut palette (≤256, `bg` first, one
+  global colour table), a 5×7 ASCII font, and shapes for `█ ╱ ─ │ · ● ◆ ✦`. `SQN42` to `SQN52`.
+- `README.md` — the top `<picture>` mark is now one centred `<img>` of the GIF (`width="672"`).
+  `docs/TUI.md` "Splash and logo" and `docs/BRAND.md` describe the sequence and the regeneration command.
+
+**Satisfied matrix rows:** all of them: SQN01-52. Fuzz/property: `FuzzRender` (ran 10 s clean),
+`TestProperty_SQN_Bounds`.
+
+**Unsatisfied:** none.
+
+**Differed from spec / decisions worth recording:**
+- C21 raised `./tui/splash/splashgif` 350→460 (the generator is 443 code lines: the median-cut quantiser and
+  rasteriser). To keep `make ci` green the earlier done-chunk specs were also raised: C15/C16/C17 `./tui/ui`
+  1900→1950. Human should confirm, or ask for the quantiser to be split out.
+- C16 rows SPL01 to SPL11 are retired and removed from the C16 matrix; C16 no longer lists `./tui/splash` as a
+  package or a budget. `assets/logo/gen -go` has no consumer now and is left in place.
+- The Plain tier is centred vertically as well as horizontally. The spec only said "centred".
+- Sanitising the version: non-width-1 runes (wide/control) are dropped by `sanitize` so a hostile version
+  cannot widen a line or inject an escape (`FuzzRender` found this).
+- The GIF palette quantises truecolor cell colours to ≤256 with median cut; behaviour 31's "cell colours, not
+  re-blended" means no second opacity pass, not literal 24-bit output (a GIF cannot carry it).
+
+**Gotchas for the next agent:**
+- `tui/splash` is `!notui`, but `font.go` is untagged, so under `-tags notui` the package contains only the
+  bitmaps. `splashgif` is `!notui`; `go build ./tui/splash/splashgif` leaves a `splashgif` binary in the cwd
+  (delete it, or use `go run`).
+- `Cell.FG` for truecolor is `color.RGBA` (passthrough); for ANSI256 it is `ansi.IndexedColor`, which `sgr`
+  serialises as `38;5;N`. Coloured tiers only run at ANSI256+; below that the tier is Plain.
+- The star field keys on absolute cells (`hash(x, y, 917)`), which is what keeps `SQN26` true and what the
+  tests use to tell a star from a shell glyph.
+- The median-cut palette must stay deterministic: the colour set is gathered from a map and then sorted; keep
+  that sort if you touch it, or `SQN47` flakes.
+- The committed GIF is compared pixel-by-pixel after compositing (`SQN48`), so regenerating is mandatory after
+  any `tui/splash` pixel change. The file is 1,207,315 bytes; the cap is 2.5 MB.
+
+**Looked at:** Full at 100×30 (word left, star right, outburst, tagline `terminal coding agent  v0.1`),
+Compact at 80×24 (thin word, smaller outburst), and the held frame; all read well in the text dump and the GIF.
+
+**One command:** `go run ./scripts/accept C21`.
 
 ### C20 — 2026-10-13 — pi — main — cost not visible
 
@@ -1262,8 +1322,12 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
-- C21 (when built): mark C16 rows SPL01 to SPL11 `retired by C21` and lower or remove C16's `./tui/splash`
-  budget (250); rewrite `docs/TUI.md` "Splash and logo" to match; note that `assets/logo/gen -go` has no consumer.
+- C21 (applied): C16 rows SPL01 to SPL11 are retired (moved to a "Retired rows" section and removed from the
+  C16 matrix) and `./tui/splash` is removed from C16's packages and budgets. `docs/TUI.md` "Splash and logo"
+  and `docs/BRAND.md` describe the sequence and `go run ./tui/splash/splashgif`. `assets/logo/gen -go` has no
+  consumer and is left in place.
+- C21 budgets (applied): `./tui/splash/splashgif` 350→460 (the generator is 443 code lines). To keep `make ci`
+  green C15/C16/C17 `./tui/ui` 1900→1950. Human should confirm, or ask for the quantiser to be split out.
 - C20 was expanded (by the human) to add the pi login flow, live model discovery, and `x-opencode-session`.
   Applied: `./auth/opencode` package and LGN01-LGN07/DSC01/OPG21/OPG22 rows; default model
   `opencode-go/deepseek-v4.1-flash`. The spec still needs USG01... rows for the usage meters, and
@@ -1621,8 +1685,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   frame? Nothing in the spec adds one.
 - C21: the mockup draws `✦ ◆ ● ╱` as shapes. Their widths and look in real terminal fonts (macOS Terminal, iTerm2,
   Windows Terminal, kitty) have not been checked. Look before release.
-- C21: confirm the C16 splash rows SPL01 to SPL11 may be retired, and the budgets `./tui/splash` 700 and
-  `./tui/ui` 1950 (a +50 raise to the C15/C16/C17 budget).
+- C21 (applied, confirm): the C16 splash rows SPL01 to SPL11 are retired, and the budgets are `./tui/splash`
+  700, `./tui/splash/splashgif` 460, `./tui/ui` 1950 (+50 in C15/C16/C17).
 - C20: should `x-opencode-session` carry a real per-conversation id threaded from the server, or a random
   id per process? Today `mode/providers` does not set it at all.
 - C20: confirm the budget raises (`./provider/opencodego` 560, `./mode/providers` 360, `./auth/opencode`
@@ -1696,8 +1760,7 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 - C16: confirm the `matrixcheck` change (unknown-ID checks are skipped for tests that cite no row of the
   current spec) and the `linecount` change (generated files are skipped).
-- C16: the full splash mark renders sparsely at 97x97; is that acceptable, or should the generator emit a
-  denser grid or the splash downsample differently?
+- C16: the full splash mark renders sparsely at 97x97; moot after C21 retired the half-block splash.
 
 ## Cost
 
@@ -1711,4 +1774,5 @@ sessions (about twenty-four commits) covering config, help/version, firstrun, do
 examples, the favicon, and release/install; its cost was not visible either. C20 was one partial session
 (nine commits) covering the SSE transport, the Responses and Messages dialects, the OpenCode Go preset and
 router, the Console login, live discovery, and the usage meters (data layer, command, overlay, footer);
-its cost was not visible either.
+its cost was not visible either. C21 was one session of four commits covering the grid sequence, the UI tick
+chain, the GIF generator, and the README banner; its cost was not visible either.

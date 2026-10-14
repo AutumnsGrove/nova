@@ -5,14 +5,15 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 
 ## Start here
 
-**State:** C00 through C21 are done; `accept C21` and `make ci` both pass. **All specified chunks are built;
-there is no next chunk in `docs/chunks`.**
+**State:** C00 through C22 are done; `accept C22` and `make ci` both pass. **C22b (the protocol login command)
+is the next chunk; it is not specified yet.**
 
-**Next:** this is the final chunk. Human review of the accumulated *Open questions for the human* (especially
-the budget raises below) is the next step, then release polish. The one artefact to eyeball is the README
-GIF: regenerate it with `go run ./tui/splash/splashgif` whenever `tui/splash` moves pixels, and look at the
-splash in a few real terminals (macOS Terminal, iTerm2, kitty) before release, because the mockup draws the
-glyphs as shapes and their look in a terminal font is unchecked.
+**Next:** build **C22b**, the protocol `login`/`logout` command so a `serve`/`rpc` client can sign in the server
+host. The seam is `auth/providerauth`: the server can call `All`/`Resolve` and a provider's `Begin`/`Save`, and
+add `CmdLogin`/`CmdLogout`. After that, human review of the accumulated *Open questions for the human* (the
+budget raises below especially) and release polish. The README GIF is current; regenerate it with
+`go run ./tui/splash/splashgif` if `tui/splash` moves pixels, and look at the splash in a few real terminals
+before release.
 
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
 files carry `//go:build !notui`, and `scripts/linecount` skips generated files. `tui/splash/mark_gen.go` is
@@ -63,10 +64,61 @@ never one big lump (see `AGENTS.md`, "Working rhythm").
 | C19 | Polish, first run, doctor, examples, release | done | C16, C17, C18 | 2026-10-13 | |
 | C20 | OpenCode Go, the second launch provider | done | C02, C03, C12 | 2026-10-13 | |
 | C21 | Splash sequence: slash wordmark, outburst, star field | done | C16 | 2026-10-13 | not visible |
+| C22 | In-app login: provider picker, OAuth, and API keys | done | C17, C20 | 2026-10-13 | not visible |
+| C22b | Login over the protocol (serve/rpc) | todo | C22 | 2026-10-13 | |
 
 Status values: `todo`, `in-progress`, `done`, `partial` (something unsatisfied, listed below), `blocked`.
 
 ## Last session
+
+### C22 — 2026-10-13 — pi — main — cost not visible
+
+Added in-app `/login` and `/logout`, at the human's request after looking at Pi's `OAuthSelectorComponent`.
+Six green commits. `go run ./scripts/accept C22` passes all nine steps, `matrixcheck` and `linecount` are clean,
+and every SGN row has a named test.
+
+**Built:**
+- `auth/providerauth` — the data-driven registry. `Provider` (id, name, methods, env vars, default model,
+  `Begin`/`Save`/`Load`/`Delete`), `Session`, `Resolve` (config, env, store; not cached), and one file per
+  provider (`openrouter.go`, `opencodego.go`) that calls `Register` from `init`. A third provider is one file.
+- `auth` — `Begin`/`Submit`/`Wait`/`Close` on a `Flow`; `Login` is `Begin`+`Wait`. `Submit` takes the pasted
+  redirect URL for a remote browser. `FuzzRedirect`.
+- `auth/opencode` — `Complete(ctx, cfg, device)` splits the poll from `RequestDeviceCode`, and `DeleteKey`.
+- `mode/providers` — the OpenCode Go key now resolves per request (`APIKeyFunc`), so a runtime login is used
+  without a restart (SGN37).
+- `tui/dialog` — `NewProviderPicker`, `NewMethodPicker`, `NewSecretInput`, `NewFlowDialog`, and a `Retry`
+  field on `Result`. The key is masked and never rendered.
+- `tui/ui` — `/login [provider [method]]` and `/logout [provider]`, the intents `login`, `login-method`,
+  `login-key`, `login-flow`, `logout`, and the state machine in `login.go`. `providersLoadedMsg` resolves the
+  ready state off the update loop; `Save`/`Delete`/`Begin`/`Wait` all run in `tea.Cmd`s.
+- `docs/TUI.md` — the slash list and the dialog table.
+
+**Satisfied matrix rows:** all of them: SGN01-SGN40. Properties: `TestProperty_SGN_Secrets`,
+`TestProperty_SGN_Registry`; fuzz: `FuzzRedirect`.
+
+**Unsatisfied:** none.
+
+**Differed from spec / decisions worth recording:**
+- The spec's interface block missed two things the build needed: `dialog.NewFlowDialog` (SGN23/SGN26/SGN28/
+  SGN32) and `dialog.Result.Retry`, and `providerauth.Config.OpenBrowser` (SGN24). All are in the code now.
+- The TUI calls `providerauth.Resolve` with an empty config key, so a hand-edited `provider.opencode_go.api_key`
+  in `config.yaml` is not shown as ready in the picker (env + store are). `mode.Server` was not changed to
+  expose its config. See the open question.
+- Budgets raised (applied): C22 `./tui/ui` 2150→2350 and C15/C16/C17/C20/C21 `./tui/ui` →2350, because
+  `./tui/ui` is 2252 after the login state machine. `./tui/dialog` stays 2050 (it is 1836).
+- The spec's Acceptance step 2 (an interactive OpenRouter sign-in by hand) was not done; it needs a browser
+  and a real account. Everything up to the network call is covered by the tests with fakes.
+
+**Gotchas for the next agent:**
+- `providerauth` is a process-wide registry and its tests register fakes with unique ids; keep new test ids
+  unique and order-independent, because `All()` is global.
+- A `Session.Submit` must not block: the real `auth.Flow.Submit` sends on a buffered channel; the test fakes
+  use a buffer of one for the same reason. `applyLocalIntent` calls `Submit` synchronously.
+- `loginGen` guards against a late `loginDoneMsg` after Esc; `clearLogin` also cancels the flow context.
+- The ready state is computed in `providerInfosCmd` (a `tea.Cmd`), not in `Update`, because `Resolve` reads
+  the store. Keep any new provider I/O in a command.
+
+**One command:** `go run ./scripts/accept C22`.
 
 ### C21 — 2026-10-13 — pi — main — cost not visible
 
@@ -1322,6 +1374,13 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Spec corrections to apply
 
+- C22 (applied): the interface block needed `dialog.NewFlowDialog`, `dialog.Result.Retry`, and
+  `providerauth.Config.OpenBrowser`, all added during the build. Budgets raised: C22 `./tui/ui` 2150→2350 and
+  C15/C16/C17/C20/C21 `./tui/ui` →2350 (the package is 2252). Human should confirm, or ask for the login
+  state machine to move to a `tui/signin` package.
+- C22b (to write): a protocol `login`/`logout` command over `auth/providerauth`, so `serve`/`rpc` clients can
+  sign in the server host. Include `CmdLogin`/`CmdLogout` in `proto`, a `mode/commands.go` handler, and a TUI
+  path that uses it when the server is remote.
 - C21 (applied): C16 rows SPL01 to SPL11 are retired (moved to a "Retired rows" section and removed from the
   C16 matrix) and `./tui/splash` is removed from C16's packages and budgets. `docs/TUI.md` "Splash and logo"
   and `docs/BRAND.md` describe the sequence and `go run ./tui/splash/splashgif`. `assets/logo/gen -go` has no
@@ -1677,6 +1736,16 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Open questions for the human
 
+- C22: should the TUI pass the loaded config into `providerauth.Resolve` so a hand-edited
+  `provider.opencode_go.api_key` shows as ready in `/login`? Today the picker sees env and store only.
+- C22: after a login, `/login` opens the model picker automatically. Keep that, or only show a notice and
+  leave `/model` to the user?
+- C22: should `/logout` clear the current model when it was served by the provider being logged out, and fall
+  back to another available model?
+- C22: the OpenRouter OAuth branch shown for a pasted redirect is not exercised by hand yet (needs a browser and
+  an account). Is the paste-only fallback enough, or should the TUI also show the loopback callback status?
+- C22: confirm the `./tui/ui` raise to 2350 in C22 and the done chunks, or ask for a `tui/signin` split.
+
 - C21: the held end state keeps a faint shell ring on screen (30 percent opacity) as "keep everything on screen".
   Say if the ring should disappear after the burst and leave only the star, spikes, stars, and name.
 - C21: terminals below 256 colours (and `NO_COLOR`) get a plain `nova` / `press any key`, not the slash
@@ -1775,4 +1844,6 @@ examples, the favicon, and release/install; its cost was not visible either. C20
 (nine commits) covering the SSE transport, the Responses and Messages dialects, the OpenCode Go preset and
 router, the Console login, live discovery, and the usage meters (data layer, command, overlay, footer);
 its cost was not visible either. C21 was one session of four commits covering the grid sequence, the UI tick
-chain, the GIF generator, and the README banner; its cost was not visible either.
+chain, the GIF generator, and the README banner; its cost was not visible either. C22 was one session of six
+commits covering the provider registry, the steppable auth flows, the login dialogs, and the `/login`/`/logout`
+TUI state machine; its cost was not visible either.

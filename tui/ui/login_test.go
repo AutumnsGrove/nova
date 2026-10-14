@@ -4,6 +4,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/client"
 )
 
 // fakeStore is an in-memory credential store for the UI tests.
@@ -99,6 +101,8 @@ func (s *fakeSession) Wait(ctx context.Context) (providerauth.Credential, error)
 		return c, nil
 	}
 }
+
+func (s *fakeSession) complete(c providerauth.Credential) { s.ch <- c }
 
 func (s *fakeSession) wasClosed() bool {
 	s.mu.Lock()
@@ -295,6 +299,47 @@ func TestUI_SGN25_PastedRedirectCompletes(t *testing.T) {
 	drive(m, drive(m, wait))
 	if _, saves, _, _ := store.snapshot(); saves != 1 {
 		t.Fatalf("credential not saved: saves=%d", saves)
+	}
+}
+
+func TestUI_SGN29_DevicePollCompletes(t *testing.T) {
+	session := &fakeSession{prompt: "Sign in with Device", url: "https://device.example", code: "CODE-1", ch: make(chan providerauth.Credential, 1)}
+	store := &fakeStore{}
+	fakeRegister(t, "fake-device-poll-c22", []providerauth.Method{providerauth.Device, providerauth.APIKey}, store, map[providerauth.Method]providerauth.BeginFunc{
+		providerauth.Device: func(context.Context, providerauth.Config) (providerauth.Session, error) { return session, nil },
+	})
+	m, _, _ := newModel(t)
+	m.setEditorText("/login fake-device-poll-c22 device")
+	wait := drive(m, update(m, enterKey))
+	if v := m.render(); !strings.Contains(v, "https://device.example") || !strings.Contains(v, "CODE-1") {
+		t.Fatalf("device dialog missing the URL or code:\n%s", v)
+	}
+	session.complete(providerauth.Credential{Method: providerauth.Device, Key: "device-key"})
+	drive(m, drive(m, wait))
+	if _, saves, _, _ := store.snapshot(); saves != 1 {
+		t.Fatalf("device poll did not save: saves=%d", saves)
+	}
+}
+
+func TestUI_SGN34_DefaultModelOpensPicker(t *testing.T) {
+	store := &fakeStore{}
+	providerauth.Register(providerauth.Provider{
+		ID: "fake-model-c22", Name: "Fake Model", Methods: []providerauth.Method{providerauth.APIKey},
+		DefaultModel: "fake/model",
+		Save:         store.save, Load: store.load, Delete: store.delete,
+	})
+	m, _, _ := newModel(t)
+	m.setEditorText("/login fake-model-c22 api_key")
+	drive(m, update(m, enterKey))
+	typeKeys(m, "sk-test")
+	execAll(drive(m, update(m, enterKey)))
+	if m.await != intentModels {
+		t.Fatalf("await = %q, want models", m.await)
+	}
+	resp := proto.Response{Command: proto.CmdListModels, OK: true, Data: json.RawMessage(`[{"id":"fake/model","name":"Fake Model","provider":"fake"}]`)}
+	update(m, client.ResponseMsg{Response: resp})
+	if v := m.render(); !strings.Contains(v, "Fake Model") {
+		t.Fatalf("model picker did not open:\n%s", v)
 	}
 }
 

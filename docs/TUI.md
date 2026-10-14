@@ -136,9 +136,10 @@ over their `details` JSON for a nicer card.
 ### Slash commands
 
 `/model`, `/thinking`, `/context [tokens]`, `/compact`, `/new`, `/resume`, `/fork`,
-`/tree`, `/name`, `/cost`, `/theme`, `/reload`, `/ext`, `/todos`, `/plan`, `/help`,
-`/quit`. Extensions add more. Each is also a protocol command, so a headless client has
-the same set.
+`/tree`, `/name`, `/cost`, `/theme`, `/reload`, `/ext`, `/todos`, `/plan`, `/login`,
+`/logout`, `/help`, `/quit`. Extensions add more. Each is also a protocol command, so
+a headless client has the same set, except `/login` and `/logout`, which run in the
+local TUI and will become a protocol command in C22b.
 
 ## Dialogs
 
@@ -148,6 +149,7 @@ A stack of overlays. Each is a struct with `Draw` and a key handler.
 |---|---|
 | Permission | the `ask` outcome of the permission policy: shows the tool, its arguments, and the matched rule; allow once, allow for the session, deny |
 | Select / input / confirm | `ui_request` methods from extensions |
+| Sign-in | `/login` and `/logout`: a provider picker, a method picker, a masked key input, and the OAuth/device flow dialog with a pasted-redirect fallback for remote machines |
 | **Form** | the `ask` tool: tabs per question, single and multi select, free text, a note per answer, skip, a review screen |
 | Model picker | filterable list from the catalog, with context window and price |
 | Session list and tree | resume, fork, navigate branches |

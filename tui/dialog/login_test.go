@@ -99,3 +99,23 @@ func TestLogin_SGN18_SecretInputIsMasked(t *testing.T) {
 		t.Fatalf("secret input shows no bullets:\n%s", v)
 	}
 }
+
+func TestLogin_SGN47_PickerWidensForALongRow(t *testing.T) {
+	d := NewProviderPicker("Select provider to configure:", []ProviderInfo{
+		{ID: "opencode-go", Name: "OpenCode Go", Methods: []string{"device", "API key"}, Ready: true, Source: "config"},
+	})
+	w, h := d.Size(100, 24)
+	// The whole note, including where the key comes from, must fit the box.
+	if v := d.View(w, h, styles.Styles{}); !strings.Contains(v, "device, API key · ready (config)") {
+		t.Fatalf("the row was truncated at width %d:\n%s", w, v)
+	}
+}
+
+func TestLogin_SGN48_PickerWidthIsCappedToTheScreen(t *testing.T) {
+	d := NewProviderPicker("t", []ProviderInfo{
+		{ID: "x", Name: strings.Repeat("N", 200), Methods: []string{"API key"}, Ready: true, Source: "env"},
+	})
+	if w, _ := d.Size(60, 24); w > 60 {
+		t.Fatalf("width = %d, want at most the available 60", w)
+	}
+}

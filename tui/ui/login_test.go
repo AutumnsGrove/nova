@@ -160,14 +160,42 @@ func TestUI_SGN10_LoginOpensPicker(t *testing.T) {
 	}
 }
 
+// providersResponse is a canned list_providers answer.
+func providersResponse(rows ...string) proto.Response {
+	return proto.Response{Command: proto.CmdListProviders, OK: true, Data: json.RawMessage("[" + strings.Join(rows, ",") + "]")}
+}
+
 func TestUI_SGN11_PickerShowsReady(t *testing.T) {
-	store := &fakeStore{ready: true, key: "stored"}
-	fakeRegister(t, "fake-ready-c22", []providerauth.Method{providerauth.APIKey}, store, nil)
-	m, _, _ := newModel(t)
+	m, f, _ := newModel(t)
+	f.responses[proto.CmdListProviders] = providersResponse(
+		`{"id":"fake-ready-c22","name":"Fake Ready","methods":["api_key"],"ready":true,"source":"store"}`)
 	m.setEditorText("/login")
 	drive(m, update(m, enterKey))
-	if v := m.render(); !strings.Contains(v, "ready") || !strings.Contains(v, "store") {
+	if v := m.render(); !strings.Contains(v, "Fake Ready") || !strings.Contains(v, "ready") || !strings.Contains(v, "store") {
 		t.Fatalf("ready state missing:\n%s", v)
+	}
+}
+
+func TestUI_SGN45_PickerAsksTheServer(t *testing.T) {
+	m, f, _ := newModel(t)
+	m.setEditorText("/login")
+	drive(m, update(m, enterKey))
+	if len(f.sends) != 1 || f.sends[0].Type != proto.CmdListProviders {
+		t.Fatalf("sends = %+v, want one list_providers", f.sends)
+	}
+}
+
+func TestUI_SGN46_PickerShowsAConfigKeyAsReady(t *testing.T) {
+	m, f, _ := newModel(t)
+	// The server resolves the loaded config; the TUI never sees it, so a
+	// hand-edited key must reach the picker through the response alone.
+	f.responses[proto.CmdListProviders] = providersResponse(
+		`{"id":"opencode-go","name":"OpenCode Go","methods":["device","api_key"],"ready":true,"source":"config"}`)
+	m.setEditorText("/login")
+	drive(m, update(m, enterKey))
+	// The exact note, not loose words: the picker title itself contains "config".
+	if v := m.render(); !strings.Contains(v, "device, API key · ready (config)") {
+		t.Fatalf("config-key readiness missing:\n%s", v)
 	}
 }
 

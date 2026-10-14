@@ -4,6 +4,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"runtime"
@@ -46,38 +47,56 @@ type logoutDoneMsg struct {
 	err       error
 }
 
-// providersLoadedMsg carries the picker rows once their status is resolved.
-type providersLoadedMsg struct {
-	purpose string // "login" or "logout"
-	items   []dialog.ProviderInfo
+// providerRow is one provider in a list_providers response. The server fills
+// it in, so readiness reflects what the server will actually use, including a
+// key from its loaded config that the TUI never sees.
+type providerRow struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Methods      []string `json:"methods"`
+	Ready        bool     `json:"ready"`
+	Source       string   `json:"source"`
+	Current      bool     `json:"current"`
+	DefaultModel string   `json:"default_model"`
 }
 
-// providerInfosCmd resolves every provider's status off the update loop,
-// because Resolve reads the credential store. The config key is empty because
-// the TUI reads credentials from the environment and the stores; a hand-edited
-// config key is still honoured by the provider.
-func (m *Model) providerInfosCmd(purpose string) tea.Cmd {
-	home := m.home
-	return func() tea.Msg {
-		env := os.Getenv
-		items := make([]dialog.ProviderInfo, 0, len(providerauth.All()))
-		for _, p := range providerauth.All() {
-			st := providerauth.Resolve(p, "", env, home)
-			items = append(items, dialog.ProviderInfo{
-				ID: p.ID, Name: p.Name, Methods: methodLabels(p), Ready: st.Ready, Source: st.Source,
-			})
+// decodeProviders reads a list_providers response; a bad body is no rows.
+func decodeProviders(resp proto.Response) []providerRow {
+	var rows []providerRow
+	if resp.OK {
+		_ = json.Unmarshal(resp.Data, &rows)
+	}
+	return rows
+}
+
+// requestProviders asks the server for every provider's sign-in status. The
+// intent says what to do with the answer.
+func (m *Model) requestProviders(intent string) tea.Cmd {
+	m.await = intent
+	return m.client.Send(proto.Command{Type: proto.CmdListProviders})
+}
+
+// onProviders routes a list_providers response by what asked for it.
+func (m *Model) onProviders(resp proto.Response) {
+	intent := m.await
+	switch intent {
+	case intentProvidersLogin, intentProvidersLogout:
+		m.await = ""
+		title, next := "Select provider to configure:", intentLogin
+		if intent == intentProvidersLogout {
+			title, next = "Select provider to logout:", intentLogout
 		}
-		return providersLoadedMsg{purpose: purpose, items: items}
+		rows := decodeProviders(resp)
+		items := make([]dialog.ProviderInfo, 0, len(rows))
+		for _, r := range rows {
+			labels := make([]string, len(r.Methods))
+			for i, method := range r.Methods {
+				labels[i] = providerauth.Method(method).Label()
+			}
+			items = append(items, dialog.ProviderInfo{ID: r.ID, Name: r.Name, Methods: labels, Ready: r.Ready, Source: r.Source})
+		}
+		m.pushDialog(dialog.NewProviderPicker(title, items), next)
 	}
-}
-
-// onProvidersLoaded shows the provider picker.
-func (m *Model) onProvidersLoaded(msg providersLoadedMsg) {
-	title, intent := "Select provider to configure:", intentLogin
-	if msg.purpose == "logout" {
-		title, intent = "Select provider to logout:", intentLogout
-	}
-	m.pushDialog(dialog.NewProviderPicker(title, msg.items), intent)
 }
 
 // methodLabels names a provider's methods for the picker.
@@ -113,10 +132,10 @@ func parseMethod(s string) (providerauth.Method, bool) {
 }
 
 // openLoginPicker asks for the provider list for /login.
-func (m *Model) openLoginPicker() tea.Cmd { return m.providerInfosCmd("login") }
+func (m *Model) openLoginPicker() tea.Cmd { return m.requestProviders(intentProvidersLogin) }
 
 // openLogoutPicker asks for the provider list for /logout.
-func (m *Model) openLogoutPicker() tea.Cmd { return m.providerInfosCmd("logout") }
+func (m *Model) openLogoutPicker() tea.Cmd { return m.requestProviders(intentProvidersLogout) }
 
 // loginCommand handles /login [provider [method]].
 func (m *Model) loginCommand(args string) tea.Cmd {

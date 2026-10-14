@@ -315,6 +315,10 @@ func NewSecretInput(title, placeholder string) Dialog
 | SGN42 | `ForModel`, OpenCode Go | the OpenCode Go default model | the `opencode-go` provider (the catalog name is `opencodego`) |
 | SGN43 | `ForModel`, unknown model | an id the catalog does not know | the `openrouter` provider, as the request router does |
 | SGN44 | `ConfigKeyFrom` | OpenCode Go with a config key; OpenRouter; a nil config | the key; empty; empty |
+| SGN45 | the picker asks the server | `/login` | one `list_providers` command, no local credential read |
+| SGN46 | a config key shows as ready | `list_providers` answers a `config`-sourced row | the picker row reads `ready (config)` |
+| SGN47 | the picker fits its widest row | a ready row with a long note | the whole note is visible at the dialog's own width |
+| SGN48 | the picker width is capped | a very long row, 60 columns available | the width never exceeds 60 |
 
 ## Fuzz and property tests
 

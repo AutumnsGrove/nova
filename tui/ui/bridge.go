@@ -30,6 +30,11 @@ const (
 	intentLoginKey    = "login-key"
 	intentLoginFlow   = "login-flow"
 	intentLogout      = "logout"
+
+	// The provider list is asked for on behalf of a purpose; the intent says
+	// which.
+	intentProvidersLogin  = "providers-login"
+	intentProvidersLogout = "providers-logout"
 )
 
 // capable reports whether the client declared a UI method in hello.

@@ -184,7 +184,17 @@ func (l *listPicker) Tick(time.Time) bool { return false }
 
 // Size returns the desired box size.
 func (l *listPicker) Size(maxW, maxH int) (int, int) {
-	return min(max(len(l.title)+4, 48), maxW), min(len(l.items)+4, maxH)
+	// Fit the widest row (marker, label, two spaces, note) plus the frame, so a
+	// long note such as "ready (config)" is not cut off; the screen still caps it.
+	widest := 0
+	for _, item := range l.items {
+		row := 2 + ansi.StringWidth(safe(item.label))
+		if item.note != "" {
+			row += 2 + ansi.StringWidth(safe(item.note))
+		}
+		widest = max(widest, row)
+	}
+	return min(max(len(l.title)+4, widest+4, 48), maxW), min(len(l.items)+4, maxH)
 }
 
 // View renders the framed list. The selected row is marked with `>`.

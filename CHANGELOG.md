@@ -9,6 +9,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `nova update --target <path>` and `NOVA_INSTALL_DIR` choose which binary `nova update` replaces, and the
+  command prints the target it is using.
 - Styled `--help` and `nova version` with JSON output.
 - First-run flow: log in or paste a key, then pick a model.
 - `nova doctor` for checking the installation.
@@ -17,6 +19,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Ten example extensions under `examples/extensions/`.
 - A favicon variant of the logo.
 - A release workflow with checksummed binaries and `install.sh`.
+
+### Fixed
+
+- `nova update` under `go run` replaced a temporary binary and reported success; it now refuses and says to
+  pass `--target` or set `NOVA_INSTALL_DIR`.
 
 ## [0.1.0] - 2026-10-09
 

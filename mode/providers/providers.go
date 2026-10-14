@@ -21,6 +21,10 @@ type Options struct {
 	Getenv func(string) string
 	// Store is the OpenRouter credential store; nil means no stored key.
 	Store auth.Store
+	// SessionID returns the current conversation's id, read on every request
+	// because session.new, resume, and fork change it. It is sent to OpenCode Go
+	// as x-opencode-session; nil or an empty result sends no header.
+	SessionID func() string
 }
 
 // Build returns a provider.Provider that serves the OpenRouter and OpenCode Go
@@ -79,13 +83,14 @@ func Build(opt Options) provider.Provider {
 	}
 	openCodeGo := opencodego.New(opencodego.Config{APIKeyFunc: goKeyFunc, BaseURL: goBase})
 
-	return &router{openRouter: openRouter, openCodeGo: openCodeGo}
+	return &router{openRouter: openRouter, openCodeGo: openCodeGo, sessionID: opt.SessionID}
 }
 
 // router sends each request to the provider its model names.
 type router struct {
 	openRouter provider.Provider
 	openCodeGo provider.Provider
+	sessionID  func() string
 }
 
 // Name returns the router's id.
@@ -95,9 +100,29 @@ func (r *router) Name() string { return "router" }
 // OpenRouter.
 func (r *router) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
 	if m, ok := provider.GetModel(req.Model); ok && m.Provider == opencodego.ProviderName {
-		return r.openCodeGo.Stream(ctx, req, onEvent)
+		return r.openCodeGo.Stream(ctx, r.withSession(req), onEvent)
 	}
 	return r.openRouter.Stream(ctx, req, onEvent)
+}
+
+// withSession adds the conversation id as OpenCode Go's session header. It
+// copies the header map, so the caller's request is never mutated and a retry
+// sees the same headers it started with.
+func (r *router) withSession(req provider.Request) provider.Request {
+	if r.sessionID == nil {
+		return req
+	}
+	id := r.sessionID()
+	if id == "" {
+		return req
+	}
+	headers := make(map[string]string, len(req.ExtraHeaders)+1)
+	for k, v := range req.ExtraHeaders {
+		headers[k] = v
+	}
+	headers[opencodego.SessionHeader] = id
+	req.ExtraHeaders = headers
+	return req
 }
 
 // ResolveOpenCodeGoKey resolves the Go key from config, then the environment.

@@ -424,6 +424,11 @@ type OpenCodeGoConfig struct {
 | DSC01 | live discovery | fake models and models.dev | overlay registered; cache fresh; baseline kept |
 | OPG21 | session header | any request | `x-opencode-session` sent |
 | OPG22 | default model | `DefaultModel` | `opencode-go/deepseek-v4.1-flash`, in the catalog |
+| OPG23 | OpenCode Go gets the conversation id | a request to an OpenCode Go model, with a session id function | `x-opencode-session` equals the id |
+| OPG24 | OpenRouter does not | a request to an OpenRouter model | no `x-opencode-session` header |
+| OPG25 | the header follows the conversation | the id changes between two requests | the second request carries the new id |
+| OPG26 | no id, no header | the id function returns "" | no header is sent |
+| OPG27 | the caller's headers are kept | a request with its own `ExtraHeaders` | its headers arrive, and its map is not mutated |
 
 | USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |
 | USG02 | percent clamped | used over limit | percent 100 |

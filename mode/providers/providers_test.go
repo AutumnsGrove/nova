@@ -22,8 +22,9 @@ import (
 // recordServer counts requests.
 type recordServer struct {
 	*httptest.Server
-	mu    sync.Mutex
-	paths []string
+	mu      sync.Mutex
+	paths   []string
+	headers []http.Header
 }
 
 func newRecordServer(t *testing.T) *recordServer {
@@ -32,6 +33,7 @@ func newRecordServer(t *testing.T) *recordServer {
 	rs.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rs.mu.Lock()
 		rs.paths = append(rs.paths, r.URL.Path)
+		rs.headers = append(rs.headers, r.Header.Clone())
 		rs.mu.Unlock()
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -44,6 +46,16 @@ func (rs *recordServer) count() int {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	return len(rs.paths)
+}
+
+// lastHeader returns a header of the most recent request, or "" when there was none.
+func (rs *recordServer) lastHeader(name string) string {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if len(rs.headers) == 0 {
+		return ""
+	}
+	return rs.headers[len(rs.headers)-1].Get(name)
 }
 
 func envFrom(vars map[string]string) func(string) string {
@@ -200,5 +212,78 @@ func TestProviders_TMO11_AgentRetriesTimedOutDialect(t *testing.T) {
 	<-done
 	if retries != 1 {
 		t.Fatalf("retry events = %d, want 1", retries)
+	}
+}
+
+// sessionRouter builds a router whose conversation id is whatever *id holds,
+// with both servers recording.
+func sessionRouter(t *testing.T, id *string) (provider.Provider, *recordServer, *recordServer) {
+	t.Helper()
+	goSrv, orSrv := newRecordServer(t), newRecordServer(t)
+	cfg := config.Defaults()
+	cfg.Provider.OpenCodeGo.BaseURL = goSrv.URL
+	cfg.Provider.OpenRouter.BaseURL = orSrv.URL
+	p := Build(Options{
+		Config: &cfg, Getenv: envFrom(map[string]string{"OPENROUTER_API_KEY": "or-key"}),
+		SessionID: func() string { return *id },
+	})
+	return p, goSrv, orSrv
+}
+
+func TestProviders_OPG23_OpenCodeGoGetsTheConversationID(t *testing.T) {
+	id := "ses_one"
+	p, goSrv, _ := sessionRouter(t, &id)
+	_, _ = p.Stream(context.Background(), provider.Request{Model: "opencode-go/glm-5.3"}, nil)
+	if got := goSrv.lastHeader("x-opencode-session"); got != "ses_one" {
+		t.Fatalf("x-opencode-session = %q, want ses_one", got)
+	}
+}
+
+func TestProviders_OPG24_OpenRouterDoesNotGetIt(t *testing.T) {
+	id := "ses_one"
+	p, _, orSrv := sessionRouter(t, &id)
+	_, _ = p.Stream(context.Background(), provider.Request{Model: openRouterModel()}, nil)
+	if orSrv.count() == 0 {
+		t.Fatal("the OpenRouter server received no request")
+	}
+	if got := orSrv.lastHeader("x-opencode-session"); got != "" {
+		t.Fatalf("OpenRouter was sent x-opencode-session = %q", got)
+	}
+}
+
+func TestProviders_OPG25_TheHeaderFollowsTheConversation(t *testing.T) {
+	id := "ses_one"
+	p, goSrv, _ := sessionRouter(t, &id)
+	req := provider.Request{Model: "opencode-go/glm-5.3"}
+	_, _ = p.Stream(context.Background(), req, nil)
+	id = "ses_two" // session.new, resume, or fork changed the conversation
+	_, _ = p.Stream(context.Background(), req, nil)
+	if got := goSrv.lastHeader("x-opencode-session"); got != "ses_two" {
+		t.Fatalf("after the conversation changed, header = %q, want ses_two", got)
+	}
+}
+
+func TestProviders_OPG26_NoIDNoHeader(t *testing.T) {
+	id := ""
+	p, goSrv, _ := sessionRouter(t, &id)
+	_, _ = p.Stream(context.Background(), provider.Request{Model: "opencode-go/glm-5.3"}, nil)
+	if goSrv.count() == 0 {
+		t.Fatal("no request reached the server")
+	}
+	if got := goSrv.lastHeader("x-opencode-session"); got != "" {
+		t.Fatalf("an empty id still sent the header: %q", got)
+	}
+}
+
+func TestProviders_OPG27_CallersHeadersAreKeptAndNotMutated(t *testing.T) {
+	id := "ses_one"
+	p, goSrv, _ := sessionRouter(t, &id)
+	extra := map[string]string{"X-Custom": "kept"}
+	_, _ = p.Stream(context.Background(), provider.Request{Model: "opencode-go/glm-5.3", ExtraHeaders: extra}, nil)
+	if got := goSrv.lastHeader("X-Custom"); got != "kept" {
+		t.Fatalf("X-Custom = %q, the caller's header was lost", got)
+	}
+	if _, leaked := extra["x-opencode-session"]; leaked || len(extra) != 1 {
+		t.Fatalf("the caller's ExtraHeaders map was mutated: %v", extra)
 	}
 }

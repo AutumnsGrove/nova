@@ -1684,6 +1684,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
   Belongs in `docs/DECISIONS.md`.
 - C23: the mode is auto-detected from the cwd (a checkout rebuilds from source, otherwise a release), and
   `--source`/`--release` override it. Belongs in `docs/DECISIONS.md`.
+- C23 (human-confirmed 2026-10-14): a source build uses the checkout as it is; `nova update` never runs
+  `git pull`. Belongs in `docs/DECISIONS.md`.
 
 - C21: the splash is drawn procedurally on the character grid (two letter bitmaps and shaders) and the
   generated 97 by 49 cell data (`tui/splash/mark_gen.go`) is dropped. The splash plays once, then holds with
@@ -1785,9 +1787,8 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 
 ## Open questions for the human
 
-- C23: should `nova update` `git pull` a source checkout before rebuilding, or keep using the tree as it is?
-  Today it is as-is. Also: is replacing `os.Executable()` the right target, or should `NOVA_INSTALL_DIR` be
-  honoured like install.sh?
+- C23: is replacing `os.Executable()` the right target, or should the install directory be configurable like
+  install.sh's `NOVA_INSTALL_DIR`?
 
 - C22: should the TUI pass the loaded config into `providerauth.Resolve` so a hand-edited
   `provider.opencode_go.api_key` shows as ready in `/login`? Today the picker sees env and store only.

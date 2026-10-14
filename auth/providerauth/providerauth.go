@@ -60,6 +60,14 @@ type Session interface {
 	Close() error
 }
 
+// StatusReporter is implemented by a Session that can say what it is waiting
+// for, so a UI can show progress. It is optional: a session without it simply
+// shows no status line.
+type StatusReporter interface {
+	// Status is one short line, such as "Waiting for the browser callback...".
+	Status() string
+}
+
 // BeginFunc starts one method's flow.
 type BeginFunc func(ctx context.Context, cfg Config) (Session, error)
 

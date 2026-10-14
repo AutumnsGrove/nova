@@ -118,3 +118,43 @@ func FuzzRedirect(f *testing.F) {
 		}
 	})
 }
+
+func TestAuth_SGN56_AddrAndReceivedAfterCallback(t *testing.T) {
+	fx := newFakeExchange(t, http.StatusOK, `{"key":"k"}`)
+	flow, u := beginFlow(t, fx, nil)
+	callback := u.Query().Get("callback_url")
+	if !strings.HasPrefix(callback, "http://"+flow.Addr()+"/") {
+		t.Fatalf("Addr() = %q, but the callback URL is %q", flow.Addr(), callback)
+	}
+	if flow.Received() {
+		t.Fatal("Received() is true before any callback")
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(callback + "?code=the-code&state=" + url.QueryEscape(u.Query().Get("state")))
+	if err != nil {
+		t.Fatalf("callback GET: %v", err)
+	}
+	resp.Body.Close()
+	if !flow.Received() {
+		t.Fatal("Received() is false after the callback arrived")
+	}
+}
+
+func TestAuth_SGN57_ReceivedAfterAPastedRedirect(t *testing.T) {
+	fx := newFakeExchange(t, http.StatusOK, `{"key":"k"}`)
+	flow, u := beginFlow(t, fx, nil)
+	// A rejected paste is not a callback.
+	if err := flow.Submit("not a url"); err == nil {
+		t.Fatal("a malformed redirect was accepted")
+	}
+	if flow.Received() {
+		t.Fatal("Received() is true after a rejected paste")
+	}
+	redirect := u.Query().Get("callback_url") + "?code=c&state=" + url.QueryEscape(u.Query().Get("state"))
+	if err := flow.Submit(redirect); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if !flow.Received() {
+		t.Fatal("Received() is false after a good paste")
+	}
+}

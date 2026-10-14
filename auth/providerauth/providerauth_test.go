@@ -3,10 +3,14 @@ package providerauth
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/provider/opencodego"
 	"github.com/AutumnsGrove/nova/provider/openrouter"
@@ -236,5 +240,30 @@ func TestProviderauth_SGN44_ConfigKey(t *testing.T) {
 	}
 	if got := goP.ConfigKeyFrom(nil); got != "" {
 		t.Fatalf("nil config gave %q", got)
+	}
+}
+
+func TestProviderauth_SGN58_OAuthSessionReportsStatus(t *testing.T) {
+	flow, raw, err := auth.Begin(auth.LoginOptions{AuthURL: "https://example.test/auth", Out: io.Discard})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer flow.Close()
+	var sess Session = &oauthSession{flow: flow, url: raw, name: "OpenRouter"}
+	reporter, ok := sess.(StatusReporter)
+	if !ok {
+		t.Fatal("the OAuth session does not report its status")
+	}
+	waiting := reporter.Status()
+	if !strings.Contains(waiting, flow.Addr()) || !strings.Contains(strings.ToLower(waiting), "waiting") {
+		t.Fatalf("waiting status = %q, want it to name %s", waiting, flow.Addr())
+	}
+	u, _ := url.Parse(raw)
+	redirect := u.Query().Get("callback_url") + "?code=c&state=" + url.QueryEscape(u.Query().Get("state"))
+	if err := sess.Submit(redirect); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if got := reporter.Status(); got == waiting || !strings.Contains(strings.ToLower(got), "received") {
+		t.Fatalf("status after the redirect = %q, want a received message different from %q", got, waiting)
 	}
 }

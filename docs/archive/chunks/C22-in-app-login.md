@@ -326,6 +326,9 @@ func NewSecretInput(title, placeholder string) Dialog
 | SGN53 | logout of another provider | the provider signed out does not serve the current model | the model is left alone |
 | SGN54 | logout while an env key remains | the provider still resolves from the environment | the model is left alone; the notice names `env` |
 | SGN55 | logout while a config key remains | the server still resolves a key from its config | the notice names `config`; the model is left alone |
+| SGN56 | the flow reports its address and receipt | begin a flow, then hit its loopback callback | `Addr` matches the callback URL; `Received` is false, then true |
+| SGN57 | a paste counts only when accepted | a malformed paste, then a good one | `Received` stays false, then becomes true |
+| SGN58 | the OAuth session reports a status | an OAuth session, before and after a redirect | a "waiting" line naming the address, then a different "received" line |
 
 ## Fuzz and property tests
 

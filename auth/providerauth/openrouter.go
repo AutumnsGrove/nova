@@ -62,6 +62,14 @@ type oauthSession struct {
 	name string
 }
 
+// Status says whether the loopback callback is still awaited or has arrived.
+func (s *oauthSession) Status() string {
+	if s.flow.Received() {
+		return "Callback received; finishing sign-in..."
+	}
+	return "Waiting for the browser callback on " + s.flow.Addr() + "..."
+}
+
 func (s *oauthSession) Prompt() string            { return "Sign in with " + s.name }
 func (s *oauthSession) URL() string               { return s.url }
 func (s *oauthSession) Code() string              { return "" }

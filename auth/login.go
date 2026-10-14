@@ -112,6 +112,19 @@ func Begin(opts BeginOptions) (*Flow, string, error) {
 	return &Flow{flow: lflow, opts: opts, verifier: verifier, server: srv, listener: ln}, authURL, nil
 }
 
+// Addr is the loopback address the callback listener is bound to, such as
+// "127.0.0.1:54321". A UI shows it so the user can tell the listener is up.
+func (f *Flow) Addr() string {
+	if f.listener == nil {
+		return ""
+	}
+	return f.listener.Addr().String()
+}
+
+// Received reports whether a callback or a good pasted redirect has been
+// accepted, so a UI can move from "waiting" to "finishing".
+func (f *Flow) Received() bool { return f.flow.handled.Load() }
+
 // Submit hands the flow the redirect URL the browser landed on. It fails on a
 // value without a matching code and state, and leaves Wait blocked.
 func (f *Flow) Submit(pasted string) error {

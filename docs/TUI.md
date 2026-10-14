@@ -138,8 +138,9 @@ over their `details` JSON for a nicer card.
 `/model`, `/thinking`, `/context [tokens]`, `/compact`, `/new`, `/resume`, `/fork`,
 `/tree`, `/name`, `/cost`, `/theme`, `/reload`, `/ext`, `/todos`, `/plan`, `/login`,
 `/logout`, `/help`, `/quit`. Extensions add more. Each is also a protocol command, so
-a headless client has the same set, except `/login` and `/logout`, which run in the
-local TUI and will become a protocol command in C22b.
+a headless client has the same set. `login`, `login_submit`, `login_cancel`, `logout`, and
+`list_providers` are the protocol commands for sign-in ([`PROTOCOL.md`](PROTOCOL.md)); the local TUI runs
+the sign-in flows itself and asks the server for each provider's status.
 
 ## Dialogs
 
@@ -149,7 +150,7 @@ A stack of overlays. Each is a struct with `Draw` and a key handler.
 |---|---|
 | Permission | the `ask` outcome of the permission policy: shows the tool, its arguments, and the matched rule; allow once, allow for the session, deny |
 | Select / input / confirm | `ui_request` methods from extensions |
-| Sign-in | `/login` and `/logout`: a provider picker, a method picker, a masked key input, and the OAuth/device flow dialog with a pasted-redirect fallback for remote machines |
+| Sign-in | `/login` and `/logout`: a provider picker (readiness comes from the server, so a key in the config counts), a method picker, a masked key input, and the OAuth/device flow dialog. The OAuth dialog shows the callback status (waiting on the loopback address, then received) and keeps a pasted-redirect fallback for remote machines. After a login the model picker opens only if the current model has no signed-in provider; after a logout from the provider serving the current model, the model switches to another signed-in provider's default, or the notice says to run `/login` |
 | **Form** | the `ask` tool: tabs per question, single and multi select, free text, a note per answer, skip, a review screen |
 | Model picker | filterable list from the catalog, with context window and price |
 | Session list and tree | resume, fork, navigate branches |

@@ -119,3 +119,26 @@ func TestLogin_SGN48_PickerWidthIsCappedToTheScreen(t *testing.T) {
 		t.Fatalf("width = %d, want at most the available 60", w)
 	}
 }
+
+func TestLogin_SGN59_FlowDialogShowsItsStatus(t *testing.T) {
+	d := NewFlowDialog("Sign in with OpenRouter", "https://example.test/auth", "", true)
+	status := "Waiting for the browser callback on 127.0.0.1:5000..."
+	d.(interface{ SetStatus(func() string) }).SetStatus(func() string { return status })
+	w, h := d.Size(100, 24)
+	if v := d.View(w, h, styles.Styles{}); !strings.Contains(v, status) {
+		t.Fatalf("flow dialog missing the status:\n%s", v)
+	}
+	// The line is read on every render, so a change shows without a new dialog.
+	status = "Callback received; finishing sign-in..."
+	if v := d.View(w, h, styles.Styles{}); !strings.Contains(v, status) {
+		t.Fatalf("flow dialog did not follow the status change:\n%s", v)
+	}
+}
+
+func TestLogin_SGN60_FlowDialogWithoutStatusIsUnchanged(t *testing.T) {
+	d := NewFlowDialog("Sign in with Device", "https://example.test", "CODE", false)
+	w, h := d.Size(100, 24)
+	if v := d.View(w, h, styles.Styles{}); strings.Contains(v, "Waiting") || strings.Contains(v, "Callback") {
+		t.Fatalf("a dialog with no status invented one:\n%s", v)
+	}
+}

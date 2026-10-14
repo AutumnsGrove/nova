@@ -20,6 +20,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - A favicon variant of the logo.
 - A release workflow with checksummed binaries and `install.sh`.
 
+### Changed
+
+- `/login` shows a provider as ready when its key comes from the config, and the OAuth sign-in dialog shows the
+  loopback callback status. After a login the model picker opens only when the current model needs it, and
+  `/logout` from the provider serving the current model switches to another signed-in provider's model.
+- `list_providers` reports `current` and `default_model`, and counts a key from the loaded config as ready.
+
 ### Fixed
 
 - `nova update` under `go run` replaced a temporary binary and reported success; it now refuses and says to

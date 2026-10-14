@@ -257,6 +257,11 @@ func (m *Model) onLoginBegun(msg loginBegunMsg) tea.Cmd {
 func (m *Model) pushFlowDialog() {
 	paste := m.loginMethod == providerauth.OAuth
 	d := dialog.NewFlowDialog(m.loginSession.Prompt(), m.loginSession.URL(), m.loginSession.Code(), paste)
+	if r, ok := m.loginSession.(providerauth.StatusReporter); ok {
+		if f, ok := d.(interface{ SetStatus(func() string) }); ok {
+			f.SetStatus(r.Status)
+		}
+	}
 	if m.loginErr != "" {
 		if f, ok := d.(interface{ Fail(string) }); ok {
 			f.Fail(m.loginErr)
@@ -277,6 +282,17 @@ func (m *Model) onLoginDone(msg loginDoneMsg) tea.Cmd {
 		return nil
 	}
 	return m.saveCredential(id, method, msg.cred.Key)
+}
+
+// loginStatusLive reports whether an open sign-in shows a status line. It
+// keeps the tick chain running so the line redraws while the user waits, since
+// nothing else would send a message until the flow ends.
+func (m *Model) loginStatusLive() bool {
+	if m.loginSession == nil {
+		return false
+	}
+	_, ok := m.loginSession.(providerauth.StatusReporter)
+	return ok
 }
 
 // clearLogin forgets the current flow and releases its context.

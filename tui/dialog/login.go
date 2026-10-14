@@ -32,6 +32,10 @@ type flowDialog struct {
 	paste  bool
 	input  []rune
 	err    string
+	// status, when set, is read on every render, so the line follows the
+	// flow ("waiting for the callback", then "received") without the dialog
+	// being rebuilt.
+	status func() string
 }
 
 // NewFlowDialog builds the dialog shown while an OAuth or device flow runs.
@@ -42,6 +46,10 @@ func NewFlowDialog(prompt, url, code string, paste bool) Dialog {
 
 // ID is empty for a local dialog.
 func (d *flowDialog) ID() string { return "" }
+
+// SetStatus gives the dialog a function that returns the flow's current status
+// line, or nil for none.
+func (d *flowDialog) SetStatus(f func() string) { d.status = f }
 
 // Fail records a failure so the dialog shows it and offers a retry.
 func (d *flowDialog) Fail(msg string) { d.err = msg }
@@ -92,7 +100,11 @@ func (d *flowDialog) Tick(time.Time) bool { return false }
 
 // Size returns the desired box size.
 func (d *flowDialog) Size(maxW, maxH int) (int, int) {
-	return min(max(len(d.url)+8, 52), maxW), min(11, maxH)
+	width := max(len(d.url)+8, 52)
+	if d.status != nil {
+		width = max(width, ansi.StringWidth(safe(d.status()))+4)
+	}
+	return min(width, maxW), min(12, maxH)
 }
 
 // View renders the framed flow dialog.
@@ -104,6 +116,11 @@ func (d *flowDialog) View(w, h int, st styles.Styles) string {
 	}
 	if d.code != "" {
 		body = append(body, "code: "+safe(d.code))
+	}
+	if d.status != nil {
+		if line := d.status(); line != "" {
+			body = append(body, st.Muted.Render(safe(line)))
+		}
 	}
 	if d.paste {
 		body = append(body, st.Muted.Render("If the browser runs on another machine, paste the URL it was redirected to:"))

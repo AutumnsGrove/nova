@@ -329,6 +329,10 @@ func NewSecretInput(title, placeholder string) Dialog
 | SGN56 | the flow reports its address and receipt | begin a flow, then hit its loopback callback | `Addr` matches the callback URL; `Received` is false, then true |
 | SGN57 | a paste counts only when accepted | a malformed paste, then a good one | `Received` stays false, then becomes true |
 | SGN58 | the OAuth session reports a status | an OAuth session, before and after a redirect | a "waiting" line naming the address, then a different "received" line |
+| SGN59 | the flow dialog shows a status line | a dialog given a status function, whose answer then changes | the line appears, then follows the change on the next render |
+| SGN60 | no status, no line | a dialog with no status function | no invented status line |
+| SGN61 | the open dialog follows the session status | a status-reporting session changes its status, then a tick arrives | the rendered dialog shows the new status |
+| SGN62 | the tick chain lives only while the dialog is open | a status-reporting sign-in, then esc | `needsTick` is true while open and false after the cancel |
 
 ## Fuzz and property tests
 

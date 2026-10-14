@@ -658,3 +658,60 @@ func TestUI_SGN55_LogoutSaysWhenAConfigKeyRemains(t *testing.T) {
 		t.Fatalf("model changed although the provider still works: %v", got)
 	}
 }
+
+// statusSession is a fake session that reports a changing status.
+type statusSession struct {
+	*fakeSession
+	mu     sync.Mutex
+	status string
+}
+
+func (s *statusSession) Status() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.status
+}
+
+func (s *statusSession) set(v string) {
+	s.mu.Lock()
+	s.status = v
+	s.mu.Unlock()
+}
+
+func TestUI_SGN61_FlowDialogFollowsTheSessionStatus(t *testing.T) {
+	sess := &statusSession{fakeSession: newFakeSession(), status: "Waiting for the browser callback on 127.0.0.1:1..."}
+	m, _, _ := beginStatusOAuth(t, "fake-status2-c22", sess)
+	if v := m.render(); !strings.Contains(v, "Waiting for the browser callback") {
+		t.Fatalf("status missing from the flow dialog:\n%s", v)
+	}
+	sess.set("Callback received; finishing sign-in...")
+	update(m, tickMsg{})
+	if v := m.render(); !strings.Contains(v, "Callback received") {
+		t.Fatalf("the dialog did not redraw with the new status:\n%s", v)
+	}
+}
+
+func TestUI_SGN62_StatusFlowKeepsTheTickChainOnlyWhileOpen(t *testing.T) {
+	sess := &statusSession{fakeSession: newFakeSession(), status: "Waiting..."}
+	m, _, _ := beginStatusOAuth(t, "fake-status3-c22", sess)
+	if !m.needsTick() {
+		t.Fatal("needsTick() is false while a status-reporting sign-in is open")
+	}
+	update(m, escKey)
+	if m.needsTick() {
+		t.Fatal("needsTick() stayed true after the sign-in was cancelled")
+	}
+}
+
+// beginStatusOAuth is beginOAuth for a session that reports a status.
+func beginStatusOAuth(t *testing.T, id string, session *statusSession) (*Model, *fakeStore, tea.Cmd) {
+	t.Helper()
+	store := &fakeStore{}
+	fakeRegister(t, id, []providerauth.Method{providerauth.OAuth, providerauth.APIKey}, store, map[providerauth.Method]providerauth.BeginFunc{
+		providerauth.OAuth: func(context.Context, providerauth.Config) (providerauth.Session, error) { return session, nil },
+	})
+	m, _, _ := newModel(t)
+	m.setEditorText("/login " + id + " oauth")
+	wait := drive(m, update(m, enterKey))
+	return m, store, wait
+}

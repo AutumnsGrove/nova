@@ -10,9 +10,8 @@ This file is edited by hand. Each agent updates it as its last step (see `AGENTS
 **Next:** run **C21** (`docs/chunks/C21-splash-sequence.md`), the redesigned splash. Its last step swaps the
 README logo for a generated animated GIF. The design was chosen by the human on 2026-10-13; the reference is
 `docs/mockups/splash/nova-splash-sequence.html`. Open it in a browser first. C21 retires C16 rows SPL01 to
-SPL11 (see its "Retired rows"). Two optional cleanups after that: reconcile the C18-C20 decisions into
-`docs/DECISIONS.md`, and wire the `tui/ui/registry.go` `Registry` into the transcript (the one deliberate
-C18 gap).
+SPL11 (see its "Retired rows"). The C18-C20 decisions are recorded as D61 to D69, and the bundled render
+registry is now wired into the transcript.
 
 **Watch out:** `go.mod` is at `go 1.26.6` (catwalk v0.52.49) and Go auto-downloads `go1.26.9`; all TUI
 files carry `//go:build !notui`, and `scripts/linecount` skips generated files (`tui/splash/mark_gen.go`).
@@ -1517,33 +1516,10 @@ Built the four guard programs, the shared spec parser, the Makefile, and the CI 
 - C21: the splash is drawn procedurally on the character grid (two letter bitmaps and shaders) and the
   generated 97 by 49 cell data (`tui/splash/mark_gen.go`) is dropped. The splash plays once, then holds with
   the name shimmering. Belongs in `docs/DECISIONS.md` when C21 is built (it supersedes the C16 splash design).
-- C20: the OpenCode Go usage footer is refreshed by the **TUI** (it sends `get_usage` and sets its own
-  `opencode-go` status segment on init and every 5 minutes), not by the server pushing `ui.status`; the
-  server returns `rows` and `footer` and stays stateless. Belongs in `docs/DECISIONS.md`.
-- C20: the OpenCode Go login ports the pi extension's Console device grant and service-account key
-  provisioning; the provisioned key lives in `~/.config/nova/opencode-go.json`, not `config.yaml`, because
-  CFW10 refuses a secret-named config key. Belongs in `docs/DECISIONS.md`.
-- C20: the Go model catalog is code-defined baseline plus a live overlay from `/zen/go/v1/models` enriched
-  by models.dev and cached 12h, rather than code-only. Belongs in `docs/DECISIONS.md`.
-
-- C19: the first-run flow is a standalone Bubble Tea program in `tui/firstrun`, run by `cmd/nova` before
-  `mode.Build`, not a sub-model inside `tui/ui`; and `ext/sdk.EntryKind` declares session entry kinds for
-  replay. Both belong in `docs/DECISIONS.md`.
-- C19: the built-in `extension-author` skill is embedded in `bundled/skills` and appended by
-  `config.LoadSkillsWithBuiltins` from `mode/wire.go`, because `config` may not import `bundled/`. Belongs in
-  `docs/DECISIONS.md`.
-- C19: `tui/cli` hard-wraps fang's output to the terminal width with `ansi.Hardwrap`, because fang styles but
-  does not wrap the command and flag groups. Belongs in `docs/DECISIONS.md`.
-
-- C18: `Env.Extra["tools"]` is the parent `*tool.Registry` and `Env.Extra["plan"]` starts plan mode; both
-  are host conventions, not protocol. Belongs in `docs/DECISIONS.md`.
-- C18: bundled tools are always offered when the extension is enabled; `extensions.disable` and `--no-tools`
-  are the off switches, while `tools.active` does not filter them. Belongs in `docs/DECISIONS.md` (open
-  question below).
-- C18: a bundled extension must not publish an empty widget on a fresh start; an empty widget is only sent
-  to clear a previous one. Belongs in `docs/DECISIONS.md`.
-- C18: `ext.Host` re-registration replaces an owned tool in place rather than clearing first. Belongs in
-  `docs/DECISIONS.md`.
+- Recorded 2026-10-13: the C18-C20 decisions above are now D61 to D70 in `docs/DECISIONS.md` (bundled
+  host conventions, bundled tools always offered, no empty widget, firstrun/`EntryKind`, built-in skills,
+  `tui/cli` wrapping, the OpenCode Go login/key, the Go catalog, the TUI usage footer, and in-place
+  re-registration).
 
 - C17 session remember is a per-server allowlist consulted in `mode.Server.ask`, not a `permission.Rule`
   appended to the policy (race-free; `Allow` cannot beat `ask` under most-restrictive-wins). Belongs in

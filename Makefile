@@ -17,8 +17,9 @@ race:
 race-splash:
 	go test -race -p 2 ./tui/splash/splashgif
 
+# gofmt -l exits 0 even when it lists files, so fail on any output.
 fmt:
-	gofmt -l .
+	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 vet:
 	go vet ./...

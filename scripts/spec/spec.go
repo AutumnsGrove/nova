@@ -157,18 +157,23 @@ func checkDuplicateIDs(path string, rows []Row) error {
 	return nil
 }
 
-// Find returns the path of the one chunk spec for chunk under docs/chunks. It
+// ChunkDir is where the chunk specs live. The build-out is finished, so they
+// are archived: the specs are kept as a regression contract (every matrix row
+// still needs its test), not as the way new work is assigned.
+var ChunkDir = filepath.Join("docs", "archive", "chunks")
+
+// Find returns the path of the one chunk spec for chunk under ChunkDir. It
 // reports distinct errors for "none" and "several" so callers can tell them
 // apart.
 func Find(chunk string) (string, error) {
-	pattern := filepath.Join("docs", "chunks", chunk+"-*.md")
+	pattern := filepath.Join(ChunkDir, chunk+"-*.md")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return "", fmt.Errorf("spec: find %s: %w", chunk, err)
 	}
 	switch len(matches) {
 	case 0:
-		return "", fmt.Errorf("spec: no chunk spec matches %q in docs/chunks", chunk)
+		return "", fmt.Errorf("spec: no chunk spec matches %q in %s", chunk, ChunkDir)
 	case 1:
 		return matches[0], nil
 	default:

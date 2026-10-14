@@ -84,7 +84,7 @@ func TestRelease_REL02_AcceptanceGate(t *testing.T) {
 		runs = append(runs, s.Run)
 	}
 	joined := strings.Join(runs, "\n")
-	if !strings.Contains(joined, "scripts/accept") || !strings.Contains(joined, "docs/chunks") {
+	if !strings.Contains(joined, "scripts/accept") || !strings.Contains(joined, "docs/archive/chunks") {
 		t.Fatalf("accept job does not run every spec:\n%s", joined)
 	}
 }

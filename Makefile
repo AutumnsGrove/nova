@@ -38,25 +38,21 @@ accept:
 
 ci: fmt vet build build-notui race importcheck matrixcheck-all linecount-all
 
-# Guard only chunks whose Status in NEXTSTEPS.md is `done`. The chunk being
-# worked on is gated by `accept`; later chunks are not guarded yet. The M0
-# prototype occupies some future paths, so package existence alone is not a
-# reliable signal that a chunk is finished.
-done-chunks = $(shell awk -F'|' '/^\| *C[0-9][0-9] */ {c=$$2; s=$$4; gsub(/ /,"",c); gsub(/ /,"",s); if (s=="done") print c}' NEXTSTEPS.md)
+# The chunk specs are archived (docs/archive/chunks): the build-out is finished,
+# so every spec is a regression contract. Each matrix row must still have a
+# test, and each package must stay inside its line budget. An empty list is an
+# error, so a moved or renamed directory can never turn these guards into no-ops.
+chunk-specs = $(sort $(wildcard docs/archive/chunks/C*.md))
 
 matrixcheck-all:
-	@done="$(done-chunks)"; \
-	for spec in docs/chunks/C*.md; do \
-		chunk=$$(sed -n 's/^chunk: *//p' "$$spec" | head -1); \
-		case " $$done " in *" $$chunk "*) ;; *) echo "skip $$spec ($$chunk not done)"; continue;; esac; \
+	@test -n "$(chunk-specs)" || { echo "no chunk specs found under docs/archive/chunks"; exit 1; }
+	@for spec in $(chunk-specs); do \
 		pkgs=$$(sed -n 's/^packages: \[\(.*\)\]/\1/p' "$$spec" | head -1 | tr -d ' ' | tr ',' ' '); \
 		go run ./scripts/matrixcheck "$$spec" $$pkgs || exit 1; \
 	done
 
 linecount-all:
-	@done="$(done-chunks)"; \
-	for spec in docs/chunks/C*.md; do \
-		chunk=$$(sed -n 's/^chunk: *//p' "$$spec" | head -1); \
-		case " $$done " in *" $$chunk "*) ;; *) echo "skip $$spec ($$chunk not done)"; continue;; esac; \
+	@test -n "$(chunk-specs)" || { echo "no chunk specs found under docs/archive/chunks"; exit 1; }
+	@for spec in $(chunk-specs); do \
 		go run ./scripts/linecount "$$spec" || exit 1; \
 	done

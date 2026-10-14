@@ -39,7 +39,7 @@ exit 0
 func fixture(t *testing.T, spec string, files map[string]string) string {
 	t.Helper()
 	root := t.TempDir()
-	files["docs/chunks/C00-fixture.md"] = spec
+	files["docs/archive/chunks/C00-fixture.md"] = spec
 	for name, content := range files {
 		path := filepath.Join(root, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -174,8 +174,8 @@ func TestAccept_ACC06_StepsRunInOrder(t *testing.T) {
 		"go build -tags notui ./...",
 		"go test -short -race -p 2 ./p",
 		"go test -race -p 2 ./p",
-		"go run ./scripts/matrixcheck docs/chunks/C00-fixture.md ./p",
-		"go run ./scripts/linecount docs/chunks/C00-fixture.md",
+		"go run ./scripts/matrixcheck docs/archive/chunks/C00-fixture.md ./p",
+		"go run ./scripts/linecount docs/archive/chunks/C00-fixture.md",
 		"go run ./scripts/importcheck",
 	}, "\n")
 	got, _ := os.ReadFile(record)

@@ -19,7 +19,7 @@ jobs:
       - name: Accept every chunk
         run: |
           set -eu
-          for spec in docs/chunks/C*.md; do
+          for spec in docs/archive/chunks/C*.md; do
             chunk=$(basename "$spec" | cut -d- -f1)
             echo "== accept $chunk =="
             go run ./scripts/accept "$chunk"

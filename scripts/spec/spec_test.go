@@ -203,11 +203,11 @@ func TestSpecFind_SPC09_NoMatchAndTwoMatches(t *testing.T) {
 	if _, err := Find("C05"); err == nil || !strings.Contains(err.Error(), "no chunk spec") {
 		t.Fatalf("Find with no match: err = %v, want a no-match error", err)
 	}
-	if err := os.MkdirAll(filepath.Join("docs", "chunks"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join("docs", "archive", "chunks"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"C05-a.md", "C05-b.md"} {
-		if err := os.WriteFile(filepath.Join("docs", "chunks", name), []byte(""), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join("docs", "archive", "chunks", name), []byte(""), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

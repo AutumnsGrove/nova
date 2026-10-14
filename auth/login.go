@@ -212,6 +212,8 @@ func buildAuthURL(base, callbackURL, challenge, state string) string {
 	q.Set("callback_url", callbackURL)
 	q.Set("code_challenge", challenge)
 	q.Set("code_challenge_method", "S256")
+	// Without a label OpenRouter names the key after the loopback host and port.
+	q.Set("key_label", "Nova")
 	if state != "" {
 		q.Set("state", state)
 	}

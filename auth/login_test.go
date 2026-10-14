@@ -176,6 +176,15 @@ func TestLogin_LOG01_HappyPath(t *testing.T) {
 	}
 }
 
+// TestLogin_LOG02_KeyLabel checks the authorization URL names the key "Nova", so
+// OpenRouter does not label it with the loopback host and port.
+func TestLogin_LOG02_KeyLabel(t *testing.T) {
+	h := startLogin(t, LoginOptions{})
+	if got := h.authURL.Query().Get("key_label"); got != "Nova" {
+		t.Errorf("key_label = %q, want Nova", got)
+	}
+}
+
 // TestLogin_LOG02_AuthURLParameters checks the authorization URL carries the
 // callback, the S256 challenge, and the state.
 func TestLogin_LOG02_AuthURLParameters(t *testing.T) {

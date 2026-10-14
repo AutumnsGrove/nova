@@ -8,9 +8,11 @@ Two requirements shaped this document.
    almost nothing needs a terminal.
 2. **The first pass must cover failure, not just success.** On Ivy, the agent was not
    told to test anything but the happy path, and the edge cases that mattered were
-   found only in a second review by a larger model. Nova puts that review at plan
-   time: the edge cases are written into each chunk spec as a test matrix, and a
-   script fails the build if a matrix row has no test.
+   found only in a second review by a larger model. Nova puts that review before the
+   code: the edge cases are written down as test cases first (section 3 is the
+   checklist), and the tests are written and watched failing before the fix. The
+   areas built during the initial build-out carry their cases as a test matrix in
+   `docs/archive/chunks/`, and a script fails the build if a matrix row has no test.
 
 Tests use the standard library only (plus `x/exp/golden` and `catwalk` in `tui/`).
 
@@ -35,7 +37,7 @@ GitHub Action, and a web backend use. No terminal, no browser, no network.
 ```
 go test -short ./...                 # L0 + L1 + L4. Under 30 seconds. Run constantly.
 go test ./...                        # adds L2 and L3. Under 2 minutes.
-go test -race ./...                  # always before finishing a chunk
+go test -race ./...                  # always before finishing a change (`make ci` runs it)
 NOVA_PTY=1 go test ./tui/... -run PTY  # L5 pseudo-terminal smoke tests, CI only
 go test -tags live ./provider/...    # L6, manual
 go test -run X -update ./...         # regenerate golden files
@@ -102,10 +104,10 @@ provider saw.
 
 ## 3. Failure-mode catalog
 
-This is the checklist the larger model uses when writing a chunk's matrix. An agent
-implementing a chunk does not need to invent edge cases; it reads its matrix. The
-catalog is here so that every matrix is built from the same list and nothing is
-forgotten.
+This is the checklist to work through when you write the test cases for a change,
+before you write the code. Every archived chunk matrix was built from the same list,
+so for a solved area the matrix shows the list applied. The catalog is here so that
+nothing is forgotten.
 
 ### Provider and streaming
 
@@ -236,7 +238,9 @@ forgotten.
 
 ## 4. The matrix rule
 
-Every chunk spec has a table. Each row is one behaviour to test and has an ID.
+Every archived chunk spec (`docs/archive/chunks/`) has a table. Each row is one
+behaviour to test and has an ID. The matrices are the regression contract for the
+areas built during the initial build-out.
 
 ```
 | ID    | Case                                 | Input / setup                         | Expected                              |
@@ -248,12 +252,16 @@ Rules:
 
 1. A test's name contains its row ID as a whole component: `TestRead_RDF08_OffsetBeyondEnd`.
    An ID is two to four capital letters and two or three digits.
-2. `go run ./scripts/matrixcheck docs/chunks/C05-tools-fs.md ./tools/fs` (C00) parses the
+2. `go run ./scripts/matrixcheck docs/archive/chunks/C05-tools-fs.md ./tools/fs` parses the
    spec, finds every row ID, and **fails if any ID has no test whose name contains
    it**, or if a test cites an ID that is not in the spec.
-3. The chunk's acceptance command runs `matrixcheck`. A chunk is not done until it passes.
-4. The implementing agent may add rows (a new ID and a new test) but may not delete or
-   weaken one. Changes to a spec are made by the human or the larger model.
+3. `make ci` runs `matrixcheck` over every archived spec, so a change to a solved area
+   cannot drop a row's test without failing the build.
+4. A change may add rows (a new ID and a new test) but may not delete or weaken one. If
+   a row is wrong because the behaviour was changed on purpose, change the row in the
+   spec in the same commit and say why.
+5. New work does not need a spec or a matrix. Write its cases as tests first; add them to
+   a spec's matrix only when extending a solved area, so the next change inherits them.
 
 This turns "did you test the edge cases" from a judgement into a check.
 
@@ -275,23 +283,34 @@ This turns "did you test the edge cases" from a judgement into a check.
 - **Determinism**: no test depends on wall-clock time, map order, the network, or the
   machine's locale. Seeds are fixed and printed on failure.
 
-## 6. Definition of done for any chunk
+## 6. Definition of done for a change
 
-A chunk is done only when all of these pass, run by `scripts/accept <chunk>`:
+A change is done when `make ci` passes. It is the same set the `ci` workflow runs:
 
 ```
-gofmt -l .                      # no output
-go vet ./...
-go build ./... && go build -tags notui ./...
-go test -short -race ./<pkgs>
-go test -race ./<pkgs>
-go run ./scripts/matrixcheck <spec> <pkgs>
-go run ./scripts/linecount <pkgs>      # within the package budget
-go run ./scripts/importcheck           # layer rules and the UI import boundary
+make ci
+  fmt              # gofmt -l prints nothing (any listed file fails the gate)
+  vet              # go vet ./...
+  build            # go build ./...
+  build-notui      # go build -tags notui ./...
+  race             # go test -race over every package except tui/splash/splashgif
+  importcheck      # layer rules and the UI import boundary
+  matrixcheck-all  # every row in docs/archive/chunks has a test
+  linecount-all    # every package is within its budget
+make race-splash   # when tui/splash changed: the GIF tests are slow under -race, so CI runs them apart
 ```
 
-and the agent has updated `NEXTSTEPS.md` (see `AGENTS.md`), listing anything it
-could not satisfy and why. An empty list is a valid result. A silent gap is not.
+`make test` (`go test -short`) is the fast loop while you work; it is not the gate.
+
+`matrixcheck-all` and `linecount-all` replace the per-chunk `accept` as the way solved
+areas are held steady: they run over every archived spec, with no status filter, and
+fail if the specs cannot be found. `go run ./scripts/accept <chunk>` still runs the full
+gate for one archived chunk when you want a narrower loop.
+
+Beyond the gates: the tests for the change were written first and watched failing, the
+docs the change touches are updated, and anything unfinished is stated in the issue or
+the commit message. An empty list is a valid result. A silent gap is not. See
+[`AGENTS.md`](../AGENTS.md).
 
 ## 7. What not to test
 

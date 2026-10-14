@@ -6,6 +6,10 @@ import (
 	"math/rand"
 	"os"
 	"testing"
+
+	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/provider/opencodego"
+	"github.com/AutumnsGrove/nova/provider/openrouter"
 )
 
 func TestProviderauth_SGN01_RegistryHasBoth(t *testing.T) {
@@ -191,5 +195,46 @@ func TestProviderauth_SGN39_FakeProviderNeedsNoNetwork(t *testing.T) {
 	}
 	if path, err := p.Save(home, Credential{Method: APIKey, Key: "offline-key"}); err != nil || path != home {
 		t.Fatalf("Save = (%q, %v)", path, err)
+	}
+}
+
+func TestProviderauth_SGN41_ForModelOpenRouter(t *testing.T) {
+	p, ok := ForModel(openrouter.DefaultModel)
+	if !ok || p.ID != "openrouter" {
+		t.Fatalf("ForModel(openrouter default) = %q, %v", p.ID, ok)
+	}
+}
+
+func TestProviderauth_SGN42_ForModelOpenCodeGo(t *testing.T) {
+	// The catalog calls this provider "opencodego" and the sign-in registry
+	// calls it "opencode-go"; ForModel is what bridges the two names.
+	p, ok := ForModel(opencodego.DefaultModel)
+	if !ok || p.ID != "opencode-go" {
+		t.Fatalf("ForModel(opencode-go default) = %q, %v", p.ID, ok)
+	}
+}
+
+func TestProviderauth_SGN43_ForModelUnknownFallsBackToOpenRouter(t *testing.T) {
+	// The request router sends an unknown model id to OpenRouter, so the
+	// sign-in that matters for it is OpenRouter's.
+	p, ok := ForModel("nobody/never-heard-of-it")
+	if !ok || p.ID != "openrouter" {
+		t.Fatalf("ForModel(unknown) = %q, %v", p.ID, ok)
+	}
+}
+
+func TestProviderauth_SGN44_ConfigKey(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Provider.OpenCodeGo.APIKey = "cfg-key"
+	goP, _ := Get("opencode-go")
+	if got := goP.ConfigKeyFrom(&cfg); got != "cfg-key" {
+		t.Fatalf("opencode-go config key = %q", got)
+	}
+	orP, _ := Get("openrouter")
+	if got := orP.ConfigKeyFrom(&cfg); got != "" {
+		t.Fatalf("openrouter has no config key, got %q", got)
+	}
+	if got := goP.ConfigKeyFrom(nil); got != "" {
+		t.Fatalf("nil config gave %q", got)
 	}
 }

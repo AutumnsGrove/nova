@@ -8,6 +8,9 @@ import (
 	"errors"
 	"strings"
 	"sync"
+
+	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/provider"
 )
 
 // Method is one way a provider authenticates.
@@ -84,10 +87,17 @@ type Provider struct {
 	Methods      []Method
 	EnvVars      []string
 	DefaultModel string
-	Begin        map[Method]BeginFunc
-	Save         func(home string, c Credential) (path string, err error)
-	Load         func(home string) (Credential, bool, error)
-	Delete       func(home string) error
+	// CatalogProvider is the name the model catalog gives this provider's
+	// models (provider.Model.Provider). It differs from ID for OpenCode Go, so
+	// ForModel needs it to find the provider that serves a model.
+	CatalogProvider string
+	// ConfigKey reads this provider's key from the loaded config, nil when the
+	// config has no place for one.
+	ConfigKey func(*config.Config) string
+	Begin     map[Method]BeginFunc
+	Save      func(home string, c Credential) (path string, err error)
+	Load      func(home string) (Credential, bool, error)
+	Delete    func(home string) error
 }
 
 var (
@@ -126,6 +136,33 @@ func Get(id string) (Provider, bool) {
 		return Provider{}, false
 	}
 	return providers[i], true
+}
+
+// ConfigKeyFrom returns the provider's key from cfg, or "" when there is none.
+func (p Provider) ConfigKeyFrom(cfg *config.Config) string {
+	if p.ConfigKey == nil || cfg == nil {
+		return ""
+	}
+	return p.ConfigKey(cfg)
+}
+
+// fallbackProvider serves any model the catalog does not know. The request
+// router (mode/providers) sends such a model to OpenRouter, so sign-in checks
+// must agree with it.
+const fallbackProvider = "openrouter"
+
+// ForModel returns the provider that serves model: the one whose
+// CatalogProvider matches the model's catalog entry, else OpenRouter for an
+// unknown id, which is where the request router sends it.
+func ForModel(model string) (Provider, bool) {
+	if m, ok := provider.GetModel(model); ok {
+		for _, p := range All() {
+			if p.CatalogProvider != "" && p.CatalogProvider == m.Provider {
+				return p, true
+			}
+		}
+	}
+	return Get(fallbackProvider)
 }
 
 // Status is a provider's resolved authentication.

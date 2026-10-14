@@ -311,6 +311,10 @@ func NewSecretInput(title, placeholder string) Dialog
 | SGN38 | no secret in any rendered line | a full flow | the key never appears in a view or notice |
 | SGN39 | a fake provider needs no network | fake `Begin`/`Wait`/`Save` | the flow completes offline |
 | SGN40 | `/login` while a run is active | run streaming, `/login` | allowed; the run is not disturbed |
+| SGN41 | `ForModel`, OpenRouter | the OpenRouter default model | the `openrouter` provider |
+| SGN42 | `ForModel`, OpenCode Go | the OpenCode Go default model | the `opencode-go` provider (the catalog name is `opencodego`) |
+| SGN43 | `ForModel`, unknown model | an id the catalog does not know | the `openrouter` provider, as the request router does |
+| SGN44 | `ConfigKeyFrom` | OpenCode Go with a config key; OpenRouter; a nil config | the key; empty; empty |
 
 ## Fuzz and property tests
 

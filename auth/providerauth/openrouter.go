@@ -22,6 +22,8 @@ func openRouterProvider() Provider {
 		Methods:      []Method{OAuth, APIKey},
 		EnvVars:      []string{auth.EnvAPIKey},
 		DefaultModel: openrouter.DefaultModel,
+		// The config has no OpenRouter key field, so there is no ConfigKey.
+		CatalogProvider: "openrouter",
 		Begin: map[Method]BeginFunc{
 			OAuth:  beginOpenRouterOAuth,
 			APIKey: func(context.Context, Config) (Session, error) { return newKeySession("Paste your OpenRouter key"), nil },

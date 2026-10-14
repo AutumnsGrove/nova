@@ -7,6 +7,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/auth/opencode"
+	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/provider/opencodego"
 )
 
@@ -16,11 +17,13 @@ func init() { Register(openCodeGoProvider()) }
 // stored in the 0600 file the CLI login writes.
 func openCodeGoProvider() Provider {
 	return Provider{
-		ID:           "opencode-go",
-		Name:         "OpenCode Go",
-		Methods:      []Method{Device, APIKey},
-		EnvVars:      []string{auth.EnvOpenCodeGoKey},
-		DefaultModel: opencodego.DefaultModel,
+		ID:              "opencode-go",
+		Name:            "OpenCode Go",
+		Methods:         []Method{Device, APIKey},
+		EnvVars:         []string{auth.EnvOpenCodeGoKey},
+		DefaultModel:    opencodego.DefaultModel,
+		CatalogProvider: opencodego.ProviderName,
+		ConfigKey:       func(cfg *config.Config) string { return cfg.Provider.OpenCodeGo.APIKey },
 		Begin: map[Method]BeginFunc{
 			Device: beginOpenCodeGoDevice,
 			APIKey: func(context.Context, Config) (Session, error) {

@@ -241,7 +241,8 @@ func (r *run) result(reason string) *Result {
 	}
 }
 
-// finish emits the closing events, runs AgentEnd, and returns the result.
+// finish emits the closing events, runs AgentEnd (even after an abort), and
+// returns the result.
 func (r *run) finish(res *Result, err error) (*Result, error) {
 	if err != nil && res.Reason == "error" {
 		code := proto.CodeInternal
@@ -252,7 +253,7 @@ func (r *run) finish(res *Result, err error) (*Result, error) {
 		r.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: code, Message: err.Error()}})
 	}
 	if r.cfg.Hooks.AgentEnd != nil {
-		runHook(r, "agent_end", func(ctx context.Context) struct{} {
+		runHookUnder(r, context.WithoutCancel(r.ctx), "agent_end", func(ctx context.Context) struct{} {
 			r.cfg.Hooks.AgentEnd(ctx, res)
 			return struct{}{}
 		})

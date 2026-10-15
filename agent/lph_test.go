@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
@@ -428,5 +429,63 @@ func Test_LPH18_NilHooks(t *testing.T) {
 	res, _ := runCollect(t, Config{Provider: p, Model: "m", Clock: clock, Tools: registry(echoTool())}, nil, message.User("go"))
 	if res.Answer != "done" {
 		t.Fatalf("answer = %q", res.Answer)
+	}
+}
+
+// An aborted run still ends: AgentEnd is the observer's only reliable "this run is
+// over" signal, so it must run exactly once, before run_end, with a live context
+// (the run's own is already cancelled). Repeated because a select between a
+// cancelled context and a finished hook once made this a coin flip.
+func Test_LPH19_AgentEndRunsOnAbort(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		clock := testkit.NewFakeClock(baseTime)
+		p := testkit.NewProvider(clock, textTurn("never"))
+		c := &collector{}
+		var mu sync.Mutex
+		calls, sawRunEnd := 0, false
+		var ctxErr error
+		var reason string
+		cfg := Config{Provider: p, Model: "m", Clock: clock, Emit: c.emit}
+		cfg.Hooks.AgentEnd = func(ctx context.Context, r *Result) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls++
+			ctxErr, reason = ctx.Err(), r.Reason
+			for _, ty := range eventTypes(c.all()) {
+				sawRunEnd = sawRunEnd || ty == proto.EventRunEnd
+			}
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		out := runAsyncCtx(New(cfg), ctx)
+		if out.res.Reason != "aborted" {
+			t.Fatalf("reason = %q, want aborted", out.res.Reason)
+		}
+		mu.Lock()
+		if calls != 1 || reason != "aborted" || ctxErr != nil || sawRunEnd {
+			t.Fatalf("run %d: agent_end calls=%d reason=%q ctxErr=%v sawRunEnd=%v", i, calls, reason, ctxErr, sawRunEnd)
+		}
+		mu.Unlock()
+	}
+}
+
+// A call the permission policy denies still passes through ToolResult, so a hook
+// that redacts or audits results sees every call the model made (D100).
+func Test_LPH20_ToolResultSeesPolicyBlockedCall(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	p := testkit.NewProvider(clock, toolTurn(), textTurn("done"))
+	var ran bool
+	var seen []tool.Result
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Tools: registry(ranTool(&ran)), Policy: echoPolicy(permission.Deny)}
+	cfg.Hooks.ToolResult = func(_ context.Context, _ ToolCall, r tool.Result) tool.Result {
+		seen = append(seen, r)
+		return r
+	}
+	runCollect(t, cfg, nil, message.User("go"))
+	if ran {
+		t.Fatal("the denied tool ran")
+	}
+	if len(seen) != 1 || !seen[0].IsError {
+		t.Fatalf("ToolResult saw %+v, want one error result", seen)
 	}
 }

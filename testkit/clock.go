@@ -73,22 +73,42 @@ func (c *FakeClock) Now() time.Time {
 }
 
 // After registers a timer due d after the current fake time.
-func (c *FakeClock) After(d time.Duration) <-chan time.Time {
+func (c *FakeClock) After(d time.Duration) <-chan time.Time { return c.add(d).ch }
+
+// add registers a timer and wakes BlockUntil waiters.
+func (c *FakeClock) add(d time.Duration) *fakeTimer {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	t := &fakeTimer{deadline: c.now.Add(d), ch: make(chan time.Time, 1)}
 	c.timers = append(c.timers, t)
 	c.notifyLocked()
-	return t.ch
+	return t
 }
 
-// Sleep waits for d of fake time or for ctx to be cancelled.
+// remove drops a timer that nobody is waiting on any more.
+func (c *FakeClock) remove(t *fakeTimer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i, x := range c.timers {
+		if x == t {
+			c.timers = append(c.timers[:i], c.timers[i+1:]...)
+			return
+		}
+	}
+}
+
+// Sleep waits for d of fake time or for ctx to be cancelled. A cancelled sleep
+// gives its timer back, so BlockUntil counts live sleepers only.
 func (c *FakeClock) Sleep(ctx context.Context, d time.Duration) error {
-	ch := c.After(d)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t := c.add(d)
 	select {
 	case <-ctx.Done():
+		c.remove(t)
 		return ctx.Err()
-	case <-ch:
+	case <-t.ch:
 		return nil
 	}
 }

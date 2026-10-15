@@ -88,3 +88,36 @@ func TestClock_TKC06_TimerAtExactTimeFires(t *testing.T) {
 		t.Error("timer at exactly the new time did not fire")
 	}
 }
+
+// pending reports how many timers the clock still holds.
+func (c *FakeClock) pending() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.timers)
+}
+
+// A cancelled sleeper must give its timer back. BlockUntil counts timers, so a
+// leftover one made it return before the goroutine a test was waiting for had
+// started sleeping.
+func TestClock_TKC07_CancelledSleepReleasesItsTimer(t *testing.T) {
+	c := NewFakeClock(time.Unix(0, 0))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- c.Sleep(ctx, time.Hour) }()
+	c.BlockUntil(t, 1)
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Sleep = %v, want context.Canceled", err)
+	}
+	if n := c.pending(); n != 0 {
+		t.Fatalf("pending timers after a cancelled Sleep = %d, want 0", n)
+	}
+
+	// An already-cancelled context must not leave one behind either.
+	if err := c.Sleep(ctx, time.Hour); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Sleep on a cancelled context = %v", err)
+	}
+	if n := c.pending(); n != 0 {
+		t.Fatalf("pending timers after a pre-cancelled Sleep = %d, want 0", n)
+	}
+}

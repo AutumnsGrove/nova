@@ -510,3 +510,66 @@ func TestServe_HTP14_GracefulShutdown(t *testing.T) {
 		t.Fatalf("shutdown took %v", elapsed)
 	}
 }
+
+// deadlineRecorder records the write deadline a handler asks for, the way
+// net/http's real response writer accepts one through http.ResponseController.
+type deadlineRecorder struct {
+	*httptest.ResponseRecorder
+	deadline time.Time
+	set      bool
+}
+
+func (d *deadlineRecorder) SetWriteDeadline(t time.Time) error {
+	d.deadline, d.set = t, true
+	return nil
+}
+
+func (d *deadlineRecorder) Flush() { d.ResponseRecorder.Flush() }
+
+func TestServe_HTP15_WriteDeadlineOnRequestRoutes(t *testing.T) {
+	s, _ := newModeServer(t, baseConfig())
+	srv, err := newServer(s, Options{})
+	if err != nil {
+		t.Fatalf("newServer: %v", err)
+	}
+	t.Cleanup(srv.close)
+
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/v1/state"},
+		{"POST", "/v1/commands"},
+		{"POST", "/v1/ui_response"},
+		{"GET", "/healthz"},
+	} {
+		rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+		req := httptest.NewRequest(route.method, route.path, strings.NewReader("{}"))
+		before := time.Now()
+		srv.ServeHTTP(rec, req)
+		if !rec.set {
+			t.Errorf("%s %s: no write deadline set", route.method, route.path)
+			continue
+		}
+		if got := rec.deadline.Sub(before); got < 25*time.Second || got > 35*time.Second {
+			t.Errorf("%s %s: deadline %v from now, want about 30s", route.method, route.path, got)
+		}
+	}
+}
+
+func TestServe_HTP16_NoWriteDeadlineOnEvents(t *testing.T) {
+	s, _ := newModeServer(t, baseConfig())
+	srv, err := newServer(s, Options{})
+	if err != nil {
+		t.Fatalf("newServer: %v", err)
+	}
+	t.Cleanup(srv.close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	req := httptest.NewRequest("GET", "/v1/events", nil).WithContext(ctx)
+	done := make(chan struct{})
+	go func() { srv.ServeHTTP(rec, req); close(done) }()
+	cancel() // end the stream; the handler has set up (or skipped) its deadline by now
+	<-done
+	if rec.set {
+		t.Fatalf("event stream got a write deadline %v; it must stay open", rec.deadline)
+	}
+}

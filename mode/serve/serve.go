@@ -164,6 +164,12 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, fail(proto.CodeInternal, "internal error"))
 		}
 	}()
+	// The event stream is long-lived by design, so only the request/response routes
+	// get a write deadline, set before auth so that rejections are bounded too; a stalled reader cannot pin a handler forever. A writer
+	// without deadline support (a test recorder) returns an error we can ignore.
+	if r.URL.Path != "/v1/events" {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(writeTimeout))
+	}
 	if s.opt.CORSOrigin != "" {
 		w.Header().Add("Vary", "Origin")
 		if r.Header.Get("Origin") == s.opt.CORSOrigin {

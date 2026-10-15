@@ -29,6 +29,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- `nova serve` now gives every route except the event stream a 30 s write deadline, so a client that stops reading
+  can no longer hold a handler open indefinitely.
 - OpenCode Go models were routed to OpenRouter by the running server, because the request carried the wire slug
   and not the catalog id; they now reach OpenCode Go.
 - A prompt was refused with an OpenRouter key message for a user signed in only to OpenCode Go; the check now

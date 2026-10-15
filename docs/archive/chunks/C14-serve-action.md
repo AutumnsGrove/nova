@@ -2,7 +2,7 @@
 chunk: C14
 title: "The serve mode and the GitHub Action"
 packages: [./mode/serve, ./mode/action]
-budgets: { ./mode/serve: 400, ./mode/action: 700 }
+budgets: { ./mode/serve: 410, ./mode/action: 700 }
 depends: [C12]
 ---
 
@@ -135,8 +135,8 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 13. **Shutdown.** On context cancel the server stops accepting, closes event streams with a final
     comment, waits up to 5 seconds for in-flight requests, and returns. A running agent is not aborted
     by closing the HTTP server (the caller decides).
-14. Slow-loris protection: `ReadHeaderTimeout` 10 s, `IdleTimeout` 120 s, no write timeout on the
-    event route and 30 s elsewhere.
+14. Slow-loris protection: `ReadHeaderTimeout` 10 s, `IdleTimeout` 120 s, a 30 s write deadline on every route except the
+    event stream, which has none (set per request, since `http.Server.WriteTimeout` is server-wide).
 
 ### Action: setup
 
@@ -247,6 +247,8 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | HTP12 | `/v1/state` | | same as `get_state` |
 | HTP13 | slow-loris header | partial headers held open | closed after the header timeout |
 | HTP14 | graceful shutdown | cancel the context | streams closed with a final comment; returns within 5 s |
+| HTP15 | write deadline on request routes | any route but the event stream | a 30 s write deadline is set, before auth |
+| HTP16 | no write deadline on events | `GET /v1/events` | no deadline; the stream stays open |
 | SSE01 | events stream in order | one run | `id`s increasing; payloads decode |
 | SSE02 | heartbeat | fake clock or short interval | `: ping` lines arrive |
 | SSE03 | headers | | `text/event-stream`, `no-store`, `X-Accel-Buffering: no` |

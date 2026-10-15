@@ -29,7 +29,11 @@ type ToolFunction struct {
 // Request is one completion request. The system prompt is carried as the
 // leading system message in Messages, mirroring the model-facing transcript.
 type Request struct {
-	Model           string
+	Model string
+	// ModelID is the stable catalog id that Model (the wire slug) was derived
+	// from. A router uses it to pick the provider, because a slug alone does not
+	// name one; wire providers ignore it. Empty means Model is the catalog id.
+	ModelID         string
 	Messages        []message.Message
 	Tools           []ToolDef
 	ToolChoice      any

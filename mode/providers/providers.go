@@ -96,10 +96,15 @@ type router struct {
 // Name returns the router's id.
 func (r *router) Name() string { return "router" }
 
-// Stream routes by the model's catalog provider; an unknown id falls back to
-// OpenRouter.
+// Stream routes by the model's catalog provider, found from the request's
+// ModelID (the server sends the wire slug as Model, which does not name a
+// provider); an unknown id falls back to OpenRouter.
 func (r *router) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
-	if m, ok := provider.GetModel(req.Model); ok && m.Provider == opencodego.ProviderName {
+	id := req.ModelID
+	if id == "" {
+		id = req.Model
+	}
+	if m, ok := provider.GetModel(id); ok && m.Provider == opencodego.ProviderName {
 		return r.openCodeGo.Stream(ctx, r.withSession(req), onEvent)
 	}
 	return r.openRouter.Stream(ctx, req, onEvent)

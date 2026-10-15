@@ -287,3 +287,30 @@ func TestProviders_OPG27_CallersHeadersAreKeptAndNotMutated(t *testing.T) {
 		t.Fatalf("the caller's ExtraHeaders map was mutated: %v", extra)
 	}
 }
+
+func TestProviders_OPG33_RouterUsesTheStableModelID(t *testing.T) {
+	// A server sends the wire slug as Model ("glm-5.3") and the catalog id as
+	// ModelID. The slug alone does not name its provider, so routing by it sent
+	// every OpenCode Go model to OpenRouter.
+	goSrv, orSrv := newRecordServer(t), newRecordServer(t)
+	cfg := config.Defaults()
+	cfg.Provider.OpenCodeGo.BaseURL = goSrv.URL
+	cfg.Provider.OpenRouter.BaseURL = orSrv.URL
+	p := Build(Options{Config: &cfg, Getenv: envFrom(map[string]string{"OPENROUTER_API_KEY": "or-key"})})
+	_, _ = p.Stream(context.Background(), provider.Request{Model: "glm-5.3", ModelID: "opencode-go/glm-5.3"}, nil)
+	if goSrv.count() == 0 || orSrv.count() != 0 {
+		t.Fatalf("OpenCode Go got %d requests and OpenRouter got %d, want the request on OpenCode Go only", goSrv.count(), orSrv.count())
+	}
+}
+
+func TestProviders_OPG34_AnUnknownModelIDStillFallsBackToOpenRouter(t *testing.T) {
+	goSrv, orSrv := newRecordServer(t), newRecordServer(t)
+	cfg := config.Defaults()
+	cfg.Provider.OpenCodeGo.BaseURL = goSrv.URL
+	cfg.Provider.OpenRouter.BaseURL = orSrv.URL
+	p := Build(Options{Config: &cfg, Getenv: envFrom(map[string]string{"OPENROUTER_API_KEY": "or-key"})})
+	_, _ = p.Stream(context.Background(), provider.Request{Model: "x/y", ModelID: "nobody/never-heard-of-it"}, nil)
+	if orSrv.count() == 0 || goSrv.count() != 0 {
+		t.Fatalf("OpenRouter got %d and OpenCode Go got %d, want OpenRouter only", orSrv.count(), goSrv.count())
+	}
+}

@@ -83,7 +83,7 @@ footer detail, in that order.
 |---|---|
 | User message | plain text, wrapped; shows attached files |
 | Assistant text | **incremental markdown**: re-render only the changed tail; code blocks highlighted |
-| **Thinking block** | native (D24). While streaming: a box of the last 8 lines with a live timer and token count. Finished: one collapsed line `Thinking for 12s · ~3.4k tokens`. `ctrl+o` expands all; the preview height is a setting. |
+| **Thinking block** | native (D24). A ruled header (`── ▸ Thought for 12s · ~3.4k tokens ──── ctrl+o to expand`), the last 8 lines of reasoning in dim italics, and a closing rule, both while streaming (live timer) and once finished, so thinking is never hidden. `ctrl+o` expands the whole text; the preview height is a setting. |
 | Tool card | header (status dot, name, key argument, duration), optional body, collapsible |
 | Compaction marker | a rule with `compacted 38k → 6k tokens` |
 | Error | red, with the retry count when retrying |

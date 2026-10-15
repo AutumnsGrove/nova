@@ -7,6 +7,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- Finished thinking blocks keep a tail preview of the reasoning on screen, in dim italics under a ruled
+  header, instead of collapsing to a single line (#5).
+
 ### Added
 
 - `nova update --target <path>` and `NOVA_INSTALL_DIR` choose which binary `nova update` replaces, and the

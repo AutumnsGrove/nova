@@ -84,7 +84,7 @@ footer detail, in that order.
 | User message | plain text, wrapped; shows attached files |
 | Assistant text | **incremental markdown**: re-render only the changed tail; code blocks highlighted |
 | **Thinking block** | native (D24). A ruled header (`── ▸ Thought for 12s · ~3.4k tokens ──── ctrl+o to expand`), the last 8 lines of reasoning in dim italics, and a closing rule, both while streaming (live timer) and once finished, so thinking is never hidden. `ctrl+o` expands the whole text; the preview height is a setting. |
-| Tool card | header (status dot, name, key argument, duration), optional body, collapsible |
+| Tool card | header (status dot, name, key argument, duration) and a compact result box: the first 6 lines of the result (the last 6 for `bash`) with a muted `… N more lines (ctrl+o to expand)` line. A call with no output stays header only. `ctrl+o` expands the full result. |
 | Compaction marker | a rule with `compacted 38k → 6k tokens` |
 | Error | red, with the retry count when retrying |
 | Extension message | rendered by the extension's template, or by a bundled renderer |

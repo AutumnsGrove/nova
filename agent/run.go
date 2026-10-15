@@ -26,6 +26,7 @@ type run struct {
 	usage    provider.Usage
 	answer   string
 	turns    int
+	ended    bool // run_end has been emitted
 }
 
 // Run executes the loop over history plus prompt and returns the final result.
@@ -94,8 +95,17 @@ func (a *Agent) begin(ctx context.Context) (*run, func(), error) {
 	return &run{a: a, cfg: a.cfg, ctx: runCtx, id: a.runID}, release, nil
 }
 
-// execute runs the loop for a registered run.
-func (r *run) execute(history []message.Message, prompt *message.Message) (*Result, error) {
+// execute runs the loop for a registered run. A panic in code the loop calls
+// directly (the provider, a callback) ends the run as an error instead of
+// crashing the process, because Start gives it no caller to recover it.
+func (r *run) execute(history []message.Message, prompt *message.Message) (res *Result, err error) {
+	defer func() {
+		if rec := recover(); rec != nil && !r.ended {
+			res, err = r.finish(r.result("error"), fmt.Errorf("internal error: %v", rec))
+		} else if rec != nil {
+			panic(rec)
+		}
+	}()
 	a := r.a
 	if a.cfg.System != "" {
 		r.messages = append(r.messages, message.System(a.cfg.System))
@@ -259,6 +269,7 @@ func (r *run) finish(res *Result, err error) (*Result, error) {
 		})
 	}
 	usage := r.usage
+	r.ended = true
 	r.emit(proto.Event{Type: proto.EventRunEnd, Reason: res.Reason, Turn: intp(res.Turns), Usage: &usage})
 	return res, err
 }

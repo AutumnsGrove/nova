@@ -345,3 +345,45 @@ func Test_LPE20_NewExcludesHistory(t *testing.T) {
 		t.Fatalf("New missing prompt: %+v", res.New)
 	}
 }
+
+// panicProvider panics inside Stream, as a buggy or hostile provider might.
+type panicProvider struct{}
+
+func (panicProvider) Name() string { return "panic" }
+
+func (panicProvider) Stream(context.Context, provider.Request, func(provider.StreamEvent)) (*provider.Response, error) {
+	panic("provider boom")
+}
+
+// A panic in code the loop calls directly (here the provider) must become an
+// error run with exactly one run_end, not a crashed process: Start runs the loop
+// on a goroutine nobody else can recover.
+func Test_LPE21_ProviderPanicEndsTheRun(t *testing.T) {
+	c := &collector{}
+	a := New(Config{Provider: panicProvider{}, Model: "m", Emit: c.emit})
+	var res *Result
+	var err error
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("panic escaped the run: %v", rec)
+			}
+		}()
+		res, err = a.Run(context.Background(), nil, message.User("go"))
+	}()
+	if err == nil || res == nil || res.Reason != "error" {
+		t.Fatalf("res = %+v err = %v, want an error run", res, err)
+	}
+	ends := 0
+	for _, ty := range eventTypes(c.all()) {
+		if ty == proto.EventRunEnd {
+			ends++
+		}
+	}
+	if ends != 1 {
+		t.Fatalf("run_end count = %d, want 1", ends)
+	}
+	if a.Running() {
+		t.Fatal("agent still registered as running")
+	}
+}

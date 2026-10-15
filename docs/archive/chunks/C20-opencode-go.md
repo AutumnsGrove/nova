@@ -413,6 +413,12 @@ type OpenCodeGoConfig struct {
 | TMO09 | `[DONE]` and clean close | `[DONE]`, then a body closing after one event | `io.EOF` both times |
 | TMO10 | no goroutine or connection leak | after every failure mode above | `testkit.NoLeaks` passes |
 | TMO11 | agent retries a timed-out dialect call | agent loop over a stalling OpenCode Go server | one `retry` event, then success; earlier usage kept |
+| TMO12 | error body shapes | `error.code` string and number, top-level `message` and `code`, HTML prose | `Code` and `Message` read from each; prose has tags stripped and whitespace collapsed |
+| TMO13 | stream cut mid-line | body ends inside a `data:` line | `errors.Is(err, ErrTruncatedLine)` |
+| TMO14 | line over the cap, exported | limit 1 KiB | `errors.As` finds `*LineTooLongError` with `Limit` 1024 |
+| TMO15 | event line number | comment, then single- and multi-line events | `Event.Line` is the last data line of each |
+| TMO16 | `[DONE]` seen | with and without the sentinel | `SawDone` is true only with it |
+| TMO17 | data right before `[DONE]` | no blank line between them | the data event is delivered, then `io.EOF` |
 
 | LGN01 | device login full flow | fake Console | key returned; the old key revoked |
 | LGN02 | sign-in denied | `access_denied` | error naming denied |

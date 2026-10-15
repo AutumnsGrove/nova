@@ -1,11 +1,11 @@
 --- width 40 ---
 ✦  [1mnova[m  ~/proj                         
-[2m▾ Thought for 20s · 15k tokens[m          
-[2mstreaming reasoning[m                     
-[2m▾ Thought for 1s · ~5 tokens[m            
-[2mexpanded reasoning body[m                 
-                                        
-                                        
+[3;2m── ▾ Thought for 20s · 15k tokens ──────[m
+[3;2mstreaming reasoning[m                     
+[3;2m────────────────────────────────────────[m
+[3;2m── ▾ Thought for 1s · ~5 tokens ────────[m
+[3;2mexpanded reasoning body[m                 
+[3;2m────────────────────────────────────────[m
                                         
                                         
                                         
@@ -25,12 +25,12 @@
 ctx n/a · $0.000 · ctrl+o expand        
 --- width 80 ---
 ✦  [1mnova[m  ~/proj                                                                 
-[2m▾ Thought for 20s · 15k tokens[m                                                  
-[2mstreaming reasoning[m                                                             
-[2m▾ Thought for 1s · ~5 tokens[m                                                    
-[2mexpanded reasoning body[m                                                         
-                                                                                
-                                                                                
+[3;2m── ▾ Thought for 20s · 15k tokens ──────────────────────────────────────────────[m
+[3;2mstreaming reasoning[m                                                             
+[3;2m────────────────────────────────────────────────────────────────────────────────[m
+[3;2m── ▾ Thought for 1s · ~5 tokens ────────────────────────────────────────────────[m
+[3;2mexpanded reasoning body[m                                                         
+[3;2m────────────────────────────────────────────────────────────────────────────────[m
                                                                                 
                                                                                 
                                                                                 
@@ -50,12 +50,12 @@ ctx n/a · $0.000 · ctrl+o expand
 ctx n/a · $0.000 · ctrl+o expand                                                
 --- width 120 ---
 ✦  [1mnova[m  ~/proj                                                                                                         
-[2m▾ Thought for 20s · 15k tokens[m                                                                                          
-[2mstreaming reasoning[m                                                                                                     
-[2m▾ Thought for 1s · ~5 tokens[m                                                                                            
-[2mexpanded reasoning body[m                                                                                                 
-                                                                                                                        
-                                                                                                                        
+[3;2m── ▾ Thought for 20s · 15k tokens ──────────────────────────────────────────────────────────────────────────────────────[m
+[3;2mstreaming reasoning[m                                                                                                     
+[3;2m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[m
+[3;2m── ▾ Thought for 1s · ~5 tokens ────────────────────────────────────────────────────────────────────────────────────────[m
+[3;2mexpanded reasoning body[m                                                                                                 
+[3;2m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[m
                                                                                                                         
                                                                                                                         
                                                                                                                         

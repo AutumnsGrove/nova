@@ -70,22 +70,23 @@ func (th *thinkingItem) Render(width int) string {
 	}
 	expanded := th.display.ExpandThinking
 	header := th.header(width, expanded)
-	body := th.st.Thinking.Render(ansi.Truncate(header, width, "…"))
-	switch {
-	case expanded:
-		rendered := th.r.Markdown(th.text, width)
-		return body + "\n" + th.st.Thinking.Render(rendered)
-	case !th.done:
-		return body + "\n" + th.preview(width)
-	default:
-		return body
+	head := th.st.Thinking.Render(ansi.Truncate(header, width, "…"))
+	// A finished block keeps its reasoning on screen as the same tail preview
+	// a streaming one shows, so collapsing never hides the thinking outright.
+	var body string
+	if expanded {
+		body = th.st.Thinking.Render(th.r.Markdown(th.text, width))
+	} else {
+		body = th.preview(width)
 	}
+	closing := th.st.Thinking.Render(strings.Repeat("─", width))
+	return head + "\n" + body + "\n" + closing
 }
 
 // header is the one-line label for the block.
 func (th *thinkingItem) header(width int, expanded bool) string {
 	if !th.done {
-		return fmt.Sprintf("▸ Thinking for %s", th.elapsed())
+		return ruled(fmt.Sprintf("▸ Thinking for %s", th.elapsed()), "", width)
 	}
 	arrow := "▸"
 	if expanded {
@@ -99,9 +100,24 @@ func (th *thinkingItem) header(width int, expanded bool) string {
 		label += " · " + t + " tokens"
 	}
 	if !expanded {
-		return rightHint(label, "ctrl+o to expand", width)
+		return ruled(label, "ctrl+o to expand", width)
 	}
-	return label
+	return ruled(label, "", width)
+}
+
+// ruled draws label as a horizontal rule, "── label ──────── hint", the way
+// pi frames a thinking block. The hint is dropped when it does not fit.
+func ruled(label, hint string, width int) string {
+	left := "── " + label + " "
+	lw := ansi.StringWidth(left)
+	if hint != "" && lw+ansi.StringWidth(hint)+3 <= width {
+		fill := width - lw - ansi.StringWidth(hint) - 2
+		return left + strings.Repeat("─", fill) + " " + hint
+	}
+	if lw < width {
+		return left + strings.Repeat("─", width-lw)
+	}
+	return left
 }
 
 // preview is the last previewLines wrapped lines, with a leading ellipsis when

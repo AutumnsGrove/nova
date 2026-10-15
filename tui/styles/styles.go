@@ -79,7 +79,7 @@ func Build(t Theme, p colorprofile.Profile) Styles {
 
 		User:       b.fg("core").Bold(true),
 		Assistant:  b.fg("ink"),
-		Thinking:   b.fg("muted").Faint(true),
+		Thinking:   b.fg("muted").Faint(true).Italic(true),
 		Tool:       b.fg("spark"),
 		ToolError:  b.fg("error"),
 		Compaction: b.fg("muted").Faint(true),

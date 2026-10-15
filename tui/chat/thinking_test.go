@@ -332,3 +332,32 @@ func FuzzThinkingFormat(f *testing.F) {
 		}
 	})
 }
+
+// A finished block keeps its reasoning visible as a tail preview (issue #5);
+// only the expand gesture reveals the rest.
+func TestThinking_THK25_FinishedShowsPreview(t *testing.T) {
+	tr := newTestTranscript(60)
+	startThinking(tr, strings.Repeat("early\n", 30)+"the final thought")
+	tr.Apply(proto.Event{Type: proto.EventThinkingEnd, Run: "r1", Turn: intp(1), Ms: 4000})
+	got := renderItem(think(t, tr), 60)
+	if !strings.Contains(got, "Thought for 4s") {
+		t.Fatalf("header missing: %q", got)
+	}
+	if !strings.Contains(got, "the final thought") || !strings.Contains(got, "…") {
+		t.Fatalf("finished block hides its reasoning tail: %q", got)
+	}
+	if n := strings.Count(got, "early"); n >= 30 {
+		t.Fatalf("preview was not truncated, %d early lines", n)
+	}
+}
+
+// The header is a horizontal rule that runs to the full width, as in pi.
+func TestThinking_THK26_HeaderIsRule(t *testing.T) {
+	tr := newTestTranscript(60)
+	startThinking(tr, "reason")
+	tr.Apply(proto.Event{Type: proto.EventThinkingEnd, Run: "r1", Turn: intp(1), Ms: 1600})
+	first := strings.SplitN(renderItem(think(t, tr), 60), "\n", 2)[0]
+	if !strings.Contains(first, "──") {
+		t.Fatalf("header is not ruled: %q", first)
+	}
+}

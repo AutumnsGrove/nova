@@ -9,12 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
-	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/bundled"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
@@ -93,7 +93,6 @@ type Server struct {
 
 	prov      provider.Provider
 	usesAuth  bool
-	keyStore  auth.Store
 	tools     *tool.Registry
 	pool      map[string]tool.Tool
 	active    []string
@@ -132,6 +131,10 @@ type Server struct {
 	// guarded by mu. loginWG counts their goroutines so Close can wait.
 	logins  map[string]*loginFlow
 	loginWG sync.WaitGroup
+
+	// fallbackConv identifies the conversation when no session store is open
+	// (print mode with no session), so a provider still sees one stable id.
+	fallbackConv string
 }
 
 // New builds a server from the options. A missing API key is not an error; the
@@ -172,11 +175,11 @@ func New(opt Options) (*Server, error) {
 		uiPending: map[string]chan proto.UIResponse{},
 		ledger:    usage.NewLedger(provider.GetModel),
 	}
+	s.fallbackConv = newConversationID()
 	s.prov = opt.Provider
 	if s.prov == nil {
 		s.usesAuth = true
-		s.keyStore = auth.NewFileStore(keyPath(home))
-		s.prov = buildProvider(cfg, home)
+		s.prov = buildProvider(cfg, home, s.conversationID)
 	}
 	tools, pool, err := buildTools(cfg)
 	if err != nil {
@@ -367,12 +370,30 @@ func (s *Server) sessionID() string {
 	return s.store.Header().ID
 }
 
+// conversationID is the id providers receive for the current conversation: the
+// session's id, which changes with session.new, resume, and fork, or a random
+// per-server id when there is no session store. It is read on every request,
+// possibly from the run goroutine, so it takes the lock that guards the store.
+func (s *Server) conversationID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id := s.sessionID(); id != "" {
+		return id
+	}
+	return s.fallbackConv
+}
+
+// newConversationID returns a random id for a server with no session store. It
+// only labels the conversation for a provider, so it is not a secret.
+func newConversationID() string { return fmt.Sprintf("nova_%016x", rand.Uint64()) }
+
 // beforeProviderRequest applies the live model and thinking state to each
 // request, so set_model and set_thinking take effect without rebuilding.
 func (s *Server) beforeProviderRequest(_ context.Context, req *provider.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	req.Model = s.model
+	req.ModelID = s.cfg.Model
 	req.ReasoningEffort = s.think
 }
 

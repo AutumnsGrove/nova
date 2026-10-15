@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/AutumnsGrove/nova/auth"
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/session"
@@ -106,8 +106,8 @@ func (s *Server) handlePrompt(cmd proto.Command) proto.Response {
 		return failResponse(cmd, proto.CodeBadRequest, "prompt: text is required")
 	}
 	if s.usesAuth {
-		if _, _, err := auth.Resolve("", os.Getenv, s.keyStore); err != nil {
-			return failResponse(cmd, proto.CodeProviderError, `no API key: run "nova login" or set OPENROUTER_API_KEY`)
+		if msg := s.signInProblem(); msg != "" {
+			return failResponse(cmd, proto.CodeProviderError, msg)
 		}
 	}
 	if s.agent.Running() {
@@ -123,6 +123,31 @@ func (s *Server) handlePrompt(cmd proto.Command) proto.Response {
 		return startFailure(cmd, err)
 	}
 	return okResponse(cmd, nil)
+}
+
+// signInProblem returns why the current model cannot be used yet, or "" when
+// the provider that serves it is signed in. The check follows the model, so a
+// user who signed in only to OpenCode Go is not asked for an OpenRouter key.
+func (s *Server) signInProblem() string {
+	s.mu.Lock()
+	model := s.cfg.Model
+	s.mu.Unlock()
+	p, ok := providerauth.ForModel(model)
+	if !ok {
+		return ""
+	}
+	if providerauth.Resolve(p, p.ConfigKeyFrom(s.cfg), os.Getenv, s.home).Ready {
+		return ""
+	}
+	login, forName := "nova login", ""
+	if p.ID != "openrouter" {
+		login, forName = "nova login "+p.ID, " for "+p.Name
+	}
+	env := ""
+	if len(p.EnvVars) > 0 {
+		env = " or set " + p.EnvVars[0]
+	}
+	return `no API key` + forName + `: run "` + login + `"` + env
 }
 
 // handleSteer queues a steering message for the active run.

@@ -32,12 +32,13 @@ func trustPath(home string) string {
 }
 
 // buildProvider builds the cross-provider router: OpenRouter plus OpenCode Go.
-func buildProvider(cfg *config.Config, home string) provider.Provider {
+func buildProvider(cfg *config.Config, home string, sessionID func() string) provider.Provider {
 	return providers.Build(providers.Options{
-		Config: cfg,
-		Home:   home,
-		Getenv: os.Getenv,
-		Store:  auth.NewFileStore(keyPath(home)),
+		Config:    cfg,
+		Home:      home,
+		Getenv:    os.Getenv,
+		Store:     auth.NewFileStore(keyPath(home)),
+		SessionID: sessionID,
 	})
 }
 

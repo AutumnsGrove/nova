@@ -29,6 +29,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- OpenCode Go models were routed to OpenRouter by the running server, because the request carried the wire slug
+  and not the catalog id; they now reach OpenCode Go.
+- A prompt was refused with an OpenRouter key message for a user signed in only to OpenCode Go; the check now
+  follows the provider that serves the current model.
+- OpenCode Go requests now carry the conversation id as `x-opencode-session`.
+
 - `nova update` under `go run` replaced a temporary binary and reported success; it now refuses and says to
   pass `--target` or set `NOVA_INSTALL_DIR`.
 

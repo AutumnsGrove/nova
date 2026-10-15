@@ -2,7 +2,7 @@
 chunk: C20
 title: "OpenCode Go, the second launch provider"
 packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./mode/providers, ./auth/opencode, ./mode, ./tui/ui]
-budgets: { ./provider/ssestream: 320, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1450, ./auth: 500, ./mode: 2150, ./tui/ui: 2350 }
+budgets: { ./provider/ssestream: 320, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1450, ./auth: 500, ./mode: 2200, ./tui/ui: 2350 }
 depends: [C02, C03, C12]
 ---
 
@@ -429,6 +429,13 @@ type OpenCodeGoConfig struct {
 | OPG25 | the header follows the conversation | the id changes between two requests | the second request carries the new id |
 | OPG26 | no id, no header | the id function returns "" | no header is sent |
 | OPG27 | the caller's headers are kept | a request with its own `ExtraHeaders` | its headers arrive, and its map is not mutated |
+| OPG28 | an OpenCode-Go-only user can prompt | a server with an OpenCode Go key and model, and no OpenRouter key | the prompt is accepted and reaches OpenCode Go |
+| OPG29 | the request carries the session id | a prompt through a real server | `x-opencode-session` equals the server's session id |
+| OPG30 | a new conversation gets a new id | `session.new`, then another prompt | the header changes to the new session's id |
+| OPG31 | no store, stable id | a server with no session store, two prompts | the same non-empty id on both |
+| OPG32 | sign-in failure names the right provider | OpenCode Go model, no OpenCode Go key | `provider_error` naming OpenCode Go, `nova login opencode-go`, and its env var |
+| OPG33 | the router uses the stable model id | `Model` is the wire slug, `ModelID` the catalog id | the request goes to OpenCode Go, not OpenRouter |
+| OPG34 | an unknown model id falls back | `ModelID` not in the catalog | the request goes to OpenRouter |
 
 | USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |
 | USG02 | percent clamped | used over limit | percent 100 |

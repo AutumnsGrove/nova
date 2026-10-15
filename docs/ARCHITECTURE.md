@@ -60,8 +60,9 @@ nova/
     serve/        the protocol over HTTP and SSE                ≤ 400
     action/       the GitHub review action                      ≤ 700
     providers/    build both providers, route by model          ≤ 320
-  ext/            extension host, manifest, install, reload,
-                  in-process API for bundled extensions         ≤ 3200
+  ext/            extension host, manifest, check, reload,
+                  in-process API for bundled extensions         ≤ 3100
+    install/      install, update, remove, lockfile, git        ≤ 660
     sdk/          the Go SDK for extensions                     ≤ 700
   testkit/        fake provider and server, clock, golden       ≤ 1200
   bundled/        in-tree extensions: tasks, ask, plan,

@@ -125,7 +125,7 @@ over their `details` JSON for a nicer card.
 | `enter` | send. While a run is active, queue as a **steering** message |
 | `alt+enter` | queue as a **follow-up** |
 | `esc` | abort the run; in a dialog, close it |
-| `ctrl+c` | clear the editor; twice quits |
+| `ctrl+c` | clear the editor; twice quits (the footer shows `ctrl+c again to quit` once armed) |
 | `ctrl+o` | expand or collapse tool output and thinking |
 | `ctrl+l` | model picker |
 | `ctrl+t` | cycle thinking level |
@@ -137,7 +137,7 @@ over their `details` JSON for a nicer card.
 
 `/model`, `/thinking`, `/context [tokens]`, `/compact`, `/new`, `/resume`, `/fork`,
 `/tree`, `/name`, `/cost`, `/theme`, `/reload`, `/ext`, `/todos`, `/plan`, `/login`,
-`/logout`, `/help`, `/quit`. Extensions add more. Each is also a protocol command, so
+`/logout`, `/help`, `/quit` (or `/exit`). Extensions add more. Each is also a protocol command, so
 a headless client has the same set. `login`, `login_submit`, `login_cancel`, `logout`, and
 `list_providers` are the protocol commands for sign-in ([`PROTOCOL.md`](PROTOCOL.md)); the local TUI runs
 the sign-in flows itself and asks the server for each provider's status.

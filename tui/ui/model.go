@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/textarea"
+	"charm.land/lipgloss/v2"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 
@@ -214,14 +215,34 @@ func New(opt Options) *Model {
 	return m
 }
 
-// applyEditorStyles clears the textarea's hardcoded colours for a mono or
-// no-colour profile, and restores them otherwise.
+// applyEditorStyles paints the textarea from the active theme. The library's
+// defaults are fixed ANSI-256 colours, including a black cursor-line background
+// that is wrong on a light theme, so every state is rebuilt from m.st. A mono
+// or no-colour profile gets empty styles, which render with no colour at all.
 func (m *Model) applyEditorStyles() {
 	if m.profile <= colorprofile.ASCII || m.theme.Name == "mono" {
 		m.editor.SetStyles(textarea.Styles{})
 		return
 	}
-	m.editor.SetStyles(textarea.DefaultDarkStyles())
+	plain := lipgloss.NewStyle()
+	state := func(text, prompt lipgloss.Style) textarea.StyleState {
+		return textarea.StyleState{
+			Base:             plain,
+			Text:             text,
+			Prompt:           prompt,
+			Placeholder:      m.st.Placeholder,
+			LineNumber:       m.st.Muted,
+			CursorLineNumber: m.st.Muted,
+			CursorLine:       text,
+			EndOfBuffer:      m.st.Muted,
+			Selection:        plain.Reverse(true),
+		}
+	}
+	st := textarea.DefaultDarkStyles() // keeps the cursor shape and blink
+	st.Focused = state(m.st.Text, m.st.Spark)
+	st.Blurred = state(m.st.Muted, m.st.Muted)
+	st.Cursor.Color = m.st.Spark.GetForeground()
+	m.editor.SetStyles(st)
 }
 
 // themeDirs are the user and project theme directories.

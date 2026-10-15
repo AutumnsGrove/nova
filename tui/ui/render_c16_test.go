@@ -5,11 +5,13 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/exp/golden"
 
@@ -283,5 +285,73 @@ func TestUI_THM10_MonoNoColour(t *testing.T) {
 	m.syncList()
 	if out := m.render(); hasColourEscape(out) {
 		t.Fatalf("mono transcript has colour escapes: %q", out)
+	}
+}
+
+// hasColour reports whether c is a real colour; an unset lipgloss style reports
+// NoColor, which is not.
+func hasColour(c color.Color) bool {
+	if c == nil {
+		return false
+	}
+	_, none := c.(lipgloss.NoColor)
+	return !none
+}
+
+// sameColour compares two colours by their rendered RGBA, since the types differ.
+func sameColour(a, b color.Color) bool {
+	if !hasColour(a) || !hasColour(b) {
+		return !hasColour(a) && !hasColour(b)
+	}
+	ar, ag, ab, aa := a.RGBA()
+	br, bg, bb, ba := b.RGBA()
+	return ar == br && ag == bg && ab == bb && aa == ba
+}
+
+func TestUI_THM11_EditorFollowsTheme(t *testing.T) {
+	m := colorModel(t, 80, 24)
+	check := func(label string) {
+		t.Helper()
+		got := m.editor.Styles()
+		for _, c := range []struct {
+			name       string
+			have, want color.Color
+		}{
+			{"prompt", got.Focused.Prompt.GetForeground(), m.st.Spark.GetForeground()},
+			{"text", got.Focused.Text.GetForeground(), m.st.Text.GetForeground()},
+			{"placeholder", got.Focused.Placeholder.GetForeground(), m.st.Muted.GetForeground()},
+			{"cursor", got.Cursor.Color, m.st.Spark.GetForeground()},
+			{"blurred text", got.Blurred.Text.GetForeground(), m.st.Muted.GetForeground()},
+		} {
+			if c.want == nil {
+				t.Fatalf("%s: theme has no %s colour; the test would pass vacuously", label, c.name)
+			}
+			if !sameColour(c.have, c.want) {
+				t.Errorf("%s: %s colour = %v, want the theme's %v", label, c.name, c.have, c.want)
+			}
+		}
+		if bg := got.Focused.CursorLine.GetBackground(); hasColour(bg) {
+			t.Errorf("%s: cursor line has a background %v; it should not highlight", label, bg)
+		}
+	}
+	check("dark")
+	if !m.setTheme("nova-light") {
+		t.Fatal("setTheme failed")
+	}
+	check("light after /theme")
+}
+
+func TestUI_THM12_EditorMonoHasNoColour(t *testing.T) {
+	m, _, _ := newModel(t) // mono theme, ASCII profile
+	got := m.editor.Styles()
+	for name, c := range map[string]color.Color{
+		"prompt":      got.Focused.Prompt.GetForeground(),
+		"text":        got.Focused.Text.GetForeground(),
+		"placeholder": got.Focused.Placeholder.GetForeground(),
+		"cursor line": got.Focused.CursorLine.GetBackground(),
+	} {
+		if hasColour(c) {
+			t.Errorf("%s has colour %v in the mono theme", name, c)
+		}
 	}
 }

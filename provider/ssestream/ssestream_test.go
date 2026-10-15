@@ -381,26 +381,58 @@ func TestSSEStream_TMO13_LineTooLongIsExported(t *testing.T) {
 	}
 }
 
-func TestSSEStream_TMO14_LineCounter(t *testing.T) {
+func TestSSEStream_TMO14_EventLine(t *testing.T) {
 	srv := sseServer(t, ":c\n\ndata: a\n\ndata: b\ndata: c\n\n")
 	s, err := open(context.Background(), t, Config{}, srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if s.Line() != 0 {
-		t.Fatalf("Line before reading = %d, want 0", s.Line())
+	for i, want := range []int{3, 6} { // the last data line of each event
+		ev, err := s.Next()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ev.Line != want {
+			t.Fatalf("event %d: Line = %d, want %d", i, ev.Line, want)
+		}
 	}
-	if _, err := s.Next(); err != nil { // reads ":c", "", "data: a", ""
+}
+
+func TestSSEStream_TMO15_SawDone(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		want       bool
+	}{
+		{"sentinel", "data: a\n\ndata: [DONE]\n\n", true},
+		{"plain close", "data: a\n\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := sseServer(t, tc.body)
+			s, err := open(context.Background(), t, Config{}, srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			collect(t, s)
+			if s.SawDone() != tc.want {
+				t.Fatalf("SawDone = %v, want %v", s.SawDone(), tc.want)
+			}
+		})
+	}
+}
+
+// A [DONE] on the line right after a data line, with no blank line between,
+// must not swallow the data before it.
+func TestSSEStream_TMO16_DataBeforeDoneIsDelivered(t *testing.T) {
+	srv := sseServer(t, "data: last\ndata: [DONE]\n\n")
+	s, err := open(context.Background(), t, Config{}, srv.URL)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Line() != 4 {
-		t.Fatalf("Line after first event = %d, want 4", s.Line())
-	}
-	if _, err := s.Next(); err != nil { // reads "data: b", "data: c", ""
-		t.Fatal(err)
-	}
-	if s.Line() != 7 {
-		t.Fatalf("Line after second event = %d, want 7", s.Line())
+	defer s.Close()
+	events := collect(t, s)
+	if len(events) != 1 || string(events[0].Data) != "last" || !s.SawDone() {
+		t.Fatalf("events = %+v sawDone = %v, want the data then done", events, s.SawDone())
 	}
 }

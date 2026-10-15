@@ -44,6 +44,9 @@ type Config struct {
 type Event struct {
 	Name string
 	Data []byte
+	// Line is the 1-based number of the last data line in the event, so a
+	// caller can name the line a bad payload came from.
+	Line int
 }
 
 // Stream is one open SSE response.
@@ -58,7 +61,9 @@ type Stream struct {
 	idleTimer *time.Timer
 	idleFired *atomic.Bool
 	sawEvent  bool
+	sawDone   bool
 	lines     int
+	dataLine  int // line number of the latest data line
 	done      bool
 }
 
@@ -182,10 +187,14 @@ func (s *Stream) Next() (Event, error) {
 			name = value
 		case "data":
 			if value == "[DONE]" {
-				s.done = true
+				s.done, s.sawDone = true, true
+				if len(data) > 0 {
+					return s.emit(name, data) // data pending in this event is delivered first
+				}
 				return Event{}, io.EOF
 			}
 			data = append(data, value)
+			s.dataLine = s.lines
 		case "id", "retry":
 			// Accepted and ignored.
 		}
@@ -195,7 +204,7 @@ func (s *Stream) Next() (Event, error) {
 // emit finalizes one event and marks that the stream has produced output.
 func (s *Stream) emit(name string, data []string) (Event, error) {
 	s.sawEvent = true
-	return Event{Name: name, Data: []byte(strings.Join(data, "\n"))}, nil
+	return Event{Name: name, Data: []byte(strings.Join(data, "\n")), Line: s.dataLine}, nil
 }
 
 // readLine reads one line without its terminator.
@@ -231,9 +240,9 @@ func (s *Stream) idleTimeout() time.Duration {
 	return s.idleGap
 }
 
-// Line returns how many lines have been read, so a caller can name the line a
-// bad payload came from.
-func (s *Stream) Line() int { return s.lines }
+// SawDone reports whether the server sent the [DONE] sentinel, which tells a
+// clean finish from a connection that merely closed.
+func (s *Stream) SawDone() bool { return s.sawDone }
 
 // Close releases the connection and stops the idle timer.
 func (s *Stream) Close() error {

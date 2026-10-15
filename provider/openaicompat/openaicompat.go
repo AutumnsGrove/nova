@@ -5,24 +5,15 @@
 package openaicompat
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/AutumnsGrove/nova/provider"
-)
-
-// Defaults for the timeouts and the line cap. Zero in a Config means "use the
-// default", so a caller cannot accidentally ask for no timeout at all.
-const (
-	defaultConnectTimeout = 30 * time.Second
-	defaultIdleTimeout    = 120 * time.Second
-	defaultMaxLineBytes   = 8 << 20
+	"github.com/AutumnsGrove/nova/provider/ssestream"
 )
 
 // Config configures a Provider. BaseURL should include the API version path
@@ -66,15 +57,6 @@ func New(cfg Config) *Provider {
 		cfg.Name = "openaicompat"
 	}
 	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
-	if cfg.ConnectTimeout == 0 {
-		cfg.ConnectTimeout = defaultConnectTimeout
-	}
-	if cfg.IdleTimeout == 0 {
-		cfg.IdleTimeout = defaultIdleTimeout
-	}
-	if cfg.MaxLineBytes == 0 {
-		cfg.MaxLineBytes = defaultMaxLineBytes
-	}
 	client := cfg.HTTPClient
 	if client == nil {
 		client = &http.Client{}
@@ -116,53 +98,33 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 		}
 	}
 
-	// reqCtx is the request context; the connect timer cancels it if the
-	// headers never arrive. It must outlive Do so the body stays readable, so
-	// cancel is deferred to the end of Stream rather than called here.
-	reqCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	httpReq, err := http.NewRequestWithContext(reqCtx, http.MethodPost,
-		p.cfg.BaseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("openaicompat: build request: %w", err)
-	}
-	// Header precedence: fixed first, then the request's extras, then the
-	// bearer token last so a stray Authorization cannot shadow the key.
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "text/event-stream")
+	// Header precedence: fixed first, then the config's, then the request's
+	// extras, then the bearer token last so a stray Authorization cannot shadow
+	// the key.
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/json")
+	headers.Set("Accept", "text/event-stream")
 	for k, v := range p.cfg.Headers {
-		httpReq.Header.Set(k, v)
+		headers.Set(k, v)
 	}
 	for k, v := range req.ExtraHeaders {
-		httpReq.Header.Set(k, v)
+		headers.Set(k, v)
 	}
 	if key != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+key)
+		headers.Set("Authorization", "Bearer "+key)
 	}
 
-	var timedOut atomic.Bool
-	timer := time.AfterFunc(p.cfg.ConnectTimeout, func() {
-		timedOut.Store(true)
-		cancel()
-	})
-	resp, err := p.client.Do(httpReq)
-	timer.Stop()
+	stream, err := ssestream.Open(ctx, ssestream.Config{
+		HTTPClient:     p.client,
+		ConnectTimeout: p.cfg.ConnectTimeout,
+		IdleTimeout:    p.cfg.IdleTimeout,
+		MaxLineBytes:   p.cfg.MaxLineBytes,
+	}, p.cfg.BaseURL+"/chat/completions", headers, body)
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		if timedOut.Load() {
-			return nil, &provider.Error{Message: "connect timeout", Retryable: true, Err: err}
-		}
-		return nil, &provider.Error{Message: "request failed", Retryable: true, Err: err}
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, httpError(resp.StatusCode, resp.Header, readCapped(resp.Body))
-	}
-	return p.consume(ctx, cancel, resp.Body, req, onEvent)
+	defer stream.Close()
+	return p.consume(ctx, stream, req, onEvent)
 }
 
 // buildBody renders the request, drops reasoning unless asked to keep it, and

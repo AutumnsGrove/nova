@@ -1,7 +1,6 @@
 package openaicompat
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,50 +9,11 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync/atomic"
-	"time"
 
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/provider/ssestream"
 )
-
-// errTruncatedLine marks a line that ended without a newline, which means the
-// connection was cut mid-event rather than the stream ending cleanly.
-var errTruncatedLine = errors.New("openaicompat: stream ended mid-line")
-
-// lineReader reads SSE lines while tracking the line number for error
-// messages. bufio.Scanner cannot report the line or tell "too long" from "read
-// failed", and both matter to the matrix.
-type lineReader struct {
-	r    *bufio.Reader
-	max  int
-	line int
-}
-
-// newLineReader sizes the buffer so it holds a line of exactly max bytes plus
-// its terminator; ErrBufferFull therefore means the line is genuinely over max.
-func newLineReader(r io.Reader, max int) *lineReader {
-	return &lineReader{r: bufio.NewReaderSize(r, max+2), max: max}
-}
-
-// next returns the next line without its terminator, or io.EOF at the end. A
-// line over max is an *errLineTooLong; a line cut off before its terminator is
-// errTruncatedLine.
-func (lr *lineReader) next() (string, error) {
-	lr.line++
-	frag, err := lr.r.ReadSlice('\n')
-	if errors.Is(err, bufio.ErrBufferFull) {
-		return "", &errLineTooLong{limit: lr.max}
-	}
-	if err != nil {
-		if len(frag) == 0 {
-			return "", err
-		}
-		return "", errTruncatedLine
-	}
-	line := strings.TrimSuffix(string(frag), "\n")
-	return strings.TrimSuffix(line, "\r"), nil
-}
 
 // callAcc accumulates one tool call across its deltas.
 type callAcc struct {
@@ -132,25 +92,13 @@ func (a *assembler) assembled() (calls []message.ToolCall, dropped int) {
 // consume reads the SSE body, emits streaming events, and returns the response.
 // On any failure after the stream has started it returns the partial response
 // together with the error, so the caller keeps what the model already said.
-func (p *Provider) consume(ctx context.Context, cancel context.CancelFunc, body io.ReadCloser, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
+func (p *Provider) consume(ctx context.Context, stream *ssestream.Stream, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
 	result := &provider.Response{Model: req.Model}
 	result.Message.Role = message.RoleAssistant
 
-	lr := newLineReader(body, p.cfg.MaxLineBytes)
-
-	// The idle timer cancels the request context, which unblocks the body read
-	// and closes the connection. A synchronous read plus a canceling timer is
-	// simpler than a reader goroutine, and it still cannot pin the caller.
-	var idleFired atomic.Bool
-	idle := time.AfterFunc(p.cfg.IdleTimeout, func() {
-		idleFired.Store(true)
-		cancel()
-	})
-	defer idle.Stop()
-
 	var text, reasoning strings.Builder
 	asm := &assembler{calls: map[int]*callAcc{}}
-	var sawChunk, sawFinish, sawDone, firstChunk bool = false, false, false, true
+	var sawChunk, sawFinish, firstChunk = false, false, true
 
 	// partial snapshots the delivered text, so an error still carries what the
 	// caller already saw.
@@ -164,46 +112,37 @@ func (p *Provider) consume(ctx context.Context, cancel context.CancelFunc, body 
 	}
 
 	for {
-		line, err := lr.next()
+		ev, err := stream.Next()
 		if err != nil {
 			if ctx.Err() != nil {
 				return partial(), ctx.Err()
 			}
-			if idleFired.Load() {
-				return fail("stream idle timeout", true, err)
-			}
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			var tooLong *errLineTooLong
+			var tooLong *ssestream.LineTooLongError
+			var perr *provider.Error
 			switch {
-			case errors.Is(err, errTruncatedLine):
+			case errors.Is(err, ssestream.ErrTruncatedLine):
 				return fail("stream ended mid-event", true, err)
 			case errors.As(err, &tooLong):
 				return fail(tooLong.Error(), false, nil)
+			case errors.As(err, &perr):
+				return partial(), perr
 			case errors.Is(err, os.ErrDeadlineExceeded), os.IsTimeout(err):
 				return fail("stream idle timeout", true, err)
 			default:
 				return fail(fmt.Sprintf("read stream: %v", err), true, err)
 			}
 		}
-		idle.Reset(p.cfg.IdleTimeout)
-
-		data, ok := strings.CutPrefix(line, "data:")
-		if !ok {
+		data := string(ev.Data)
+		if data == "" {
 			continue
-		}
-		if data = strings.TrimPrefix(data, " "); data == "" {
-			continue
-		}
-		if data == "[DONE]" {
-			sawDone = true
-			break
 		}
 
 		var chunk chatChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return fail(fmt.Sprintf("invalid JSON on line %d: %v", lr.line, err), false, nil)
+			return fail(fmt.Sprintf("invalid JSON on line %d: %v", ev.Line, err), false, nil)
 		}
 		if firstChunk {
 			firstChunk = false
@@ -244,7 +183,7 @@ func (p *Provider) consume(ctx context.Context, cancel context.CancelFunc, body 
 	if !sawChunk {
 		return result, &provider.Error{Message: "empty stream", Retryable: true}
 	}
-	if !sawDone && !sawFinish {
+	if !stream.SawDone() && !sawFinish {
 		return result, &provider.Error{Message: "stream ended before completion", Retryable: true}
 	}
 

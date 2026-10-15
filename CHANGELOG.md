@@ -29,6 +29,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- The input editor now takes its colours from the active theme. It used fixed terminal colours, including a black
+  highlight on the cursor line that looked wrong on the light theme.
 - A provider that panicked mid-run crashed `nova` outright; the run now ends as an error with its `run_end`.
 - The `AgentEnd` hook now runs when a run is aborted. It was skipped or raced with `run_end` because the run's own
   context was already cancelled.

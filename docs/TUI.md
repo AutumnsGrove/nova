@@ -110,7 +110,7 @@ over their `details` JSON for a nicer card.
 ## Input
 
 - Multi-line editor (`bubbles/v2/textarea`). `enter` sends, `shift+enter` or `alt+enter`
-  newline, `ctrl+g` opens `$EDITOR`.
+  newline, `ctrl+g` opens `$EDITOR`. Its prompt, text, placeholder, and cursor use the active theme.
 - `/` opens command completion: built-ins, prompt templates, and extension commands.
 - `@` completes file paths.
 - `!cmd` runs a shell command and shows the output; `!!cmd` runs it without adding it

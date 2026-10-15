@@ -290,6 +290,8 @@ type Display struct {
 | THM08 | `/theme x` switches | | styles rebuilt; all items refreshed |
 | THM09 | unknown theme | | notice |
 | THM10 | mono theme | | no colour escapes anywhere in a full transcript |
+| THM11 | the editor follows the theme | dark theme, then `/theme nova-light` | prompt, text, placeholder, cursor and blurred text take the theme colours; the cursor line has no background |
+| THM12 | the editor in the mono theme | mono theme, ASCII profile | no editor style carries a colour |
 | DSP01 | `/display thinking expand` | | blocks expand |
 | DSP02 | `/display lines 12` | | preview 12 lines |
 | DSP03 | `/display lines 0` | | notice; unchanged |

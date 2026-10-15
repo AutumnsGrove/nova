@@ -1,8 +1,6 @@
-package ext
+package install
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,19 +84,4 @@ func sortLockEntries(entries []LockEntry) {
 			entries[j], entries[j-1] = entries[j-1], entries[j]
 		}
 	}
-}
-
-// manifestHash hashes a manifest file's bytes for change detection.
-func manifestHash(dir string) string {
-	data, err := os.ReadFile(filepath.Join(dir, "extension.yaml"))
-	if err != nil {
-		return ""
-	}
-	return hashBytes(data)
-}
-
-// hashBytes returns the hex SHA-256 of b.
-func hashBytes(b []byte) string {
-	s := sha256.Sum256(b)
-	return hex.EncodeToString(s[:])
 }

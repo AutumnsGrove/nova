@@ -33,7 +33,7 @@ func (h *Host) rebuildChanged(ctx context.Context) {
 	h.manifestHashes = map[string]string{}
 	h.mu.Unlock()
 	for _, dir := range h.opt.Dirs {
-		hash := manifestHash(dir)
+		hash := ManifestHash(dir)
 		if prev, ok := old[hashKey(dir)]; ok && prev == hash {
 			continue
 		}
@@ -69,6 +69,6 @@ func (h *Host) recordManifestHashes() {
 		h.manifestHashes = map[string]string{}
 	}
 	for _, dir := range h.opt.Dirs {
-		h.manifestHashes[hashKey(dir)] = manifestHash(dir)
+		h.manifestHashes[hashKey(dir)] = ManifestHash(dir)
 	}
 }

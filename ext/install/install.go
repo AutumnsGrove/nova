@@ -1,9 +1,10 @@
-package ext
+package install
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/AutumnsGrove/nova/ext"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ type InstallOptions struct {
 	LockPath string
 	Confirm  func(Plan) bool // nil refuses
 	Git      GitRunner
-	Run      CommandRunner
+	Run      ext.CommandRunner
 	Timeout  time.Duration
 }
 
@@ -46,7 +47,7 @@ type InstallOptions struct {
 type Installer struct {
 	opt InstallOptions
 	git GitRunner
-	run CommandRunner
+	run ext.CommandRunner
 
 	installMu sync.Mutex
 }
@@ -62,7 +63,7 @@ func NewInstaller(opt InstallOptions) *Installer {
 		i.git = execGit{}
 	}
 	if i.run == nil {
-		i.run = ExecRunner{}
+		i.run = ext.ExecRunner{}
 	}
 	return i
 }
@@ -184,7 +185,7 @@ func normaliseGitURL(raw string) (string, error) {
 }
 
 // Install clones and installs the extensions in src.
-func (i *Installer) Install(ctx context.Context, src Source) (*Manifest, error) {
+func (i *Installer) Install(ctx context.Context, src Source) (*ext.Manifest, error) {
 	i.installMu.Lock()
 	defer i.installMu.Unlock()
 	if i.opt.Root == "" || i.opt.LockPath == "" {
@@ -200,7 +201,7 @@ func (i *Installer) Install(ctx context.Context, src Source) (*Manifest, error) 
 }
 
 // installGit clones into a temp directory, plans, confirms, builds, and moves.
-func (i *Installer) installGit(ctx context.Context, src Source) (*Manifest, error) {
+func (i *Installer) installGit(ctx context.Context, src Source) (*ext.Manifest, error) {
 	tmp, err := os.MkdirTemp(i.opt.Root, ".install-*")
 	if err != nil {
 		return nil, err
@@ -247,7 +248,7 @@ func (i *Installer) installGit(ctx context.Context, src Source) (*Manifest, erro
 			Ref:          src.Ref,
 			Commit:       commit,
 			Installed:    time.Now(),
-			ManifestHash: hashBytes(f.data),
+			ManifestHash: ext.HashBytes(f.data),
 		}
 	}
 	if err := writeLock(i.opt.LockPath, lock); err != nil {
@@ -260,8 +261,8 @@ func (i *Installer) installGit(ctx context.Context, src Source) (*Manifest, erro
 }
 
 // installLocal links a local directory into Root.
-func (i *Installer) installLocal(ctx context.Context, src Source) (*Manifest, error) {
-	m, err := LoadManifest(src.Path)
+func (i *Installer) installLocal(ctx context.Context, src Source) (*ext.Manifest, error) {
+	m, err := ext.LoadManifest(src.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +281,7 @@ func (i *Installer) installLocal(ctx context.Context, src Source) (*Manifest, er
 	if err := os.Symlink(src.Path, dst); err != nil {
 		return nil, err
 	}
-	lock[m.Name] = LockEntry{Name: m.Name, Source: src.Path, Ref: src.Ref, Commit: "link", Installed: time.Now(), ManifestHash: manifestHash(src.Path), Linked: true}
+	lock[m.Name] = LockEntry{Name: m.Name, Source: src.Path, Ref: src.Ref, Commit: "link", Installed: time.Now(), ManifestHash: ext.ManifestHash(src.Path), Linked: true}
 	if err := writeLock(i.opt.LockPath, lock); err != nil {
 		_ = os.Remove(dst)
 		return nil, err
@@ -292,7 +293,7 @@ func (i *Installer) installLocal(ctx context.Context, src Source) (*Manifest, er
 // discovered is one validated extension found in a clone.
 type discovered struct {
 	dir      string
-	manifest *Manifest
+	manifest *ext.Manifest
 	data     []byte
 }
 
@@ -304,7 +305,7 @@ func (i *Installer) discover(dir string) ([]discovered, error) {
 	}
 	var out []discovered
 	for _, d := range dirs {
-		m, err := LoadManifest(d)
+		m, err := ext.LoadManifest(d)
 		if err != nil {
 			return nil, err
 		}
@@ -319,7 +320,7 @@ func (i *Installer) discover(dir string) ([]discovered, error) {
 func (i *Installer) checkCollisions(found []discovered, lock map[string]LockEntry, source string) error {
 	for _, f := range found {
 		name := f.manifest.Name
-		if Reserved(name) {
+		if ext.Reserved(name) {
 			return fmt.Errorf("ext: %s conflicts with a built-in or bundled extension", name)
 		}
 		if e, ok := lock[name]; ok {
@@ -379,7 +380,7 @@ func (i *Installer) moveAll(found []discovered) ([]string, error) {
 }
 
 // Update fetches the locked source again and replaces the extension.
-func (i *Installer) Update(ctx context.Context, name string) (*Manifest, error) {
+func (i *Installer) Update(ctx context.Context, name string) (*ext.Manifest, error) {
 	i.installMu.Lock()
 	defer i.installMu.Unlock()
 	lock, _ := readLock(i.opt.LockPath)
@@ -446,7 +447,7 @@ func (i *Installer) Update(ctx context.Context, name string) (*Manifest, error) 
 	}
 	entry.Commit = commit
 	entry.Installed = time.Now()
-	entry.ManifestHash = hashBytes(target.data)
+	entry.ManifestHash = ext.HashBytes(target.data)
 	lock[name] = entry
 	if err := writeLock(i.opt.LockPath, lock); err != nil {
 		_ = os.RemoveAll(dst)

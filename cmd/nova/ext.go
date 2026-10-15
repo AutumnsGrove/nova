@@ -12,6 +12,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/ext"
+	"github.com/AutumnsGrove/nova/ext/install"
 )
 
 // extCommand builds the `nova ext` command tree.
@@ -28,13 +29,13 @@ func extCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
 }
 
 // newInstaller builds an installer rooted in the user config directory.
-func newInstaller(stdin io.Reader, stdout io.Writer, yes bool) (*ext.Installer, error) {
+func newInstaller(stdin io.Reader, stdout io.Writer, yes bool) (*install.Installer, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
 	dir := config.UserConfigDir(home)
-	confirm := func(p ext.Plan) bool {
+	confirm := func(p install.Plan) bool {
 		fmt.Fprintf(stdout, "%s from %s at %s\n", p.Name, p.Source, p.Commit)
 		fmt.Fprintf(stdout, "  run: %v\n  build: %v\n  capabilities: %v\n", p.Run, p.Build, p.Capabilities)
 		if yes {
@@ -44,7 +45,7 @@ func newInstaller(stdin io.Reader, stdout io.Writer, yes bool) (*ext.Installer, 
 		line, _ := bufio.NewReader(stdin).ReadString('\n')
 		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "y")
 	}
-	return ext.NewInstaller(ext.InstallOptions{
+	return install.NewInstaller(install.InstallOptions{
 		Root:     filepath.Join(dir, "extensions"),
 		LockPath: filepath.Join(dir, "extensions.lock"),
 		Confirm:  confirm,
@@ -63,7 +64,7 @@ func extInstall(stdin io.Reader, stdout io.Writer) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			src, err := ext.ParseSource(args[0])
+			src, err := install.ParseSource(args[0])
 			if err != nil {
 				return err
 			}

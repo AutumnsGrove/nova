@@ -197,3 +197,23 @@ func TestReload_RLD07_ReplayAfterReload(t *testing.T) {
 
 // toolReg builds an empty registry.
 func toolReg() *tool.Registry { return tool.NewRegistry() }
+
+// writeRepoFiles writes files below dir, creating parents.
+func writeRepoFiles(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for name, body := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// pathExists reports whether path can be stat'd.
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}

@@ -2,7 +2,7 @@
 chunk: C18
 title: "Bundled extensions"
 packages: [./ext, ./bundled, ./bundled/tasks, ./bundled/ask, ./bundled/plan, ./bundled/subagent, ./bundled/webfetch]
-budgets: { ./ext: 3600, ./bundled: 150, ./bundled/tasks: 450, ./bundled/ask: 350, ./bundled/plan: 400, ./bundled/subagent: 500, ./bundled/webfetch: 700 }
+budgets: { ./ext: 3100, ./bundled: 150, ./bundled/tasks: 450, ./bundled/ask: 350, ./bundled/plan: 400, ./bundled/subagent: 500, ./bundled/webfetch: 700 }
 depends: [C13, C17]
 ---
 

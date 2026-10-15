@@ -267,6 +267,7 @@ func NoLeaks(t testing.TB)                  // registers a cleanup that checks g
 | TKC04 | `Sleep` honours cancellation | cancel before advance | `context.Canceled` |
 | TKC05 | `BlockUntil` waits for sleepers | goroutine sleeps | returns once registered |
 | TKC06 | timer exactly at the new time fires | deadline == now+d | fires |
+| TKC07 | a cancelled `Sleep` releases its timer | cancel a sleeper, then sleep on a cancelled context | no timer is left pending, so `BlockUntil` counts live sleepers only |
 | TKP01 | turns are consumed in order | 2 turns | responses match in order |
 | TKP02 | exhausted script | 3rd call | error contains `script exhausted` |
 | TKP03 | requests recorded as deep copies | mutate the original after the call | recorded value unchanged |

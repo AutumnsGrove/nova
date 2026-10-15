@@ -36,9 +36,11 @@ people's programs), so its tests are reviewed by the larger model before merge.
 | `ext/tools.go` | adapt extension tools and declarative tools to `tool.Tool` |
 | `ext/declarative.go` | `exec` tools: argument templating without a shell |
 | `ext/hooks.go` | compose hooks from many extensions; command hooks |
-| `ext/install.go` | install, update, remove, list, check |
-| `ext/lock.go` | the lockfile |
-| `ext/git.go` | the git operations (calls the `git` binary) |
+| `ext/install/install.go` | install, update, remove, list (moved out of `ext`, D102) |
+| `ext/check.go` | `Check` and the build-step runner |
+| `ext/hash.go` | the manifest hash shared by reload and the lockfile |
+| `ext/install/lock.go` | the lockfile |
+| `ext/install/git.go` | the git operations (calls the `git` binary) |
 | `ext/reload.go` | the reload sequence |
 | `ext/sdk/sdk.go` | the Go SDK |
 | `ext/sdk/doc.go` | package documentation with a complete example |

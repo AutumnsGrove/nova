@@ -42,9 +42,8 @@ document parts are deferred (`DECISIONS.md`). The rest were fixed.
 
 ## What is left of it
 
-`cmd/nova-run` (about 170 lines) is still in the tree. It is a throwaway headless runner from the spike and is
-not part of the product; `cmd/nova` is. It still builds. The old plan said the CLI chunk would delete it, and
-that did not happen, so removing it is open work, not something this file promises.
+Nothing of the code. `cmd/nova-run`, the spike's throwaway headless runner, was removed once `cmd/nova` had
+replaced it, as the CLI chunk (C12) had planned.
 
 The chunk specs in `docs/archive/chunks/` list the prototype defects that the test matrices were written to
 prevent (panic recovery only in parallel mode, `bash` leaving child processes running, and others).

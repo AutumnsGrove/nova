@@ -292,6 +292,7 @@ history as given, as before.
 | LPE18 | compat `Run(ctx, cfg, history)` | prototype test cases | same results as before |
 | LPE19 | final answer text | | `Result.Answer` |
 | LPE20 | `New` contains only this run's messages | | excludes history |
+| LPE21 | the provider panics | `Stream` panics | the run ends `error` with one `run_end`; the process survives |
 | LPT01 | one tool call | | result appended after the assistant message |
 | LPT02 | many calls, parallel | 5 slow `Parallel` tools | run concurrently (peak concurrency > 1) |
 | LPT03 | completion order differs from call order | call 1 slow | results still appended in call order |

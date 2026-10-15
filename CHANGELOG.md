@@ -29,6 +29,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- A provider that panicked mid-run crashed `nova` outright; the run now ends as an error with its `run_end`.
 - The `AgentEnd` hook now runs when a run is aborted. It was skipped or raced with `run_end` because the run's own
   context was already cancelled.
 - `nova serve` now gives every route except the event stream a 30 s write deadline, so a client that stops reading

@@ -69,12 +69,12 @@ nova/
                   subagent, webfetch                            ≤ 2500 total
   tui/            the terminal UI                               ≤ 9000
     cli/          fang-styled help and errors (full build only) ≤ 150
-  cmd/nova/       main, cobra commands, doctor, version         ≤ 1300
+  cmd/nova/       main, cobra commands, doctor, version         ≤ 1200
   doctor/         environment checks                            ≤ 300
   update/         replace the binary from a checkout or release ≤ 450
   scripts/        matrixcheck, linecount, importcheck, accept
   assets/         logo SVGs and the generator
-  docs/
+  docs/           embedded topics, search, authoring context    ≤ 220
 ```
 
 Budgets are line counts of non-test Go and are enforced by a CI check (D37). They

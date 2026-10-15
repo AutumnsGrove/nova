@@ -1,2 +1,3 @@
 I will read the file.
 ● [1mread[m main.go
+package main

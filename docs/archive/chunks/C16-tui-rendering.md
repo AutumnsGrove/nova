@@ -2,7 +2,7 @@
 chunk: C16
 title: "TUI rendering: thinking block, tool cards, diffs, themes, splash"
 packages: [./tui/render, ./tui/diff, ./tui/chat, ./tui/styles, ./tui/ui]
-budgets: { ./tui/render: 700, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 2350 }
+budgets: { ./tui/render: 740, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 2350 }
 depends: [C15]
 ---
 
@@ -222,7 +222,7 @@ type Display struct {
 | CRD02 | status dot colours | running, ok, error | spinner, success, error |
 | CRD03 | spinner animates | fake clock | frame advances |
 | CRD04 | duration shown and dropped first | narrow | dropped before the arguments |
-| CRD05 | body hidden by default | finished ok call | header only |
+| CRD05 | no result, no body (was "body hidden by default"; changed by #5, see TCP01) | finished call with no result | header only |
 | CRD06 | body shown when running | | live tail, 5 lines |
 | CRD07 | body shown on error | | first 12 lines of the message |
 | CRD08 | expanded shows the body | | body present |

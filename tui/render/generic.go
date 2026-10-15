@@ -50,7 +50,11 @@ func genericBody(c Call, st styles.Styles, width int, expanded bool) string {
 		text, limit = lastLines(c.Live, 5), 0
 	}
 	if strings.TrimSpace(ansi.Strip(text)) != "" {
-		parts = append(parts, renderText(text, st, width, limit))
+		if !expanded && !c.Running {
+			parts = append(parts, previewText(text, st, width, false))
+		} else {
+			parts = append(parts, renderText(text, st, width, limit))
+		}
 	}
 	if c.Truncated {
 		parts = append(parts, st.Muted.Render("(output truncated)"))

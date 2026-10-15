@@ -37,16 +37,22 @@ func (s searchRenderer) Body(c Call, st styles.Styles, width int, expanded bool)
 	if c.Running {
 		return renderText(c.Live, st, width, 5)
 	}
-	if !expanded {
+	if !expanded && strings.TrimSpace(c.Content) == "" {
 		return ""
 	}
-	lines := strings.Split(ansi.Strip(c.Content), "\n")
+	lines := strings.Split(strings.TrimRight(ansi.Strip(c.Content), "\n"), "\n")
 	for i, l := range lines {
 		if s.kind == "grep" {
 			if pat := argString(c.Args, "pattern"); pat != "" {
 				l = strings.ReplaceAll(l, pat, st.Core.Render(pat))
 			}
 		}
+		lines[i] = l
+	}
+	if !expanded {
+		return clipPreview(lines, st, width, false)
+	}
+	for i, l := range lines {
 		lines[i] = ansi.Truncate(l, width, "…")
 	}
 	return strings.Join(lines, "\n")

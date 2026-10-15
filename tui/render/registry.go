@@ -154,6 +154,9 @@ func oneLine(left, right string, width int) string {
 	return left + strings.Repeat(" ", width-lw-rw) + right
 }
 
+// PreviewLines is how many lines of a finished result a collapsed card shows.
+const PreviewLines = 6
+
 // bodyLimit reports whether a body is shown and the line cap for it.
 func bodyLimit(c Call, expanded bool) (bool, int) {
 	switch {
@@ -163,11 +166,43 @@ func bodyLimit(c Call, expanded bool) (bool, int) {
 		return true, 5
 	case c.IsError:
 		return true, 12
-	case c.Name == "edit":
-		return true, 12
 	default:
-		return false, 0
+		return true, PreviewLines
 	}
+}
+
+// moreHint is the muted line that closes a clipped preview. earlier is true
+// when the hidden lines come before the shown ones (a tail preview).
+func moreHint(n int, earlier bool, st styles.Styles) string {
+	which := "more"
+	if earlier {
+		which = "earlier"
+	}
+	return st.Muted.Render(fmt.Sprintf("… %d %s lines (ctrl+o to expand)", n, which))
+}
+
+// previewText shows the first PreviewLines lines of s, or the last when tail
+// is set, with a hint for the rest. It is the compact view of a finished
+// result; an empty result gives "".
+func previewText(s string, st styles.Styles, width int, tail bool) string {
+	s = strings.TrimRight(strings.ReplaceAll(ansi.Strip(s), "\r", ""), "\n")
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
+	return clipPreview(strings.Split(s, "\n"), st, width, tail)
+}
+
+// clipPreview truncates each line to width and caps the list at PreviewLines.
+func clipPreview(lines []string, st styles.Styles, width int, tail bool) string {
+	if hidden := len(lines) - PreviewLines; hidden > 0 && tail {
+		lines = append([]string{moreHint(hidden, true, st)}, lines[hidden:]...)
+	} else if hidden > 0 {
+		lines = append(lines[:PreviewLines:PreviewLines], moreHint(hidden, false, st))
+	}
+	for i, l := range lines {
+		lines[i] = ansi.Truncate(l, width, "…")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // renderText strips control sequences, caps the line count, and wraps to width.

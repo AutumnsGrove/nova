@@ -37,18 +37,23 @@ func (readRenderer) Body(c Call, st styles.Styles, width int, expanded bool) str
 	if c.IsError {
 		return errorBody(c, st, width)
 	}
-	if !expanded {
-		if c.Running {
-			return renderText(c.Live, st, width, 5)
-		}
-		return ""
+	if !expanded && c.Running {
+		return renderText(c.Live, st, width, 5)
 	}
 	path := pathOf(c)
+	max := 200
+	if !expanded {
+		max = PreviewLines
+	}
 	lines := strings.Split(strings.TrimRight(c.Content, "\n"), "\n")
 	var out []string
 	for i, l := range lines {
-		if i >= 200 {
-			out = append(out, st.Muted.Render(fmt.Sprintf("… %d more lines", len(lines)-200)))
+		if i >= max {
+			if expanded {
+				out = append(out, st.Muted.Render(fmt.Sprintf("… %d more lines", len(lines)-max)))
+			} else {
+				out = append(out, moreHint(len(lines)-max, false, st))
+			}
 			break
 		}
 		num, code, ok := strings.Cut(l, "\t")

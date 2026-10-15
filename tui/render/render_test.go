@@ -135,9 +135,12 @@ func TestRender_CRD04_DurationDroppedFirst(t *testing.T) {
 	}
 }
 
-func TestRender_CRD05_BodyHiddenByDefault(t *testing.T) {
+// CRD05 once asserted that a finished call hides its body. Issue #5 changed
+// that on purpose: a finished call shows a short preview (see TCP01), and only
+// a call with no result has nothing to show.
+func TestRender_CRD05_NoResultNoBody(t *testing.T) {
 	st := mono()
-	c := Call{Name: "read", Args: raw(`{"path":"a.go"}`), Content: "1\tx"}
+	c := Call{Name: "read", Args: raw(`{"path":"a.go"}`)}
 	if got := NewRegistry().Lookup("read").Body(c, st, 40, false); got != "" {
 		t.Fatalf("body = %q, want empty", got)
 	}
@@ -515,6 +518,91 @@ func TestRender_CRD11_WidthNeverExceeded(t *testing.T) {
 					t.Fatalf("width %d: %q is %d wide", width, l, ansi.StringWidth(l))
 				}
 			}
+		}
+	}
+}
+
+// numbered returns n lines "L1".."Ln" (with a read-style gutter when numbered).
+func numbered(n int, gutter bool) string {
+	var b strings.Builder
+	for i := 1; i <= n; i++ {
+		if gutter {
+			fmt.Fprintf(&b, "%d\tL%d\n", i, i)
+		} else {
+			fmt.Fprintf(&b, "L%d\n", i)
+		}
+	}
+	return b.String()
+}
+
+// previewCalls are finished calls with a long result, one per renderer. The
+// bash result is read from the tail, the rest from the head.
+func previewCalls() map[string]Call {
+	return map[string]Call{
+		"bash":    {Name: "bash", Args: raw(`{"command":"ls"}`), Content: numbered(20, false), Details: raw(`{"exit_code":0}`)},
+		"read":    {Name: "read", Args: raw(`{"path":"a.txt"}`), Content: numbered(20, true)},
+		"grep":    {Name: "grep", Args: raw(`{"pattern":"zzz"}`), Content: numbered(20, false)},
+		"write":   {Name: "write", Args: raw(`{"path":"a.txt","content":` + jsonString(numbered(20, false)) + `}`)},
+		"generic": {Name: "other", Content: numbered(20, false)},
+		"edit":    {Name: "edit", Args: raw(`{"path":"a.go"}`), Details: raw(`{"diff":` + jsonString(editDiff) + `}`)},
+	}
+}
+
+func TestRender_TCP01_CollapsedShowsSixLinePreview(t *testing.T) {
+	st := mono()
+	for name, c := range previewCalls() {
+		got := ansi.Strip(NewRegistry().Lookup(c.Name).Body(c, st, 80, false))
+		if got == "" {
+			t.Fatalf("%s: finished call hides its result", name)
+		}
+		lines := strings.Split(got, "\n")
+		if len(lines) > PreviewLines+1 {
+			t.Fatalf("%s: %d lines, want at most %d plus a hint:\n%s", name, len(lines), PreviewLines, got)
+		}
+		if !strings.Contains(got, "ctrl+o to expand") {
+			t.Fatalf("%s: no expand hint:\n%s", name, got)
+		}
+	}
+}
+
+func TestRender_TCP02_PreviewDirection(t *testing.T) {
+	st := mono()
+	calls := previewCalls()
+	bash := ansi.Strip(NewRegistry().Lookup("bash").Body(calls["bash"], st, 80, false))
+	if !strings.Contains(bash, "L20") || strings.Contains(bash, "L1\n") {
+		t.Fatalf("bash preview should show the tail:\n%s", bash)
+	}
+	grep := ansi.Strip(NewRegistry().Lookup("grep").Body(calls["grep"], st, 80, false))
+	if !strings.Contains(grep, "L1") || strings.Contains(grep, "L20") {
+		t.Fatalf("grep preview should show the head:\n%s", grep)
+	}
+}
+
+func TestRender_TCP03_ShortResultShownWhole(t *testing.T) {
+	st := mono()
+	c := Call{Name: "bash", Args: raw(`{"command":"ls"}`), Content: numbered(3, false)}
+	got := ansi.Strip(NewRegistry().Lookup("bash").Body(c, st, 80, false))
+	if !strings.Contains(got, "L1") || !strings.Contains(got, "L3") || strings.Contains(got, "expand") {
+		t.Fatalf("short result:\n%s", got)
+	}
+}
+
+func TestRender_TCP04_NoOutputStaysHeaderOnly(t *testing.T) {
+	c := Call{Name: "bash", Args: raw(`{"command":"true"}`)}
+	if got := NewRegistry().Lookup("bash").Body(c, mono(), 80, false); got != "" {
+		t.Fatalf("empty bash output drew a body: %q", got)
+	}
+}
+
+func TestRender_TCP05_ExpandedStillFull(t *testing.T) {
+	st := mono()
+	for name, c := range previewCalls() {
+		got := ansi.Strip(NewRegistry().Lookup(c.Name).Body(c, st, 80, true))
+		if strings.Contains(got, "ctrl+o to expand") {
+			t.Fatalf("%s: expanded view still offers to expand:\n%s", name, got)
+		}
+		if name != "edit" && !strings.Contains(got, "L20") {
+			t.Fatalf("%s: expanded view lost its tail:\n%s", name, got)
 		}
 	}
 }

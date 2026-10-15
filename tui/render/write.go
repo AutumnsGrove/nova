@@ -37,10 +37,11 @@ func (writeRenderer) Body(c Call, st styles.Styles, width int, expanded bool) st
 	if c.Running {
 		return renderText(c.Live, st, width, 5)
 	}
+	lines := Highlight(argString(c.Args, "content"), pathOf(c), st, width)
 	if !expanded {
-		return ""
+		return clipPreview(lines, st, width, false)
 	}
-	return capLines(Highlight(argString(c.Args, "content"), pathOf(c), st, width), 200, st)
+	return capLines(lines, 200, st)
 }
 
 // intOr0 decodes an int detail, or zero.

@@ -48,6 +48,10 @@ var bundledExtensions = map[string]bool{
 	"tasks": true, "ask": true, "plan": true, "subagent": true, "webfetch": true,
 }
 
+// Reserved reports whether name belongs to a core tool or a bundled extension,
+// which an installed extension may not take.
+func Reserved(name string) bool { return builtinTools[name] || bundledExtensions[name] }
+
 // hookNames are the loop's hook points (ARCHITECTURE.md section 4).
 var hookNames = map[string]bool{
 	"input": true, "before_agent_start": true, "transform_context": true,

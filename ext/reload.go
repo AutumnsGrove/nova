@@ -43,7 +43,7 @@ func (h *Host) rebuildChanged(ctx context.Context) {
 		}
 		run := h.opt.Run
 		if run == nil {
-			run = execRunner{}
+			run = ExecRunner{}
 		}
 		_ = run.Run(ctx, dir, m.Build)
 		h.mu.Lock()

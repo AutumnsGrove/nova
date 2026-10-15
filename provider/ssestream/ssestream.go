@@ -8,12 +8,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -29,6 +27,8 @@ const (
 	defaultMaxLineBytes   = 8 << 20
 	// maxErrorBody caps how much of a failed response body is read.
 	maxErrorBody = 1 << 20
+	// maxErrorMessage caps the prose kept from a body with no JSON message.
+	maxErrorMessage = 500
 )
 
 // Config configures a stream.
@@ -58,18 +58,21 @@ type Stream struct {
 	idleTimer *time.Timer
 	idleFired *atomic.Bool
 	sawEvent  bool
+	lines     int
 	done      bool
 }
 
-// lineTooLong is the error for a line past MaxLineBytes.
-type lineTooLong struct{ limit int }
+// LineTooLongError is the error for a line past MaxLineBytes. It is a fault of
+// the server or the configuration, never worth retrying.
+type LineTooLongError struct{ Limit int }
 
-func (e *lineTooLong) Error() string {
-	return fmt.Sprintf("ssestream: line exceeds the %d-byte limit", e.limit)
+func (e *LineTooLongError) Error() string {
+	return fmt.Sprintf("ssestream: line exceeds the %d-byte limit", e.Limit)
 }
 
-// errTruncatedLine marks a body that ended mid-line.
-var errTruncatedLine = errors.New("ssestream: stream ended mid-line")
+// ErrTruncatedLine marks a body that ended mid-line: the connection was cut
+// inside an event, not closed cleanly after one.
+var ErrTruncatedLine = errors.New("ssestream: stream ended mid-line")
 
 // Open posts body to url and returns an SSE stream. A non-2xx status is a
 // *provider.Error built with provider.Classify. The caller must Close.
@@ -197,9 +200,10 @@ func (s *Stream) emit(name string, data []string) (Event, error) {
 
 // readLine reads one line without its terminator.
 func (s *Stream) readLine() (string, error) {
+	s.lines++
 	frag, err := s.reader.ReadSlice('\n')
 	if errors.Is(err, bufio.ErrBufferFull) {
-		return "", &lineTooLong{limit: s.max}
+		return "", &LineTooLongError{Limit: s.max}
 	}
 	if err != nil {
 		if s.caller.Err() != nil {
@@ -211,7 +215,7 @@ func (s *Stream) readLine() (string, error) {
 		if len(frag) == 0 {
 			return "", io.EOF
 		}
-		return "", errTruncatedLine
+		return "", ErrTruncatedLine
 	}
 	s.idleTimer.Reset(s.idleTimeout())
 	line := strings.TrimSuffix(string(frag), "\n")
@@ -226,6 +230,10 @@ func (s *Stream) idleTimeout() time.Duration {
 	}
 	return s.idleGap
 }
+
+// Line returns how many lines have been read, so a caller can name the line a
+// bad payload came from.
+func (s *Stream) Line() int { return s.lines }
 
 // Close releases the connection and stops the idle timer.
 func (s *Stream) Close() error {
@@ -254,31 +262,4 @@ func withDefaults(cfg Config) Config {
 func readCapped(r io.Reader, max int) []byte {
 	data, _ := io.ReadAll(io.LimitReader(r, int64(max)))
 	return data
-}
-
-// htmlTag strips markup from a non-JSON error body.
-var htmlTag = regexp.MustCompile(`<[^>]*>`)
-
-// httpError builds a provider.Error for a non-2xx response. The message comes
-// from error.message in a JSON body, else the first 500 bytes of the body with
-// HTML tags stripped.
-func httpError(status int, header http.Header, body []byte) *provider.Error {
-	retryable, retryAfter := provider.Classify(status, header.Get("Retry-After"))
-	message := ""
-	var parsed struct {
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if json.Unmarshal(body, &parsed) == nil && parsed.Error.Message != "" {
-		message = parsed.Error.Message
-	} else {
-		text := htmlTag.ReplaceAllString(string(body), "")
-		text = strings.Join(strings.Fields(text), " ")
-		if len(text) > 500 {
-			text = text[:500]
-		}
-		message = text
-	}
-	return &provider.Error{Status: status, Message: message, Retryable: retryable, RetryAfter: retryAfter}
 }

@@ -260,7 +260,7 @@ func TestSSEStream_TMO07_LineTooLong(t *testing.T) {
 	}
 	defer s.Close()
 	_, err = s.Next()
-	var tooLong *lineTooLong
+	var tooLong *LineTooLongError
 	if !errors.As(err, &tooLong) {
 		t.Fatalf("err = %v, want a line-too-long error", err)
 	}
@@ -322,4 +322,85 @@ func FuzzSSEStream(f *testing.F) {
 			}
 		}
 	})
+}
+
+func TestSSEStream_TMO11_ErrorBodyShapes(t *testing.T) {
+	cases := []struct {
+		name, body, wantCode, wantMessage string
+	}{
+		{"nested code and message", `{"error":{"code":"rate_limit_exceeded","message":"slow down"}}`, "rate_limit_exceeded", "slow down"},
+		{"numeric nested code", `{"error":{"code":429,"message":"slow down"}}`, "429", "slow down"},
+		{"top-level message and code", `{"message":"top level","code":"E1"}`, "E1", "top level"},
+		{"prose", "<p>gateway  down</p>", "", "gateway down"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			t.Cleanup(srv.Close)
+			_, err := open(context.Background(), t, Config{}, srv.URL)
+			var perr *provider.Error
+			if !errors.As(err, &perr) {
+				t.Fatalf("err = %v, want *provider.Error", err)
+			}
+			if perr.Code != tc.wantCode || perr.Message != tc.wantMessage {
+				t.Fatalf("code = %q message = %q, want %q and %q", perr.Code, perr.Message, tc.wantCode, tc.wantMessage)
+			}
+		})
+	}
+}
+
+func TestSSEStream_TMO12_TruncatedLineIsExported(t *testing.T) {
+	srv := sseServer(t, "data: one\n\ndata: cut")
+	s, err := open(context.Background(), t, Config{}, srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.Next(); err != nil {
+		t.Fatalf("first event: %v", err)
+	}
+	if _, err := s.Next(); !errors.Is(err, ErrTruncatedLine) {
+		t.Fatalf("err = %v, want ErrTruncatedLine", err)
+	}
+}
+
+func TestSSEStream_TMO13_LineTooLongIsExported(t *testing.T) {
+	srv := sseServer(t, "data: "+strings.Repeat("x", 2048)+"\n\n")
+	s, err := open(context.Background(), t, Config{MaxLineBytes: 1024}, srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_, err = s.Next()
+	var tooLong *LineTooLongError
+	if !errors.As(err, &tooLong) || tooLong.Limit != 1024 {
+		t.Fatalf("err = %v, want *LineTooLongError with Limit 1024", err)
+	}
+}
+
+func TestSSEStream_TMO14_LineCounter(t *testing.T) {
+	srv := sseServer(t, ":c\n\ndata: a\n\ndata: b\ndata: c\n\n")
+	s, err := open(context.Background(), t, Config{}, srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if s.Line() != 0 {
+		t.Fatalf("Line before reading = %d, want 0", s.Line())
+	}
+	if _, err := s.Next(); err != nil { // reads ":c", "", "data: a", ""
+		t.Fatal(err)
+	}
+	if s.Line() != 4 {
+		t.Fatalf("Line after first event = %d, want 4", s.Line())
+	}
+	if _, err := s.Next(); err != nil { // reads "data: b", "data: c", ""
+		t.Fatal(err)
+	}
+	if s.Line() != 7 {
+		t.Fatalf("Line after second event = %d, want 7", s.Line())
+	}
 }

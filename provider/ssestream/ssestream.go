@@ -1,7 +1,7 @@
-// Package ssestream is the shared POST + Server-Sent Events transport for the
-// OpenCode Go dialects. It owns the connect and idle timeouts, the line cap,
-// and the mapping from HTTP status to provider.Error, so the Responses and
-// Messages endpoints fail the same way as chat-completions.
+// Package ssestream is the shared POST + Server-Sent Events transport for every
+// streaming dialect: chat-completions (openaicompat), Responses, and Messages.
+// It owns the connect and idle timeouts, the line cap, and the mapping from
+// HTTP status to provider.Error, so all of them fail the same way.
 package ssestream
 
 import (

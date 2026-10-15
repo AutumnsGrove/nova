@@ -324,7 +324,7 @@ func FuzzSSEStream(f *testing.F) {
 	})
 }
 
-func TestSSEStream_TMO11_ErrorBodyShapes(t *testing.T) {
+func TestSSEStream_TMO12_ErrorBodyShapes(t *testing.T) {
 	cases := []struct {
 		name, body, wantCode, wantMessage string
 	}{
@@ -352,7 +352,7 @@ func TestSSEStream_TMO11_ErrorBodyShapes(t *testing.T) {
 	}
 }
 
-func TestSSEStream_TMO12_TruncatedLineIsExported(t *testing.T) {
+func TestSSEStream_TMO13_TruncatedLineIsExported(t *testing.T) {
 	srv := sseServer(t, "data: one\n\ndata: cut")
 	s, err := open(context.Background(), t, Config{}, srv.URL)
 	if err != nil {
@@ -367,7 +367,7 @@ func TestSSEStream_TMO12_TruncatedLineIsExported(t *testing.T) {
 	}
 }
 
-func TestSSEStream_TMO13_LineTooLongIsExported(t *testing.T) {
+func TestSSEStream_TMO14_LineTooLongIsExported(t *testing.T) {
 	srv := sseServer(t, "data: "+strings.Repeat("x", 2048)+"\n\n")
 	s, err := open(context.Background(), t, Config{MaxLineBytes: 1024}, srv.URL)
 	if err != nil {
@@ -381,7 +381,7 @@ func TestSSEStream_TMO13_LineTooLongIsExported(t *testing.T) {
 	}
 }
 
-func TestSSEStream_TMO14_EventLine(t *testing.T) {
+func TestSSEStream_TMO15_EventLine(t *testing.T) {
 	srv := sseServer(t, ":c\n\ndata: a\n\ndata: b\ndata: c\n\n")
 	s, err := open(context.Background(), t, Config{}, srv.URL)
 	if err != nil {
@@ -399,7 +399,7 @@ func TestSSEStream_TMO14_EventLine(t *testing.T) {
 	}
 }
 
-func TestSSEStream_TMO15_SawDone(t *testing.T) {
+func TestSSEStream_TMO16_SawDone(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
 		want       bool
@@ -424,7 +424,7 @@ func TestSSEStream_TMO15_SawDone(t *testing.T) {
 
 // A [DONE] on the line right after a data line, with no blank line between,
 // must not swallow the data before it.
-func TestSSEStream_TMO16_DataBeforeDoneIsDelivered(t *testing.T) {
+func TestSSEStream_TMO17_DataBeforeDoneIsDelivered(t *testing.T) {
 	srv := sseServer(t, "data: last\ndata: [DONE]\n\n")
 	s, err := open(context.Background(), t, Config{}, srv.URL)
 	if err != nil {

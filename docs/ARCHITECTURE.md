@@ -1,8 +1,8 @@
 # Nova — Architecture
 
-This is the target architecture. The M0 prototype at the repository root implements
-a subset of it ([`SPIKE.md`](SPIKE.md)). Where the prototype differs, the section
-says so. Why each choice was made is in [`DECISIONS.md`](DECISIONS.md).
+This is the architecture of Nova. It began as a plan that an early prototype
+([`SPIKE.md`](SPIKE.md), now historical) de-risked, and the build-out that followed is
+finished. Why each choice was made is in [`DECISIONS.md`](DECISIONS.md).
 
 ## 1. One binary, many front doors
 

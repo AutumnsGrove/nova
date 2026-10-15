@@ -97,7 +97,7 @@ wheel.
 | [`docs/BRAND.md`](docs/BRAND.md) | The two logo marks, the palette, and how to regenerate them. |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | The ecosystem survey and what we borrow from where. |
 | [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | How her-go, polaris, and ivy embed Nova. |
-| [`docs/SPIKE.md`](docs/SPIKE.md) | Historical: what the early M0 prototype proved, and its limitations. |
+| [`docs/SPIKE.md`](docs/SPIKE.md) | Historical: what the early M0 prototype proved, and where its ideas live now. |
 
 ## Name
 

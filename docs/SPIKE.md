@@ -1,101 +1,50 @@
-# Nova — M0 Spike
+# Nova: the M0 spike (historical)
 
-An early prototype of the Nova **backend** spine was built at the repository root
-to de-risk the loop, provider, and tool interfaces before writing the real plan.
-It is **exploratory**: its API is not frozen, and it does not implement the full
-target architecture. Treat it as executable documentation.
+Before the real plan was written, a small backend-only prototype was built to de-risk three interfaces: the
+agent loop, the provider, and the tool. It is **finished and superseded**. This file records what it proved
+and where each idea lives now. It is not a description of how Nova works today; for that, read
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-The prototype is backend-only. The `cmd/nova-run` in it is a throwaway line REPL; chunk C12
-deletes it and replaces it with `cmd/nova`. The TUI will live in the `tui/` package of the
-same module (chunks C15 to C17).
+## What it proved
 
-## What is present
+- **The loop works.** Request, tool calls, results, repeat, with sequential and parallel dispatch, result order
+  preserved, and a panic in one call contained to that call.
+- **The provider boundary is right.** `provider.Provider` is a single `Stream` method. An OpenAI-compatible
+  provider needed only the standard library to parse text, reasoning, tool-call deltas, usage, and OpenRouter's
+  `cost` field.
+- **Tools are easy to add.** `tool.New(Info, Func)` plus a registry; the core tools are ordinary tools, not
+  special cases.
+- **Hooks can absorb domain behaviour** without changes to the core.
+- **A scripted fake provider** makes the loop deterministic to test.
 
-```
-message/                 canonical transcript types
-provider/                Provider interface, registry, model catalog
-  openaicompat/          OpenAI chat completions + SSE + tool calls
-  openrouter/            OpenRouter preset
-tool/                    Tool interface, registry, annotations
-tools/fs/                read, write, edit, list
-tools/bash/              bash (timeout, output cap)
-agent/                   loop, Config, hooks, typed events
-cmd/nova-run/                throwaway headless CLI (single prompt or REPL)
-```
+## Where it went
 
-(No TUI is present yet; it lands in chunks C15 to C17 as the `tui/` package.)
+Everything the spike listed as missing has since been built. The interfaces it proposed became the real ones.
 
-~2,300 lines including tests. `go vet ./...`, `go build ./...`, and
-`go test ./...` are clean.
+| The spike lacked | Today |
+|---|---|
+| Sessions, compaction, steering queues | `session/` (JSONL tree), `compaction/`, and the steering and follow-up queues in `agent/` |
+| Search tools, context files | `tools/search` (`glob`, `grep`); context files, skills, and prompt templates in `config/` |
+| A TUI | `tui/` (Bubble Tea, Lipgloss, Bubbles, Glamour) |
+| Extensions | `ext/` (the host, subprocess extensions, `ext/install`) and `bundled/` |
+| Permissions | `permission/` (allow, ask, deny) |
+| Other front doors | `mode/`: `print`, `json`, `rpc`, `serve`, and the GitHub `action` |
+| Other providers | `provider/responses`, `provider/messages`, and the `openrouter` and `opencodego` presets, all on `provider/ssestream` |
 
-## What it proves
+The hook set grew and was renamed. Today it is `BeforeProviderRequest`, `TransformContext`, `BeforeTurn`,
+`MessageEnd`, `ToolCall`, `ToolResult`, `TurnEnd`, and `AgentEnd` (see `agent.Hooks`).
 
-- **The loop works.** `agent.Run` performs request → tool calls → results →
-  repeat, with `Sequential` and `Parallel` dispatch, order preservation, and
-  per-call panic recovery.
-- **The provider boundary is right.** `provider.Provider` is a single `Stream`
-  method; `openaicompat` implements it with only the standard library and parses
-  text, reasoning, tool-call deltas, usage, and OpenRouter's `cost` field.
-- **Tools are easy to add.** `tool.New(Info, Func)` plus a registry; the core
-  tools are ordinary tools, not special cases.
-- **Hooks absorb domain behavior.** `BeforeToolCall`, `AfterToolCall`,
-  `FinishTurn`, `TransformContext`, and `OnEvent` are enough to express the
-  behaviors her-go and polaris need, without core changes.
-- **A CLI is cheap.** `cmd/nova-run` wires OpenRouter + core tools into a working
-  coding agent in ~200 lines.
-- **It is testable.** A scriptable fake provider drives deterministic loop tests.
+## Limits that no longer apply
 
-## Try it
+The spike carried text-only messages, no non-streaming fallback, no token accounting, no persistence, and a
+line REPL instead of a TUI. The first of these still holds: message content is text only, and image and
+document parts are deferred (`DECISIONS.md`). The rest were fixed.
 
-```sh
-cd nova
-export OPENROUTER_API_KEY=sk-or-...
-go run ./cmd/nova-run -p "what's in this directory?"
-go test ./...
-```
+## What is left of it
 
-## Deltas from the target architecture
+`cmd/nova-run` (about 170 lines) is still in the tree. It is a throwaway headless runner from the spike and is
+not part of the product; `cmd/nova` is. It still builds. The old plan said the CLI chunk would delete it, and
+that did not happen, so removing it is open work, not something this file promises.
 
-The prototype is intentionally narrower than [`ARCHITECTURE.md`](ARCHITECTURE.md):
-
-| Area | Prototype | Target |
-|---|---|---|
-| YAML manifests | none | `tool.yaml` loader (M1) |
-| Tool annotations | present on `Info` | surfaced to a permission hook and dispatch policy |
-| Search tools | none | `glob`, `grep` (M1) |
-| Sessions | none | JSONL tree + `session.Manager` (M2) |
-| Compaction | none | summarize-and-splice (M2) |
-| Context files | none | project instructions in the system prompt (M1) |
-| TUI | line-oriented REPL | `charm.land` TUI (Bubble Tea, Lipgloss, Bubbles, Glamour) (M3) |
-| Extensions | none | `Extension` + `Host`, MCP (M4) |
-| Message content | text only | images/content parts (M4) |
-| Steering queues | none | pi-style steer/follow-up (M2) |
-| Model catalog | exists, barely used | drives model picker and cost fallback |
-| Per-run tool filtering | none | `Config.FilterTools` (M1) |
-
-## Known limitations
-
-- The message model carries text only; images and rich content parts are not
-  representable.
-- `openaicompat` assumes streaming is available; there is no non-streaming
-  fallback.
-- No token estimation or context accounting, so no compaction trigger.
-- The CLI keeps a single in-memory history; nothing persists between processes.
-- The CLI is a plain line REPL, not the crafted `charm.land` TUI planned for M3;
-  the real frontend will follow crush's design language.
-- Provider behavior is only exercised against a fake SSE server (and optionally
-  a live OpenRouter call), not against a compatibility matrix.
-
-## What to keep
-
-The interfaces in the prototype are the ones proposed in
-[`ARCHITECTURE.md`](ARCHITECTURE.md): the `Provider`/`Tool`/`agent.Config`
-shapes, the OpenAI-shaped transcript, and the hook set. When the real build
-starts, each becomes the basis for its milestone package rather than a throwaway.
-
-## How the prototype is used
-
-The chunk specs in `docs/archive/chunks/` say, per file, what to keep and what to change. Several list
-known prototype defects (the loop recovers panics only in parallel mode, `bash` leaves child
-processes running, `edit` applies edits sequentially, and others). Those defects are the reason
-the specs carry test matrices.
+The chunk specs in `docs/archive/chunks/` list the prototype defects that the test matrices were written to
+prevent (panic recovery only in parallel mode, `bash` leaving child processes running, and others).

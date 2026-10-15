@@ -1,5 +1,20 @@
 # Nova: next steps
 
+> **Archived. Do not start a session here.** This was the hand-off log for the build-out (C00 to C23); see
+> `README.md` in this directory. Start from `AGENTS.md` instead. Where each section ended up:
+>
+> - **Start here:** done. C22b (login over the protocol) was built, and so was everything after it.
+> - **Status** and **Last session:** history of the chunks. The specs in `chunks/` are the record.
+> - **Spec corrections to apply:** applied to the specs, or kept here as history.
+> - **Decisions to record:** now rows D72 to D95 in `docs/DECISIONS.md`.
+> - **Open questions for the human:** triaged. Some were settled by earlier decisions (D62, D85, D88, D89 and
+>   others). The rest were fixed afterwards and recorded as D96 to D103: the lost abort (`Agent.Start`), the
+>   `nova update` target, the login decisions, the OpenCode Go session header and routing, the `AgentEnd` and
+>   `ToolResult` hook guarantees, the `serve` write deadline, one shared SSE transport, the themed editor, and the
+>   `ext/install` and `docs` splits. None are left open. The open GitHub issues are separate TUI bugs.
+>
+> Text below this line is unedited.
+
 Start every session here: read this file and `AGENTS.md`, then do the first item under **Start here**.
 This file is edited by hand. Each agent updates it as its last step (see `AGENTS.md`); so do you.
 

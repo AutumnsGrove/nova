@@ -25,9 +25,7 @@ func (m *Model) toggleExpanded() {
 func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	key := msg.Keystroke()
 	m.splashOff = true
-	if m.quitArmed && key != "ctrl+c" {
-		m.quitArmed = false
-	}
+	m.quitArmed = m.quitArmed && key == "ctrl+c"
 	if m.overlay.Len() > 0 {
 		r, d := m.overlay.HandleKey(msg)
 		if r.Done {
@@ -68,10 +66,9 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			return m.abort()
 		}
 		if m.quitArmed && m.clock.Now().Before(m.quitAt) {
-			return tea.Batch(m.cancelAllDialogs(), tea.Quit)
+			return m.quit()
 		}
-		m.quitArmed = true
-		m.quitAt = m.clock.Now().Add(quitWindow)
+		m.quitArmed, m.quitAt = true, m.clock.Now().Add(quitWindow)
 		return m.clock.After(quitWindow)
 	case "enter":
 		return m.submit("enter")

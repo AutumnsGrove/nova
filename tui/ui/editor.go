@@ -131,6 +131,14 @@ func (m *Model) abort() tea.Cmd {
 	return m.client.Send(proto.Command{Type: proto.CmdAbort})
 }
 
+// quit asks the server to shut down and quits once it responds. Cancelling the
+// dialogs first answers every outstanding UI request, so an extension is not
+// left waiting. The shutdown response is what finally quits, so the session
+// and extensions are released before the program exits.
+func (m *Model) quit() tea.Cmd {
+	return tea.Batch(m.cancelAllDialogs(), m.client.Send(proto.Command{Type: proto.CmdShutdown}))
+}
+
 // tickInterval is the running-block refresh period.
 const tickInterval = 250 * time.Millisecond
 
@@ -206,6 +214,8 @@ func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 			return m.logoutCommand(id), true
 		}
 		return m.openLogoutPicker(), true
+	case "quit", "exit":
+		return m.quit(), true
 	}
 	return nil, false
 }

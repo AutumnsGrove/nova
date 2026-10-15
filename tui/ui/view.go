@@ -162,13 +162,14 @@ func (m *Model) builtinSegments() []string {
 // hint is the most relevant key for the current state.
 func (m *Model) hint() string {
 	switch {
+	case m.quitArmed:
+		return "ctrl+c again to quit"
 	case m.runActive:
 		return "esc abort"
 	case m.expanded:
 		return "ctrl+o collapse"
-	default:
-		return "ctrl+o expand"
 	}
+	return "ctrl+o expand"
 }
 
 // contextBar renders a context-usage bar of the given width.

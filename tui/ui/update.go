@@ -68,9 +68,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, id := range m.transcript.SetNow(m.clock.Now()) {
 			m.list.Touch(id)
 		}
-		if m.quitArmed && !m.clock.Now().Before(m.quitAt) {
-			m.quitArmed = false
-		}
+		m.quitArmed = m.quitArmed && m.clock.Now().Before(m.quitAt)
 		return m, m.scheduleTick()
 
 	case usageTickMsg:
@@ -132,6 +130,9 @@ func (m *Model) handleResponse(resp proto.Response) tea.Cmd {
 		return m.finishSend(resp)
 	case proto.CmdAbort:
 		m.finishAbort(resp)
+	case proto.CmdShutdown:
+		// The server has released the session and extensions; leave cleanly.
+		return tea.Batch(m.cancelAllDialogs(), tea.Quit)
 	case proto.CmdRunCommand:
 		if resp.OK {
 			var out struct {

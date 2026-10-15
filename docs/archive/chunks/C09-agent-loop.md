@@ -330,6 +330,8 @@ history as given, as before.
 | LPH16 | `AgentEnd` called once with the result | | once |
 | LPH17 | `OnMessage` returns an error | | run ends `error`; error returned |
 | LPH18 | hooks nil | | no panic |
+| LPH19 | `AgentEnd` on an aborted run | the run context is cancelled | called once, before `run_end`, with a live context |
+| LPH20 | `ToolResult` for a policy-blocked call | the policy denies the call | the hook still runs, with the error result |
 | LPP01 | no policy | | everything runs |
 | LPP02 | deny rule | | `error: blocked by policy: …`; tool not run; `ToolCall` hook not run |
 | LPP03 | allow rule | | runs |

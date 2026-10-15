@@ -199,3 +199,4 @@ These need an answer during implementation, not before.
    The `parallel` extension (needs a key and has a quota) is suggested, not bundled.
 4. **Image and document content parts.** The message type is text-only. Content parts
    are deferred but the session format reserves room for them.
+| D100 | Hook guarantees at the end of a call and of a run | `ToolResult` runs for every call result, including ones the permission policy or a `ToolCall` hook blocked, so an auditing or redacting hook sees all of them. `AgentEnd` runs exactly once for every run, including an aborted one, before `run_end`, under a context that is not cancelled (it keeps the hook deadline). Before this, an abort made `AgentEnd` a coin flip between a cancelled context and a finished hook. |

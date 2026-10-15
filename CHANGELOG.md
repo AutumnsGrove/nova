@@ -29,6 +29,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- The `AgentEnd` hook now runs when a run is aborted. It was skipped or raced with `run_end` because the run's own
+  context was already cancelled.
 - `nova serve` now gives every route except the event stream a 30 s write deadline, so a client that stops reading
   can no longer hold a handler open indefinitely.
 - OpenCode Go models were routed to OpenRouter by the running server, because the request carried the wire slug

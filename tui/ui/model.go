@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/textarea"
-	"charm.land/lipgloss/v2"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 
 	"github.com/AutumnsGrove/nova/auth/providerauth"

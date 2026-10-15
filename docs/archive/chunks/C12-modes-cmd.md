@@ -236,6 +236,7 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV40 | retry visible | server returns 500 then ok | `retry` event; run `done` |
 | SRV41 | usage events | | totals match the scripted usage |
 | SRV42 | thinking events | reasoning in the script | `thinking_*` with a duration |
+| SRV45 | `run_command quit` and `exit` | | aliases for `shutdown`; `get_commands` lists them |
 | PRI01 | print mode answer | scripted "42" | stdout is `42\n`; exit 0 |
 | PRI02 | stdout has only the answer | tool calls in the run | tool progress only on stderr |
 | PRI03 | `-p -` reads stdin | | prompt from stdin |

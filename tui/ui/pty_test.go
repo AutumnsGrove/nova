@@ -166,6 +166,18 @@ func TestPTY_PTY01_StartsAndQuits(t *testing.T) {
 	waitQuit(t, done)
 }
 
+// TestPTY_PTY03_QuitCommand types /quit and expects the UI to exit.
+func TestPTY_PTY03_QuitCommand(t *testing.T) {
+	requirePTY(t)
+	reader, master, done := startTUI(t, ptyServer(t, ""))
+	if _, ok := reader.waitFor("nova", 6*time.Second); !ok {
+		t.Fatal("the TUI never rendered")
+	}
+	// The first enter accepts the completion popup, the second submits.
+	master.Write([]byte("/quit\r\r"))
+	waitQuit(t, done)
+}
+
 // TestPTY_PTY02_PromptRoundTrip types a prompt and expects the reply on screen.
 func TestPTY_PTY02_PromptRoundTrip(t *testing.T) {
 	requirePTY(t)

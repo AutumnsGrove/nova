@@ -57,6 +57,24 @@ func TestHandlers_SRV32_RunCommandUnknown(t *testing.T) {
 	}
 }
 
+func TestHandlers_SRV45_RunCommandQuit(t *testing.T) {
+	for _, name := range []string{"quit", "exit"} {
+		s, _ := testServer(t)
+		resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdRunCommand, Name: name})
+		if !resp.OK {
+			t.Fatalf("run_command %s = %+v", name, resp)
+		}
+	}
+}
+
+func TestHandlers_SRV45_GetCommandsListsQuit(t *testing.T) {
+	s, _ := testServer(t)
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdGetCommands})
+	if !resp.OK || !bytesContain(resp.Data, "\"quit\"") || !bytesContain(resp.Data, "\"exit\"") {
+		t.Fatalf("get_commands = %+v data=%s", resp, resp.Data)
+	}
+}
+
 func TestHandlers_SRV19_CompactNothing(t *testing.T) {
 	s, _ := testServer(t)
 	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdCompact})

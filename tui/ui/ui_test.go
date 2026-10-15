@@ -297,6 +297,31 @@ func TestUI_UIM13_PanicInViewRecovered(t *testing.T) {
 	}
 }
 
+func TestUI_UIM14_ShutdownQuits(t *testing.T) {
+	m, f, _ := newModel(t)
+	pushUI(m, proto.UIRequest{Type: proto.FrameUIRequest, ID: "a", Method: "select",
+		Options: []proto.UIOption{{ID: "x", Label: "X"}}})
+	resp := client.ResponseMsg{Response: proto.Response{
+		Type: proto.FrameResponse, Command: proto.CmdShutdown, OK: true}}
+	msg := do(update(m, resp))
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("shutdown response returned %T, want a batch", msg)
+	}
+	quit := false
+	for _, c := range batch {
+		if reflect.DeepEqual(do(c), tea.Quit()) {
+			quit = true
+		}
+	}
+	if !quit {
+		t.Fatal("shutdown response did not quit")
+	}
+	if len(f.answers) != 1 || !f.answers[0].Cancelled {
+		t.Fatalf("shutdown did not cancel the dialog: %+v", f.answers)
+	}
+}
+
 func intp(v int) *int { return &v }
 
 // --- EDI ---
@@ -435,6 +460,20 @@ func TestUI_EDI13_NoEditorNotice(t *testing.T) {
 	}
 }
 
+func TestUI_EDI14_QuitCommand(t *testing.T) {
+	for _, name := range []string{"quit", "exit"} {
+		m, f, _ := newModel(t)
+		m.setEditorText("/" + name)
+		execAll(update(m, enterKey))
+		if !sent(f, proto.CmdShutdown) {
+			t.Fatalf("/%s did not send shutdown: %+v", name, f.sends)
+		}
+		if m.editor.Value() != "" {
+			t.Fatalf("/%s left text in the editor: %q", name, m.editor.Value())
+		}
+	}
+}
+
 // --- KEY ---
 
 func TestUI_KEY01_EscAbortsAndRestores(t *testing.T) {
@@ -485,15 +524,20 @@ func TestUI_KEY04_CtrlCAbortsRun(t *testing.T) {
 }
 
 func TestUI_KEY05_CtrlCTwiceQuits(t *testing.T) {
-	m, _, clk := newModel(t)
+	m, f, clk := newModel(t)
 	update(m, ctrlKey('c'))
 	if !m.quitArmed {
 		t.Fatal("quit not armed")
 	}
 	clk.now = clk.now.Add(time.Second)
-	cmd := update(m, ctrlKey('c'))
-	if !reflect.DeepEqual(do(cmd), tea.Quit()) {
-		t.Fatalf("second ctrl+c did not quit: %T", do(cmd))
+	execAll(update(m, ctrlKey('c')))
+	if !sent(f, proto.CmdShutdown) {
+		t.Fatalf("second ctrl+c did not send shutdown: %+v", f.sends)
+	}
+	resp := client.ResponseMsg{Response: proto.Response{
+		Type: proto.FrameResponse, Command: proto.CmdShutdown, OK: true}}
+	if !reflect.DeepEqual(do(update(m, resp)), tea.Quit()) {
+		t.Fatal("shutdown response did not quit")
 	}
 }
 
@@ -599,6 +643,17 @@ func TestUI_KEY12_UpInMultiLine(t *testing.T) {
 	update(m, upKey) // cursor on the last line: moves the cursor, not history
 	if m.editor.Value() != "a\nb" {
 		t.Fatalf("history replaced a multi-line edit: %q", m.editor.Value())
+	}
+}
+
+func TestUI_KEY14_QuitArmedHint(t *testing.T) {
+	m, _, _ := newModel(t)
+	update(m, ctrlKey('c'))
+	if !m.quitArmed {
+		t.Fatal("quit not armed")
+	}
+	if !strings.Contains(m.footer(), "ctrl+c again to quit") {
+		t.Fatalf("footer %q missing the quit hint", m.footer())
 	}
 }
 

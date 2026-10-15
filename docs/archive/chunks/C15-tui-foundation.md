@@ -338,11 +338,12 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | EDI11 | large paste | 20,000 characters | shown as `[pasted …]`; full text sent |
 | EDI12 | `ctrl+g` | `$EDITOR` set to a script | text replaced on return |
 | EDI13 | `ctrl+g` with no `$EDITOR` | | notice |
+| EDI14 | `/quit` and `/exit` | idle | `shutdown` sent; the editor cleared |
 | KEY01 | esc aborts a run | | `abort`; queued messages returned to the editor |
 | KEY02 | esc with no run | | closes completion only |
 | KEY03 | ctrl+c clears a non-empty editor | | cleared |
 | KEY04 | ctrl+c aborts a run | empty editor | `abort` |
-| KEY05 | ctrl+c twice quits | idle; fake clock within 2 s | quit |
+| KEY05 | ctrl+c twice quits | idle; fake clock within 2 s | `shutdown` sent; quits on the response |
 | KEY06 | second ctrl+c after 3 s | | does not quit; re-arms |
 | KEY07 | other key disarms quit | | not armed |
 | KEY08 | pgup and pgdn | | transcript scrolls; following toggles |
@@ -351,6 +352,7 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | KEY11 | history bounds and duplicates | 600 inputs; same input twice | 500 kept; duplicate skipped |
 | KEY12 | up inside a multi-line editor | cursor not on the first line | moves the cursor, not history |
 | KEY13 | unavailable keys | `ctrl+l` | no panic |
+| KEY14 | quit armed shows a hint | first `ctrl+c` | footer says `ctrl+c again to quit` |
 | CPL01 | `/` opens commands | | list from `get_commands` |
 | CPL02 | filter by prefix then substring | | ordered |
 | CPL03 | tab accepts | | inserted |
@@ -372,6 +374,7 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | UIM11 | `session_changed` | | transcript reloaded via `get_messages` |
 | UIM12 | `state_changed` | | footer and header update |
 | UIM13 | panic in `View` | injected | recovered; terminal restored |
+| UIM14 | `shutdown` response | `/quit`; response arrives | dialogs cancelled; `tea.Quit` returned |
 | RUN01 | refuses without a terminal | piped stdin | the documented error |
 | RUN02 | `NO_COLOR` | | mono theme and no colour escapes in the view |
 | RUN03 | log file used | | log written; nothing on stdout or stderr |
@@ -388,6 +391,7 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | PRF02 | token stream | 1,000 deltas | under 1 ms per delta of render work |
 | PTY01 | the TUI starts and quits | a pseudo-terminal; skipped unless `NOVA_PTY=1` | starts; `ctrl+c` twice exits 0 |
 | PTY02 | a prompt round trip | against `testkit.Server` | the reply appears on screen |
+| PTY03 | `/quit` exits cleanly | a pseudo-terminal; skipped unless `NOVA_PTY=1` | exits 0 |
 
 ## Fuzz and property tests
 

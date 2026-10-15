@@ -152,7 +152,9 @@ func main() {
             return c.UI.Notify("Hello from an extension", sdk.Info)
         })
 
-        h.On("turn_end", func(e *sdk.TurnEnd) (*sdk.TurnDecision, error) { return nil, nil })
+        // Every hook has the same shape: decode the event you care about with
+        // e.Decode(&v), and return nil to leave the loop alone or a *sdk.HookDecision.
+        h.On("turn_end", func(e *sdk.Hook) (*sdk.HookDecision, error) { return nil, nil })
         return nil
     })
 }

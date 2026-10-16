@@ -7,22 +7,24 @@ import (
 	"sync"
 
 	"charm.land/glamour/v2"
+	"charm.land/glamour/v2/ansi"
+	"charm.land/glamour/v2/styles"
 	"github.com/charmbracelet/colorprofile"
 
-	"github.com/AutumnsGrove/nova/tui/styles"
+	novastyles "github.com/AutumnsGrove/nova/tui/styles"
 )
 
 // glamourRenderer renders markdown with glamour, caching one term renderer per
 // width because wrapping is fixed at construction.
 type glamourRenderer struct {
-	st    styles.Styles
+	st    novastyles.Styles
 	mu    sync.Mutex
 	cache map[int]*glamour.TermRenderer
 }
 
 // NewGlamourRenderer returns the production markdown renderer. It degrades to
 // plain text styling when the profile has no colour or the theme is Mono.
-func NewGlamourRenderer(st styles.Styles) Renderer {
+func NewGlamourRenderer(st novastyles.Styles) Renderer {
 	return &glamourRenderer{st: st, cache: map[int]*glamour.TermRenderer{}}
 }
 
@@ -47,17 +49,30 @@ func (g *glamourRenderer) renderer(width int) *glamour.TermRenderer {
 	if tr, ok := g.cache[width]; ok {
 		return tr
 	}
-	style := "dark"
-	switch {
-	case g.st.Profile <= colorprofile.ASCII || g.st.Theme.Name == "mono":
-		style = "notty"
-	case g.st.Theme.Name == "nova-light":
-		style = "light"
-	}
-	tr, err := glamour.NewTermRenderer(glamour.WithStandardStyle(style), glamour.WithWordWrap(width))
+	cfg := baseStyle(g.st)
+	// The transcript already spaces blocks, and it renders the open tail
+	// without glamour. Drop glamour's document padding (a two-space margin and
+	// blank lines around it) so a closed block is flush and does not jump when
+	// the streaming tail becomes one.
+	cfg.Document.Margin = nil
+	cfg.Document.BlockPrefix = ""
+	cfg.Document.BlockSuffix = ""
+	tr, err := glamour.NewTermRenderer(glamour.WithStyles(cfg), glamour.WithWordWrap(width))
 	if err != nil {
 		return nil
 	}
 	g.cache[width] = tr
 	return tr
+}
+
+// baseStyle picks the glamour palette for the theme and profile.
+func baseStyle(st novastyles.Styles) ansi.StyleConfig {
+	switch {
+	case st.Profile <= colorprofile.ASCII || st.Theme.Name == "mono":
+		return styles.NoTTYStyleConfig
+	case st.Theme.Name == "nova-light":
+		return styles.LightStyleConfig
+	default:
+		return styles.DarkStyleConfig
+	}
 }

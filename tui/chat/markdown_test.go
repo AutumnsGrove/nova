@@ -226,6 +226,20 @@ func TestMarkdown_MDK14_PassThrough(t *testing.T) {
 	}
 }
 
+// MDK15: consecutive blocks are separated by exactly one blank line. Glamour's
+// document style prefixes every render with a newline, which the join must not
+// turn into a second blank line.
+func TestMarkdown_MDK15_SingleBlankLineBetweenBlocks(t *testing.T) {
+	r := NewGlamourRenderer(styles.Build(styles.Dark(), colorprofile.TrueColor))
+	m := newMarkdown(r)
+	m.setWidth(60)
+	m.append("# Title\n\nfirst paragraph\n\n- a\n- b\n\n```go\npackage main\n```\n\n## Second\n\nsecond paragraph")
+	got := m.String()
+	if strings.Contains(got, "\n\n\n") {
+		t.Fatalf("blocks are separated by more than one blank line:\n%q", got)
+	}
+}
+
 // TestGlamourRenderer_RendersMarkdown is a smoke test for the production
 // renderer: it renders through glamour and never exceeds the width.
 func TestGlamourRenderer_RendersMarkdown(t *testing.T) {

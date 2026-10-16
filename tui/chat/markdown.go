@@ -74,7 +74,29 @@ func (m *markdown) String() string {
 	if tail := strings.TrimRight(m.pending, "\n"); strings.TrimSpace(tail) != "" {
 		parts = append(parts, cheap(tail, m.width))
 	}
-	return strings.Join(parts, "\n\n")
+	// Glamour's document style prefixes and suffixes every block with a blank,
+	// margin-only line. Trim those edges so the join below leaves exactly one
+	// blank line between blocks instead of stacking them.
+	shown := parts[:0]
+	for _, p := range parts {
+		if p = trimBlankEdges(p); p != "" {
+			shown = append(shown, p)
+		}
+	}
+	return strings.Join(shown, "\n\n")
+}
+
+// trimBlankEdges drops leading and trailing lines that hold no visible text
+// (whitespace and ANSI only), leaving inner blank lines untouched.
+func trimBlankEdges(s string) string {
+	lines := strings.Split(s, "\n")
+	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[0])) == "" {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // render renders one closed block through the Renderer.

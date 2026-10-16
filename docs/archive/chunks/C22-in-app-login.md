@@ -2,7 +2,7 @@
 chunk: C22
 title: "In-app login: provider picker, OAuth, and API keys"
 packages: [./auth, ./auth/providerauth, ./auth/opencode, ./mode/providers, ./tui/dialog, ./tui/ui]
-budgets: { ./auth: 560, ./auth/providerauth: 400, ./auth/opencode: 760, ./mode/providers: 400, ./tui/dialog: 2050, ./tui/ui: 2350 }
+budgets: { ./auth: 560, ./auth/providerauth: 400, ./auth/opencode: 760, ./mode/providers: 400, ./tui/dialog: 2050, ./tui/ui: 2380 }
 depends: [C17, C20]
 ---
 

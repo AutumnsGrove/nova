@@ -2,7 +2,7 @@
 chunk: C15
 title: "TUI foundation"
 packages: [./tui/layout, ./tui/list, ./tui/styles, ./tui/client, ./tui/chat, ./tui/ui]
-budgets: { ./tui/layout: 150, ./tui/list: 350, ./tui/styles: 450, ./tui/client: 200, ./tui/chat: 1300, ./tui/ui: 2350 }
+budgets: { ./tui/layout: 150, ./tui/list: 350, ./tui/styles: 450, ./tui/client: 200, ./tui/chat: 1300, ./tui/ui: 2380 }
 depends: [C12]
 ---
 
@@ -283,6 +283,10 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | VLS12 | item taller than the viewport | | scrollable through |
 | VLS13 | items with zero lines | | skipped without error |
 | VLS14 | benchmark: append to 10,000 items | | under 1 ms per append (benchmark, not a hard test) |
+| VLS15 | `Sync` preserves the scroll position | scrolled up; new item appended | view unchanged; not following |
+| VLS16 | `Sync` keeps following | at the tail; new item | tail shown; following |
+| VLS17 | `Sync` clamps when items shrink | scrolled into a removed item | valid view; no panic |
+| VLS18 | `Sync` reuses cached renders | same items | no re-render |
 | STY01 | dark palette | `Build(Dark(), TrueColor)` | brand colours used |
 | STY02 | no colour literals outside themes | code inspection test (grep) | none in `styles.go` |
 | STY03 | mono emits no colour | render a sample | no colour escapes |
@@ -353,6 +357,9 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | KEY12 | up inside a multi-line editor | cursor not on the first line | moves the cursor, not history |
 | KEY13 | unavailable keys | `ctrl+l` | no panic |
 | KEY14 | quit armed shows a hint | first `ctrl+c` | footer says `ctrl+c again to quit` |
+| SCR01 | mouse wheel scrolls the transcript | wheel up then down | following off; view moves |
+| SCR02 | scrolling up while streaming stays put | `pgup`, then an event | view unchanged |
+| SCR03 | home and end | | top stops following; end resumes |
 | CPL01 | `/` opens commands | | list from `get_commands` |
 | CPL02 | filter by prefix then substring | | ordered |
 | CPL03 | tab accepts | | inserted |

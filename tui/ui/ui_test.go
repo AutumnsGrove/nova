@@ -5,6 +5,7 @@ package ui
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -662,6 +663,58 @@ func TestUI_KEY13_UnavailableKey(t *testing.T) {
 	update(m, tea.KeyPressMsg{Code: tea.KeyF12})
 	if m.notice != "" || m.editor.Value() != "" {
 		t.Fatalf("an unbound key changed state: notice=%q editor=%q", m.notice, m.editor.Value())
+	}
+}
+
+// --- SCR ---
+
+func TestUI_SCR01_WheelScrolls(t *testing.T) {
+	m, _, _ := newModel(t)
+	for i := 0; i < 100; i++ {
+		m.transcript.AddUser(fmt.Sprintf("line %d", i), nil)
+	}
+	m.syncList()
+	update(m, tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	if m.list.Following() {
+		t.Fatal("wheel up did not stop following")
+	}
+	up := m.list.View()
+	update(m, tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+	if m.list.View() == up {
+		t.Fatal("wheel down did not move the view")
+	}
+}
+
+func TestUI_SCR02_ScrollUpWhileStreamingStaysPut(t *testing.T) {
+	m, _, _ := newModel(t)
+	for i := 0; i < 100; i++ {
+		m.transcript.AddUser("line", nil)
+	}
+	m.syncList()
+	update(m, pgupKey)
+	if m.list.Following() {
+		t.Fatal("pgup did not stop following")
+	}
+	frozen := m.list.View()
+	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventError, Error: &proto.Error{Message: "boom"}}})
+	if got := m.list.View(); got != frozen {
+		t.Fatal("a streaming event moved the view while scrolled up")
+	}
+}
+
+func TestUI_SCR03_HomeEnd(t *testing.T) {
+	m, _, _ := newModel(t)
+	for i := 0; i < 100; i++ {
+		m.transcript.AddUser("line", nil)
+	}
+	m.syncList()
+	update(m, tea.KeyPressMsg{Code: tea.KeyHome})
+	if m.list.Following() {
+		t.Fatal("home did not stop following")
+	}
+	update(m, tea.KeyPressMsg{Code: tea.KeyEnd})
+	if !m.list.Following() {
+		t.Fatal("end did not resume following")
 	}
 }
 

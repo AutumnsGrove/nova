@@ -257,6 +257,78 @@ func TestList_VLS13_ZeroLineItems(t *testing.T) {
 	}
 }
 
+func TestList_VLS15_SyncPreservesPosition(t *testing.T) {
+	l := New()
+	l.Resize(20, 3)
+	items := make([]Item, 10)
+	for i := range items {
+		items[i] = oneLine("item"+string(rune('a'+i)), "line"+string(rune('0'+i)))
+	}
+	l.SetItems(items)
+	l.ScrollBy(-3)
+	if l.Following() {
+		t.Fatal("scrolling up left Following true")
+	}
+	frozen := strings.Join(viewLines(t, l), "|")
+	l.Sync(append(items, oneLine("new", "lineZ")))
+	if l.Following() {
+		t.Fatal("Sync turned following back on")
+	}
+	if got := strings.Join(viewLines(t, l), "|"); got != frozen {
+		t.Fatalf("view moved after Sync: %q != %q", got, frozen)
+	}
+}
+
+func TestList_VLS16_SyncKeepsFollowing(t *testing.T) {
+	l := New()
+	l.Resize(20, 3)
+	items := make([]Item, 5)
+	for i := range items {
+		items[i] = oneLine("item"+string(rune('a'+i)), "line"+string(rune('0'+i)))
+	}
+	l.SetItems(items)
+	l.Sync(append(items, oneLine("new", "lineZ")))
+	if !l.Following() {
+		t.Fatal("Sync stopped following")
+	}
+	got := viewLines(t, l)
+	if last := got[len(got)-1]; last != "lineZ" {
+		t.Fatalf("new content not shown after Sync: %v", got)
+	}
+}
+
+func TestList_VLS17_SyncClampsWhenShrunk(t *testing.T) {
+	l := New()
+	l.Resize(20, 3)
+	items := make([]Item, 10)
+	for i := range items {
+		items[i] = oneLine("item"+string(rune('a'+i)), "line"+string(rune('0'+i)))
+	}
+	l.SetItems(items)
+	l.ScrollBy(-4)
+	l.Sync(items[:2])
+	if got := viewLines(t, l); len(got) != 3 {
+		t.Fatalf("view has %d lines, want 3: %v", len(got), got)
+	}
+}
+
+func TestList_VLS18_SyncReusesCache(t *testing.T) {
+	l := New()
+	l.Resize(40, 5)
+	items := make([]Item, 20)
+	for i := range items {
+		items[i] = oneLine("item"+string(rune('a'+i)), "row")
+	}
+	l.SetItems(items)
+	l.View()
+	before := l.RenderCount()
+	l.Sync(items)
+	l.View()
+	if got := l.RenderCount() - before; got != 0 {
+		t.Fatalf("Sync re-rendered %d items, want 0", got)
+	}
+}
+
 // BenchmarkVLS14_Append measures the cost of growing a large list.
 func BenchmarkList_VLS14_Append(b *testing.B) {
 	l := New()

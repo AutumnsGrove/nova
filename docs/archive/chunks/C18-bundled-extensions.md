@@ -202,7 +202,8 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
     that must finish the task and report concisely, and a **restricted tool set**: the requested `tools` that exist in the parent
     registry, defaulting to the read-only tools (`read`, `list`, `glob`, `grep`, `web_fetch`). Unknown names are an error result.
     `subagent` itself is **not** available to the child (maximum depth 1; `Config` may raise it, to at most 3). `max_turns`
-    defaults to 15, at most 50.
+    is optional, with **no default and no cap**: unset means the child runs until it finishes, and a value the caller passes is
+    used as-is.
 23. The child inherits the parent's permission policy and approval path; an `ask` from the child reaches the user with the reason
     prefixed `[subagent]`. The parent's `tool_call` and `tool_result` hooks apply to the child's calls (so a block hook guards
     sub-agents too); its other hooks do not.
@@ -327,7 +328,7 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 | SUB04 | unknown tool name | | error result |
 | SUB05 | `subagent` not offered to the child | | absent |
 | SUB06 | depth limit | config depth 2 | one nested level allowed; a third refused |
-| SUB07 | `max_turns` default and cap | none, 500 | 15; 50 |
+| SUB07 | `max_turns` optional, no default or cap | none, 500 | 0; 500 passed straight through |
 | SUB08 | child hits max turns | | answer with an exhausted note |
 | SUB09 | child provider error | | error result |
 | SUB10 | policy inherited | child calls a denied tool | denied |

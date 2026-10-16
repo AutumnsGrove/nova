@@ -33,7 +33,7 @@ type Options struct {
 	Out                                     io.Writer
 	State                                   *State
 	After                                   func(time.Duration) <-chan time.Time // nil means time.After
-	WallClock                               time.Duration
+	WallClock                               time.Duration                        // 0 means no limit; the CLI and action.yml default to 15m
 	Sleep                                   func(context.Context, time.Duration) error
 }
 
@@ -229,9 +229,6 @@ func (o *Options) resolve() error {
 	}
 	if o.DiffMaxBytes <= 0 {
 		o.DiffMaxBytes = 200 << 10
-	}
-	if o.WallClock <= 0 {
-		o.WallClock = 15 * time.Minute
 	}
 	return nil
 }

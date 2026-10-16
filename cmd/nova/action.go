@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -14,6 +15,7 @@ func actionReview(stdout io.Writer, exit *int) *cobra.Command {
 	var model, token string
 	var maxComments int
 	var maxCost float64
+	var wallClock time.Duration
 	var dryRun, jsonOut bool
 	cmd := &cobra.Command{
 		Use:   "action review",
@@ -22,7 +24,8 @@ func actionReview(stdout io.Writer, exit *int) *cobra.Command {
 			state := action.NewState(maxComments)
 			opt := action.Options{
 				Model: model, MaxComments: maxComments, MaxCostUSD: maxCost,
-				DryRun: dryRun, JSON: jsonOut, Token: token,
+				WallClock: wallClock,
+				DryRun:    dryRun, JSON: jsonOut, Token: token,
 				HasKey: mode.HasProviderKey(""), Out: stdout, State: state,
 			}
 			if !opt.HasKey {
@@ -30,7 +33,7 @@ func actionReview(stdout io.Writer, exit *int) *cobra.Command {
 				return nil
 			}
 			s, err := mode.Build(mode.BuildOptions{
-				Mode: "action", Version: version, Model: model, MaxTurns: 30, DenyAll: true,
+				Mode: "action", Version: version, Model: model, DenyAll: true,
 				ExtraTools: state.Tools(), SystemPrompt: action.Prompt,
 				Tools: []string{"read", "list", "glob", "grep", "review_comment", "review_summary"},
 			})
@@ -45,7 +48,8 @@ func actionReview(stdout io.Writer, exit *int) *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&model, "model", "", "model id")
 	f.IntVar(&maxComments, "max-comments", 15, "maximum inline comments")
-	f.Float64Var(&maxCost, "max-cost", 1.00, "maximum cost in USD (0 means unlimited)")
+	f.Float64Var(&maxCost, "max-cost", 0, "maximum cost in USD (0 means unlimited)")
+	f.DurationVar(&wallClock, "wall-clock", 15*time.Minute, "wall-clock limit (0 means no limit)")
 	f.BoolVar(&dryRun, "dry-run", false, "do not post the review")
 	f.BoolVar(&jsonOut, "json", false, "print the report as JSON")
 	f.StringVar(&token, "token", "", "GitHub token (or GITHUB_TOKEN)")

@@ -11,7 +11,11 @@ inputs:
   max-cost:
     description: Maximum model cost in USD (0 means unlimited).
     required: false
-    default: "1.00"
+    default: "0"
+  wall-clock:
+    description: Wall-clock limit for the review, e.g. 15m or 30s (0 means no limit).
+    required: false
+    default: "15m"
   openrouter-api-key:
     description: OpenRouter API key. Omit on pull requests from forks.
     required: false
@@ -38,3 +42,4 @@ runs:
         --model "${{ inputs.model }}"
         --max-comments "${{ inputs.max-comments }}"
         --max-cost "${{ inputs.max-cost }}"
+        --wall-clock "${{ inputs.wall-clock }}"

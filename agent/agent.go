@@ -123,7 +123,7 @@ type Config struct {
 	ToolData  any
 	SessionID string
 
-	MaxTurns        int               // default 25
+	MaxTurns        int               // 0 or negative means unlimited; >0 caps provider requests
 	ToolExecution   ToolExecutionMode // default Parallel
 	MaxParallel     int               // default 8
 	Temperature     *float64

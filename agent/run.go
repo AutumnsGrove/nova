@@ -12,9 +12,6 @@ import (
 	"github.com/AutumnsGrove/nova/tool"
 )
 
-// defaultMaxTurns bounds provider requests when Config.MaxTurns is unset.
-const defaultMaxTurns = 25
-
 // run holds the mutable state of one Agent.Run call.
 type run struct {
 	a        *Agent
@@ -131,14 +128,20 @@ func (r *run) execute(history []message.Message, prompt *message.Message) (res *
 	return r.loop()
 }
 
-// loop runs turns until the model answers, the budget runs out, the context is
-// cancelled, or the provider fails.
+// loop runs turns until the model answers, the context is cancelled, the
+// provider fails, or an explicitly set budget runs out. With no budget the loop
+// is unbounded; the abort path is what stops a runaway run.
 func (r *run) loop() (*Result, error) {
 	maxTurns := r.cfg.MaxTurns
-	if maxTurns <= 0 {
-		maxTurns = defaultMaxTurns
-	}
-	for r.turn = 0; r.turn < maxTurns; r.turn++ {
+	for r.turn = 0; ; r.turn++ {
+		// A budget is only in force when a caller set one; zero and negative
+		// both mean unlimited.
+		if maxTurns > 0 && r.turn >= maxTurns {
+			res := r.result("exhausted")
+			res.Exhausted = true
+			res.Turns = maxTurns
+			return r.finish(res, nil)
+		}
 		if err := r.ctx.Err(); err != nil {
 			return r.finish(r.result("aborted"), err)
 		}
@@ -208,11 +211,6 @@ func (r *run) loop() (*Result, error) {
 			return r.finish(r.result("done"), nil)
 		}
 	}
-
-	res := r.result("exhausted")
-	res.Exhausted = true
-	res.Turns = maxTurns
-	return r.finish(res, nil)
 }
 
 // dispatchTools runs the assistant message's tool calls and appends one result

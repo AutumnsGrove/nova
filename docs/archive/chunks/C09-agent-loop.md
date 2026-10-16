@@ -68,7 +68,7 @@ type Config struct {
     ToolData any
     SessionID string
 
-    MaxTurns        int               // default 25
+    MaxTurns        int               // 0 or negative means unlimited; >0 caps requests
     ToolExecution   ToolExecutionMode // Parallel (default) or Sequential
     MaxParallel     int               // default 8
     Temperature     *float64
@@ -168,7 +168,8 @@ history as given, as before.
    an error before any event is emitted.
 2. The working transcript is `[system?] + history + prompt`. The prompt is a user message; it
    is passed to `OnMessage` before the first request.
-3. `MaxTurns` counts provider requests (default 25). Reaching it ends the run with
+3. `MaxTurns` counts provider requests and is off by default: zero or negative means unlimited.
+   When a caller sets a positive budget, reaching it ends the run with
    `Reason: "exhausted"`, `Exhausted: true`, and **no error**.
 4. Exactly one `run_start` and exactly one `run_end` are emitted per run, including for
    errors, aborts, and exhaustion. Nothing is emitted after `run_end`. `Seq` is strictly
@@ -284,7 +285,7 @@ history as given, as before.
 | LPE10 | `Emit` nil | | no panic |
 | LPE11 | no tools registered, model calls one | | error result `unknown tool`; run continues |
 | LPE12 | `MaxTurns` reached | model always calls a tool, max 3 | 3 turns; `Exhausted`; reason exhausted; **no error** |
-| LPE13 | `MaxTurns` zero and negative | | default 25 |
+| LPE13 | `MaxTurns` zero and negative | | unlimited; runs past 100 turns and ends `done` |
 | LPE14 | `MaxTurns` exactly enough | final answer on turn 3 of max 3 | done, not exhausted |
 | LPE15 | missing provider or model | | error before any event |
 | LPE16 | `Run` while running | second call | `ErrBusy` |

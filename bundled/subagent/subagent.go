@@ -22,8 +22,6 @@ import (
 
 // Defaults and limits.
 const (
-	defaultTurns  = 15
-	maxTurnsCap   = 50
 	maxDepthCap   = 3
 	resultCap     = 20000
 	defaultSystem = "You are a sub-agent. Finish the task you are given and report the result concisely."
@@ -125,13 +123,8 @@ func (e *Extension) run(ctx context.Context, args json.RawMessage, tctx *tool.Co
 	if e.env == nil || e.env.Spawn == nil {
 		return tool.Errorf("no sub-agent runner is available"), nil
 	}
-	maxTurns := in.MaxTurns
-	if maxTurns <= 0 {
-		maxTurns = defaultTurns
-	}
-	if maxTurns > maxTurnsCap {
-		maxTurns = maxTurnsCap
-	}
+	// max_turns is optional: no default and no cap. A caller that wants a bound
+	// passes one, and 0 means the child runs until it finishes.
 	select {
 	case e.sem <- struct{}{}:
 	case <-ctx.Done():
@@ -145,7 +138,7 @@ func (e *Extension) run(ctx context.Context, args json.RawMessage, tctx *tool.Co
 		Task:     task,
 		Tools:    tools,
 		Model:    in.Model,
-		MaxTurns: maxTurns,
+		MaxTurns: in.MaxTurns,
 		Depth:    depth,
 		OnEvent: func(ev proto.Event) {
 			if ev.Type == proto.EventToolStart || ev.Type == proto.EventToolCall {

@@ -148,7 +148,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 	flags.StringVar(&toolsFlag, "tools", "", "comma-separated tools to enable")
 	flags.BoolVar(&noTools, "no-tools", false, "enable no tools")
 	flags.StringVar(&cwdFlag, "cwd", "", "working directory")
-	flags.IntVar(&maxTurns, "max-turns", 0, "maximum agent turns")
+	flags.IntVar(&maxTurns, "max-turns", 0, "optional maximum agent turns (0 means unlimited)")
 	flags.IntVar(&contextLimit, "context-limit", 0, "context token limit")
 	flags.BoolVar(&yes, "yes", false, "auto-approve permission prompts for this run")
 	root.PersistentFlags().BoolVar(&debugFlag, "debug", false, "write routine tracing to the debug log")

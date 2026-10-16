@@ -69,8 +69,9 @@ type Options struct {
     APIURL      string   // default https://api.github.com
     Model       string
     MaxComments int      // default 15
-    MaxCostUSD  float64  // default 1.00; 0 means unlimited
+    MaxCostUSD  float64  // 0 means unlimited
     DiffMaxBytes int     // default 200 KiB
+    WallClock   time.Duration // 0 means no limit; the CLI defaults it to 15m
     DryRun      bool
     Out         io.Writer
 }
@@ -172,11 +173,14 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
     Otherwise it is rejected with an explanation (`line 120 is not part of the diff; comment on a
     changed line or put this in the summary`). Duplicate `(path, line, body)` is rejected. Beyond
     `MaxComments` accepted comments the tool returns an error asking the model to prioritise.
-22. **Cost cap.** The review run stops as soon as the usage ledger exceeds `MaxCostUSD`
-    (`BeforeTurn` returns a cap error). The review is then marked `Partial` and what was collected is
-    still posted, with a note in the summary.
-23. **Limits.** The run uses at most `MaxTurns` (default 30) and a wall-clock limit of 15 minutes.
-    Hitting either is `Partial`.
+22. **Cost cap.** A run stops when the usage ledger exceeds a configured `MaxCostUSD`
+    (`BeforeTurn` returns a cap error). The cap is off by default (`0` means unlimited). The review is
+    then marked `Partial` and what was collected is still posted, with a note in the summary.
+23. **Limits.** The library sets **no turn cap**: a review runs until the model finishes or a real
+    error ends it. A wall-clock limit may be configured through `Options.WallClock`; `0` means no
+    limit, and the CLI and `action.yml` default it to 15 minutes (the one place a default limit
+    lives, because running the Action at all is the explicit opt-in to an unattended job). Hitting a
+    configured wall clock is `Partial`.
 
 ### Action: posting
 
@@ -203,7 +207,7 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 
 ### action.yml
 
-30. A composite action with inputs `model`, `max-comments`, `max-cost`, `openrouter-api-key`,
+30. A composite action with inputs `model`, `max-comments`, `max-cost`, `wall-clock`, `openrouter-api-key`,
     `github-token`; steps: set up Go, install Nova with `go install -tags notui
     github.com/AutumnsGrove/nova/cmd/nova@${{ github.action_ref }}`, run `nova action review`. The
     documented minimal workflow uses `on: pull_request`, `permissions: {contents: read,
@@ -286,8 +290,8 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | RVW05 | no comments and no summary | | nothing posted; notice |
 | RVW06 | summary only | | posted as a body-only review |
 | RVW07 | cost cap | `MaxCostUSD` tiny | stops; `Partial`; posted with a note |
-| RVW08 | turn limit | | `Partial` |
-| RVW09 | wall-clock limit | fake clock | `Partial` |
+| RVW08 | no turn cap | 35 turns | runs past the old bound; `done`, not `Partial` |
+| RVW09 | wall clock | fake clock, and `0` | `Partial` when configured; no timer armed when `0` |
 | RVW10 | `422` on the review | | retried once with comments in the body |
 | RVW11 | `422` twice | | error exit 1; report printed |
 | RVW12 | re-run | an earlier marked review with the same comment | not repeated |

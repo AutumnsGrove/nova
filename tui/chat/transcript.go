@@ -298,18 +298,13 @@ func (t *Transcript) Apply(e proto.Event) []string {
 		return changed
 
 	case proto.EventRunEnd:
-		if e.Reason == "aborted" || e.Reason == "error" {
-			text, kind := "run aborted", "muted"
-			if e.Reason == "error" {
-				text, kind = "run error", "error"
-				if e.Error != nil {
-					text = "run error: " + e.Error.Message
-				}
-			}
-			li := &lineItem{base: &base{id: t.nextID("run")}, st: t.st, text: text, kind: kind}
-			t.append(li)
-			return []string{li.id}
+		text, kind := runEndLine(e)
+		if text == "" {
+			return nil
 		}
+		li := &lineItem{base: &base{id: t.nextID("run")}, st: t.st, text: text, kind: kind}
+		t.append(li)
+		return []string{li.id}
 
 	case proto.EventQueueUpdate:
 		var changed []string
@@ -322,6 +317,30 @@ func (t *Transcript) Apply(e proto.Event) []string {
 		return changed
 	}
 	return nil
+}
+
+// runEndLine returns the transcript line for a run_end reason. A normal end is
+// empty, and therefore silent; every other reason, including one added later,
+// gets a labelled line so a run never stops without a trace.
+func runEndLine(e proto.Event) (text, kind string) {
+	switch e.Reason {
+	case "", "done":
+		return "", ""
+	case "aborted":
+		return "run aborted", "muted"
+	case "error":
+		if e.Error != nil {
+			return "run error: " + e.Error.Message, "error"
+		}
+		return "run error", "error"
+	case "exhausted":
+		if e.Turn != nil {
+			return fmt.Sprintf("run stopped: turn budget reached (%d)", *e.Turn), "muted"
+		}
+		return "run stopped: turn budget reached", "muted"
+	default:
+		return "run stopped: " + e.Reason, "muted"
+	}
 }
 
 // applyThinkingUsage fills a thinking item's tokens from the turn usage when

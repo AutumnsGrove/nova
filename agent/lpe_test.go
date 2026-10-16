@@ -229,13 +229,20 @@ func Test_LPE12_MaxTurnsExhausted(t *testing.T) {
 	assertRunBoundaries(t, events)
 }
 
-func Test_LPE13_MaxTurnsDefault(t *testing.T) {
+// LPE13: zero and negative MaxTurns mean unlimited, so a run keeps calling
+// tools well past the old default and stops only when the model does.
+func Test_LPE13_MaxTurnsUnlimited(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
+	const past = 100
 	for _, maxTurns := range []int{0, -1} {
-		p := testkit.NewProvider(clock, alwaysTool(defaultMaxTurns)...)
+		turns := append(alwaysTool(past), testkit.Turn{Text: "final"})
+		p := testkit.NewProvider(clock, turns...)
 		res, _ := runCollect(t, Config{Provider: p, Model: "m", Clock: clock, MaxTurns: maxTurns, Tools: registry(echoTool())}, nil, message.User("go"))
-		if res.Turns != defaultMaxTurns || !res.Exhausted {
-			t.Fatalf("MaxTurns %d: turns = %d exhausted = %v, want %d true", maxTurns, res.Turns, res.Exhausted, defaultMaxTurns)
+		if res.Exhausted || res.Reason != "done" {
+			t.Fatalf("MaxTurns %d: result = %+v, want done (unlimited)", maxTurns, res)
+		}
+		if res.Turns <= past {
+			t.Fatalf("MaxTurns %d: turns = %d, want > %d", maxTurns, res.Turns, past)
 		}
 	}
 }

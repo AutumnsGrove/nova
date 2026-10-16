@@ -40,7 +40,7 @@ func TestAction_ACT01_ActionYAML(t *testing.T) {
 	if doc.Runs.Using != "composite" {
 		t.Fatalf("runs.using = %q, want composite", doc.Runs.Using)
 	}
-	for _, name := range []string{"model", "max-comments", "max-cost", "openrouter-api-key", "github-token"} {
+	for _, name := range []string{"model", "max-comments", "max-cost", "wall-clock", "openrouter-api-key", "github-token"} {
 		if _, ok := doc.Inputs[name]; !ok {
 			t.Fatalf("input %q is missing from %v", name, doc.Inputs)
 		}

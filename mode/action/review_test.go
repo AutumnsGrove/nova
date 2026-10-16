@@ -264,18 +264,24 @@ func TestAction_RVW07_CostCap(t *testing.T) {
 	}
 }
 
-func TestAction_RVW08_TurnLimit(t *testing.T) {
+// RVW08: the Action sets no turn cap of its own, so a review runs past the old
+// 30-request bound and finishes normally instead of stopping Partial.
+func TestAction_RVW08_NoTurnLimit(t *testing.T) {
 	_, g := newFakeRepo(t)
-	cfg := reviewConfig()
-	cfg.MaxTurns = 1
 	state := NewState(15)
-	s, _ := reviewServer(t, state, cfg, testkit.Turn{ToolCalls: []testkit.Call{commentCall("c1", 2, "issue", "one")}})
+	const turns = 35
+	script := make([]testkit.Turn, 0, turns+1)
+	for i := 0; i < turns; i++ {
+		script = append(script, testkit.Turn{ToolCalls: []testkit.Call{summaryCall("c", "reviewed")}})
+	}
+	script = append(script, testkit.Turn{Text: "done"})
+	s, _ := reviewServer(t, state, reviewConfig(), script...)
 	report, err := Review(context.Background(), s, reviewOptions(state, g))
 	if err != nil {
 		t.Fatalf("Review: %v", err)
 	}
-	if !report.Partial {
-		t.Fatalf("report = %+v, want partial", report)
+	if report.Partial {
+		t.Fatalf("report = %+v, want not partial (no turn cap)", report)
 	}
 }
 
@@ -311,6 +317,30 @@ func TestAction_RVW09_WallClock(t *testing.T) {
 			clock.Advance(time.Second)
 			runtime.Gosched()
 		}
+	}
+}
+
+// RVW09: a review with no wall clock configured arms no timer and is never cut
+// off by the clock, so the library default is genuinely unlimited.
+func TestAction_RVW09_NoWallClock(t *testing.T) {
+	_, g := newFakeRepo(t)
+	state := NewState(15)
+	s, _ := reviewServer(t, state, reviewConfig(), testkit.Turn{Text: "nothing to say"})
+	opt := reviewOptions(state, g)
+	armed := false
+	opt.After = func(time.Duration) <-chan time.Time {
+		armed = true
+		return nil
+	}
+	report, err := Review(context.Background(), s, opt)
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if armed {
+		t.Fatal("a wall-clock timer was armed with no WallClock configured")
+	}
+	if report.Partial {
+		t.Fatalf("report = %+v, want not partial", report)
 	}
 }
 

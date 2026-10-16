@@ -191,11 +191,38 @@ func TestTranscript_TRN08_ErrorEvent(t *testing.T) {
 	}
 }
 
-func TestTranscript_TRN09_RunEndAborted(t *testing.T) {
-	tr := newTestTranscript(80)
-	tr.Apply(proto.Event{Type: proto.EventRunEnd, Reason: "aborted"})
-	if got := renderItem(tr.Items()[0], 80); !strings.Contains(got, "aborted") {
-		t.Fatalf("run_end render = %q", got)
+// TRN09: run_end leaves a line for every reason except a normal end, so a run
+// never stops silently.
+func TestTranscript_TRN09_RunEndReasons(t *testing.T) {
+	cases := []struct {
+		reason   string
+		turn     *int
+		err      *proto.Error
+		want     string
+		wantItem bool
+	}{
+		{reason: "done", wantItem: false},
+		{reason: "aborted", want: "aborted", wantItem: true},
+		{reason: "error", err: &proto.Error{Code: proto.CodeInternal, Message: "boom"}, want: "error", wantItem: true},
+		{reason: "exhausted", turn: intp(30), want: "turn budget", wantItem: true},
+		{reason: "future", want: "future", wantItem: true},
+	}
+	for _, c := range cases {
+		tr := newTestTranscript(80)
+		tr.Apply(proto.Event{Type: proto.EventRunEnd, Reason: c.reason, Turn: c.turn, Error: c.err})
+		items := tr.Items()
+		if !c.wantItem {
+			if len(items) != 0 {
+				t.Fatalf("%s: items = %d, want 0 (silent)", c.reason, len(items))
+			}
+			continue
+		}
+		if len(items) == 0 {
+			t.Fatalf("%s: no closing line", c.reason)
+		}
+		if got := renderItem(items[0], 80); !strings.Contains(got, c.want) {
+			t.Fatalf("%s: render = %q, want it to contain %q", c.reason, got, c.want)
+		}
 	}
 }
 

@@ -149,16 +149,18 @@ func TestSubagent_SUB06_DepthLimit(t *testing.T) {
 	}
 }
 
+// SUB07: max_turns is optional, with no default and no cap; an unset value is
+// passed through as 0 (unlimited) and a caller's value is passed unchanged.
 func TestSubagent_SUB07_MaxTurns(t *testing.T) {
 	fake := &fakeSpawn{}
 	e := setup(defaultRegistry(), nil, fake.spawn)
 	_, _ = e.run(context.Background(), json.RawMessage(`{"task":"a"}`), nil)
-	if got := fake.last().MaxTurns; got != 15 {
-		t.Fatalf("default max_turns = %d, want 15", got)
+	if got := fake.last().MaxTurns; got != 0 {
+		t.Fatalf("default max_turns = %d, want 0 (unlimited)", got)
 	}
 	_, _ = e.run(context.Background(), json.RawMessage(`{"task":"b","max_turns":500}`), nil)
-	if got := fake.last().MaxTurns; got != 50 {
-		t.Fatalf("capped max_turns = %d, want 50", got)
+	if got := fake.last().MaxTurns; got != 500 {
+		t.Fatalf("max_turns = %d, want 500 (no cap)", got)
 	}
 }
 

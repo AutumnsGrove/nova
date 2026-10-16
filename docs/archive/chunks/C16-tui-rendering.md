@@ -120,7 +120,12 @@ type Display struct {
 8. A card is a header line plus an optional body. The header: a status dot (a spinner frame while running, `●` in the
    success colour when ok, in the error colour when `IsError`), the tool name in bold, the summarised arguments, and the
    right-aligned duration (`0.1s`, `12s`) when finished or the running time when running. The header is always one
-   line, truncated with `…` to the width; the duration is dropped first when space is short.
+   line, truncated with `…` to the width; the duration is dropped first when space is short. Every card is drawn inside
+   a full-width panel with one cell of padding on each side and a background tinted by state: pending while running,
+   success when ok, error on failure. The background is re-asserted after every reset inside the card so a styled
+   segment cannot clear it, and every line ends with a reset so the panel cannot bleed into the next item. Mono and a
+   colourless profile have no background and are only padded. The panel wraps any tool, so a `subagent` card and every
+   other card get it with no per-tool change.
 9. `Summarize` picks the argument that identifies the call: `path`, `file_path`, `command` (first line only), `pattern`,
    `url`, `query`, `name`; else the first string argument; else the compact JSON. It strips control characters, collapses
    whitespace, and truncates to `max` cells with `…`. Paths shorter than the width are shown in full; longer ones keep the
@@ -237,6 +242,10 @@ type Display struct {
 | CRD13 | restored card matches live card | `Load` vs events | same output (ignoring timer) |
 | CRD14 | truncated marker | `Truncated` | shown |
 | CRD15 | `Toggle` expands one card | | only that card expands |
+| PNL01 | card panel is tinted by state | running, ok, error | a background on every line; the three differ; each line resets |
+| PNL02 | panel spans the width with side padding | widths 20 to 200 | every line is the full width; one cell on each side |
+| PNL03 | mono has no panel background | `Mono` | no escapes; still padded |
+| PNL04 | a subagent card is panelled | `subagent` tool call | same tint and padding as any tool |
 | ARG01 | picks `path` | | path shown |
 | ARG02 | picks `command` first line | multi-line | first line |
 | ARG03 | picks `pattern`, `url`, `query` | | each |

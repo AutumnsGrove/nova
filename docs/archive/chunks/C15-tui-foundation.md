@@ -295,6 +295,7 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | STY05 | non-terminal output | | `NoColor` |
 | STY06 | 256 and 16 colour degradation | | closest colours; no truecolor escapes |
 | STY07 | light theme contrast | text on background | contrast ratio at least 4.5 for body text |
+| STY08 | tool-card panel tokens | `panel`, `panelok`, `panelerr` | each panel style has a distinct background in Dark; none under Mono |
 | CLT01 | `Send` yields a response | | `ResponseMsg` |
 | CLT02 | `Next` yields events in order | | order preserved |
 | CLT03 | pipe closed | | `ClosedMsg` |

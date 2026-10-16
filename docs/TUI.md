@@ -84,7 +84,7 @@ footer detail, in that order.
 | User message | plain text, wrapped; shows attached files |
 | Assistant text | **incremental markdown**: re-render only the changed tail; code blocks highlighted |
 | **Thinking block** | native (D24). A ruled header (`── ▸ Thought for 12s · ~3.4k tokens ──── click to expand`), the last 8 lines of reasoning in dim italics, and a closing rule, both while streaming (live timer) and once finished, so thinking is never hidden. Click the block to expand just it; `ctrl+o` expands or collapses every block; the preview height is a setting. |
-| Tool card | header (status dot, name, key argument, duration) and a compact result box: the first 6 lines of the result (the last 6 for `bash`) with a muted `… N more lines (click to expand)` line. A call with no output stays header only. Click the card to expand just it; `ctrl+o` expands or collapses every card. |
+| Tool card | a full-width panel tinted by state (pending, success, error) with one cell of padding on each side, holding a header (status dot, name, key argument, duration) and a compact result box: the first 6 lines of the result (the last 6 for `bash`) with a muted `… N more lines (click to expand)` line. A call with no output stays header only. Click the card to expand just it; `ctrl+o` expands or collapses every card. |
 | Compaction marker | a rule with `compacted 38k → 6k tokens` |
 | Error | red, with the retry count when retrying |
 | Extension message | rendered by the extension's template, or by a bundled renderer |
@@ -106,6 +106,12 @@ width, and an `expanded` flag, and returns a string. Defaults:
 A tool the TUI has never heard of still renders through the default, so a new
 extension tool works without any TUI change. Third-party tools can supply a template
 over their `details` JSON for a nicer card.
+
+Every card, whatever its renderer, is wrapped in a full-width panel with one cell
+of padding on each side and a background tinted by state: pending while running,
+success when ok, error on failure. That includes a `subagent` card, which shows its
+child's tool activity as progress lines inside the same panel. Under `mono` or
+`NO_COLOR` the panel carries no background and the card is only padded.
 
 ## Input
 
@@ -188,6 +194,9 @@ colors:
   muted: "#8b98ad"
   success: "#7ee0a1"
   error:   "#ff6b6b"
+  panel:    "#1b2230"   # tool-card panel while running
+  panelok:  "#112c1d"   # tool-card panel when ok
+  panelerr: "#30161a"   # tool-card panel on error
 ```
 
 Shipped themes: `nova-dark`, `nova-light`, and `mono` (no colour, for dumb terminals and

@@ -9,6 +9,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Tool cards are full-width panels with one cell of padding and a background tinted by state: pending while
+  running, success when ok, error on failure. The panel wraps every tool, the `subagent` card included, and the
+  three new theme tokens are `panel`, `panelok`, and `panelerr`. `mono` and `NO_COLOR` stay background-free and
+  are only padded (#15).
 - No turn cap is on by default anywhere. An agent run, a subagent, and the GitHub Action run until the
   model finishes, the user aborts, or a real error ends them; `max_turns` (and the subagent's `max_turns`)
   are optional and off unless a caller sets one. The abort path is now the runaway guard (#21).

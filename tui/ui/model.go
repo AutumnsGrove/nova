@@ -130,6 +130,7 @@ type Model struct {
 	loginGen      int
 	usageArmed    bool
 	runActive     bool
+	runStartedAt  time.Time
 	expanded      bool
 	quitArmed     bool
 	quitAt        time.Time
@@ -333,9 +334,22 @@ func (m *Model) setState(resp proto.Response) {
 	if s.CWD != "" {
 		m.cwd = s.CWD
 	}
-	m.runActive = s.Running
+	m.setRunning(s.Running)
 	m.editorLines = m.editor.LineCount()
 	m.recompute()
+}
+
+// setRunning tracks the run state and, when a run begins, its wall-clock start,
+// so the footer's indicator can show elapsed time. It is the one place that
+// flips the flag, from run_start, run_end, and state_changed alike.
+func (m *Model) setRunning(running bool) {
+	if running && !m.runActive {
+		m.runStartedAt = m.clock.Now()
+	}
+	if !running {
+		m.runStartedAt = time.Time{}
+	}
+	m.runActive = running
 }
 
 // shortCWD replaces the home prefix with ~.

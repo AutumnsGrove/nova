@@ -111,16 +111,26 @@ func clipLines(s string, width int) string {
 
 var spinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+// Spinner returns the animation frame for an elapsed duration. The per-block
+// status dot and the footer's run indicator share it, so both stay in step.
+func Spinner(elapsed time.Duration) string {
+	frame := int(elapsed/(100*time.Millisecond)) % len(spinner)
+	if frame < 0 {
+		frame += len(spinner)
+	}
+	return spinner[frame]
+}
+
 // statusDot is the leading status marker: a spinner while running, a success
 // dot when ok, and an error dot otherwise.
 func statusDot(c Call, st styles.Styles) string {
 	switch {
 	case c.Running:
-		frame := 0
+		elapsed := time.Duration(0)
 		if !c.Started.IsZero() && !c.Now.IsZero() {
-			frame = int(c.Now.Sub(c.Started)/(100*time.Millisecond)) % len(spinner)
+			elapsed = c.Now.Sub(c.Started)
 		}
-		return st.Spark.Render(spinner[(frame+len(spinner))%len(spinner)])
+		return st.Spark.Render(Spinner(elapsed))
 	case c.IsError:
 		return st.Error.Render("✖")
 	default:

@@ -214,9 +214,9 @@ func (m *Model) handleEvent(e proto.Event) tea.Cmd {
 	var cmd tea.Cmd
 	switch e.Type {
 	case proto.EventRunStart:
-		m.runActive = true
+		m.setRunning(true)
 	case proto.EventRunEnd:
-		m.runActive = false
+		m.setRunning(false)
 	case proto.EventUsage:
 		if e.Total != nil {
 			m.state.Usage.TotalTokens = e.Total.TotalTokens
@@ -256,7 +256,7 @@ func (m *Model) decodeStateEvent(raw json.RawMessage) {
 		m.state.Model = s.Model
 		m.state.Thinking = s.Thinking
 		m.state.EffectiveLimit = s.EffectiveLimit
-		m.runActive = s.Running
+		m.setRunning(s.Running)
 	}
 }
 

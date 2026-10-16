@@ -39,6 +39,14 @@ type Config struct {
 	SystemPrompt string            `yaml:"system_prompt"` // text appended to the base prompt
 	Webfetch     WebfetchConfig    `yaml:"webfetch"`
 	Subagent     SubagentConfig    `yaml:"subagent"`
+	Display      DisplayConfig     `yaml:"display"`
+}
+
+// DisplayConfig holds the TUI's rendering preferences. Both line counts are
+// clamped to 1..50 when loaded and when edited in /settings.
+type DisplayConfig struct {
+	ThinkingLines int `yaml:"thinking_lines"` // reasoning lines in a collapsed thinking block
+	ToolLines     int `yaml:"tool_lines"`     // result lines in a collapsed tool card
 }
 
 // WebfetchConfig bounds the bundled web_fetch tool.
@@ -140,6 +148,7 @@ func Defaults() Config {
 		Compaction: CompactionConfig{Enabled: &enabled},
 		Extensions: ExtensionsConfig{CompleteMaxPerRun: 20},
 		Retry:      RetryConfig{Max: 3, BaseMS: 500, CapMS: 30000},
+		Display:    DisplayConfig{ThinkingLines: 8, ToolLines: 6},
 	}
 }
 
@@ -386,6 +395,8 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 	nonNegative(&cfg.Retry.Max, "retry.max", warnings)
 	nonNegative(&cfg.Retry.BaseMS, "retry.base_ms", warnings)
 	nonNegative(&cfg.Retry.CapMS, "retry.cap_ms", warnings)
+	displayLines(&cfg.Display.ThinkingLines, Defaults().Display.ThinkingLines, "display.thinking_lines", warnings)
+	displayLines(&cfg.Display.ToolLines, Defaults().Display.ToolLines, "display.tool_lines", warnings)
 	if err := cfg.Permissions.Validate(); err != nil {
 		*warnings = append(*warnings, Warning{Source: "config", Message: "invalid permissions: " + err.Error()})
 		cfg.Permissions = Defaults().Permissions
@@ -397,6 +408,25 @@ func nonNegative(v *int, name string, warnings *[]Warning) {
 	if *v < 0 {
 		*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("negative %s; using 0", name)})
 		*v = 0
+	}
+}
+
+// displayLines clamps a display line count to 1..50. A zero is treated as unset
+// and takes the default, so a sparse section cannot blank the setting.
+func displayLines(v *int, def int, name string, warnings *[]Warning) {
+	switch {
+	case *v == 0:
+		*v = def
+	case *v < 1 || *v > 50:
+		clamped := *v
+		if clamped < 1 {
+			clamped = 1
+		}
+		if clamped > 50 {
+			clamped = 50
+		}
+		*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("%s out of range; using %d", name, clamped)})
+		*v = clamped
 	}
 }
 

@@ -442,6 +442,13 @@ func startFailure(cmd proto.Command, err error) proto.Response {
 	return failResponse(cmd, proto.CodeInternal, err.Error())
 }
 
+// Display returns the TUI rendering preferences from the loaded config, so the
+// interactive client starts with the user's saved settings. It is a Go accessor,
+// not a protocol command: the display is client-side and never crosses the wire.
+func (s *Server) Display() (thinkingLines, toolLines int) {
+	return s.cfg.Display.ThinkingLines, s.cfg.Display.ToolLines
+}
+
 // Close releases the session. It is idempotent.
 func (s *Server) Close() error {
 	s.mu.Lock()

@@ -387,7 +387,7 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | UIM14 | `shutdown` response | `/quit`; response arrives | dialogs cancelled; `tea.Quit` returned |
 | RUN01 | refuses without a terminal | piped stdin | the documented error |
 | RUN02 | `NO_COLOR` | | mono theme and no colour escapes in the view |
-| RUN03 | log file used | | log written; nothing on stdout or stderr |
+| RUN03 | crash log used | | a report is written to `crash.log` and its path is printed |
 | RUN04 | `cmd/nova` mode selection | terminal and no flags; `-p` set | TUI; print mode |
 | GLD01 | empty session at 40, 80, 120 | golden | matches |
 | GLD02 | a text turn at three widths | golden | matches |

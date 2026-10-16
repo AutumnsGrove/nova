@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/chat"
 	"github.com/AutumnsGrove/nova/tui/client"
@@ -871,23 +872,22 @@ func TestUI_RUN02_NoColor(t *testing.T) {
 	}
 }
 
-func TestUI_RUN03_LogFile(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	f, err := openLog()
+func TestUI_RUN03_CrashLog(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".config", "nova")
+	rec := diag.New(diag.Options{Dir: dir, Version: "test"})
+	diag.SetDefault(rec)
+	defer diag.SetDefault(nil)
+	var out bytes.Buffer
+	reportCrash(&out, "boom", "tui view")
+	data, err := os.ReadFile(filepath.Join(dir, "crash.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.Write([]byte("hello log\n")); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(string(data), "boom") {
+		t.Fatalf("crash log = %q", data)
 	}
-	f.Close()
-	data, err := os.ReadFile(filepath.Join(home, ".config", "nova", "tui.log"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "hello log") {
-		t.Fatalf("log = %q", data)
+	if !strings.Contains(out.String(), filepath.Join(dir, "crash.log")) {
+		t.Fatalf("crash path not reported: %q", out.String())
 	}
 }
 

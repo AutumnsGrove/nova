@@ -8,13 +8,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/term"
 
-	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/mode"
 	"github.com/AutumnsGrove/nova/tui/chat"
 	"github.com/AutumnsGrove/nova/tui/client"
@@ -75,20 +74,31 @@ func runWith(ctx context.Context, srv *mode.Server, opt RunOptions, in io.Reader
 		Version:  opt.Version,
 		Renderer: chat.NewGlamourRenderer(st),
 	})
+	diag.SetMode("tui")
+	diag.SetOp("tui running")
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "nova: panic in the UI: %v\n", r)
-			logPanic(fmt.Sprint(r))
+			fmt.Fprintf(os.Stderr, "\nnova: internal error: %v\n", r)
+			reportCrash(os.Stderr, r, "tui program")
 		}
 	}()
-	if log, err := openLog(); err == nil {
-		defer log.Close()
-	}
 	progModel, err := tea.NewProgram(model, tea.WithContext(ctx), tea.WithInput(in), tea.WithOutput(out)).Run()
 	if m, ok := progModel.(*Model); ok && m.panicValue != nil {
-		logPanic(fmt.Sprint(m.panicValue))
+		fmt.Fprintf(os.Stderr, "\nnova: recovered from a UI panic: %v\n", m.panicValue)
+		reportCrash(os.Stderr, m.panicValue, "tui view")
 	}
 	return err
+}
+
+// reportCrash records a panic with the process recorder and writes the crash
+// file path to w so the user can read the full stack after the terminal
+// returns. Nothing is written when no report could be stored.
+func reportCrash(w io.Writer, v any, op string) {
+	path, err := diag.Report(v, op)
+	if err != nil || path == "" {
+		return
+	}
+	fmt.Fprintf(w, "nova: crash report: %s\n", path)
 }
 
 // Interactive reports whether the TUI should start for the given mode flag and
@@ -122,36 +132,4 @@ func pickTheme(opt RunOptions, p colorprofile.Profile) styles.Theme {
 func isTerminal(v any) bool {
 	f, ok := v.(interface{ Fd() uintptr })
 	return ok && term.IsTerminal(f.Fd())
-}
-
-// logFilePath is <config dir>/nova/tui.log, or empty when the home directory
-// cannot be found.
-func logFilePath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(config.UserConfigDir(home), "tui.log")
-}
-
-// openLog opens the TUI log file, creating its directory.
-func openLog() (io.WriteCloser, error) {
-	path := logFilePath()
-	if path == "" {
-		return nil, errors.New("no home directory")
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, err
-	}
-	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-}
-
-// logPanic records a recovered panic to the log file, if it can be opened.
-func logPanic(text string) {
-	f, err := openLog()
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	fmt.Fprintln(f, text)
 }

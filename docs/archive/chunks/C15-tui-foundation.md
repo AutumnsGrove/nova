@@ -2,7 +2,7 @@
 chunk: C15
 title: "TUI foundation"
 packages: [./tui/layout, ./tui/list, ./tui/styles, ./tui/client, ./tui/chat, ./tui/ui]
-budgets: { ./tui/layout: 150, ./tui/list: 350, ./tui/styles: 450, ./tui/client: 200, ./tui/chat: 1300, ./tui/ui: 2420 }
+budgets: { ./tui/layout: 150, ./tui/list: 350, ./tui/styles: 450, ./tui/client: 200, ./tui/chat: 1300, ./tui/ui: 2520 }
 depends: [C12]
 ---
 
@@ -393,6 +393,13 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | IND04 | run_end stops the ticks | | no timer rescheduled; not ticking |
 | IND05 | `state_changed running` starts it | | indicator shown |
 | IND06 | indicator golden | three widths, Mono | one line; survives narrow widths |
+| SETU01 | `/settings` and `/config` | both names | open the settings dialog |
+| SETU02 | applying settings is live | a tool card | the display changes and the card re-renders shorter |
+| SETU03 | `/display lines` persists | 3 | saved to `display.thinking_lines` |
+| SETU04 | local commands listed | | `settings` and `config` are in the command list |
+| SETU05 | model seeded from options | `Display` set | `m.display` starts from it |
+| SETU06 | `/display lines` refuses or clamps | 0, -1, `abc`, 999 | notice and no write, then 50 |
+| SETC01 | thinking height re-renders | finished block, 8 then 2 | the block shrinks |
 | UIM10 | prompt response error | `busy`, `provider_error` | error shown; text restored to the editor |
 | UIM11 | `session_changed` | | transcript reloaded via `get_messages` |
 | UIM12 | `state_changed` | | footer and header update |

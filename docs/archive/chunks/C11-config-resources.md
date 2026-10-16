@@ -256,6 +256,12 @@ type PromptInput struct {
 | CFG28 | very large config | 5 MiB YAML | loads or warns; no panic |
 | CFG29 | YAML anchors and aliases | | work; "billion laughs" input bounded (error or warning, no hang) |
 | CFG30 | duplicate keys | `a: 1` twice | warning |
+| SET01 | display defaults | | `display` is `{8, 6}` |
+| SET02 | display section loads | both keys | applied |
+| SET03 | partial display section | one key | the other keeps its default |
+| SET04 | malformed `display` | a string | warning; defaults kept; no crash |
+| SET05 | display clamp | 999, negative | clamped to 50 and 1 with a warning |
+| SET06 | `SetUser` display round trip | two keys | saved, other keys preserved |
 | TRU01 | untrusted by default | | false |
 | TRU02 | trust then check | | true |
 | TRU03 | ancestor trusted | trust `/a`, check `/a/b/c` | true |

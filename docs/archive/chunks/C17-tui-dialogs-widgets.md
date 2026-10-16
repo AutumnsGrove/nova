@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./tui/ui, ./cmd/nova]
-budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2200, ./tui/ui: 2420, ./cmd/nova: 1260 }
+budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2200, ./tui/ui: 2520, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -282,6 +282,10 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | FRD15 | answers in question order | | order kept |
 | FRD16 | long prompt and option text | | wrapped; no overflow |
 | FRD17 | golden at three widths | | matches |
+| DGS01 | settings save | arrow edits | enter returns both rows with the edited values |
+| DGS02 | settings typed digits | `12` | value 12 |
+| DGS03 | settings clamp | 999, many lefts | clamped to 50 and 1 |
+| DGS04 | settings cancel | esc | done, cancelled, no value |
 | MPK01 | list and current marker | | catalog shown; current marked |
 | MPK02 | filter | | works |
 | MPK03 | choose | `enter` | `set_model` sent |

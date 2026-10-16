@@ -28,6 +28,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `/settings` (alias `/config`) opens a display-settings dialog: `up`/`down` choose a row, the arrows
+  or typing edit it, `enter` saves, `esc` cancels. Changes apply live and are written to the user config.
+  The first two settings are the thinking-trace height (`display.thinking_lines`, default 8) and the tool
+  result height (`display.tool_lines`, default 6), both clamped to 1–50. `/display lines N` still works and
+  now persists too (#14).
 - An always-visible run indicator. While a run is active the footer leads with a spinner and the elapsed
   run time (`⠋ working 3s`), animated on the 250 ms tick chain and cleared the instant the run ends. It fills
   the waiting-on-the-provider gap that the per-block spinners miss, and it survives truncation on a narrow

@@ -2,7 +2,7 @@
 chunk: C16
 title: "TUI rendering: thinking block, tool cards, diffs, themes, splash"
 packages: [./tui/render, ./tui/diff, ./tui/chat, ./tui/styles, ./tui/ui]
-budgets: { ./tui/render: 740, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 2420 }
+budgets: { ./tui/render: 745, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 2520 }
 depends: [C15]
 ---
 
@@ -250,6 +250,7 @@ type Display struct {
 | PNL04 | a subagent card is panelled | `subagent` tool call | same tint and padding as any tool |
 | PNL05 | blocks are separated by one blank line | two tool cards | each item ends with a blank line; cards do not touch |
 | PNL06 | the user message is panelled | a user turn | a background on every line, filling the width |
+| TCP06 | a call's own preview height caps the card | `Call.Preview` 2, then 0 | 2 lines plus the hint; 0 restores the default |
 | ARG01 | picks `path` | | path shown |
 | ARG02 | picks `command` first line | multi-line | first line |
 | ARG03 | picks `pattern`, `url`, `query` | | each |

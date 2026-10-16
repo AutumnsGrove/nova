@@ -151,12 +151,20 @@ bottom resumes it.
 ### Slash commands
 
 `/model`, `/thinking`, `/context [tokens]`, `/compact`, `/new` (or `/clear`), `/resume`, `/fork`,
-`/tree`, `/name`, `/cost`, `/theme`, `/reload`, `/ext`, `/todos`, `/plan`, `/login`,
-`/logout`, `/help`, `/quit` (or `/exit`). Extensions add more. Each is also a protocol command, so
+`/tree`, `/name`, `/cost`, `/theme`, `/settings` (or `/config`), `/reload`, `/ext`, `/todos`, `/plan`,
+`/login`, `/logout`, `/help`, `/quit` (or `/exit`). Extensions add more. Each is also a protocol command, so
 a headless client has the same set. `/new` and `/clear` start a fresh session file and clear the
 transcript; they are refused while a run is active. `login`, `login_submit`, `login_cancel`, `logout`, and
 `list_providers` are the protocol commands for sign-in ([`PROTOCOL.md`](PROTOCOL.md)); the local TUI runs
 the sign-in flows itself and asks the server for each provider's status.
+
+`/settings` (alias `/config`) opens a dialog over the display settings. `up`/`down`
+choose a row, the arrows or `+`/`-` step it, typing a number sets it, `enter` saves,
+and `esc` cancels. Each change applies live — tool cards and thinking blocks
+re-render at the new height — and is written to `display.thinking_lines` and
+`display.tool_lines` in the user config, so it survives a restart. `/display lines N`
+is the shortcut for the thinking height and persists the same way. Adding a setting
+is one row in the dialog's table plus one case in `applySettings`.
 
 ## Dialogs
 

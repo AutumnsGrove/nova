@@ -81,7 +81,7 @@ func (th *thinkingItem) Render(width int) string {
 		body = th.preview(width)
 	}
 	closing := th.st.Thinking.Render(strings.Repeat("─", width))
-	return head + "\n" + body + "\n" + closing
+	return spaced(head + "\n" + body + "\n" + closing)
 }
 
 // header is the one-line label for the block.

@@ -54,7 +54,7 @@ func (ti *toolItem) Render(width int) string {
 	if body != "" {
 		card = header + "\n" + body
 	}
-	return Panel(card, ti.call, ti.st, width)
+	return spaced(Panel(card, ti.call, ti.st, width))
 }
 
 // setNow updates the running clock.

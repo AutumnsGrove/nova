@@ -24,6 +24,15 @@ func (b *base) ID() string   { return b.id }
 func (b *base) Version() int { return b.version }
 func (b *base) touch()       { b.version++ }
 
+// spaced closes a rendered item with one blank line, so transcript blocks never
+// run together. An empty item stays empty (it draws nothing).
+func spaced(s string) string {
+	if s == "" {
+		return ""
+	}
+	return s + "\n"
+}
+
 // wrapPlain wraps plain text to width, safely. It is the cheap path: no
 // markdown, no styling, and ANSI in the source is stripped.
 func wrapPlain(s string, width int) string {
@@ -79,7 +88,7 @@ func (u *userItem) Render(width int) string {
 	if len(u.attachments) > 0 {
 		body += "\n" + strings.Join(u.attachments, " ")
 	}
-	return label + "  " + wrapPlain(body, max(width-5, 1))
+	return spaced(label + "  " + wrapPlain(body, max(width-5, 1)))
 }
 
 // restyle swaps the theme and refreshes the item.
@@ -107,7 +116,7 @@ func (a *assistantItem) Render(width int) string {
 	if rendered == "" {
 		return ""
 	}
-	return a.st.Assistant.Render(rendered)
+	return spaced(a.st.Assistant.Render(rendered))
 }
 
 // restyle swaps the theme and refreshes the item.
@@ -126,11 +135,11 @@ func (l *lineItem) Render(width int) string {
 	text := wrapPlain(l.text, width)
 	switch l.kind {
 	case "error":
-		return l.st.Error.Render("✖ " + text)
+		return spaced(l.st.Error.Render("✖ " + text))
 	case "notice":
-		return l.st.Notice.Render(text)
+		return spaced(l.st.Notice.Render(text))
 	default:
-		return l.st.Muted.Render(text)
+		return spaced(l.st.Muted.Render(text))
 	}
 }
 
@@ -146,7 +155,7 @@ type compactionItem struct {
 
 func (c *compactionItem) Render(width int) string {
 	text := fmt.Sprintf("── compacted %s → %s tokens", shortTokens(c.before), shortTokens(c.after))
-	return c.st.Compaction.Render(wrapPlain(text, width))
+	return spaced(c.st.Compaction.Render(wrapPlain(text, width)))
 }
 
 // restyle swaps the theme and refreshes the item.

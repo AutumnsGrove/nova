@@ -1,75 +1,75 @@
 --- width 40 ---
 ✦  [1mnova[m  ~/proj                         
- ● [1mread[m a.go [1–1]                      
-    1 package main                      
- ● [1mwrite[m a.go (created, 12 bytes)       
- package main                           
+                                        
  ● [1medit[m a.go +1 −1                      
      [1m@@ -1 +1 @@[m                        
  1   -o                                 
    1 +n                                 
+                                        
  ● [1m$ ls[m                                 
  file                                   
+                                        
  ● [1mglob[m *.go · 1 files                  
  a.go                                   
+                                        
  ● [1mgrep[m main · 1 matches                
  a.go:1:main                            
+                                        
  ● [1mlist[m . · 1 files                     
  a.go                                   
+                                        
  ● [1mmystery[m  y                           
  result                                 
-                                        
-                                        
                                         
 > [7m [m                                     
 ctx n/a · $0.000 · ctrl+o expand        
 --- width 80 ---
 ✦  [1mnova[m  ~/proj                                                                 
- ● [1mread[m a.go [1–1]                                                              
-    1 package main                                                              
- ● [1mwrite[m a.go (created, 12 bytes)                                               
- package main                                                                   
+                                                                                
  ● [1medit[m a.go +1 −1                                                              
      [1m@@ -1 +1 @@[m                                                                
  1   -o                                                                         
    1 +n                                                                         
+                                                                                
  ● [1m$ ls[m                                                                         
  file                                                                           
+                                                                                
  ● [1mglob[m *.go · 1 files                                                          
  a.go                                                                           
+                                                                                
  ● [1mgrep[m main · 1 matches                                                        
  a.go:1:main                                                                    
+                                                                                
  ● [1mlist[m . · 1 files                                                             
  a.go                                                                           
+                                                                                
  ● [1mmystery[m  y                                                                   
  result                                                                         
-                                                                                
-                                                                                
                                                                                 
 > [7m [m                                                                             
 ctx n/a · $0.000 · ctrl+o expand                                                
 --- width 120 ---
 ✦  [1mnova[m  ~/proj                                                                                                         
- ● [1mread[m a.go [1–1]                                                                                                      
-    1 package main                                                                                                      
- ● [1mwrite[m a.go (created, 12 bytes)                                                                                       
- package main                                                                                                           
+                                                                                                                        
  ● [1medit[m a.go +1 −1                                                                                                      
      [1m@@ -1 +1 @@[m                                                                                                        
  1   -o                                                                                                                 
    1 +n                                                                                                                 
+                                                                                                                        
  ● [1m$ ls[m                                                                                                                 
  file                                                                                                                   
+                                                                                                                        
  ● [1mglob[m *.go · 1 files                                                                                                  
  a.go                                                                                                                   
+                                                                                                                        
  ● [1mgrep[m main · 1 matches                                                                                                
  a.go:1:main                                                                                                            
+                                                                                                                        
  ● [1mlist[m . · 1 files                                                                                                     
  a.go                                                                                                                   
+                                                                                                                        
  ● [1mmystery[m  y                                                                                                           
  result                                                                                                                 
-                                                                                                                        
-                                                                                                                        
                                                                                                                         
 > [7m [m                                                                                                                     
 ctx n/a · $0.000 · ctrl+o expand                                                                                        

@@ -241,11 +241,37 @@ func TestTranscript_PNL04_SubagentPanelled(t *testing.T) {
 	}
 	out := items[0].Render(80)
 	for _, l := range strings.Split(out, "\n") {
+		if strings.TrimSpace(ansi.Strip(l)) == "" {
+			continue // the blank line between blocks
+		}
 		if !strings.Contains(l, "48;") {
 			t.Fatalf("subagent card line has no panel background: %q", l)
 		}
 		if w := ansi.StringWidth(l); w != 80 {
 			t.Fatalf("subagent card line is %d wide, want 80", w)
+		}
+	}
+}
+
+// PNL05: every block closes with a blank line, so two cards (or a card and the
+// next block) never run together.
+func TestTranscript_PNL05_BlocksSpaced(t *testing.T) {
+	tr := newTestTranscript(80)
+	tr.Apply(proto.Event{Type: proto.EventToolCall, Call: &proto.ToolCall{
+		ID: "c1", Name: "read", Arguments: json.RawMessage(`{"path":"a.go"}`),
+	}})
+	tr.Apply(proto.Event{Type: proto.EventToolEnd, CallID: "c1", Result: &proto.ToolResult{Content: "one"}})
+	tr.Apply(proto.Event{Type: proto.EventToolCall, Call: &proto.ToolCall{
+		ID: "c2", Name: "read", Arguments: json.RawMessage(`{"path":"b.go"}`),
+	}})
+	tr.Apply(proto.Event{Type: proto.EventToolEnd, CallID: "c2", Result: &proto.ToolResult{Content: "two"}})
+	items := tr.Items()
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want 2", len(items))
+	}
+	for i, it := range items {
+		if got := it.Render(80); !strings.HasSuffix(got, "\n") {
+			t.Fatalf("item %d has no trailing blank line: %q", i, got)
 		}
 	}
 }

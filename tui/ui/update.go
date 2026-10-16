@@ -50,6 +50,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commands = msg.commands
 		return m, nil
 
+	case noticeMsg:
+		m.notice = msg.text
+		return m, nil
+
 	case completionMsg:
 		m.applyCompletion(msg)
 		return m, nil

@@ -35,7 +35,7 @@ func colorModel(t *testing.T, w, h int) *Model {
 
 func TestUI_THM07_ThemeLists(t *testing.T) {
 	m, _, _ := newModel(t)
-	update(m, runeKey('/'))
+	// setEditorText bypasses completion, so the command is submitted on enter.
 	m.setEditorText("/theme")
 	update(m, enterKey)
 	if !strings.Contains(m.notice, "nova-dark") {

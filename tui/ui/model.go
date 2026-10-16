@@ -57,6 +57,7 @@ type Options struct {
 	Width, Height int
 	Profile       colorprofile.Profile
 	Renderer      chat.Renderer
+	Display       chat.Display // saved display preferences; zero uses the defaults
 }
 
 // commandInfo is one slash command from get_commands.
@@ -183,6 +184,9 @@ func New(opt Options) *Model {
 	}
 	home, _ := os.UserHomeDir()
 	transcript := chat.NewTranscript(opt.Width, opt.Renderer, st)
+	if opt.Display != (chat.Display{}) {
+		transcript.SetDisplay(opt.Display)
+	}
 	registry := NewRegistry(render.NewRegistry())
 	registry.Bundled()
 	transcript.SetRegistry(registry.renderers)

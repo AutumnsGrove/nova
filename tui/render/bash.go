@@ -38,7 +38,7 @@ func (bashRenderer) Body(c Call, st styles.Styles, width int, expanded bool) str
 		return renderText(lastLines(c.Live, 5), st, width, 0)
 	}
 	if !expanded {
-		return previewText(c.Content, st, width, true)
+		return previewText(c.Content, st, width, true, previewCap(c))
 	}
 	var parts []string
 	if cmd := argString(c.Args, "command"); cmd != "" {

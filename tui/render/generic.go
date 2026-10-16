@@ -51,7 +51,7 @@ func genericBody(c Call, st styles.Styles, width int, expanded bool) string {
 	}
 	if strings.TrimSpace(ansi.Strip(text)) != "" {
 		if !expanded && !c.Running {
-			parts = append(parts, previewText(text, st, width, false))
+			parts = append(parts, previewText(text, st, width, false, previewCap(c)))
 		} else {
 			parts = append(parts, renderText(text, st, width, limit))
 		}

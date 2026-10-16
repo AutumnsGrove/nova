@@ -17,6 +17,7 @@ type toolItem struct {
 	*base
 	st       styles.Styles
 	registry *render.Registry
+	display  *Display
 	call     render.Call
 	expanded bool
 }
@@ -26,6 +27,7 @@ func newToolItem(st styles.Styles, registry *render.Registry, display *Display, 
 		base:     &base{id: id},
 		st:       st,
 		registry: registry,
+		display:  display,
 		call: render.Call{
 			ID:      callID,
 			Name:    call.Name,
@@ -45,6 +47,9 @@ func (ti *toolItem) Render(width int) string {
 		reg = render.NewRegistry()
 	}
 	rd := reg.Lookup(ti.call.Name)
+	if ti.display != nil {
+		ti.call.Preview = ti.display.toolLines()
+	}
 	// The panel pads one cell on each side, so the card is drawn to the inner
 	// width and then framed.
 	inner := PanelInner(width)

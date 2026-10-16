@@ -17,6 +17,7 @@ import (
 // defaults; use DefaultDisplay.
 type Display struct {
 	ThinkingPreviewLines int
+	ToolPreviewLines     int
 	ExpandThinking       bool
 	ExpandTools          bool
 	Splash               bool
@@ -24,17 +25,26 @@ type Display struct {
 
 // DefaultDisplay returns the starting display preferences.
 func DefaultDisplay() Display {
-	return Display{ThinkingPreviewLines: 8, Splash: true}
+	return Display{ThinkingPreviewLines: 8, ToolPreviewLines: 6, Splash: true}
 }
 
-// previewLines clamps the preview height to 1..50.
+// previewLines clamps the thinking preview height to 1..50.
 func (d Display) previewLines() int {
-	n := d.ThinkingPreviewLines
+	return clampLines(d.ThinkingPreviewLines)
+}
+
+// toolLines clamps the tool-result preview height to 1..50.
+func (d Display) toolLines() int {
+	return clampLines(d.ToolPreviewLines)
+}
+
+// clampLines clamps a preview height to 1..50.
+func clampLines(n int) int {
 	if n < 1 {
-		n = 1
+		return 1
 	}
 	if n > 50 {
-		n = 50
+		return 50
 	}
 	return n
 }

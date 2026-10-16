@@ -209,6 +209,8 @@ func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 		return nil, true
 	case "display":
 		return m.displayCommand(args), true
+	case "settings", "config":
+		return m.openSettings(), true
 	case "login":
 		return m.loginCommand(args), true
 	case "logout":
@@ -230,6 +232,7 @@ func (m *Model) displayCommand(args string) tea.Cmd {
 		return nil
 	}
 	key, val := fields[0], fields[1]
+	persist := false
 	switch key {
 	case "thinking":
 		if !m.setToggle(&m.display.ExpandThinking, val) {
@@ -245,7 +248,11 @@ func (m *Model) displayCommand(args string) tea.Cmd {
 			m.notice = "display lines: expected a positive number"
 			return nil
 		}
+		if n > 50 {
+			n = 50
+		}
 		m.display.ThinkingPreviewLines = n
+		persist = true
 	case "splash":
 		switch val {
 		case "on":
@@ -262,6 +269,9 @@ func (m *Model) displayCommand(args string) tea.Cmd {
 	}
 	m.transcript.SetDisplay(m.display)
 	m.expanded = m.display.ExpandTools
+	if persist {
+		return m.persistSetting("display.thinking_lines", m.display.ThinkingPreviewLines)
+	}
 	return nil
 }
 

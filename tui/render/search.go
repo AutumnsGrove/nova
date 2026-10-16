@@ -50,7 +50,7 @@ func (s searchRenderer) Body(c Call, st styles.Styles, width int, expanded bool)
 		lines[i] = l
 	}
 	if !expanded {
-		return clipPreview(lines, st, width, false)
+		return clipPreview(lines, st, width, false, previewCap(c))
 	}
 	for i, l := range lines {
 		lines[i] = ansi.Truncate(l, width, "…")

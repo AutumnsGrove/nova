@@ -21,7 +21,9 @@ import (
 )
 
 // Call is everything a renderer knows about one tool call. Now is the render
-// clock, used for the running timer and spinner frame.
+// clock, used for the running timer and spinner frame. Preview is the collapsed
+// result height the caller set (the user's display setting), or 0 for the
+// package default.
 type Call struct {
 	ID, Name       string
 	Args           json.RawMessage
@@ -33,6 +35,7 @@ type Call struct {
 	Details        json.RawMessage
 	Started, Ended time.Time
 	Now            time.Time
+	Preview        int
 }
 
 // Renderer draws one tool call. Header is exactly one line; Body is zero or
@@ -164,8 +167,18 @@ func oneLine(left, right string, width int) string {
 	return left + strings.Repeat(" ", width-lw-rw) + right
 }
 
-// PreviewLines is how many lines of a finished result a collapsed card shows.
+// PreviewLines is the default number of lines of a finished result a collapsed
+// card shows when the call does not carry its own limit.
 const PreviewLines = 6
+
+// previewCap is the collapsed preview height for a call: the caller's setting
+// when set, else the package default.
+func previewCap(c Call) int {
+	if c.Preview > 0 {
+		return c.Preview
+	}
+	return PreviewLines
+}
 
 // bodyLimit reports whether a body is shown and the line cap for it.
 func bodyLimit(c Call, expanded bool) (bool, int) {
@@ -177,7 +190,7 @@ func bodyLimit(c Call, expanded bool) (bool, int) {
 	case c.IsError:
 		return true, 12
 	default:
-		return true, PreviewLines
+		return true, previewCap(c)
 	}
 }
 
@@ -191,23 +204,23 @@ func moreHint(n int, earlier bool, st styles.Styles) string {
 	return st.Muted.Render(fmt.Sprintf("… %d %s lines (click to expand)", n, which))
 }
 
-// previewText shows the first PreviewLines lines of s, or the last when tail
-// is set, with a hint for the rest. It is the compact view of a finished
-// result; an empty result gives "".
-func previewText(s string, st styles.Styles, width int, tail bool) string {
+// previewText shows the first limit lines of s, or the last when tail is set,
+// with a hint for the rest. It is the compact view of a finished result; an
+// empty result gives "".
+func previewText(s string, st styles.Styles, width int, tail bool, limit int) string {
 	s = strings.TrimRight(strings.ReplaceAll(ansi.Strip(s), "\r", ""), "\n")
 	if strings.TrimSpace(s) == "" {
 		return ""
 	}
-	return clipPreview(strings.Split(s, "\n"), st, width, tail)
+	return clipPreview(strings.Split(s, "\n"), st, width, tail, limit)
 }
 
-// clipPreview truncates each line to width and caps the list at PreviewLines.
-func clipPreview(lines []string, st styles.Styles, width int, tail bool) string {
-	if hidden := len(lines) - PreviewLines; hidden > 0 && tail {
+// clipPreview truncates each line to width and caps the list at limit.
+func clipPreview(lines []string, st styles.Styles, width int, tail bool, limit int) string {
+	if hidden := len(lines) - limit; hidden > 0 && tail {
 		lines = append([]string{moreHint(hidden, true, st)}, lines[hidden:]...)
 	} else if hidden > 0 {
-		lines = append(lines[:PreviewLines:PreviewLines], moreHint(hidden, false, st))
+		lines = append(lines[:limit:limit], moreHint(hidden, false, st))
 	}
 	for i, l := range lines {
 		lines[i] = ansi.Truncate(l, width, "…")

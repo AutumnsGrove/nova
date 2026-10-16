@@ -33,6 +33,7 @@ const (
 	intentLoginKey    = "login-key"
 	intentLoginFlow   = "login-flow"
 	intentLogout      = "logout"
+	intentSettings    = "settings"
 
 	// The provider list is asked for on behalf of a purpose; the intent says
 	// which.
@@ -184,6 +185,10 @@ func toProtocol(id string, r dialog.Result) proto.UIResponse {
 // applyLocalIntent runs the command behind a local dialog's answer.
 func (m *Model) applyLocalIntent(intent string, r dialog.Result) tea.Cmd {
 	switch intent {
+	case intentSettings:
+		if rows, ok := r.Value.([]dialog.Setting); ok && !r.Cancelled {
+			return m.applySettings(rows)
+		}
 	case intentModels:
 		if id, ok := r.Value.(string); ok && id != "" {
 			return m.client.Send(proto.Command{Type: proto.CmdSetModel, Model: id})
@@ -522,7 +527,7 @@ func (m *Model) openHelp() tea.Cmd {
 		{Key: "ctrl+c twice", Description: "quit"},
 	}
 	cmds := []string{"log"}
-	for _, c := range m.commands {
+	for _, c := range m.allCommands() {
 		cmds = append(cmds, c.Name)
 	}
 	m.pushDialog(dialog.NewHelp(keys, cmds), intentHelp)

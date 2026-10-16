@@ -39,7 +39,7 @@ func (writeRenderer) Body(c Call, st styles.Styles, width int, expanded bool) st
 	}
 	lines := Highlight(argString(c.Args, "content"), pathOf(c), st, width)
 	if !expanded {
-		return clipPreview(lines, st, width, false)
+		return clipPreview(lines, st, width, false, previewCap(c))
 	}
 	return capLines(lines, 200, st)
 }

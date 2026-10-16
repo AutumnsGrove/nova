@@ -300,6 +300,27 @@ func TestTranscript_PNL06_UserPanelled(t *testing.T) {
 	}
 }
 
+// SETC01: changing the thinking preview height re-renders a finished block.
+func TestTranscript_SETC01_ThinkingHeight(t *testing.T) {
+	tr := newTestTranscript(80)
+	tr.Apply(proto.Event{Type: proto.EventThinkingStart, Run: "r", Turn: intp(1)})
+	tr.Apply(proto.Event{Type: proto.EventThinkingDelta, Run: "r", Turn: intp(1),
+		Text: "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten"})
+	tr.Apply(proto.Event{Type: proto.EventThinkingEnd, Run: "r", Turn: intp(1), Ms: 1000})
+	items := tr.Items()
+	if len(items) == 0 {
+		t.Fatal("no thinking item")
+	}
+	tall := items[0].Render(80)
+	d := tr.Display()
+	d.ThinkingPreviewLines = 2
+	tr.SetDisplay(d)
+	short := tr.Items()[0].Render(80)
+	if strings.Count(short, "\n") >= strings.Count(tall, "\n") {
+		t.Fatalf("thinking block did not shrink: tall=%q short=%q", tall, short)
+	}
+}
+
 func TestTranscript_TRN10_NeverReorders(t *testing.T) {
 	rng := rand.New(rand.NewSource(10))
 	tr := newTestTranscript(80)

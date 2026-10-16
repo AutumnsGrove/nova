@@ -453,6 +453,23 @@ func jsonString(s string) string {
 	return string(b)
 }
 
+// TCP06: a Call's own preview height caps a collapsed result, and a zero
+// preview keeps the package default.
+func TestRender_TCP06_PreviewCap(t *testing.T) {
+	st := mono()
+	rd := NewRegistry().Lookup("bash")
+	c := Call{Name: "bash", Content: "a\nb\nc\nd\ne\nf\ng", Details: raw(`{"exit_code":0}`), Preview: 2}
+	short := rd.Body(c, st, 40, false)
+	if n := len(strings.Split(short, "\n")); n > 3 {
+		t.Fatalf("preview = %d lines, want at most 3:\n%s", n, short)
+	}
+	c.Preview = 0
+	def := rd.Body(c, st, 40, false)
+	if len(strings.Split(def, "\n")) <= len(strings.Split(short, "\n")) {
+		t.Fatalf("default preview is not longer than the clamped one:\ndefault %q\nclamped %q", def, short)
+	}
+}
+
 // FuzzSummarize asserts Summarize never panics and never exceeds max.
 func FuzzSummarize(f *testing.F) {
 	f.Add(`{"path":"a.go"}`, 20)

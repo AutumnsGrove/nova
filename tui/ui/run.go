@@ -66,6 +66,10 @@ func runWith(ctx context.Context, srv *mode.Server, opt RunOptions, in io.Reader
 	c := mode.NewPipe(srv, capabilities...)
 	defer c.Close()
 	cwd, _ := os.Getwd()
+	// The server already loaded and normalised the config; take its display
+	// preferences so the saved line counts survive a restart.
+	display := chat.DefaultDisplay()
+	display.ThinkingPreviewLines, display.ToolPreviewLines = srv.Display()
 	model := New(Options{
 		Client:   client.FromPipe(c),
 		Theme:    theme,
@@ -73,6 +77,7 @@ func runWith(ctx context.Context, srv *mode.Server, opt RunOptions, in io.Reader
 		CWD:      cwd,
 		Version:  opt.Version,
 		Renderer: chat.NewGlamourRenderer(st),
+		Display:  display,
 	})
 	diag.SetMode("tui")
 	diag.SetOp("tui running")

@@ -44,7 +44,7 @@ type commandsLoadedMsg struct{ commands []commandInfo }
 
 // openCommands filters the loaded slash commands by prefix, then substring.
 func (m *Model) openCommands(prefix string) {
-	items := filterCommands(m.commands, prefix)
+	items := filterCommands(m.allCommands(), prefix)
 	if len(items) == 0 {
 		m.completion.active = false
 		return

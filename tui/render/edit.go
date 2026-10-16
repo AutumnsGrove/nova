@@ -45,7 +45,7 @@ func (editRenderer) Body(c Call, st styles.Styles, width int, expanded bool) str
 	if !expanded {
 		// Render every line, then clip here so the hint matches the other tools.
 		opt.MaxLines = 1 << 20
-		return clipPreview(strings.Split(diff.Render(unified, pathOf(c), width, st, opt), "\n"), st, width, false)
+		return clipPreview(strings.Split(diff.Render(unified, pathOf(c), width, st, opt), "\n"), st, width, false, previewCap(c))
 	}
 	return diff.Render(unified, pathOf(c), width, st, opt)
 }

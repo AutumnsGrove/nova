@@ -41,18 +41,18 @@ func (readRenderer) Body(c Call, st styles.Styles, width int, expanded bool) str
 		return renderText(c.Live, st, width, 5)
 	}
 	path := pathOf(c)
-	max := 200
+	limit := 200
 	if !expanded {
-		max = PreviewLines
+		limit = previewCap(c)
 	}
 	lines := strings.Split(strings.TrimRight(c.Content, "\n"), "\n")
 	var out []string
 	for i, l := range lines {
-		if i >= max {
+		if i >= limit {
 			if expanded {
-				out = append(out, st.Muted.Render(fmt.Sprintf("… %d more lines", len(lines)-max)))
+				out = append(out, st.Muted.Render(fmt.Sprintf("… %d more lines", len(lines)-limit)))
 			} else {
-				out = append(out, moreHint(len(lines)-max, false, st))
+				out = append(out, moreHint(len(lines)-limit, false, st))
 			}
 			break
 		}

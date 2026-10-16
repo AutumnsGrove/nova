@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- No turn cap is on by default anywhere. An agent run, a subagent, and the GitHub Action run until the
+  model finishes, the user aborts, or a real error ends them; `max_turns` (and the subagent's `max_turns`)
+  are optional and off unless a caller sets one. The abort path is now the runaway guard (#21).
+- The GitHub Action's review no longer stops at a turn count. Its wall clock stays but is configurable:
+  `--wall-clock` (and the `wall-clock` action input) defaults to 15 minutes and takes any duration, with
+  `0` meaning no limit. `--max-cost` now defaults to `0` (unlimited) instead of `$1.00` (#21).
 - Finished tool calls show a 6-line preview of their result (the tail for `bash`) with an expand hint, instead
   of a bare header (#5).
 - Finished thinking blocks keep a tail preview of the reasoning on screen, in dim italics under a ruled

@@ -59,7 +59,7 @@ Ivy is the best first adopter: greenfield loop, three read-only tools, and a
   - `feature "ask"` is already defined with `endpoint: chat, vetted: true,
     multi: true`. The decorator's `Stream` performs the admission, writes the
     ledger row, then calls the underlying OpenAI-compatible request.
-  - Step/spend caps map to `agent.Config.MaxTurns` plus the gate's reservation.
+  - Step/spend caps map to an explicitly set `agent.Config.MaxTurns` (there is no default cap) plus the gate's reservation.
 - **Tools.** `search_mail`, `read_mail`, `think` as `tool.Tool` implementations.
   `read_mail` records the message ids it actually read into `ToolData`; the final
   answer's citations are verified against that set (and optionally the DB).

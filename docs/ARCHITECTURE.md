@@ -206,7 +206,9 @@ Rules the loop must keep, each of which has tests in [`TESTING.md`](TESTING.md):
   configured count, and emits `retry` events. This includes a network timeout: a
   connect or idle timeout is a retryable error on every provider dialect, and the
   partial response is kept.
-- **Turn budget.** `MaxTurns` ends the run with `Exhausted=true`. It never errors.
+- **Turn budget.** A caller-set `MaxTurns` ends the run with `Exhausted=true`; it never errors. There
+  is no default cap, so an unbounded run is stopped only by the abort path (user cancel, `esc`, or
+  context cancellation).
 - **Hooks never crash the loop.** A hook that panics or exceeds its deadline is
   skipped, logged, and reported as an `extension_error` event.
 

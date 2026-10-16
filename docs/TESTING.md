@@ -167,7 +167,7 @@ nothing is forgotten.
   returns enormous content. A panic in **sequential** mode (not only parallel).
 - Parallel completion order differs from call order; results still appended in call order.
 - A hook that panics, returns nil, blocks, blocks everything, takes longer than its deadline.
-- `MaxTurns` exactly reached; one below; `MaxTurns` of zero (default) and negative.
+- `MaxTurns` exactly reached; one below; `MaxTurns` of zero and negative (both unlimited).
 - Cancel before the first request, during streaming, during a tool, between turns.
 - Provider error on turn one, on a later turn, after tool results were appended.
 - Steering message arriving during a tool call, during streaming, after the last turn.

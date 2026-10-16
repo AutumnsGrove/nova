@@ -107,7 +107,7 @@ usage            { run, usage, total }              // running totals
 retry            { run, attempt, max, delay_ms, error }      // discard the in-progress message of the current turn
 compaction       { entry, replaced, tokens_before, tokens_after }
 queue_update     { steering, follow_up }
-run_end          { run, reason, turns, usage }      // reason: done | exhausted | aborted | error
+run_end          { run, reason, turns, usage }      // reason: done | exhausted | aborted | error; exhausted only when a bound was set
 error            { run?, code, message }
 extension_error  { extension, hook?, message }
 ui_expired       { id }                              // a ui_request timed out; close its dialog

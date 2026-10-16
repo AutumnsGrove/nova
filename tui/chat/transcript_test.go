@@ -226,6 +226,30 @@ func TestTranscript_TRN09_RunEndReasons(t *testing.T) {
 	}
 }
 
+// PNL04: a subagent card is a tool card like any other, so it carries the same
+// state-tinted panel and padding as the built-in tools.
+func TestTranscript_PNL04_SubagentPanelled(t *testing.T) {
+	st := styles.Build(styles.Dark(), colorprofile.TrueColor)
+	tr := NewTranscript(80, &fakeRenderer{echo: true}, st)
+	tr.Apply(proto.Event{Type: proto.EventToolCall, Call: &proto.ToolCall{
+		ID: "c1", Name: "subagent", Arguments: json.RawMessage(`{"task":"do it"}`),
+	}})
+	tr.Apply(proto.Event{Type: proto.EventToolEnd, CallID: "c1", Result: &proto.ToolResult{Content: "done"}})
+	items := tr.Items()
+	if len(items) == 0 {
+		t.Fatal("no item for the subagent call")
+	}
+	out := items[0].Render(80)
+	for _, l := range strings.Split(out, "\n") {
+		if !strings.Contains(l, "48;") {
+			t.Fatalf("subagent card line has no panel background: %q", l)
+		}
+		if w := ansi.StringWidth(l); w != 80 {
+			t.Fatalf("subagent card line is %d wide, want 80", w)
+		}
+	}
+}
+
 func TestTranscript_TRN10_NeverReorders(t *testing.T) {
 	rng := rand.New(rand.NewSource(10))
 	tr := newTestTranscript(80)

@@ -4,10 +4,10 @@
 [3;2m── ▸ Thought for 12s · 3.4k tokens ─────[m
 [3;2mthe call is in client.go[m                
 [3;2m────────────────────────────────────────[m
-● [1medit[m client.go +9 −2                  
-    [1m@@ -1,2 +1,2 @@[m                     
-1   -old                                
-  1 +new                                
+ ● [1medit[m client.go +9 −2                 
+     [1m@@ -1,2 +1,2 @@[m                    
+ 1   -old                               
+   1 +new                               
                                         
                                         
                                         
@@ -29,10 +29,10 @@ ctx n/a · $0.000 · ctrl+o expand
 [3;2m── ▸ Thought for 12s · 3.4k tokens ──────────────────────────── click to expand[m 
 [3;2mthe call is in client.go[m                                                        
 [3;2m────────────────────────────────────────────────────────────────────────────────[m
-● [1medit[m client.go +9 −2                                                          
-    [1m@@ -1,2 +1,2 @@[m                                                             
-1   -old                                                                        
-  1 +new                                                                        
+ ● [1medit[m client.go +9 −2                                                         
+     [1m@@ -1,2 +1,2 @@[m                                                            
+ 1   -old                                                                       
+   1 +new                                                                       
                                                                                 
                                                                                 
                                                                                 
@@ -54,10 +54,10 @@ ctx n/a · $0.000 · ctrl+o expand
 [3;2m── ▸ Thought for 12s · 3.4k tokens ──────────────────────────────────────────────────────────────────── click to expand[m 
 [3;2mthe call is in client.go[m                                                                                                
 [3;2m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[m
-● [1medit[m client.go +9 −2                                                                                                  
-    [1m@@ -1,2 +1,2 @@[m                                                                                                     
-1   -old                                                                                                                
-  1 +new                                                                                                                
+ ● [1medit[m client.go +9 −2                                                                                                 
+     [1m@@ -1,2 +1,2 @@[m                                                                                                    
+ 1   -old                                                                                                               
+   1 +new                                                                                                               
                                                                                                                         
                                                                                                                         
                                                                                                                         

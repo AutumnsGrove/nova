@@ -37,21 +37,24 @@ func newToolItem(st styles.Styles, registry *render.Registry, display *Display, 
 	}
 }
 
-// Render draws the card: always a header, then a body when the call is
-// expanded, running, or an error.
+// Render draws the card: a full-width, state-tinted panel holding a header and,
+// when expanded, running, or on error, a body.
 func (ti *toolItem) Render(width int) string {
 	reg := ti.registry
 	if reg == nil {
 		reg = render.NewRegistry()
 	}
 	rd := reg.Lookup(ti.call.Name)
-	expanded := ti.expanded
-	header := rd.Header(ti.call, ti.st, width)
-	body := rd.Body(ti.call, ti.st, width, expanded)
-	if body == "" {
-		return header
+	// The panel pads one cell on each side, so the card is drawn to the inner
+	// width and then framed.
+	inner := PanelInner(width)
+	header := rd.Header(ti.call, ti.st, inner)
+	body := rd.Body(ti.call, ti.st, inner, ti.expanded)
+	card := header
+	if body != "" {
+		card = header + "\n" + body
 	}
-	return header + "\n" + body
+	return Panel(card, ti.call, ti.st, width)
 }
 
 // setNow updates the running clock.

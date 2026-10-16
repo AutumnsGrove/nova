@@ -40,6 +40,11 @@ type Styles struct {
 	Compaction lipgloss.Style
 	Notice     lipgloss.Style
 
+	// Tool-card panels, tinted by state: running, success, and error.
+	ToolPanel      lipgloss.Style
+	ToolPanelOK    lipgloss.Style
+	ToolPanelError lipgloss.Style
+
 	// The input area.
 	Editor             lipgloss.Style
 	EditorFocused      lipgloss.Style
@@ -85,6 +90,10 @@ func Build(t Theme, p colorprofile.Profile) Styles {
 		Compaction: b.fg("muted").Faint(true),
 		Notice:     b.fg("warm"),
 
+		ToolPanel:      b.bgstyle("panel"),
+		ToolPanelOK:    b.bgstyle("panelok"),
+		ToolPanelError: b.bgstyle("panelerr"),
+
 		Editor:             b.fg("ink"),
 		EditorFocused:      b.fg("ink").Bold(true),
 		Placeholder:        b.fg("muted").Faint(true),
@@ -118,6 +127,18 @@ func (p painter) fg(token string) lipgloss.Style {
 // bg is fg for backgrounds.
 func (p painter) bg(token string) color.Color {
 	return p.color(token)
+}
+
+// bgstyle returns a style whose background is the token's colour, or an
+// unstyled one when the token is absent, the theme is Mono, or the profile has
+// no colour. It is the tool-card panel: only the background is set, so the
+// card's own foreground styles stay in charge.
+func (p painter) bgstyle(token string) lipgloss.Style {
+	s := lipgloss.NewStyle()
+	if c := p.color(token); c != nil {
+		s = s.Background(c)
+	}
+	return s
 }
 
 // bgfg returns a style with a foreground and a background, each omitted when

@@ -1,7 +1,7 @@
 --- width 40 ---
 ✦  [1mnova[m  ~/proj                         
-● [1mread[m client.go                        
-package client                          
+ ● [1mread[m client.go                       
+ package client                         
                                         
                                         
                                         
@@ -25,8 +25,8 @@ package client
 ctx n/a · $0.000 · ctrl+o expand        
 --- width 80 ---
 ✦  [1mnova[m  ~/proj                                                                 
-● [1mread[m client.go                                                                
-package client                                                                  
+ ● [1mread[m client.go                                                               
+ package client                                                                 
                                                                                 
                                                                                 
                                                                                 
@@ -50,8 +50,8 @@ package client
 ctx n/a · $0.000 · ctrl+o expand                                                
 --- width 120 ---
 ✦  [1mnova[m  ~/proj                                                                                                         
-● [1mread[m client.go                                                                                                        
-package client                                                                                                          
+ ● [1mread[m client.go                                                                                                       
+ package client                                                                                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         

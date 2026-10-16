@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 )
 
@@ -94,6 +95,29 @@ func TestStyles_STY07_LightThemeContrast(t *testing.T) {
 	}
 }
 
+func TestStyles_STY08_ToolPanelBackground(t *testing.T) {
+	d := Build(Dark(), colorprofile.TrueColor)
+	panels := map[string]lipgloss.Style{
+		"pending": d.ToolPanel,
+		"success": d.ToolPanelOK,
+		"error":   d.ToolPanelError,
+	}
+	seen := map[string]bool{}
+	for name, s := range panels {
+		got := s.Render("x")
+		if !strings.Contains(got, "48;") {
+			t.Fatalf("%s panel has no background: %q", name, got)
+		}
+		if seen[got] {
+			t.Fatalf("%s panel shares a colour with another state", name)
+		}
+		seen[got] = true
+	}
+	if got := Build(Mono(), colorprofile.TrueColor).ToolPanel.Render("x"); strings.Contains(got, "48;") {
+		t.Fatalf("mono panel emitted a background: %q", got)
+	}
+}
+
 // sample returns every style by name so a test can check them all.
 func sample(s Styles) map[string]interface{ Render(...string) string } {
 	return map[string]interface{ Render(...string) string }{
@@ -101,6 +125,7 @@ func sample(s Styles) map[string]interface{ Render(...string) string } {
 		"Spark": s.Spark, "Core": s.Core, "Warm": s.Warm, "Success": s.Success,
 		"Error": s.Error, "User": s.User, "Assistant": s.Assistant, "Thinking": s.Thinking,
 		"Tool": s.Tool, "ToolError": s.ToolError, "Editor": s.Editor, "DiffAdd": s.DiffAdd,
+		"ToolPanel": s.ToolPanel, "ToolPanelOK": s.ToolPanelOK, "ToolPanelError": s.ToolPanelError,
 	}
 }
 

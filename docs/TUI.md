@@ -51,7 +51,7 @@ Taken from Crush's `internal/ui/AGENTS.md`, because they work.
 │                                                              │
 │  you   add a retry to the fetch call                         │
 │                                                              │
-│  ▸ Thinking for 12s · ~3.4k tokens            ctrl+o expand  │  thinking block
+│  ▸ Thinking for 12s · ~3.4k tokens             click to expand  │  thinking block
 │    …the call is in client.go and has no retry…               │
 │                                                              │
 │  ● read  client.go                                  0.1s     │  tool card
@@ -83,8 +83,8 @@ footer detail, in that order.
 |---|---|
 | User message | plain text, wrapped; shows attached files |
 | Assistant text | **incremental markdown**: re-render only the changed tail; code blocks highlighted |
-| **Thinking block** | native (D24). A ruled header (`── ▸ Thought for 12s · ~3.4k tokens ──── ctrl+o to expand`), the last 8 lines of reasoning in dim italics, and a closing rule, both while streaming (live timer) and once finished, so thinking is never hidden. `ctrl+o` expands the whole text; the preview height is a setting. |
-| Tool card | header (status dot, name, key argument, duration) and a compact result box: the first 6 lines of the result (the last 6 for `bash`) with a muted `… N more lines (ctrl+o to expand)` line. A call with no output stays header only. `ctrl+o` expands the full result. |
+| **Thinking block** | native (D24). A ruled header (`── ▸ Thought for 12s · ~3.4k tokens ──── click to expand`), the last 8 lines of reasoning in dim italics, and a closing rule, both while streaming (live timer) and once finished, so thinking is never hidden. Click the block to expand just it; `ctrl+o` expands or collapses every block; the preview height is a setting. |
+| Tool card | header (status dot, name, key argument, duration) and a compact result box: the first 6 lines of the result (the last 6 for `bash`) with a muted `… N more lines (click to expand)` line. A call with no output stays header only. Click the card to expand just it; `ctrl+o` expands or collapses every card. |
 | Compaction marker | a rule with `compacted 38k → 6k tokens` |
 | Error | red, with the retry count when retrying |
 | Extension message | rendered by the extension's template, or by a bundled renderer |
@@ -126,7 +126,8 @@ over their `details` JSON for a nicer card.
 | `alt+enter` | queue as a **follow-up** |
 | `esc` | abort the run; in a dialog, close it |
 | `ctrl+c` | clear the editor; twice quits (the footer shows `ctrl+c again to quit` once armed) |
-| `ctrl+o` | expand or collapse tool output and thinking |
+| `ctrl+o` | expand or collapse **every** tool and thinking block |
+| click | expand or collapse the block under the pointer |
 | `ctrl+l` | model picker |
 | `ctrl+t` | cycle thinking level |
 | `ctrl+r` | session list |

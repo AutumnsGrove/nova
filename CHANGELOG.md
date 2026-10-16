@@ -16,6 +16,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Clicking a tool card or thinking block expands or collapses just that block. `ctrl+o` still expands or collapses
+  every block, and `/display` sets what new blocks do (#5).
 - `/quit` and `/exit` leave the TUI cleanly: they cancel open dialogs, send `shutdown`, and quit when the
   server confirms. Pressing `ctrl+c` twice does the same, and the footer shows a `ctrl+c again to quit` hint
   once the first press arms it (#10).

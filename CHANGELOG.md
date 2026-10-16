@@ -48,6 +48,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- `/new` was advertised and autocompleted but returned `unknown command new`; it and its new alias `/clear`
+  now start a fresh session and clear the transcript, and are refused with a notice while a run is active (#12).
 - The TUI transcript now scrolls: the mouse wheel and trackpad work, `home`/`end` jump to the top and bottom,
   and scrolling up while a run streams no longer snaps back to the tail (#7).
 - The input editor now takes its colours from the active theme. It used fixed terminal colours, including a black

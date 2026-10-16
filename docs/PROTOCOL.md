@@ -72,7 +72,7 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 | `list_models` | `query?` | the model catalog: id, name, provider, context window, prices |
 | `session.list` | | sessions for the working directory: id, name, modified, entry count |
 | `get_extensions` | | each extension's name, version, state, restarts, last error |
-| `run_command` | `name`, `args` | execute a slash command; `quit` and `exit` are aliases for `shutdown` |
+| `run_command` | `name`, `args` | execute a slash command; `quit` and `exit` are aliases for `shutdown`, and `new` and `clear` start a fresh session (the `session.new` command) |
 | `bash` | `command` | run a user shell command and record it in the session |
 | `shutdown` | | graceful close |
 | `list_providers` | | every provider with `id`, `name`, `methods`, `ready`, and `source` (`config`, `env`, `store`, or empty), `current` (it serves the current model), and `default_model` (what to switch to after signing in). `ready` counts a key from the loaded config |

@@ -131,8 +131,9 @@ in C13, `serve` and `action` in C14.)
 11. `bash` runs a user shell command with the `bash` tool code, records it in the session as a
     `custom_message` (display, not in context) unless the command was `!!`, and returns the output.
 12. `get_commands` lists built-ins and prompt templates. `run_command` runs a built-in
-    (`model`, `thinking`, `context`, `compact`, `new`, `name`, `cost`, `help`) or expands a prompt
-    template into a prompt. Built-ins return their text in `data`.
+    (`model`, `thinking`, `context`, `compact`, `new`, `clear`, `name`, `cost`, `help`) or expands a prompt
+    template into a prompt. `new` and `clear` are aliases for `session.new`, so a slash command clears the
+    conversation. Built-ins return their text in `data`.
 13. **Permissions and UI.** With a policy and a UI handler set, `ask` calls the handler as a
     `confirm` request; without one, `ask` resolves per `Headless`. `AnswerUI` routes responses by
     id; a response for an unknown or expired id is ignored with a log line. A `ui_request` with
@@ -237,6 +238,7 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV41 | usage events | | totals match the scripted usage |
 | SRV42 | thinking events | reasoning in the script | `thinking_*` with a duration |
 | SRV45 | `run_command quit` and `exit` | | aliases for `shutdown`; `get_commands` lists them |
+| SRV46 | `run_command new` and `clear` | a session with one turn | each opens a fresh session (path changes) and emits `session_changed`; the old messages are gone; `get_commands` lists both; refused with `busy` while a run is active |
 | PRI01 | print mode answer | scripted "42" | stdout is `42\n`; exit 0 |
 | PRI02 | stdout has only the answer | tool calls in the run | tool progress only on stderr |
 | PRI03 | `-p -` reads stdin | | prompt from stdin |

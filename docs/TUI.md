@@ -141,10 +141,11 @@ bottom resumes it.
 
 ### Slash commands
 
-`/model`, `/thinking`, `/context [tokens]`, `/compact`, `/new`, `/resume`, `/fork`,
+`/model`, `/thinking`, `/context [tokens]`, `/compact`, `/new` (or `/clear`), `/resume`, `/fork`,
 `/tree`, `/name`, `/cost`, `/theme`, `/reload`, `/ext`, `/todos`, `/plan`, `/login`,
 `/logout`, `/help`, `/quit` (or `/exit`). Extensions add more. Each is also a protocol command, so
-a headless client has the same set. `login`, `login_submit`, `login_cancel`, `logout`, and
+a headless client has the same set. `/new` and `/clear` start a fresh session file and clear the
+transcript; they are refused while a run is active. `login`, `login_submit`, `login_cancel`, `logout`, and
 `list_providers` are the protocol commands for sign-in ([`PROTOCOL.md`](PROTOCOL.md)); the local TUI runs
 the sign-in flows itself and asks the server for each provider's status.
 

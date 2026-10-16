@@ -125,7 +125,8 @@ type Display struct {
    success when ok, error on failure. The background is re-asserted after every reset inside the card so a styled
    segment cannot clear it, and every line ends with a reset so the panel cannot bleed into the next item. Mono and a
    colourless profile have no background and are only padded. The panel wraps any tool, so a `subagent` card and every
-   other card get it with no per-tool change.
+   other card get it with no per-tool change. Every transcript item is closed with one blank line, so neighbouring
+   cards and blocks do not run together.
 9. `Summarize` picks the argument that identifies the call: `path`, `file_path`, `command` (first line only), `pattern`,
    `url`, `query`, `name`; else the first string argument; else the compact JSON. It strips control characters, collapses
    whitespace, and truncates to `max` cells with `…`. Paths shorter than the width are shown in full; longer ones keep the
@@ -246,6 +247,7 @@ type Display struct {
 | PNL02 | panel spans the width with side padding | widths 20 to 200 | every line is the full width; one cell on each side |
 | PNL03 | mono has no panel background | `Mono` | no escapes; still padded |
 | PNL04 | a subagent card is panelled | `subagent` tool call | same tint and padding as any tool |
+| PNL05 | blocks are separated by one blank line | two tool cards | each item ends with a blank line; cards do not touch |
 | ARG01 | picks `path` | | path shown |
 | ARG02 | picks `command` first line | multi-line | first line |
 | ARG03 | picks `pattern`, `url`, `query` | | each |

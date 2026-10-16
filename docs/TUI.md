@@ -89,6 +89,9 @@ footer detail, in that order.
 | Error | red, with the retry count when retrying |
 | Extension message | rendered by the extension's template, or by a bundled renderer |
 
+Each item is closed with one blank line, so neighbouring cards and blocks have room
+to breathe instead of running together.
+
 ### Tool renderers
 
 A registry maps tool name to a renderer. A renderer takes the call, the result, the

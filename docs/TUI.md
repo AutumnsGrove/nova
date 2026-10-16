@@ -178,7 +178,12 @@ keeps updating underneath.
 
 Extensions (bundled or third-party) publish to named slots through `widget` and
 `status`. The TUI owns layout; an extension only chooses a placement and content. The
-footer shows status segments left to right with a muted `///` between them.
+footer shows status segments left to right with a muted `///` between them. While a
+run is active the footer leads with the run indicator: a spinner and the elapsed run
+time (`⠋ working 3s`). It sits first so it survives truncation on a narrow terminal,
+animates on the 250 ms tick chain, and clears the instant `run_end` arrives. It is the
+global counterpart to the per-block spinners in the transcript, visible whatever the
+transcript is scrolled to.
 
 ## Themes
 

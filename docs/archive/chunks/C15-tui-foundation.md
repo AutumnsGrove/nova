@@ -242,10 +242,12 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 
 ### Footer and header
 
-27. The footer shows, left to right: a context bar and percentage (`estimated tokens / effective limit`, or
+27. The footer shows, left to right: the run indicator when a run is active (a spinner and the elapsed run
+time, `⠋ working 3s`, first so it survives truncation), a context bar and percentage (`estimated tokens / effective limit`, or
     `ctx n/a` when the limit is unknown), the session cost, queued counts (`2 queued`), and a hint for the
     most relevant key. It truncates by dropping segments from the right, never wrapping. Values come from
-    `get_state` and the `usage` and `queue_update` events.
+    `get_state` and the `usage` and `queue_update` events. The run indicator is fed by `run_start`, `run_end`,
+    and `state_changed running`; the 250 ms tick chain runs while it is up and stops when the run ends.
 28. The header shows the minimal mark glyph `✦`, `nova`, the model, the cwd (shortened with `~`), and the
     git branch if known (from `get_state`). It is dropped when the layout says so.
 
@@ -385,6 +387,12 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | UIM07 | footer truncation | width 40 | segments dropped from the right; one line |
 | UIM08 | header | | glyph, model, cwd with `~` |
 | UIM09 | run state | `run_start`/`run_end` | editor hints change; steer mode on |
+| IND01 | run indicator shows and clears | `run_start`, `run_end` | footer shows `working` for the run, gone after `run_end` |
+| IND02 | indicator animates and times | clock advances | glyph changes; elapsed shown (`400ms`) |
+| IND03 | waiting-only run | `run_start` with no transcript activity | indicator shown; a tick is scheduled |
+| IND04 | run_end stops the ticks | | no timer rescheduled; not ticking |
+| IND05 | `state_changed running` starts it | | indicator shown |
+| IND06 | indicator golden | three widths, Mono | one line; survives narrow widths |
 | UIM10 | prompt response error | `busy`, `provider_error` | error shown; text restored to the editor |
 | UIM11 | `session_changed` | | transcript reloaded via `get_messages` |
 | UIM12 | `state_changed` | | footer and header update |

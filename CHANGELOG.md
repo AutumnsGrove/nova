@@ -28,6 +28,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- An always-visible run indicator. While a run is active the footer leads with a spinner and the elapsed
+  run time (`⠋ working 3s`), animated on the 250 ms tick chain and cleared the instant the run ends. It fills
+  the waiting-on-the-provider gap that the per-block spinners miss, and it survives truncation on a narrow
+  terminal because it is the first segment (#19).
 - Crash reports: a panic now restores the terminal, prints a one-line error and the path to
   `<config dir>/nova/crash.log`, and records the version, mode, model, last operation, and a full stack. Panics in
   Nova-owned goroutines are caught into the same report instead of escaping (#11).

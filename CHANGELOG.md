@@ -16,6 +16,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Crash reports: a panic now restores the terminal, prints a one-line error and the path to
+  `<config dir>/nova/crash.log`, and records the version, mode, model, last operation, and a full stack. Panics in
+  Nova-owned goroutines are caught into the same report instead of escaping (#11).
+- `nova log` (alias `nova crash`) prints the most recent crash report and `nova log --path` prints the file; the
+  TUI's `/log` opens it in a dialog and `nova doctor` shows the crash-log path and the last crash (#11).
+- `--debug` and `NOVA_DEBUG=1` write routine activity to `<config dir>/nova/debug.log`, so a crash report has
+  context (#11).
 - Clicking a tool card or thinking block expands or collapses just that block. `ctrl+o` still expands or collapses
   every block, and `/display` sets what new blocks do (#5).
 - `/quit` and `/exit` leave the TUI cleanly: they cancel open dialogs, send `shutdown`, and quit when the

@@ -61,6 +61,18 @@ make test          # the fast loop: go test -short
 test-driven rules, the repo map, the hard rules, and the definition of done. [`CONTRIBUTING.md`](CONTRIBUTING.md)
 is the short version.
 
+## When something goes wrong
+
+A crash never exits silently. On a panic Nova restores the terminal, prints a
+one-line error, and writes a report — the version, mode, model, last operation,
+and a full stack — to `<config dir>/nova/crash.log` (on macOS and Linux that is
+`~/.config/nova/crash.log`). The path is printed with the error, `nova doctor`
+shows it, and `nova log` prints the most recent report (`nova log --path` prints
+the file). In the TUI, `/log` opens it in a dialog.
+
+To record routine activity for a crash you are trying to reproduce, run with
+`--debug` or set `NOVA_DEBUG=1`; traces go to `<config dir>/nova/debug.log`.
+
 ## North star
 
 One day, a **full coding harness on par with pi** — our own, same principles. It

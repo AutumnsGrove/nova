@@ -12,6 +12,23 @@ import (
 // quitWindow is how long a second ctrl+c still quits.
 const quitWindow = 2 * time.Second
 
+// wheelScroll is how many lines one wheel notch moves the transcript.
+const wheelScroll = 3
+
+// handleMouse routes a mouse event. The wheel scrolls the transcript; a click
+// is handled by the item under the pointer once items are selectable.
+func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
+	if w, ok := msg.(tea.MouseWheelMsg); ok {
+		switch w.Button {
+		case tea.MouseWheelUp:
+			m.list.ScrollBy(-wheelScroll)
+		case tea.MouseWheelDown:
+			m.list.ScrollBy(wheelScroll)
+		}
+	}
+	return nil
+}
+
 // toggleExpanded flips both expansion flags together, as ctrl+o does.
 func (m *Model) toggleExpanded() {
 	m.display.ExpandThinking = !m.display.ExpandThinking
@@ -97,6 +114,12 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "pgdown":
 		m.list.ScrollBy(max(m.layout.Main.H, 1))
+		return nil
+	case "home":
+		m.list.ScrollToTop()
+		return nil
+	case "end":
+		m.list.ScrollToBottom()
 		return nil
 	case "ctrl+o":
 		m.toggleExpanded()

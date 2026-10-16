@@ -28,6 +28,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.PasteMsg:
 		return m, m.handlePaste(msg.Content)
 
+	case tea.MouseMsg:
+		return m, m.handleMouse(msg)
+
 	case client.ResponseMsg:
 		return m, m.handleResponse(msg.Response)
 
@@ -237,7 +240,7 @@ func (m *Model) handleEvent(e proto.Event) tea.Cmd {
 		cmd = m.client.Send(proto.Command{Type: proto.CmdGetMessages})
 	}
 	if changed := m.transcript.Apply(e); len(changed) > 0 {
-		m.syncList()
+		m.list.Sync(m.transcript.Items())
 	}
 	m.recompute()
 	return cmd

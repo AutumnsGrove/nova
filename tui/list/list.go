@@ -43,6 +43,45 @@ func (l *List) SetItems(items []Item) {
 	l.topIdx, l.topOff = 0, 0
 }
 
+// Sync reconciles the list with items, reusing each entry's cached render by
+// id. It preserves the following state and, when not following, keeps the item
+// at the top of the viewport, so streaming content does not yank the view back
+// to the tail. Use SetItems for a replacement that should return to the tail.
+func (l *List) Sync(items []Item) {
+	byID := make(map[string]*entry, len(l.items))
+	for _, e := range l.items {
+		byID[e.item.ID()] = e
+	}
+	anchor := ""
+	if !l.following && l.topIdx >= 0 && l.topIdx < len(l.items) {
+		anchor = l.items[l.topIdx].item.ID()
+	}
+	next := make([]*entry, 0, len(items))
+	for _, it := range items {
+		if e, ok := byID[it.ID()]; ok {
+			e.item = it
+			next = append(next, e)
+			continue
+		}
+		next = append(next, &entry{item: it})
+	}
+	l.items = next
+	if l.following || anchor == "" {
+		return
+	}
+	for i, e := range l.items {
+		if e.item.ID() == anchor {
+			l.topIdx = i
+			if h := len(l.lines(e)); l.topOff > h {
+				l.topOff = h
+			}
+			return
+		}
+	}
+	// The anchor item is gone; clamp to the tail.
+	l.topIdx, l.topOff = l.tail()
+}
+
 // Append adds one item to the end.
 func (l *List) Append(it Item) { l.items = append(l.items, &entry{item: it}) }
 
@@ -111,6 +150,12 @@ func (l *List) ScrollBy(delta int) {
 // ScrollToBottom jumps to the tail and resumes following.
 func (l *List) ScrollToBottom() { l.following = true }
 
+// ScrollToTop jumps to the first line and stops following.
+func (l *List) ScrollToTop() {
+	l.following = false
+	l.topIdx, l.topOff = 0, 0
+}
+
 // View returns exactly Height lines, each at most Width cells wide and padded
 // with blanks, drawing only the items that intersect the viewport.
 func (l *List) View() string {
@@ -135,10 +180,15 @@ func (l *List) View() string {
 	return strings.Join(out, "\n")
 }
 
-// start is the first visible (item, line) position.
+// start is the first visible (item, line) position. A position left over from
+// taller or removed items is clamped, so a viewport is never stuck on a blank
+// screen after the content changes height.
 func (l *List) start() (int, int) {
-	if l.following {
+	if l.following || l.topIdx < 0 || l.topIdx >= len(l.items) {
 		return l.tail()
+	}
+	if h := len(l.lines(l.items[l.topIdx])); l.topOff > h {
+		l.topOff = h
 	}
 	return l.topIdx, l.topOff
 }

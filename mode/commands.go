@@ -9,6 +9,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/compaction"
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/session"
 )
@@ -23,6 +24,7 @@ func (s *Server) Handle(ctx context.Context, cmd proto.Command) proto.Response {
 func (s *Server) recoverResponse(cmd proto.Command, fn func() proto.Response) (resp proto.Response) {
 	defer func() {
 		if r := recover(); r != nil {
+			_, _ = diag.Report(r, "command "+cmd.Type)
 			s.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: proto.CodeInternal, Message: fmt.Sprintf("panic: %v", r)}})
 			resp = failResponse(cmd, proto.CodeInternal, fmt.Sprintf("internal error: %v", r))
 		}
@@ -219,6 +221,7 @@ func (s *Server) handleSetModel(cmd proto.Command) proto.Response {
 	s.compactor.Model = slug
 	s.cfg.Model = name
 	s.mu.Unlock()
+	diag.SetModel(name)
 	s.recordEntry(session.Entry{Type: session.TypeModelChange, Model: name})
 	s.emitState()
 	return okResponse(cmd, nil)

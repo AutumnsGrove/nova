@@ -18,6 +18,7 @@ import (
 	"github.com/AutumnsGrove/nova/bundled"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
@@ -162,6 +163,7 @@ func New(opt Options) (*Server, error) {
 	if cfg.Model == "" {
 		cfg.Model = openrouter.DefaultModel
 	}
+	diag.SetModel(cfg.Model)
 	s := &Server{
 		opt:       opt,
 		cfg:       cfg,

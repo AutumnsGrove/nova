@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -239,10 +240,11 @@ func runExec(ctx context.Context, work string, argv []string, timeout time.Durat
 	go func() {
 		defer close(readDone)
 		defer pr.Close()
+		defer diag.Catch("extension output")
 		io.Copy(buf, pr)
 	}()
 	waitDone := make(chan error, 1)
-	go func() { waitDone <- cmd.Wait() }()
+	go func() { defer diag.Catch("extension process"); waitDone <- cmd.Wait() }()
 
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

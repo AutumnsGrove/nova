@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/mode"
 	"github.com/AutumnsGrove/nova/proto"
 )
@@ -132,6 +133,7 @@ func (s *server) start() {
 	events, cancel := s.mode.Subscribe(4096)
 	go func() {
 		defer cancel()
+		defer diag.Catch("server events")
 		for {
 			select {
 			case <-s.done:
@@ -411,7 +413,7 @@ func ListenAndServe(ctx context.Context, s *mode.Server, opt Options) error {
 	httpSrv := &http.Server{Handler: srv, ReadHeaderTimeout: srv.opt.headerTimeout, IdleTimeout: idleTimeout}
 	srv.start()
 	errCh := make(chan error, 1)
-	go func() { errCh <- httpSrv.Serve(ln) }()
+	go func() { defer diag.Catch("http server"); errCh <- httpSrv.Serve(ln) }()
 	select {
 	case <-ctx.Done():
 		srv.close()

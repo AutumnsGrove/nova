@@ -9,6 +9,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
@@ -406,6 +407,7 @@ func (h *Host) observeOne(inst *instance, fn func(proto.Event), ev proto.Event) 
 		defer close(done)
 		defer func() {
 			if rec := recover(); rec != nil {
+				_, _ = diag.Report(rec, "extension events")
 				h.reportHookErr(inst, "events", fmt.Errorf("panic: %v", rec))
 			}
 		}()

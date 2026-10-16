@@ -71,8 +71,7 @@ nova/
     cli/          fang-styled help and errors (full build only) ≤ 150
   cmd/nova/       main, cobra commands, doctor, version         ≤ 1200
   doctor/         environment checks                            ≤ 400
-  diag/           crash reports and debug traces                ≤ 250
-  update/         replace the binary from a checkout or release ≤ 450
+  diag/           crash reports and debug traces                ≤ 250  update/         replace the binary from a checkout or release ≤ 450
   scripts/        matrixcheck, linecount, importcheck, accept
   assets/         logo SVGs and the generator
   docs/           embedded topics, search, authoring context    ≤ 220
@@ -102,6 +101,8 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
   imports `permission` because it decodes the policy.
 - `session` imports `message`, `provider`, `proto`. `compaction` imports `session`, `provider`, `message`.
 - `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.
+- `diag` is a stdlib-only leaf: it holds no Nova state, so `agent` and `ext` may
+  import it for crash reporting without breaking the layering.
 - `mode` wires everything (including `serve` and `action`). `cmd/nova` only parses flags and calls `mode`, `ext`, and `update`.
 - `testkit` is test support: any package's `_test.go` may import it, but production
   code may not (D48).

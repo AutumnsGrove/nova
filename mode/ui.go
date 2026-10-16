@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
 )
@@ -77,6 +78,7 @@ func (s *Server) callUI(ctx context.Context, req proto.UIRequest) (proto.UIRespo
 
 	if handler != nil {
 		go func() {
+			defer diag.Catch("ui handler")
 			resp, err := handler(ctx, req)
 			if err != nil || !answered(resp) {
 				return

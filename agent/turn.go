@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
@@ -125,6 +126,7 @@ func (r *run) streamOnce(req provider.Request) (message.Message, provider.Usage,
 		r.emit(proto.Event{Type: proto.EventThinkingEnd, Turn: intp(r.turn), Ms: ms})
 	}
 
+	diag.SetOp(fmt.Sprintf("provider request turn %d", r.turn))
 	resp, err := r.cfg.Provider.Stream(r.ctx, req, func(ev provider.StreamEvent) {
 		switch ev.Type {
 		case provider.StreamReasoningDelta:

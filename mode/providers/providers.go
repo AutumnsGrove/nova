@@ -9,6 +9,7 @@ import (
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/opencodego"
 	"github.com/AutumnsGrove/nova/provider/openrouter"
@@ -76,6 +77,7 @@ func Build(opt Options) provider.Provider {
 	}
 	if starter, _ := goKeyFunc(context.Background()); starter != "" && cachePath != "" && !opencodego.CacheFresh(cachePath, 0) {
 		go func() {
+			defer diag.Catch("provider discovery")
 			_ = opencodego.Refresh(context.Background(), opencodego.DiscoveryConfig{
 				BaseURL: goBase, APIKey: starter, CachePath: cachePath,
 			})

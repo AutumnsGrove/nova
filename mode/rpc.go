@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/proto"
 )
 
@@ -55,6 +56,7 @@ func ServeRPC(ctx context.Context, s *Server, in io.Reader, out io.Writer) error
 	}
 	readCh := make(chan readResult, 16)
 	go func() {
+		defer diag.Catch("rpc reader")
 		reader := proto.NewReader(in, 0)
 		for {
 			line, err := reader.Next()

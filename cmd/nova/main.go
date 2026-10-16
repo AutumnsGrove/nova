@@ -19,6 +19,7 @@ import (
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/mode"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
@@ -37,8 +38,24 @@ func stdinIsTerminal() bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-// run is the testable entry point.
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer, tty bool) int {
+// run is the testable entry point. It installs the process-wide crash recorder
+// and recovers any panic that escapes a command, so a crash is never silent.
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer, tty bool) (code int) {
+	rec := newRecorder()
+	diag.SetDefault(rec)
+	defer func() {
+		_ = rec.Close()
+		diag.SetDefault(nil)
+	}()
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(stderr, "\nnova: internal error: %v\n", r)
+			if path, err := diag.Report(r, "command"); err == nil && path != "" {
+				fmt.Fprintf(stderr, "nova: crash report: %s\n", path)
+			}
+			code = 1
+		}
+	}()
 	exit := 0
 	root := newRoot(stdin, stdout, stderr, tty, &exit)
 	root.SetArgs(args)
@@ -46,6 +63,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, tty bool) int
 		return 2
 	}
 	return exit
+}
+
+// newRecorder builds the crash and debug recorder for this process. NOVA_DEBUG
+// turns routine tracing on; --debug does the same from the command line.
+func newRecorder() *diag.Recorder {
+	opt := diag.Options{Version: version, Debug: debugRequested(os.Getenv("NOVA_DEBUG"))}
+	if home, err := os.UserHomeDir(); err == nil {
+		opt.Dir = config.UserConfigDir(home)
+	}
+	return diag.New(opt)
+}
+
+// debugRequested reports whether an environment value asks for debug tracing.
+// Empty, "0", "false", "no", and "off" are off.
+func debugRequested(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "0", "false", "no", "off":
+		return false
+	}
+	return true
 }
 
 // newRoot builds the cobra command tree.
@@ -65,6 +102,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		maxTurns     int
 		contextLimit int
 		yes          bool
+		debugFlag    bool
 	)
 	root := &cobra.Command{
 		Use:           "nova",
@@ -75,6 +113,9 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if debugFlag {
+				diag.SetDebug(true)
+			}
 			code, err := runRoot(cmd.Context(), rootOptions{
 				prompt: promptFlag, mode: modeFlag, model: modelFlag, thinking: thinkingFlag,
 				session: sessionFlag, noSession: noSession, continueRun: continueFlag, resume: resumeFlag,
@@ -107,6 +148,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 	flags.IntVar(&maxTurns, "max-turns", 0, "maximum agent turns")
 	flags.IntVar(&contextLimit, "context-limit", 0, "context token limit")
 	flags.BoolVar(&yes, "yes", false, "auto-approve permission prompts for this run")
+	flags.BoolVar(&debugFlag, "debug", false, "write routine tracing to the debug log")
 
 	root.AddCommand(
 		versionCommand(stdout),
@@ -178,6 +220,7 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 		return 0, fmt.Errorf("nova: --resume needs the TUI (not built yet)")
 	}
 	tuiMode := shouldStartTUI(o.mode, o.tty, writerIsTerminal(o.stdout))
+	diag.SetMode(modeLabel(o.mode, tuiMode))
 	if tuiMode {
 		ok, err := ensureTrust(cwd, home, o.stdin, o.stdout)
 		if err != nil {
@@ -236,6 +279,19 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 			return 0, startTUI(sigCtx, s)
 		}
 		return 0, fmt.Errorf("nova: no mode selected; use -p, --mode, or a subcommand")
+	}
+}
+
+// modeLabel names the run for a crash report. A bare invocation that opened
+// the TUI is "tui"; an explicit --mode keeps its value; anything else is print.
+func modeLabel(mode string, tui bool) string {
+	switch {
+	case tui:
+		return "tui"
+	case mode != "":
+		return mode
+	default:
+		return "print"
 	}
 }
 

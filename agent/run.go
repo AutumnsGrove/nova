@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
@@ -47,6 +48,7 @@ func (a *Agent) Start(ctx context.Context, history []message.Message, prompt mes
 	}
 	go func() {
 		defer release()
+		defer diag.Catch("agent run")
 		_, _ = r.execute(history, &prompt)
 	}()
 	return nil
@@ -100,12 +102,16 @@ func (a *Agent) begin(ctx context.Context) (*run, func(), error) {
 // crashing the process, because Start gives it no caller to recover it.
 func (r *run) execute(history []message.Message, prompt *message.Message) (res *Result, err error) {
 	defer func() {
-		if rec := recover(); rec != nil && !r.ended {
-			res, err = r.finish(r.result("error"), fmt.Errorf("internal error: %v", rec))
-		} else if rec != nil {
-			panic(rec)
+		if rec := recover(); rec != nil {
+			_, _ = diag.Report(rec, "agent run")
+			if !r.ended {
+				res, err = r.finish(r.result("error"), fmt.Errorf("internal error: %v", rec))
+			} else {
+				panic(rec)
+			}
 		}
 	}()
+	diag.SetOp("run " + r.id)
 	a := r.a
 	if a.cfg.System != "" {
 		r.messages = append(r.messages, message.System(a.cfg.System))

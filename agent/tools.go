@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync"
 
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
@@ -89,6 +90,7 @@ func (r *run) dispatch(calls []message.ToolCall) []tool.Result {
 func (r *run) runCall(call message.ToolCall) (res tool.Result) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			_, _ = diag.Report(rec, "tool "+call.Function.Name)
 			res = tool.Errorf("internal error running %s: %v", call.Function.Name, rec)
 			r.emitToolEnd(call, res)
 		}
@@ -118,6 +120,7 @@ func (r *run) runCall(call message.ToolCall) (res tool.Result) {
 	}
 
 	r.emit(proto.Event{Type: proto.EventToolStart, CallID: call.ID})
+	diag.SetOp("tool " + call.Function.Name)
 	progress := newProgress(r, call.ID)
 	tctx := r.toolContext()
 	tctx.Emit = progress.emit
@@ -194,6 +197,7 @@ func newProgress(r *run, callID string) *progress {
 	p := &progress{r: r, id: callID, ch: make(chan tool.Update, 32), done: make(chan struct{})}
 	go func() {
 		defer close(p.done)
+		defer diag.Catch("tool progress")
 		for u := range p.ch {
 			p.r.emit(proto.Event{Type: proto.EventToolUpdate, CallID: p.id, Text: u.Text})
 		}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/bundled/subagent"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
@@ -155,7 +156,7 @@ func (b uiBridge) Notify(req proto.UIRequest) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	go func() { _, _ = h(ctx, req) }()
+	go func() { defer diag.Catch("ui notify"); _, _ = h(ctx, req) }()
 }
 
 // errUnsupportedUI reports a UI method the attached client cannot answer.

@@ -178,7 +178,7 @@ func moreHint(n int, earlier bool, st styles.Styles) string {
 	if earlier {
 		which = "earlier"
 	}
-	return st.Muted.Render(fmt.Sprintf("… %d %s lines (ctrl+o to expand)", n, which))
+	return st.Muted.Render(fmt.Sprintf("… %d %s lines (click to expand)", n, which))
 }
 
 // previewText shows the first PreviewLines lines of s, or the last when tail

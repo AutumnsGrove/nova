@@ -43,6 +43,25 @@ func (l *List) SetItems(items []Item) {
 	l.topIdx, l.topOff = 0, 0
 }
 
+// ItemAt returns the item at viewport line y (0-based), or nil when the line
+// is past the end of the content. It is the hit test behind a mouse click.
+func (l *List) ItemAt(y int) Item {
+	if y < 0 || y >= l.height {
+		return nil
+	}
+	idx, off := l.start()
+	for idx < len(l.items) {
+		n := len(l.lines(l.items[idx])) - off
+		if y < n {
+			return l.items[idx].item
+		}
+		y -= n
+		idx++
+		off = 0
+	}
+	return nil
+}
+
 // Sync reconciles the list with items, reusing each entry's cached render by
 // id. It preserves the following state and, when not following, keeps the item
 // at the top of the viewport, so streaming content does not yank the view back

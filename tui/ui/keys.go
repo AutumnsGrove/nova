@@ -15,15 +15,23 @@ const quitWindow = 2 * time.Second
 // wheelScroll is how many lines one wheel notch moves the transcript.
 const wheelScroll = 3
 
-// handleMouse routes a mouse event. The wheel scrolls the transcript; a click
-// is handled by the item under the pointer once items are selectable.
+// handleMouse routes a mouse event. The wheel scrolls the transcript and a
+// left click toggles the block under the pointer. ItemAt rejects a click
+// outside the main region, so only the overlay needs guarding.
 func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
-	if w, ok := msg.(tea.MouseWheelMsg); ok {
-		switch w.Button {
+	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		switch msg.Button {
 		case tea.MouseWheelUp:
 			m.list.ScrollBy(-wheelScroll)
 		case tea.MouseWheelDown:
 			m.list.ScrollBy(wheelScroll)
+		}
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft && m.overlay.Len() == 0 {
+			if it := m.list.ItemAt(msg.Y - m.layout.Main.Y); it != nil {
+				m.transcript.Toggle(it.ID())
+			}
 		}
 	}
 	return nil

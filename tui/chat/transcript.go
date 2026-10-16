@@ -61,16 +61,41 @@ func (t *Transcript) SetWidth(width int) { t.width = width }
 // Display returns the current display preferences.
 func (t *Transcript) Display() Display { return t.display }
 
-// SetDisplay replaces the display preferences and refreshes every item that
-// depends on them.
+// SetDisplay replaces the display preferences and applies them to every item:
+// it is the bulk expand/collapse behind ctrl+o and /display. A later click can
+// override one item.
 func (t *Transcript) SetDisplay(d Display) {
 	t.display = d
 	for _, th := range t.thinks {
+		th.expanded = d.ExpandThinking
 		th.touch()
 	}
 	for _, ti := range t.tools {
+		ti.expanded = d.ExpandTools
 		ti.touch()
 	}
+}
+
+// Toggle flips the expanded state of one tool or thinking item by id. It
+// reports whether the id named an expandable item.
+func (t *Transcript) Toggle(id string) bool {
+	for _, it := range t.items {
+		switch v := it.(type) {
+		case *thinkingItem:
+			if v.id == id {
+				v.expanded = !v.expanded
+				v.touch()
+				return true
+			}
+		case *toolItem:
+			if v.id == id {
+				v.expanded = !v.expanded
+				v.touch()
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SetRegistry replaces the tool renderer registry.

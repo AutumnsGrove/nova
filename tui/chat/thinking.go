@@ -44,20 +44,21 @@ func (d Display) previewLines() int {
 // expanded.
 type thinkingItem struct {
 	*base
-	st      styles.Styles
-	r       Renderer
-	display *Display
-	text    string
-	start   time.Time
-	now     time.Time
-	ms      int64
-	tokens  *int
-	done    bool
-	second  int
+	st       styles.Styles
+	r        Renderer
+	display  *Display
+	text     string
+	start    time.Time
+	now      time.Time
+	ms       int64
+	tokens   *int
+	done     bool
+	second   int
+	expanded bool
 }
 
 func newThinkingItem(st styles.Styles, r Renderer, display *Display, id string, start time.Time) *thinkingItem {
-	return &thinkingItem{base: &base{id: id}, st: st, r: r, display: display, start: start}
+	return &thinkingItem{base: &base{id: id}, st: st, r: r, display: display, start: start, expanded: display.ExpandThinking}
 }
 
 // Render draws the block at width.
@@ -68,7 +69,7 @@ func (th *thinkingItem) Render(width int) string {
 	if width < 1 {
 		width = 1
 	}
-	expanded := th.display.ExpandThinking
+	expanded := th.expanded
 	header := th.header(width, expanded)
 	head := th.st.Thinking.Render(ansi.Truncate(header, width, "…"))
 	// A finished block keeps its reasoning on screen as the same tail preview
@@ -100,7 +101,7 @@ func (th *thinkingItem) header(width int, expanded bool) string {
 		label += " · " + t + " tokens"
 	}
 	if !expanded {
-		return ruled(label, "ctrl+o to expand", width)
+		return ruled(label, "click to expand", width)
 	}
 	return ruled(label, "", width)
 }

@@ -17,8 +17,8 @@ type toolItem struct {
 	*base
 	st       styles.Styles
 	registry *render.Registry
-	display  *Display
 	call     render.Call
+	expanded bool
 }
 
 func newToolItem(st styles.Styles, registry *render.Registry, display *Display, id, callID string, call *proto.ToolCall, now time.Time) *toolItem {
@@ -26,7 +26,6 @@ func newToolItem(st styles.Styles, registry *render.Registry, display *Display, 
 		base:     &base{id: id},
 		st:       st,
 		registry: registry,
-		display:  display,
 		call: render.Call{
 			ID:      callID,
 			Name:    call.Name,
@@ -34,6 +33,7 @@ func newToolItem(st styles.Styles, registry *render.Registry, display *Display, 
 			Now:     now,
 			Started: now,
 		},
+		expanded: display.ExpandTools,
 	}
 }
 
@@ -45,7 +45,7 @@ func (ti *toolItem) Render(width int) string {
 		reg = render.NewRegistry()
 	}
 	rd := reg.Lookup(ti.call.Name)
-	expanded := ti.display != nil && ti.display.ExpandTools
+	expanded := ti.expanded
 	header := rd.Header(ti.call, ti.st, width)
 	body := rd.Body(ti.call, ti.st, width, expanded)
 	if body == "" {

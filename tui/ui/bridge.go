@@ -511,6 +511,7 @@ func (m *Model) openHelp() tea.Cmd {
 		{Key: "alt+enter", Description: "queue a follow-up"},
 		{Key: "esc", Description: "abort the run / close a dialog"},
 		{Key: "ctrl+o", Description: "expand thinking and tools"},
+		{Key: "click", Description: "expand or collapse one block"},
 		{Key: "ctrl+g", Description: "edit in $EDITOR"},
 		{Key: "ctrl+l", Description: "pick a model"},
 		{Key: "ctrl+r", Description: "resume a session"},

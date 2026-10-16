@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 
 	"github.com/AutumnsGrove/nova/diag"
+	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/chat"
 	"github.com/AutumnsGrove/nova/tui/client"
@@ -272,6 +273,37 @@ func TestUI_UIM11_SessionChangedReloads(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("session_changed did not request messages: %v", f.sends)
+	}
+}
+
+// TestUI_CLR01_NewClearsTranscript proves the full /new path in the TUI: the
+// slash command reaches the server as run_command, the server announces a new
+// session, and the reloaded (empty) conversation replaces the stale one.
+func TestUI_CLR01_NewClearsTranscript(t *testing.T) {
+	m, f, _ := newModel(t)
+	m.transcript.Load([]message.Message{
+		{Role: message.RoleUser, Content: "old question"},
+		{Role: message.RoleAssistant, Content: "old answer"},
+	})
+	m.syncList()
+	if len(m.transcript.Items()) == 0 {
+		t.Fatal("seed failed")
+	}
+
+	m.setEditorText("/new")
+	execAll(update(m, enterKey))
+	last := f.sends[len(f.sends)-1]
+	if last.Type != proto.CmdRunCommand || last.Name != "new" {
+		t.Fatalf("/new sent %+v, want run_command new", f.sends)
+	}
+
+	execAll(update(m, client.EventMsg{Event: proto.Event{Type: proto.EventSessionChanged}}))
+	update(m, client.ResponseMsg{Response: proto.Response{
+		Type: proto.FrameResponse, Command: proto.CmdGetMessages, OK: true,
+		Data: json.RawMessage(`{"messages":[]}`),
+	}})
+	if n := len(m.transcript.Items()); n != 0 {
+		t.Fatalf("transcript = %d items after /new, want 0", n)
 	}
 }
 

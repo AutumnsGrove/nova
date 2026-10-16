@@ -115,6 +115,71 @@ func TestHandlers_SRV24_SessionNew(t *testing.T) {
 	}
 }
 
+// SRV46: /new (run_command "new") starts a fresh session, the same thing
+// session.new does, so the advertised command stops returning unknown.
+func TestHandlers_SRV46_RunCommandNew(t *testing.T) {
+	s, _ := testServer(t, testkit.Turn{Text: "hello"})
+	events, cancel := s.Subscribe(64)
+	defer cancel()
+	s.Handle(context.Background(), proto.Command{Type: proto.CmdPrompt, Text: "hi"})
+	collect(t, events)
+	if msgs := s.Handle(context.Background(), proto.Command{Type: proto.CmdGetMessages}); !bytesContain(msgs.Data, "hello") {
+		t.Fatalf("precondition: old conversation missing: %s", msgs.Data)
+	}
+
+	before := s.path
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdRunCommand, Name: "new"})
+	if !resp.OK {
+		t.Fatalf("run_command new = %+v", resp)
+	}
+	if s.path == before {
+		t.Fatalf("/new did not open a new session: path still %q", s.path)
+	}
+	msgs := s.Handle(context.Background(), proto.Command{Type: proto.CmdGetMessages})
+	if !msgs.OK || bytesContain(msgs.Data, "hello") {
+		t.Fatalf("conversation not cleared by /new: %s", msgs.Data)
+	}
+}
+
+// CLR02: /clear is an alias for /new.
+func TestHandlers_CLR02_RunCommandClear(t *testing.T) {
+	s, _ := testServer(t, testkit.Turn{Text: "hello"})
+	events, cancel := s.Subscribe(64)
+	defer cancel()
+	s.Handle(context.Background(), proto.Command{Type: proto.CmdPrompt, Text: "hi"})
+	collect(t, events)
+
+	before := s.path
+	if resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdRunCommand, Name: "clear"}); !resp.OK {
+		t.Fatalf("run_command clear = %+v", resp)
+	}
+	if s.path == before {
+		t.Fatalf("/clear did not open a new session: path still %q", s.path)
+	}
+}
+
+// CLR03: both names are advertised to clients.
+func TestHandlers_CLR03_GetCommandsListsNewAndClear(t *testing.T) {
+	s, _ := testServer(t)
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdGetCommands})
+	if !resp.OK || !bytesContain(resp.Data, "\"new\"") || !bytesContain(resp.Data, "\"clear\"") {
+		t.Fatalf("get_commands = %+v data=%s", resp, resp.Data)
+	}
+}
+
+// CLR04: /new is refused while a run is active, like session.new.
+func TestHandlers_CLR04_RunCommandNewBusy(t *testing.T) {
+	s, _ := testServer(t, testkit.Turn{Hang: true})
+	events, cancel := s.Subscribe(64)
+	defer cancel()
+	s.Handle(context.Background(), proto.Command{Type: proto.CmdPrompt, Text: "one"})
+	waitFor(t, events, proto.EventRunStart)
+	if resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdRunCommand, Name: "new"}); resp.OK || resp.Error.Code != proto.CodeBusy {
+		t.Fatalf("run_command new while busy = %+v, want busy", resp)
+	}
+	s.agent.Abort()
+}
+
 func TestHandlers_SRV29_BashRecorded(t *testing.T) {
 	s, _ := testServer(t)
 	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdBash, Command: "echo hello-bash"})

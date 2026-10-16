@@ -2,7 +2,7 @@
 chunk: C23
 title: "The update command: refresh from a checkout or the latest release"
 packages: [./update, ./cmd/nova]
-budgets: { ./update: 450, ./cmd/nova: 1200 }
+budgets: { ./update: 450, ./cmd/nova: 1260 }
 depends: [C19]
 ---
 

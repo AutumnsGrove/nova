@@ -112,10 +112,13 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(*cobra.Command, []string) error {
 			if debugFlag {
 				diag.SetDebug(true)
 			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			code, err := runRoot(cmd.Context(), rootOptions{
 				prompt: promptFlag, mode: modeFlag, model: modelFlag, thinking: thinkingFlag,
 				session: sessionFlag, noSession: noSession, continueRun: continueFlag, resume: resumeFlag,
@@ -148,7 +151,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 	flags.IntVar(&maxTurns, "max-turns", 0, "maximum agent turns")
 	flags.IntVar(&contextLimit, "context-limit", 0, "context token limit")
 	flags.BoolVar(&yes, "yes", false, "auto-approve permission prompts for this run")
-	flags.BoolVar(&debugFlag, "debug", false, "write routine tracing to the debug log")
+	root.PersistentFlags().BoolVar(&debugFlag, "debug", false, "write routine tracing to the debug log")
 
 	root.AddCommand(
 		versionCommand(stdout),
@@ -222,6 +225,7 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 	}
 	tuiMode := shouldStartTUI(o.mode, o.tty, writerIsTerminal(o.stdout))
 	diag.SetMode(modeLabel(o.mode, tuiMode))
+	diag.Tracef("nova %s mode=%s", version, modeLabel(o.mode, tuiMode))
 	if tuiMode {
 		ok, err := ensureTrust(cwd, home, o.stdin, o.stdout)
 		if err != nil {

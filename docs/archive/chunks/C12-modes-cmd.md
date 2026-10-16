@@ -2,7 +2,7 @@
 chunk: C12
 title: "The server core, modes, and the nova command"
 packages: [./mode, ./cmd/nova]
-budgets: { ./mode: 2200, ./cmd/nova: 1200 }
+budgets: { ./mode: 2200, ./cmd/nova: 1260 }
 depends: [C09, C10, C11]
 ---
 

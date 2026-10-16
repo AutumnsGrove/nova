@@ -17,6 +17,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/diag"
 )
 
 // Status is how a check ended.
@@ -128,6 +129,7 @@ func Run(ctx context.Context, opt Options) []Check {
 		binaryCheck("git", Warn, opt, "needed for `nova ext install`"),
 		binaryCheck("bash", Fail, opt, "the bash tool needs it"),
 		terminalCheck(opt),
+		logCheck(opt),
 	}
 	cfg, cfgCheck := configCheck(opt)
 	checks = append(checks, cfgCheck, dirsCheck(opt), trustCheck(opt), extensionsCheck(opt))
@@ -277,6 +279,15 @@ func terminalCheck(opt Options) Check {
 		return Check{Name: "terminal", Status: Warn, Detail: detail + "; " + strings.Join(problems, "; "), Fix: "use a UTF-8 terminal with a real TERM"}
 	}
 	return Check{Name: "terminal", Status: OK, Detail: detail}
+}
+
+func logCheck(opt Options) Check {
+	path := filepath.Join(config.UserConfigDir(opt.Home), diag.CrashFile)
+	info, err := os.Stat(path)
+	if err != nil {
+		return Check{Name: "crash log", Status: OK, Detail: "none yet (" + path + ")"}
+	}
+	return Check{Name: "crash log", Status: Warn, Detail: fmt.Sprintf("last crash %s (%s)", info.ModTime().Format(time.RFC3339), path)}
 }
 
 func orDash(s string) string {

@@ -891,6 +891,36 @@ func TestUI_RUN03_CrashLog(t *testing.T) {
 	}
 }
 
+func TestUI_LogCommand_ShowsReport(t *testing.T) {
+	rec := diag.New(diag.Options{Dir: t.TempDir()})
+	diag.SetDefault(rec)
+	defer diag.SetDefault(nil)
+	if _, err := rec.Report("boom", "tui view"); err != nil {
+		t.Fatal(err)
+	}
+	m, _, _ := newModel(t)
+	cmd, handled := m.localCommand("log", "")
+	if !handled || cmd != nil {
+		t.Fatalf("localCommand(log) = (%v, %v), want handled with no command", cmd, handled)
+	}
+	if !strings.Contains(m.View().Content, "boom") {
+		t.Fatalf("crash report not shown:\n%s", m.View().Content)
+	}
+}
+
+func TestUI_LogCommand_NoReports(t *testing.T) {
+	rec := diag.New(diag.Options{Dir: t.TempDir()})
+	diag.SetDefault(rec)
+	defer diag.SetDefault(nil)
+	m, _, _ := newModel(t)
+	if _, handled := m.localCommand("log", ""); !handled {
+		t.Fatal("log command not handled")
+	}
+	if m.notice != "no crash reports" {
+		t.Fatalf("notice = %q, want no crash reports", m.notice)
+	}
+}
+
 func TestUI_RUN04_ModeSelection(t *testing.T) {
 	cases := []struct {
 		mode    string

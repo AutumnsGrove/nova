@@ -17,6 +17,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/diag"
 )
 
 // roundTripFunc adapts a function to http.RoundTripper.
@@ -380,6 +381,28 @@ func TestProperty_DRX_NoSecrets(t *testing.T) {
 		if strings.Contains(buf.String(), secret) {
 			t.Fatalf("output leaked the secret %q", secret)
 		}
+	}
+}
+
+// TestDoctor_DRX18_CrashLog proves the crash log path is surfaced whether or
+// not a report exists.
+func TestDoctor_DRX18_CrashLog(t *testing.T) {
+	opt := testOptions(t)
+	opt.Home = t.TempDir()
+	c := find(t, Run(context.Background(), opt), "crash log")
+	if c.Status != OK || !strings.Contains(c.Detail, "crash.log") {
+		t.Fatalf("no-report crash log = %s %q, want ok with path", c.Status, c.Detail)
+	}
+	dir := config.UserConfigDir(opt.Home)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, diag.CrashFile), []byte("report"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c = find(t, Run(context.Background(), opt), "crash log")
+	if c.Status != Warn || !strings.Contains(c.Detail, "crash.log") {
+		t.Fatalf("with-report crash log = %s %q, want warn with path", c.Status, c.Detail)
 	}
 }
 

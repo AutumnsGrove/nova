@@ -2,7 +2,7 @@
 chunk: C19
 title: "Polish, first run, doctor, examples, release"
 packages: [./cmd/nova, ./doctor, ./config, ./tui/firstrun, ./tui/cli, ./docs]
-budgets: { ./cmd/nova: 1200, ./doctor: 400, ./config: 1450, ./tui/firstrun: 300, ./tui/cli: 150, ./docs: 220, ./diag: 250 }
+budgets: { ./cmd/nova: 1260, ./doctor: 440, ./config: 1450, ./tui/firstrun: 300, ./tui/cli: 150, ./docs: 220, ./diag: 250 }
 depends: [C16, C17, C18]
 ---
 
@@ -219,6 +219,7 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | DRX15 | never modifies anything | filesystem snapshot before and after | identical |
 | DRX16 | never prints a secret | all outputs | the key and tokens absent |
 | DRX17 | bounded runtime | everything stalls | finishes within 30 s (fake clock) |
+| DRX18 | crash log path | no report; a report present | path shown; last crash reported |
 | DOC01 | topic list | | embedded topics |
 | DOC02 | print a topic | `extensions` | the document |
 | DOC03 | unknown topic | | lists topics |

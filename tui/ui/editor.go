@@ -194,6 +194,8 @@ func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 		return m.openHelp(), true
 	case "usage":
 		return m.requestUsage(), true
+	case "log", "crash":
+		return m.showCrashLog(), true
 	case "theme":
 		if strings.TrimSpace(args) == "" {
 			m.notice = "themes: " + m.themeList()

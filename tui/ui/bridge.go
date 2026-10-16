@@ -4,12 +4,14 @@ package ui
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/auth/providerauth"
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/dialog"
 	"github.com/AutumnsGrove/nova/tui/widget"
@@ -25,6 +27,7 @@ const (
 	intentExtensions  = "extensions"
 	intentHelp        = "help"
 	intentUsage       = "usage"
+	intentCrash       = "crash"
 	intentLogin       = "login"
 	intentLoginMethod = "login-method"
 	intentLoginKey    = "login-key"
@@ -518,11 +521,29 @@ func (m *Model) openHelp() tea.Cmd {
 		{Key: "ctrl+t", Description: "cycle thinking effort"},
 		{Key: "ctrl+c twice", Description: "quit"},
 	}
-	var cmds []string
+	cmds := []string{"log"}
 	for _, c := range m.commands {
 		cmds = append(cmds, c.Name)
 	}
 	m.pushDialog(dialog.NewHelp(keys, cmds), intentHelp)
+	return nil
+}
+
+// showCrashLog opens the most recent crash report in a read-only overlay. It is
+// a local command: the report lives on this machine, beside the TUI.
+func (m *Model) showCrashLog() tea.Cmd {
+	rec := diag.Default()
+	if rec == nil || rec.CrashPath() == "" {
+		m.notice = "no crash reports"
+		return nil
+	}
+	data, err := os.ReadFile(rec.CrashPath())
+	if err != nil {
+		m.notice = "no crash reports"
+		return nil
+	}
+	body := strings.TrimRight(string(diag.LatestReport(data)), "\n")
+	m.pushDialog(dialog.NewInfo("Crash log", strings.Split(body, "\n")), intentCrash)
 	return nil
 }
 

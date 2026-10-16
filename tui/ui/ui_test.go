@@ -718,6 +718,34 @@ func TestUI_SCR03_HomeEnd(t *testing.T) {
 	}
 }
 
+// --- CLK ---
+
+func TestUI_CLK01_ClickTogglesBlock(t *testing.T) {
+	m, _, _ := newModel(t)
+	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventToolCall, Run: "r1",
+		Call: &proto.ToolCall{ID: "c1", Name: "read", Arguments: json.RawMessage(`{"path":"a.go"}`)}}})
+	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventToolEnd, CallID: "c1",
+		Result: &proto.ToolResult{Content: strings.Repeat("row\n", 30)}}})
+	before := m.list.View()
+	update(m, tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: m.layout.Main.Y})
+	if m.list.View() == before {
+		t.Fatal("click did not change the block")
+	}
+}
+
+func TestUI_CLK02_ClickOutsideTranscript(t *testing.T) {
+	m, _, _ := newModel(t)
+	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventToolCall, Run: "r1",
+		Call: &proto.ToolCall{ID: "c1", Name: "read", Arguments: json.RawMessage(`{"path":"a.go"}`)}}})
+	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventToolEnd, CallID: "c1",
+		Result: &proto.ToolResult{Content: strings.Repeat("row\n", 30)}}})
+	before := m.list.View()
+	update(m, tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: m.layout.Editor.Y})
+	if m.list.View() != before {
+		t.Fatal("a click outside the transcript changed it")
+	}
+}
+
 // --- CPL ---
 
 func TestUI_CPL01_SlashOpensCommands(t *testing.T) {

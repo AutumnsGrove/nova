@@ -559,7 +559,7 @@ func TestRender_TCP01_CollapsedShowsSixLinePreview(t *testing.T) {
 		if len(lines) > PreviewLines+1 {
 			t.Fatalf("%s: %d lines, want at most %d plus a hint:\n%s", name, len(lines), PreviewLines, got)
 		}
-		if !strings.Contains(got, "ctrl+o to expand") {
+		if !strings.Contains(got, "click to expand") {
 			t.Fatalf("%s: no expand hint:\n%s", name, got)
 		}
 	}
@@ -598,7 +598,7 @@ func TestRender_TCP05_ExpandedStillFull(t *testing.T) {
 	st := mono()
 	for name, c := range previewCalls() {
 		got := ansi.Strip(NewRegistry().Lookup(c.Name).Body(c, st, 80, true))
-		if strings.Contains(got, "ctrl+o to expand") {
+		if strings.Contains(got, "click to expand") {
 			t.Fatalf("%s: expanded view still offers to expand:\n%s", name, got)
 		}
 		if name != "edit" && !strings.Contains(got, "L20") {

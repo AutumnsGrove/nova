@@ -103,12 +103,13 @@ type Display struct {
    text in the muted style, with a leading `…` line when earlier lines are hidden. The item's `Version` changes only
    when the displayed second or the preview text changes, so a quiet block does not cause re-renders.
 3. **Finished state.** On `thinking_end` the item freezes its duration from `ms`. Collapsed, it is one line:
-   `▸ Thought for 12s · 3.4k tokens` with `ctrl+o to expand` right-aligned when it fits. Tokens come from, in order,
+   `▸ Thought for 12s · 3.4k tokens` with `click to expand` right-aligned when it fits. Tokens come from, in order,
    `thinking_end.tokens`, the turn's `message_end.usage.reasoning_tokens` (the item updates when that arrives), or an
    estimate (`~` prefix) of characters divided by 4. Durations format as `850ms`, `4s`, `1m 05s`; tokens as `640`,
    `3.4k`, `15k`, `1.2M`.
-4. **Expanded** (`Display.ExpandThinking` or the global `ctrl+o` flag): header `▾ Thought for 20s · 15k tokens`, then
-   the **full** text, markdown-rendered in the muted style, wrapped to the width.
+4. **Expanded** (a click on the block, or `Display.ExpandThinking`/`ctrl+o` for every block at once): header
+   `▾ Thought for 20s · 15k tokens`, then the **full** text, markdown-rendered in the muted style, wrapped to the width.
+   The expanded state is per item and persists until the block is clicked again or `ctrl+o` bulk-toggles it.
 5. A block whose text is empty or only whitespace renders nothing at all. Thinking text is treated as untrusted
    output: control sequences are stripped (as in C15 rule 17).
 6. `retry` discards the in-progress thinking item with the rest of the turn's partial output.
@@ -124,8 +125,9 @@ type Display struct {
    `url`, `query`, `name`; else the first string argument; else the compact JSON. It strips control characters, collapses
    whitespace, and truncates to `max` cells with `…`. Paths shorter than the width are shown in full; longer ones keep the
    file name and elide the middle (`…/deep/dir/file.go`).
-10. A body is shown when the card is expanded, **or** when the call is running (live output tail, up to 5 lines) **or**
-    when the result is an error (the first 12 lines of the message). Otherwise only the header is shown.
+10. A body is shown when the card is expanded (a click on the card, or `ctrl+o` for every card), **or** when the call is
+    running (live output tail, up to 5 lines) **or** when the result is an error (the first 12 lines of the message).
+    Otherwise only the header is shown.
 11. **Registry.** `Lookup` returns the registered renderer for the tool name, else the generic one. A renderer that panics
     is caught: the card falls back to the generic rendering and a muted note `(renderer error)` is added; the
     transcript never crashes.
@@ -173,7 +175,8 @@ type Display struct {
 26. `/theme` lists themes; `/theme <name>` switches immediately: styles are rebuilt and every item's `Version` is bumped so
     all caches refresh. An unknown name shows a notice. The choice lasts for the process (persisting it is the config's job).
 27. `/display thinking expand|collapse`, `/display tools expand|collapse`, `/display lines <n>`, and `/display splash
-    on|off` change `Display`; invalid values show a notice. `ctrl+o` flips both expand flags together.
+    on|off` change `Display`; invalid values show a notice. `ctrl+o` flips both expand flags together and applies them to
+    every block; a click toggles a single block.
 
 ### Splash
 
@@ -218,6 +221,7 @@ type Display struct {
 | THK22 | two turns each with thinking | | two independent blocks |
 | THK23 | restored session has no thinking events | `Load` | none (reasoning is not rendered from stored messages unless `Reasoning` is set) |
 | THK24 | stored `Reasoning` | message with `Reasoning` | collapsed block, no duration |
+| THK25 | `Toggle` expands one block | | only that block expands |
 | CRD01 | header is one line | long args | single line, truncated with `…` |
 | CRD02 | status dot colours | running, ok, error | spinner, success, error |
 | CRD03 | spinner animates | fake clock | frame advances |
@@ -232,6 +236,7 @@ type Display struct {
 | CRD12 | no control sequences | tool output containing escapes | stripped |
 | CRD13 | restored card matches live card | `Load` vs events | same output (ignoring timer) |
 | CRD14 | truncated marker | `Truncated` | shown |
+| CRD15 | `Toggle` expands one card | | only that card expands |
 | ARG01 | picks `path` | | path shown |
 | ARG02 | picks `command` first line | multi-line | first line |
 | ARG03 | picks `pattern`, `url`, `query` | | each |

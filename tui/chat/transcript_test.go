@@ -71,6 +71,31 @@ func TestTranscript_TRN01_TextTurn(t *testing.T) {
 	}
 }
 
+func TestTranscript_CRD15_ToggleOneCard(t *testing.T) {
+	tr := newTestTranscript(80)
+	tr.Apply(assistantStart(1))
+	tr.Apply(proto.Event{Type: proto.EventToolCall, Run: "r1", Call: &proto.ToolCall{ID: "c1", Name: "read", Arguments: json.RawMessage(`{"path":"a.go"}`)}})
+	tr.Apply(proto.Event{Type: proto.EventToolEnd, CallID: "c1", Result: &proto.ToolResult{Content: "one"}})
+	tr.Apply(proto.Event{Type: proto.EventToolCall, Run: "r1", Call: &proto.ToolCall{ID: "c2", Name: "read", Arguments: json.RawMessage(`{"path":"b.go"}`)}})
+	tr.Apply(proto.Event{Type: proto.EventToolEnd, CallID: "c2", Result: &proto.ToolResult{Content: "two"}})
+	one, two := findTool(tr, "c1"), findTool(tr, "c2")
+	if one == nil || two == nil {
+		t.Fatal("tool cards missing")
+	}
+	if !tr.Toggle(one.id) {
+		t.Fatal("Toggle did not find the first card")
+	}
+	if !one.expanded {
+		t.Fatal("first card did not expand")
+	}
+	if two.expanded {
+		t.Fatal("second card expanded too")
+	}
+	if !tr.Toggle(one.id) || one.expanded {
+		t.Fatal("second Toggle did not collapse the card")
+	}
+}
+
 func TestTranscript_TRN02_ToolTurn(t *testing.T) {
 	tr := newTestTranscript(80)
 	tr.Apply(assistantStart(1))

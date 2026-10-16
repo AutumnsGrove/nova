@@ -329,6 +329,27 @@ func TestList_VLS18_SyncReusesCache(t *testing.T) {
 	}
 }
 
+func TestList_VLS19_ItemAt(t *testing.T) {
+	l := New()
+	l.Resize(20, 5)
+	a := &testItem{id: "a", lines: []string{"a1", "a2"}}
+	b := &testItem{id: "b", lines: []string{"b1", "b2", "b3"}}
+	c := &testItem{id: "c", lines: []string{"c1"}}
+	l.SetItems([]Item{a, b, c})
+	var got []string
+	for y := 0; y < 5; y++ {
+		if it := l.ItemAt(y); it != nil {
+			got = append(got, it.ID())
+		}
+	}
+	if want := "a,b,b,b,c"; strings.Join(got, ",") != want {
+		t.Fatalf("ItemAt = %v, want %s", got, want)
+	}
+	if l.ItemAt(5) != nil {
+		t.Fatal("ItemAt beyond the viewport should be nil")
+	}
+}
+
 // BenchmarkVLS14_Append measures the cost of growing a large list.
 func BenchmarkList_VLS14_Append(b *testing.B) {
 	l := New()

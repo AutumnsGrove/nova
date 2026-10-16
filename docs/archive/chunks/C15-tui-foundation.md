@@ -287,6 +287,7 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | VLS16 | `Sync` keeps following | at the tail; new item | tail shown; following |
 | VLS17 | `Sync` clamps when items shrink | scrolled into a removed item | valid view; no panic |
 | VLS18 | `Sync` reuses cached renders | same items | no re-render |
+| VLS19 | `ItemAt` maps a viewport line to its item | | the item owning that line |
 | STY01 | dark palette | `Build(Dark(), TrueColor)` | brand colours used |
 | STY02 | no colour literals outside themes | code inspection test (grep) | none in `styles.go` |
 | STY03 | mono emits no colour | render a sample | no colour escapes |
@@ -360,6 +361,8 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | SCR01 | mouse wheel scrolls the transcript | wheel up then down | following off; view moves |
 | SCR02 | scrolling up while streaming stays put | `pgup`, then an event | view unchanged |
 | SCR03 | home and end | | top stops following; end resumes |
+| CLK01 | click a block expands it | left click on the main region | the block toggles |
+| CLK02 | click outside the transcript | | nothing changes |
 | CPL01 | `/` opens commands | | list from `get_commands` |
 | CPL02 | filter by prefix then substring | | ordered |
 | CPL03 | tab accepts | | inserted |

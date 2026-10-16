@@ -190,10 +190,10 @@ func TestThinking_THK14_Hint(t *testing.T) {
 	startThinking(tr, "reason")
 	tokens := 3400
 	tr.Apply(proto.Event{Type: proto.EventThinkingEnd, Run: "r1", Turn: intp(1), Ms: 12000, Tokens: &tokens})
-	if got := renderItem(think(t, tr), 120); !strings.Contains(got, "ctrl+o to expand") {
+	if got := renderItem(think(t, tr), 120); !strings.Contains(got, "click to expand") {
 		t.Fatalf("wide hint missing: %q", got)
 	}
-	if got := renderItem(think(t, tr), 40); strings.Contains(got, "ctrl+o to expand") {
+	if got := renderItem(think(t, tr), 40); strings.Contains(got, "click to expand") {
 		t.Fatalf("narrow hint should be dropped: %q", got)
 	}
 }
@@ -221,6 +221,22 @@ func TestThinking_THK16_ExpandToggles(t *testing.T) {
 	tr.SetDisplay(d)
 	if th.Version() == v {
 		t.Fatal("SetDisplay did not refresh the block")
+	}
+}
+
+func TestThinking_THK25_Toggle(t *testing.T) {
+	tr := newTestTranscript(80)
+	startThinking(tr, "reason")
+	tr.Apply(proto.Event{Type: proto.EventThinkingEnd, Run: "r1", Turn: intp(1)})
+	th := think(t, tr)
+	if th.expanded {
+		t.Fatal("block starts expanded")
+	}
+	if !tr.Toggle(th.id) {
+		t.Fatal("Toggle did not find the block")
+	}
+	if !th.expanded {
+		t.Fatal("block did not expand")
 	}
 }
 

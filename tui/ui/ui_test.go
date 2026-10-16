@@ -891,6 +891,25 @@ func TestUI_RUN03_CrashLog(t *testing.T) {
 	}
 }
 
+func TestUI_RUN03_ProgramPanicReported(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".config", "nova")
+	rec := diag.New(diag.Options{Dir: dir})
+	diag.SetDefault(rec)
+	defer diag.SetDefault(nil)
+	var out bytes.Buffer
+	reportProgramError(&out, fmt.Errorf("%w: %w", tea.ErrProgramKilled, tea.ErrProgramPanic))
+	data, err := os.ReadFile(filepath.Join(dir, "crash.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "experienced a panic") {
+		t.Fatalf("crash log = %q", data)
+	}
+	if !strings.Contains(out.String(), "crash report") {
+		t.Fatalf("out = %q", out.String())
+	}
+}
+
 func TestUI_LogCommand_ShowsReport(t *testing.T) {
 	rec := diag.New(diag.Options{Dir: t.TempDir()})
 	diag.SetDefault(rec)

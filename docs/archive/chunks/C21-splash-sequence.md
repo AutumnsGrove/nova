@@ -2,7 +2,7 @@
 chunk: C21
 title: "Splash sequence: slash wordmark, outburst, star field"
 packages: [./tui/splash, ./tui/splash/splashgif, ./tui/ui]
-budgets: { ./tui/splash: 700, ./tui/splash/splashgif: 460, ./tui/ui: 2380 }
+budgets: { ./tui/splash: 700, ./tui/splash/splashgif: 460, ./tui/ui: 2420 }
 depends: [C16]
 ---
 

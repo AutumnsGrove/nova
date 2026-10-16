@@ -87,7 +87,18 @@ func runWith(ctx context.Context, srv *mode.Server, opt RunOptions, in io.Reader
 		fmt.Fprintf(os.Stderr, "\nnova: recovered from a UI panic: %v\n", m.panicValue)
 		reportCrash(os.Stderr, m.panicValue, "tui view")
 	}
+	reportProgramError(os.Stderr, err)
 	return err
+}
+
+// reportProgramError records a bubbletea event-loop panic, which Run reports as
+// ErrProgramPanic after restoring the terminal and printing the stack.
+func reportProgramError(w io.Writer, err error) {
+	if !errors.Is(err, tea.ErrProgramPanic) {
+		return
+	}
+	fmt.Fprintln(w, "\nnova: internal error in the UI (stack above)")
+	reportCrash(w, err, "tui program")
 }
 
 // reportCrash records a panic with the process recorder and writes the crash

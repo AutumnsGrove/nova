@@ -101,6 +101,7 @@ func TestStyles_STY08_ToolPanelBackground(t *testing.T) {
 		"pending": d.ToolPanel,
 		"success": d.ToolPanelOK,
 		"error":   d.ToolPanelError,
+		"user":    d.UserPanel,
 	}
 	seen := map[string]bool{}
 	for name, s := range panels {
@@ -125,7 +126,7 @@ func sample(s Styles) map[string]interface{ Render(...string) string } {
 		"Spark": s.Spark, "Core": s.Core, "Warm": s.Warm, "Success": s.Success,
 		"Error": s.Error, "User": s.User, "Assistant": s.Assistant, "Thinking": s.Thinking,
 		"Tool": s.Tool, "ToolError": s.ToolError, "Editor": s.Editor, "DiffAdd": s.DiffAdd,
-		"ToolPanel": s.ToolPanel, "ToolPanelOK": s.ToolPanelOK, "ToolPanelError": s.ToolPanelError,
+		"ToolPanel": s.ToolPanel, "ToolPanelOK": s.ToolPanelOK, "ToolPanelError": s.ToolPanelError, "UserPanel": s.UserPanel,
 	}
 }
 

@@ -276,6 +276,30 @@ func TestTranscript_PNL05_BlocksSpaced(t *testing.T) {
 	}
 }
 
+// PNL06: the user's own message sits in its own panel, so it does not blend
+// into the assistant's prose.
+func TestTranscript_PNL06_UserPanelled(t *testing.T) {
+	st := styles.Build(styles.Dark(), colorprofile.TrueColor)
+	tr := NewTranscript(80, &fakeRenderer{echo: true}, st)
+	tr.AddUser("take a look at the gh issues", nil)
+	items := tr.Items()
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	out := items[0].Render(80)
+	for _, l := range strings.Split(out, "\n") {
+		if strings.TrimSpace(ansi.Strip(l)) == "" {
+			continue // the blank line between blocks
+		}
+		if !strings.Contains(l, "48;") {
+			t.Fatalf("user message line has no panel background: %q", l)
+		}
+		if w := ansi.StringWidth(l); w != 80 {
+			t.Fatalf("user message line is %d wide, want 80", w)
+		}
+	}
+}
+
 func TestTranscript_TRN10_NeverReorders(t *testing.T) {
 	rng := rand.New(rand.NewSource(10))
 	tr := newTestTranscript(80)

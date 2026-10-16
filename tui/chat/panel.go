@@ -23,18 +23,24 @@ func PanelInner(width int) int {
 
 // Panel wraps a rendered tool card in a full-width, state-tinted background
 // with one cell of padding on each side. The card is expected to be drawn at
-// PanelInner(width). The background is re-asserted after every reset inside the
-// card, so a styled segment (a diff line, a bold header) cannot clear it, and
-// every line ends with a reset so the panel cannot bleed into the next item.
-// Under Mono or a colourless profile the style carries no background and the
-// card is only padded.
+// PanelInner(width).
 func Panel(card string, c render.Call, st styles.Styles, width int) string {
-	if card == "" || width <= 2 {
-		return card
+	return frame(card, panelStyle(c, st), width)
+}
+
+// frame wraps a rendered block in a full-width background with one cell of
+// padding on each side. The background is re-asserted after every reset inside
+// the block, so a styled segment (a diff line, a bold header) cannot clear it,
+// and every line ends with a reset so the block cannot bleed into the next
+// item. Under Mono or a colourless profile the style carries no background and
+// the block is only padded.
+func frame(block string, style lipgloss.Style, width int) string {
+	if block == "" || width <= 2 {
+		return block
 	}
 	inner := PanelInner(width)
-	bg := backgroundSeq(panelStyle(c, st))
-	lines := strings.Split(card, "\n")
+	bg := backgroundSeq(style)
+	lines := strings.Split(block, "\n")
 	for i, line := range lines {
 		line = ansi.Truncate(line, inner, "…")
 		if pad := inner - ansi.StringWidth(line); pad > 0 {

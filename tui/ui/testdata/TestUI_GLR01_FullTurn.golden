@@ -1,6 +1,6 @@
 --- width 40 ---
 ✦  [1mnova[m  ~/proj                         
-[1myou[m  add a retry                        
+ [1myou[m  add a retry                       
                                         
 [3;2m── ▸ Thought for 12s · 3.4k tokens ─────[m
 [3;2mthe call is in client.go[m                
@@ -25,7 +25,7 @@
 ctx n/a · $0.000 · ctrl+o expand        
 --- width 80 ---
 ✦  [1mnova[m  ~/proj                                                                 
-[1myou[m  add a retry                                                                
+ [1myou[m  add a retry                                                               
                                                                                 
 [3;2m── ▸ Thought for 12s · 3.4k tokens ──────────────────────────── click to expand[m 
 [3;2mthe call is in client.go[m                                                        
@@ -50,7 +50,7 @@ ctx n/a · $0.000 · ctrl+o expand
 ctx n/a · $0.000 · ctrl+o expand                                                
 --- width 120 ---
 ✦  [1mnova[m  ~/proj                                                                                                         
-[1myou[m  add a retry                                                                                                        
+ [1myou[m  add a retry                                                                                                       
                                                                                                                         
 [3;2m── ▸ Thought for 12s · 3.4k tokens ──────────────────────────────────────────────────────────────────── click to expand[m 
 [3;2mthe call is in client.go[m                                                                                                

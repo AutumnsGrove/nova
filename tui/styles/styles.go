@@ -44,6 +44,8 @@ type Styles struct {
 	ToolPanel      lipgloss.Style
 	ToolPanelOK    lipgloss.Style
 	ToolPanelError lipgloss.Style
+	// UserPanel is the background behind the user's own messages.
+	UserPanel lipgloss.Style
 
 	// The input area.
 	Editor             lipgloss.Style
@@ -93,6 +95,7 @@ func Build(t Theme, p colorprofile.Profile) Styles {
 		ToolPanel:      b.bgstyle("panel"),
 		ToolPanelOK:    b.bgstyle("panelok"),
 		ToolPanelError: b.bgstyle("panelerr"),
+		UserPanel:      b.bgstyle("paneluser"),
 
 		Editor:             b.fg("ink"),
 		EditorFocused:      b.fg("ink").Bold(true),

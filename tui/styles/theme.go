@@ -6,7 +6,8 @@
 package styles
 
 // Theme is a named palette. The keys are spark, ink, core, warm, bg, muted,
-// success, error, and the tool-card panels panel, panelok, and panelerr.
+// success, error, and the panels: panel, panelok, panelerr for tool cards and
+// paneluser for the user's own messages.
 type Theme struct {
 	Name   string
 	Colors map[string]string
@@ -27,23 +28,26 @@ func Dark() Theme {
 		"panel":    "#1b2230",
 		"panelok":  "#112c1d",
 		"panelerr": "#30161a",
+		// The user's own messages get a panel too, in the cooler spark hue.
+		"paneluser": "#122c44",
 	}}
 }
 
 // Light is a palette with enough contrast for a light terminal.
 func Light() Theme {
 	return Theme{Name: "nova-light", Colors: map[string]string{
-		"spark":    "#0b64c0",
-		"ink":      "#101722",
-		"core":     "#8a5a00",
-		"warm":     "#b23a0d",
-		"bg":       "#f7f9fc",
-		"muted":    "#4d5866",
-		"success":  "#186b3a",
-		"error":    "#b32020",
-		"panel":    "#e9edf3",
-		"panelok":  "#e0f0e5",
-		"panelerr": "#f7e1e1",
+		"spark":     "#0b64c0",
+		"ink":       "#101722",
+		"core":      "#8a5a00",
+		"warm":      "#b23a0d",
+		"bg":        "#f7f9fc",
+		"muted":     "#4d5866",
+		"success":   "#186b3a",
+		"error":     "#b32020",
+		"panel":     "#e9edf3",
+		"panelok":   "#e0f0e5",
+		"panelerr":  "#f7e1e1",
+		"paneluser": "#e2eefb",
 	}}
 }
 

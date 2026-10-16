@@ -88,7 +88,12 @@ func (u *userItem) Render(width int) string {
 	if len(u.attachments) > 0 {
 		body += "\n" + strings.Join(u.attachments, " ")
 	}
-	return spaced(label + "  " + wrapPlain(body, max(width-5, 1)))
+	// The user's message sits in its own panel, so it does not read as
+	// assistant prose. The label rides the first line; the wrap leaves room
+	// for it on every line.
+	inner := PanelInner(width)
+	content := label + "  " + wrapPlain(body, max(inner-ansi.StringWidth(label)-2, 1))
+	return spaced(frame(content, u.st.UserPanel, width))
 }
 
 // restyle swaps the theme and refreshes the item.

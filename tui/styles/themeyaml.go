@@ -14,7 +14,7 @@ import (
 )
 
 // colourKeys are the palette keys a theme file may set.
-var colourKeys = []string{"spark", "ink", "core", "warm", "bg", "muted", "success", "error", "panel", "panelok", "panelerr"}
+var colourKeys = []string{"spark", "ink", "core", "warm", "bg", "muted", "success", "error", "panel", "panelok", "panelerr", "paneluser"}
 
 // colourRe matches #rgb and #rrggbb.
 var colourRe = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)

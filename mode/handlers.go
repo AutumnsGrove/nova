@@ -22,7 +22,7 @@ import (
 )
 
 // builtinCommands are the slash commands handled in-process.
-var builtinCommands = []string{"model", "thinking", "context", "compact", "new", "name", "cost", "help", "quit", "exit"}
+var builtinCommands = []string{"model", "thinking", "context", "compact", "new", "clear", "name", "cost", "help", "quit", "exit"}
 
 // handleGetMessages returns the active branch as model messages.
 func (s *Server) handleGetMessages(cmd proto.Command) proto.Response {
@@ -223,6 +223,10 @@ func (s *Server) handleRunCommand(cmd proto.Command) proto.Response {
 		return s.handleSessionName(proto.Command{Type: proto.CmdSessionName, ID: cmd.ID, Name: cmd.Args})
 	case "compact":
 		return s.handleCompact(proto.Command{Type: proto.CmdCompact, ID: cmd.ID})
+	case "new", "clear":
+		// /new and /clear start a fresh session; both are the session.new
+		// command, so the TUI, print, json, and rpc front doors all get it.
+		return s.handleSessionNew(proto.Command{Type: proto.CmdSessionNew, ID: cmd.ID})
 	case "quit", "exit":
 		// Aliases for shutdown, so a headless client can quit the same way the
 		// TUI's /quit does.

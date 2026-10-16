@@ -131,7 +131,12 @@ over their `details` JSON for a nicer card.
 | `ctrl+t` | cycle thinking level |
 | `ctrl+r` | session list |
 | `pgup` / `pgdn` | scroll the transcript |
+| `home` / `end` | jump to the top / bottom of the transcript |
 | `tab` | complete |
+
+Mouse wheel and trackpad scroll the transcript. Scrolling up stops auto-follow and
+keeps the viewport anchored while new content streams in; scrolling back to the
+bottom resumes it.
 
 ### Slash commands
 

@@ -39,6 +39,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- The TUI transcript now scrolls: the mouse wheel and trackpad work, `home`/`end` jump to the top and bottom,
+  and scrolling up while a run streams no longer snaps back to the tail (#7).
 - The input editor now takes its colours from the active theme. It used fixed terminal colours, including a black
   highlight on the cursor line that looked wrong on the light theme.
 - A provider that panicked mid-run crashed `nova` outright; the run now ends as an error with its `run_end`.

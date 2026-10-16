@@ -60,6 +60,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Assistant markdown no longer carries glamour's document padding: paragraphs are flush left instead of
+  indented two cells, and blocks are separated by a single blank line instead of two. The streaming tail and
+  the finished block agree, so text does not shift when a paragraph closes (#15).
 - `/new` was advertised and autocompleted but returned `unknown command new`; it and its new alias `/clear`
   now start a fresh session and clear the transcript, and are refused with a notice while a run is active (#12).
 - The TUI transcript now scrolls: the mouse wheel and trackpad work, `home`/`end` jump to the top and bottom,

@@ -205,7 +205,10 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
     are rendered once per width through `Renderer.Markdown` and cached. The open (tail) block is rendered
     with a cheap path (wrap to width, keep bold, code, and fence styling) and is replaced by the full render
     when it closes or at `message_end`. The number of `Renderer.Markdown` calls for a message is therefore
-    proportional to the number of blocks, not the number of deltas.
+    proportional to the number of blocks, not the number of deltas. The renderer drops glamour's document
+    margin and the blank lines it prefixes and suffixes every block with, so a block is flush left and the
+    join leaves exactly one blank line between blocks; the cheap tail and the full render then agree, and
+    text does not shift when the tail closes.
 17. Rendering never exceeds the width in cells (measured with `ansi.StringWidth`), including for wide
     characters, combining marks, and long unbreakable words (which are hard-wrapped). ANSI sequences in the
     source text are stripped before wrapping, so tool or model output cannot move the cursor or change
@@ -331,6 +334,7 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 | MDK12 | empty text; text of only whitespace | | no panic |
 | MDK13 | very long message | 1 MiB | completes in under 1 s |
 | MDK14 | list, quote, table, inline code | | pass through the renderer unchanged |
+| MDK15 | one blank line between blocks | heading, paragraphs, list, code | no `\n\n\n`; blocks are flush, not indented by glamour's document margin |
 | EDI01 | enter submits a prompt | idle | `prompt` sent |
 | EDI02 | empty or whitespace ignored | | nothing sent |
 | EDI03 | `/model x` | | `run_command` |

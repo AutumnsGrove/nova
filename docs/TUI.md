@@ -82,7 +82,7 @@ footer detail, in that order.
 | Item | Notes |
 |---|---|
 | User message | a full-width panel with its own tint (`paneluser`), so it stands out from the assistant; plain text, wrapped; shows attached files |
-| Assistant text | **incremental markdown**: re-render only the changed tail; code blocks highlighted |
+| Assistant text | **incremental markdown**: re-render only the changed tail; code blocks highlighted; flush left with a single blank line between blocks |
 | **Thinking block** | native (D24). A ruled header (`── ▸ Thought for 12s · ~3.4k tokens ──── click to expand`), the last 8 lines of reasoning in dim italics, and a closing rule, both while streaming (live timer) and once finished, so thinking is never hidden. Click the block to expand just it; `ctrl+o` expands or collapses every block; the preview height is a setting. |
 | Tool card | a full-width panel tinted by state (pending, success, error) with one cell of padding on each side, holding a header (status dot, name, key argument, duration) and a compact result box: the first 6 lines of the result (the last 6 for `bash`) with a muted `… N more lines (click to expand)` line. A call with no output stays header only. Click the card to expand just it; `ctrl+o` expands or collapses every card. |
 | Compaction marker | a rule with `compacted 38k → 6k tokens` |

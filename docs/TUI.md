@@ -81,7 +81,7 @@ footer detail, in that order.
 
 | Item | Notes |
 |---|---|
-| User message | plain text, wrapped; shows attached files |
+| User message | a full-width panel with its own tint (`paneluser`), so it stands out from the assistant; plain text, wrapped; shows attached files |
 | Assistant text | **incremental markdown**: re-render only the changed tail; code blocks highlighted |
 | **Thinking block** | native (D24). A ruled header (`── ▸ Thought for 12s · ~3.4k tokens ──── click to expand`), the last 8 lines of reasoning in dim italics, and a closing rule, both while streaming (live timer) and once finished, so thinking is never hidden. Click the block to expand just it; `ctrl+o` expands or collapses every block; the preview height is a setting. |
 | Tool card | a full-width panel tinted by state (pending, success, error) with one cell of padding on each side, holding a header (status dot, name, key argument, duration) and a compact result box: the first 6 lines of the result (the last 6 for `bash`) with a muted `… N more lines (click to expand)` line. A call with no output stays header only. Click the card to expand just it; `ctrl+o` expands or collapses every card. |
@@ -200,6 +200,7 @@ colors:
   panel:    "#1b2230"   # tool-card panel while running
   panelok:  "#112c1d"   # tool-card panel when ok
   panelerr: "#30161a"   # tool-card panel on error
+  paneluser: "#122c44"  # the user's own messages
 ```
 
 Shipped themes: `nova-dark`, `nova-light`, and `mono` (no colour, for dumb terminals and

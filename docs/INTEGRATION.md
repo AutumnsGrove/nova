@@ -120,6 +120,12 @@ Polaris has the largest bespoke loop; most of it becomes hooks.
 - **Tool gating.** Polaris gates tools by configured API keys (`catalog.go`'s
   `offered(ctx)`). Nova needs a per-run tool filter — add `Config.FilterTools` or
   let the app build a per-run registry view. (Tracked as an M1 item.)
+- **Images.** Polaris's `ChatMessage.ImageURLs` maps to `message.Message.Parts`,
+  `ctx.AddPendingImageMessage` to `tool.Context.Inject` (or `tool.Result.Parts`),
+  and `ModelConfig.Multimodal` to `provider.Model.InputModalities`. The contract,
+  the normalization limits, and the tool seams are in [`IMAGE.md`](IMAGE.md);
+  `view_image`'s describe mode uses `Context.Complete`, its see mode returns
+  `Result.Parts`.
 - **State.** `tools.Context`'s many closures become `ToolData`. Citations, cards,
   and charts are app state mutated by tools and read after the run.
 - **Streaming.** `ctx.Emit("token" | "reasoning" | "tool_call" | ...)` maps from
@@ -136,6 +142,8 @@ Before a project switches, confirm Nova preserves:
 - [ ] `ctx` cancellation aborting in-flight provider and tool work.
 - [ ] Per-agent / per-run tool scoping and deferred loading.
 - [ ] Tool output transformation (redaction, rewrites).
+- [ ] Image content parts end to end: prompt attachments, tool-produced images,
+      model capability gating, and inline TUI rendering (`IMAGE.md`).
 - [ ] Trace output equivalent to the current `tool.yaml` trace specs.
 - [ ] Session/context behavior equal to the current compaction.
 - [ ] No new required config for the app's existing providers.

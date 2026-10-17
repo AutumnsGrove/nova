@@ -141,8 +141,10 @@ type Message struct {
 }
 ```
 
-Content parts (images, documents) are deferred. The session entry format leaves a
-`parts` field free so they can be added without a migration.
+Content parts (images, documents) are designed but not built. The contract — the
+`ContentPart` type, media on user messages only, normalization and bounds, and
+inline rendering — is in [`IMAGE.md`](IMAGE.md); the session entry format leaves a
+`parts` field free so it can be added without a migration.
 
 ### Provider
 

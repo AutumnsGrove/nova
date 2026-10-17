@@ -435,8 +435,8 @@ func (s *Server) beforeTurn(ctx context.Context, msgs []message.Message) ([]mess
 // startRun registers an agent run and starts it in the background. The run
 // exists when this returns, so a following abort always has something to
 // cancel; the outcome arrives as events ending in one run_end.
-func (s *Server) startRun(text string) error {
-	return s.agent.Start(context.Background(), s.history(), message.User(text))
+func (s *Server) startRun(m message.Message) error {
+	return s.agent.Start(context.Background(), s.history(), m)
 }
 
 // startFailure turns a startRun error into a response: a run already in

@@ -1,8 +1,12 @@
 package mode
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -332,4 +336,67 @@ func TestHandlers_SVA12_CompleteModelSelection(t *testing.T) {
 	if reqs[0].Model != "vision-slug" {
 		t.Errorf("model = %q, want the requested catalog model's slug", reqs[0].Model)
 	}
+}
+
+// imageAttachment builds a protocol attachment carrying a tiny PNG.
+func imageAttachment(t *testing.T) proto.Attachment {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return proto.Attachment{
+		Kind:     "image",
+		Name:     "shot.png",
+		MimeType: "image/png",
+		Data:     base64.StdEncoding.EncodeToString(buf.Bytes()),
+	}
+}
+
+func TestHandlers_SVA13_PromptAttachmentReachesProvider(t *testing.T) {
+	provider.RegisterModel(provider.Model{ID: "sva13-vision", Slug: "vision", Provider: "test", InputModalities: []string{"text", "image"}})
+	s, prov := testServer(t, testkit.Turn{Text: "ok"})
+	s.cfg.Model = "sva13-vision"
+	events, cancel := s.Subscribe(64)
+	defer cancel()
+
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdPrompt, Text: "look", Attachments: []proto.Attachment{imageAttachment(t)}})
+	if !resp.OK {
+		t.Fatalf("prompt = %+v", resp)
+	}
+	waitFor(t, events, proto.EventRunEnd)
+
+	reqs := prov.Requests()
+	if len(reqs) == 0 {
+		t.Fatal("provider saw no request")
+	}
+	last := reqs[0].Messages[len(reqs[0].Messages)-1]
+	if !last.HasImages() {
+		t.Fatalf("request last message = %+v, want an image part", last)
+	}
+}
+
+func TestHandlers_SVA14_TextOnlyModelRejectsPromptImage(t *testing.T) {
+	s, _ := testServer(t) // test/model has no modalities, so text only
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdPrompt, Text: "look", Attachments: []proto.Attachment{imageAttachment(t)}})
+	if resp.OK || resp.Error.Code != proto.CodeBadRequest {
+		t.Fatalf("prompt = %+v, want bad_request", resp)
+	}
+	if !strings.Contains(resp.Error.Message, "does not support images") {
+		t.Fatalf("message = %q, want a capability error", resp.Error.Message)
+	}
+}
+
+func TestHandlers_SVA15_QueuedAttachmentRejected(t *testing.T) {
+	s, _ := testServer(t, testkit.Turn{Hang: true})
+	events, cancel := s.Subscribe(64)
+	defer cancel()
+	s.Handle(context.Background(), proto.Command{Type: proto.CmdPrompt, Text: "one"})
+	waitFor(t, events, proto.EventRunStart)
+
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdSteer, Text: "two", Attachments: []proto.Attachment{imageAttachment(t)}})
+	if resp.OK || resp.Error.Code != proto.CodeBadRequest {
+		t.Fatalf("steer = %+v, want bad_request until queues carry messages", resp)
+	}
+	s.Handle(context.Background(), proto.Command{Type: proto.CmdAbort})
 }

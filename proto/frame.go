@@ -16,8 +16,15 @@ type Error struct {
 
 // Attachment is one item attached to a prompt.
 type Attachment struct {
+	// Kind is "image" or "text"; empty with an image mime type means image.
 	Kind string `json:"kind,omitempty"`
 	Name string `json:"name,omitempty"`
+	// MimeType is the media type of Data.
+	MimeType string `json:"mime_type,omitempty"`
+	// Data is base64 bytes, the portable form every transport can carry.
+	Data string `json:"data,omitempty"`
+	// Path is reserved for a local transport. A server must not read a path a
+	// remote client names, so it is rejected today.
 	Path string `json:"path,omitempty"`
 	Text string `json:"text,omitempty"`
 }

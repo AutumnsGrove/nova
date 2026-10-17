@@ -10,6 +10,8 @@ import (
 	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/diag"
+	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/mode/attach"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
@@ -105,7 +107,14 @@ func (s *Server) dispatch(ctx context.Context, cmd proto.Command) proto.Response
 
 // handlePrompt accepts a prompt and starts a run in the background.
 func (s *Server) handlePrompt(cmd proto.Command) proto.Response {
-	if strings.TrimSpace(cmd.Text) == "" {
+	s.mu.Lock()
+	accepts := attach.Accepts(modelModalities(s.cfg.Model))
+	s.mu.Unlock()
+	msg, err := attach.Message(cmd.Text, cmd.Attachments, accepts)
+	if err != nil {
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	if strings.TrimSpace(msg.Content) == "" && !msg.HasImages() {
 		return failResponse(cmd, proto.CodeBadRequest, "prompt: text is required")
 	}
 	if s.usesAuth {
@@ -117,12 +126,15 @@ func (s *Server) handlePrompt(cmd proto.Command) proto.Response {
 		if !cmd.Queue {
 			return failResponse(cmd, proto.CodeBusy, "a run is already in progress")
 		}
-		if err := s.agent.FollowUp(cmd.Text); err != nil {
+		if len(msg.Parts) > 0 {
+			return failResponse(cmd, proto.CodeBadRequest, "a queued prompt cannot carry an attachment yet")
+		}
+		if err := s.agent.FollowUp(msg.Content); err != nil {
 			return failResponse(cmd, proto.CodeBadRequest, err.Error())
 		}
 		return okResponse(cmd, nil)
 	}
-	if err := s.startRun(cmd.Text); err != nil {
+	if err := s.startRun(msg); err != nil {
 		return startFailure(cmd, err)
 	}
 	return okResponse(cmd, nil)
@@ -155,6 +167,9 @@ func (s *Server) signInProblem() string {
 
 // handleSteer queues a steering message for the active run.
 func (s *Server) handleSteer(cmd proto.Command) proto.Response {
+	if len(cmd.Attachments) > 0 {
+		return failResponse(cmd, proto.CodeBadRequest, "a steer message cannot carry an attachment yet")
+	}
 	if !s.agent.Running() {
 		return failResponse(cmd, proto.CodeBadRequest, "not running")
 	}
@@ -166,13 +181,16 @@ func (s *Server) handleSteer(cmd proto.Command) proto.Response {
 
 // handleFollowUp queues work after the active run, or starts one when idle.
 func (s *Server) handleFollowUp(cmd proto.Command) proto.Response {
+	if len(cmd.Attachments) > 0 {
+		return failResponse(cmd, proto.CodeBadRequest, "a follow-up message cannot carry an attachment yet")
+	}
 	if s.agent.Running() {
 		if err := s.agent.FollowUp(cmd.Text); err != nil {
 			return failResponse(cmd, proto.CodeBadRequest, err.Error())
 		}
 		return okResponse(cmd, nil)
 	}
-	if err := s.startRun(cmd.Text); err != nil {
+	if err := s.startRun(message.User(cmd.Text)); err != nil {
 		return startFailure(cmd, err)
 	}
 	return okResponse(cmd, nil)

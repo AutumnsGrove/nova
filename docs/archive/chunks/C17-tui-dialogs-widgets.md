@@ -1,8 +1,8 @@
 ---
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
-packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./tui/ui, ./cmd/nova]
-budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2230, ./tui/ui: 2600, ./cmd/nova: 1260 }
+packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova]
+budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2240, ./mode/attach: 160, ./tui/ui: 2600, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -355,6 +355,9 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | SVA10 | `list_models` carries input modalities | a text+image model and a text-only one | `input_modalities` present for the first, absent for the second |
 | SVA11 | `get_state` carries the current model's input modalities | a text+image model selected | `input_modalities` = `[text image]` |
 | SVA12 | `Complete` resolves a requested catalog model | `ModelID` for a registered model | the provider sees that model's slug |
+| SVA13 | a prompt attachment reaches the provider | a prompt with a base64 PNG, vision model | the request's last message carries an image part |
+| SVA14 | a text-only model rejects a prompt image | a PNG attachment, no modalities | `bad_request` naming the capability |
+| SVA15 | a steer attachment is refused until queues carry messages | steer with an image while a run is active | `bad_request`, not a silent drop |
 
 ## Fuzz and property tests
 

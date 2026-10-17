@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
@@ -187,5 +188,30 @@ func Test_LPI06_ContextInject(t *testing.T) {
 	}
 	if len(order) != 2 || order[0] != "tool" || order[1] != "injected" {
 		t.Fatalf("message order = %v, want [tool injected]", order)
+	}
+}
+
+func Test_LPI07_ToolUsageIsCounted(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	meter := toolOf("meter", false, func(_ context.Context, _ json.RawMessage, tc *tool.Context) (tool.Result, error) {
+		tc.AddUsage(provider.Usage{PromptTokens: 10, CompletionTokens: 2, TotalTokens: 12, CostUSD: 0.5})
+		return tool.Text("ok"), nil
+	})
+	p := testkit.NewProvider(clock, namedToolTurn("meter"), textTurn("done"))
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Tools: registry(meter)}
+
+	res, events := runCollect(t, cfg, nil, message.User("go"))
+
+	if res.Usage.TotalTokens < 12 || res.Usage.CostUSD < 0.5 {
+		t.Fatalf("usage = %+v, want the tool's nested call included", res.Usage)
+	}
+	found := false
+	for _, ev := range events {
+		if ev.Type == proto.EventUsage && ev.Usage != nil && ev.Usage.TotalTokens == 12 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("no usage event carried the tool's nested usage")
 	}
 }

@@ -36,6 +36,9 @@ type Context struct {
 	// needs a message of its own rather than Result.Parts. It is per call and
 	// ordered with the rest of the batch. It may be nil.
 	Inject func(message.Message)
+	// AddUsage reports the tokens and cost of a nested Complete call, so a
+	// tool's model call is counted in the run's totals. It may be nil.
+	AddUsage func(provider.Usage)
 }
 
 // Progress sends a progress update, or does nothing when Emit is nil.

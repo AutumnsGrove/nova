@@ -354,6 +354,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | SVA09 | `remember` with `ok:false` | | no rule added |
 | SVA10 | `list_models` carries input modalities | a text+image model and a text-only one | `input_modalities` present for the first, absent for the second |
 | SVA11 | `get_state` carries the current model's input modalities | a text+image model selected | `input_modalities` = `[text image]` |
+| SVA12 | `Complete` resolves a requested catalog model | `ModelID` for a registered model | the provider sees that model's slug |
 
 ## Fuzz and property tests
 

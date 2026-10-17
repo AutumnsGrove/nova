@@ -14,6 +14,7 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
+	"github.com/AutumnsGrove/nova/testkit"
 )
 
 // decodeArray decodes a response's data into a []map.
@@ -315,5 +316,20 @@ func TestHandlers_SVA11_StateInputModalities(t *testing.T) {
 	got, _ := state["input_modalities"].([]any)
 	if len(got) != 2 || got[0] != "text" || got[1] != "image" {
 		t.Fatalf("input_modalities = %v, want [text image]", state["input_modalities"])
+	}
+}
+
+func TestHandlers_SVA12_CompleteModelSelection(t *testing.T) {
+	provider.RegisterModel(provider.Model{ID: "sva12-vision", Slug: "vision-slug", Provider: "test"})
+	s, prov := testServer(t, testkit.Turn{Text: "ok"})
+	if _, err := s.complete(context.Background(), provider.Request{ModelID: "sva12-vision"}); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	reqs := prov.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %d, want 1", len(reqs))
+	}
+	if reqs[0].Model != "vision-slug" {
+		t.Errorf("model = %q, want the requested catalog model's slug", reqs[0].Model)
 	}
 }

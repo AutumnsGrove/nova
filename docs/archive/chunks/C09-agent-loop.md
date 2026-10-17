@@ -386,6 +386,7 @@ history as given, as before.
 | LPI04 | a tool's `Result.Parts` becomes a synthetic user message | a tool that returns an image and a caption | after the tool result, one synthetic user message with the image and caption |
 | LPI05 | two tools' images combine into one message | two image tools in one batch | one synthetic message with both parts |
 | LPI06 | `Context.Inject` queues a message after the batch | an injected user message with an image | recorded after the tool result, image intact |
+| LPI07 | a tool's nested usage is counted | `Context.AddUsage` with 12 tokens and a cost | run usage and a `usage` event include it |
 
 ## Fuzz and property tests
 

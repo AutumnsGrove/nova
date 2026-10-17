@@ -224,8 +224,10 @@ func (r *run) dispatchTools(assistant message.Message) ([]tool.Result, error) {
 	}
 	outcomes := r.dispatch(assistant.ToolCalls)
 	results := make([]tool.Result, len(outcomes))
+	var toolUsage provider.Usage
 	for i, call := range assistant.ToolCalls {
 		results[i] = outcomes[i].result
+		toolUsage.Add(outcomes[i].usage)
 		content := outcomes[i].result.Content
 		if content == "" {
 			content = "(empty result)"
@@ -233,6 +235,11 @@ func (r *run) dispatchTools(assistant message.Message) ([]tool.Result, error) {
 		if err := r.record(message.ToolResult(call.ID, content), nil); err != nil {
 			return results, err
 		}
+	}
+	if (toolUsage != provider.Usage{}) {
+		r.usage.Add(toolUsage)
+		total := r.usage
+		r.emit(proto.Event{Type: proto.EventUsage, Turn: intp(r.turn), Usage: &toolUsage, Total: &total})
 	}
 	for _, o := range outcomes {
 		for _, m := range o.injected {

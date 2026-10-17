@@ -9,6 +9,7 @@ import (
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -34,10 +35,11 @@ func (r *run) parallelCapable(call message.ToolCall) bool {
 }
 
 // callOutcome is one dispatched call's result plus any messages the tool asked
-// the loop to inject after the batch.
+// the loop to inject after the batch, and the usage its nested calls reported.
 type callOutcome struct {
 	result   tool.Result
 	injected []message.Message
+	usage    provider.Usage
 }
 
 // dispatch runs every call and returns the outcomes in call order, whatever the
@@ -96,11 +98,13 @@ func (r *run) dispatch(calls []message.ToolCall) []callOutcome {
 // anywhere is recovered into that call's error result.
 func (r *run) runCall(call message.ToolCall) (out callOutcome) {
 	var injected []message.Message
+	var usage provider.Usage
 	defer func() {
 		if rec := recover(); rec != nil {
 			_, _ = diag.Report(rec, "tool "+call.Function.Name)
 			out.result = tool.Errorf("internal error running %s: %v", call.Function.Name, rec)
 			out.injected = injected
+			out.usage = usage
 			r.emitToolEnd(call, out.result)
 		}
 	}()
@@ -137,6 +141,7 @@ func (r *run) runCall(call message.ToolCall) (out callOutcome) {
 	tctx := r.toolContext()
 	tctx.Emit = progress.emit
 	tctx.Inject = func(m message.Message) { injected = append(injected, m) }
+	tctx.AddUsage = func(u provider.Usage) { usage.Add(u) }
 	var res tool.Result
 	if r.cfg.Tools != nil {
 		res = r.cfg.Tools.Execute(r.ctx, call.Function.Name, args, tctx)
@@ -146,6 +151,7 @@ func (r *run) runCall(call message.ToolCall) (out callOutcome) {
 	progress.close()
 	out.result = r.finishCall(call, res)
 	out.injected = injected
+	out.usage = usage
 	return out
 }
 

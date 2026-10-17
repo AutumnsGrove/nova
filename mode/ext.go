@@ -99,10 +99,19 @@ func extensionDirs(cfg *config.Config, cwd, home string) []string {
 }
 
 // complete performs one non-streaming provider call for model:complete.
+// complete is the nested model call a tool gets as Context.Complete. An empty
+// request picks up the current model; a request that names a catalog ModelID is
+// resolved to that model's slug, so a describe tool can ask for a vision
+// fallback. The usage comes back to the tool, which reports it with AddUsage.
 func (s *Server) complete(ctx context.Context, req provider.Request) (*provider.Response, error) {
-	s.mu.Lock()
-	req.Model = s.model
-	s.mu.Unlock()
+	if req.Model == "" && req.ModelID == "" {
+		s.mu.Lock()
+		req.Model = s.model
+		req.ModelID = s.cfg.Model
+		s.mu.Unlock()
+	} else if req.Model == "" {
+		req.Model = modelSlug(req.ModelID)
+	}
 	return s.prov.Stream(ctx, req, nil)
 }
 

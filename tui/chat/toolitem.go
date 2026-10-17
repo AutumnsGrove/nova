@@ -64,8 +64,14 @@ func (ti *toolItem) Render(width int) string {
 		card = header + "\n" + body
 	}
 	out := spaced(Panel(card, ti.call, ti.st, width))
-	if imgs := renderImageParts(ti.st, ti.caps, ti.parts, width); imgs != "" {
-		out += imgs + "\n"
+	if ti.display != nil && ti.display.ShowImages {
+		cells := ti.display.ImageWidthCells
+		if cells <= 0 {
+			cells = 60
+		}
+		if imgs := renderImageParts(ti.st, ti.caps, ti.parts, min(width-2, cells)); imgs != "" {
+			out += imgs + "\n"
+		}
 	}
 	return out
 }

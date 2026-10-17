@@ -234,3 +234,10 @@ func TestLoad_CFG27_MergeDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestDisplayImageDefaults(t *testing.T) {
+	d := Defaults().Display
+	if !d.ShowImages || d.ImageWidthCells != 60 {
+		t.Fatalf("display defaults = %+v, want show_images true and 60 cells", d)
+	}
+}

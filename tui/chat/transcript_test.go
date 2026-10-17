@@ -586,3 +586,15 @@ func TestTranscript_TRN19_ImageKitty(t *testing.T) {
 		t.Fatalf("render = %q, want a Kitty sequence", got)
 	}
 }
+
+func TestTranscript_TRN20_ShowImagesOff(t *testing.T) {
+	tr := newTestTranscript(80)
+	tr.display.ShowImages = false
+	ti := toolWithImage(tr, image.Capabilities{Images: image.Kitty})
+	if ti == nil {
+		t.Fatal("tool item missing")
+	}
+	if got := ti.Render(80); strings.Contains(got, "\x1b_G") {
+		t.Fatalf("render = %q, image drawn while show_images is off", got)
+	}
+}

@@ -21,11 +21,15 @@ type Display struct {
 	ExpandThinking       bool
 	ExpandTools          bool
 	Splash               bool
+	// ShowImages draws received images inline when the terminal supports it.
+	ShowImages bool
+	// ImageWidthCells is the preferred inline image width in terminal cells.
+	ImageWidthCells int
 }
 
 // DefaultDisplay returns the starting display preferences.
 func DefaultDisplay() Display {
-	return Display{ThinkingPreviewLines: 8, ToolPreviewLines: 6, Splash: true}
+	return Display{ThinkingPreviewLines: 8, ToolPreviewLines: 6, Splash: true, ShowImages: true, ImageWidthCells: 60}
 }
 
 // previewLines clamps the thinking preview height to 1..50.

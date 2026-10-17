@@ -69,7 +69,7 @@ func runWith(ctx context.Context, srv *mode.Server, opt RunOptions, in io.Reader
 	// The server already loaded and normalised the config; take its display
 	// preferences so the saved line counts survive a restart.
 	display := chat.DefaultDisplay()
-	display.ThinkingPreviewLines, display.ToolPreviewLines = srv.Display()
+	display.ThinkingPreviewLines, display.ToolPreviewLines, display.ShowImages, display.ImageWidthCells = srv.Display()
 	model := New(Options{
 		Client:   client.FromPipe(c),
 		Theme:    theme,

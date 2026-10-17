@@ -191,7 +191,7 @@ func renderImageParts(st styles.Styles, caps image.Capabilities, parts []message
 		if p.Type != message.PartImage {
 			continue
 		}
-		if lines, ok := image.Render(p, max(min(width-2, 60), 1), caps); ok {
+		if lines, ok := image.Render(p, max(width, 1), caps); ok {
 			blocks = append(blocks, strings.Join(lines, "\n"))
 			continue
 		}

@@ -43,10 +43,13 @@ type Config struct {
 }
 
 // DisplayConfig holds the TUI's rendering preferences. Both line counts are
-// clamped to 1..50 when loaded and when edited in /settings.
+// clamped to 1..50 when loaded and when edited in /settings, and the image
+// width to 20..200 cells.
 type DisplayConfig struct {
-	ThinkingLines int `yaml:"thinking_lines"` // reasoning lines in a collapsed thinking block
-	ToolLines     int `yaml:"tool_lines"`     // result lines in a collapsed tool card
+	ThinkingLines   int  `yaml:"thinking_lines"`    // reasoning lines in a collapsed thinking block
+	ToolLines       int  `yaml:"tool_lines"`        // result lines in a collapsed tool card
+	ShowImages      bool `yaml:"show_images"`       // draw received images inline
+	ImageWidthCells int  `yaml:"image_width_cells"` // preferred inline image width in terminal cells
 }
 
 // WebfetchConfig bounds the bundled web_fetch tool.
@@ -148,7 +151,7 @@ func Defaults() Config {
 		Compaction: CompactionConfig{Enabled: &enabled},
 		Extensions: ExtensionsConfig{CompleteMaxPerRun: 20},
 		Retry:      RetryConfig{Max: 3, BaseMS: 500, CapMS: 30000},
-		Display:    DisplayConfig{ThinkingLines: 8, ToolLines: 6},
+		Display:    DisplayConfig{ThinkingLines: 8, ToolLines: 6, ShowImages: true, ImageWidthCells: 60},
 	}
 }
 
@@ -397,6 +400,7 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 	nonNegative(&cfg.Retry.CapMS, "retry.cap_ms", warnings)
 	displayLines(&cfg.Display.ThinkingLines, Defaults().Display.ThinkingLines, "display.thinking_lines", warnings)
 	displayLines(&cfg.Display.ToolLines, Defaults().Display.ToolLines, "display.tool_lines", warnings)
+	displayCells(&cfg.Display.ImageWidthCells, Defaults().Display.ImageWidthCells, "display.image_width_cells", warnings)
 	if err := cfg.Permissions.Validate(); err != nil {
 		*warnings = append(*warnings, Warning{Source: "config", Message: "invalid permissions: " + err.Error()})
 		cfg.Permissions = Defaults().Permissions
@@ -408,6 +412,19 @@ func nonNegative(v *int, name string, warnings *[]Warning) {
 	if *v < 0 {
 		*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("negative %s; using 0", name)})
 		*v = 0
+	}
+}
+
+// displayCells clamps the inline image width to 20..200 cells. A zero is
+// treated as unset and takes the default.
+func displayCells(v *int, def int, name string, warnings *[]Warning) {
+	switch {
+	case *v == 0:
+		*v = def
+	case *v < 20 || *v > 200:
+		clamped := min(max(*v, 20), 200)
+		*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("%s out of range; using %d", name, clamped)})
+		*v = clamped
 	}
 }
 

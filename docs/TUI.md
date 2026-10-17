@@ -164,8 +164,11 @@ the sign-in flows itself and asks the server for each provider's status.
 `/settings` (alias `/config`) opens a dialog over the display settings. `up`/`down`
 choose a row, the arrows or `+`/`-` step it, typing a number sets it, `enter` saves,
 and `esc` cancels. Each change applies live — tool cards and thinking blocks
-re-render at the new height — and is written to `display.thinking_lines` and
-`display.tool_lines` in the user config, so it survives a restart. `/display lines N`
+re-render at the new height — and is written to `display.thinking_lines`,
+`display.tool_lines`, `display.show_images` (draw a received image inline, on by
+default where the terminal supports it), and `display.image_width_cells` (the
+preferred inline width, 20..200 cells, default 60) in the user config, so it
+survives a restart. `/display lines N`
 is the shortcut for the thinking height and persists the same way. Adding a setting
 is one row in the dialog's table plus one case in `applySettings`.
 

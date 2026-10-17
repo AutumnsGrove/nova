@@ -2,7 +2,7 @@
 chunk: C15
 title: "TUI foundation"
 packages: [./tui/layout, ./tui/list, ./tui/styles, ./tui/client, ./tui/chat, ./tui/ui]
-budgets: { ./tui/layout: 150, ./tui/list: 350, ./tui/styles: 450, ./tui/client: 200, ./tui/chat: 1300, ./tui/ui: 2720 }
+budgets: { ./tui/layout: 150, ./tui/list: 350, ./tui/styles: 450, ./tui/client: 200, ./tui/chat: 1300, ./tui/ui: 2740 }
 depends: [C12]
 ---
 
@@ -324,6 +324,7 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | TRN17 | `SetWidth` | | items not recreated; renders at the new width |
 | TRN18 | a tool result's image renders a labelled fallback | a `tool_end` with an image part, no capabilities | the tool card contains `[Image: …]` |
 | TRN19 | a tool result's image renders a Kitty sequence | the same, with Kitty capabilities | the card contains `\x1b_G` |
+| TRN20 | `display.show_images` off suppresses the image | a tool image with Kitty capabilities | no `\x1b_G` in the card |
 | MDK01 | paragraph and heading | | rendered through the renderer |
 | MDK02 | blocks split at blank lines | | one render per closed block |
 | MDK03 | open code fence | no closing fence | the rest is one open block |

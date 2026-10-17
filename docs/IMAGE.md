@@ -214,6 +214,12 @@ capability detection. Nova does the same. The pi implementation is the reference
   and a plain Windows console → the text fallback. `PI_IMAGE_PROTOCOL` /
   `PI_TRUE_COLOR` override detection; Nova uses `NOVA_IMAGE_PROTOCOL` and
   `NO_COLOR` for the same purpose.
+- **Ghostty is the reference terminal for the first slice.** It sets
+  `TERM_PROGRAM=ghostty`, detects as Kitty, and implements the graphics
+  protocol directly. Two cases fall back to text until overridden: under `tmux`
+  or `screen`, where passthrough is unreliable, and on a remote host over SSH,
+  where `TERM_PROGRAM` is not forwarded even though the escapes would render on
+  the client — set `NOVA_IMAGE_PROTOCOL=kitty` there.
 - **Kitty encoding** (`encodeKitty`): `\x1b_G` with
   `a=T,f=100,q=2,c=<cols>,r=<rows>,i=<id>,C=1`, base64 chunked at 4096
   characters with `m=1`/`m=0` continuation. `C=1` means the sequence does not

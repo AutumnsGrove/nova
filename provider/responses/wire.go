@@ -22,15 +22,58 @@ type request struct {
 }
 
 // inputItem is one input entry: a role message, a function call, or a function
-// call output. Only the fields for the item's kind are set.
+// call output. Only the fields for the item's kind are set. Content is any so a
+// message can send the plain string form or an array when it carries images.
 type inputItem struct {
 	Type      string `json:"type,omitempty"`
 	Role      string `json:"role,omitempty"`
-	Content   string `json:"content,omitempty"`
+	Content   any    `json:"content,omitempty"`
 	CallID    string `json:"call_id,omitempty"`
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
 	Output    string `json:"output,omitempty"`
+}
+
+// contentItem is one entry of the array form of a message's content, used only
+// when the message carries image parts.
+type contentItem struct {
+	Type     string `json:"type"` // "input_text" | "input_image"
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+}
+
+// wireContent renders a message's content as a plain string, or as an input
+// array when it carries image parts. An empty message returns nil so the field
+// stays omitted, as it was before parts existed. Text precedes the images; an
+// unknown part kind or a part with no bytes or URL is skipped.
+func wireContent(m message.Message) any {
+	if len(m.Parts) == 0 {
+		if m.Content == "" {
+			return nil
+		}
+		return m.Content
+	}
+	content := make([]contentItem, 0, len(m.Parts)+1)
+	if m.Content != "" {
+		content = append(content, contentItem{Type: "input_text", Text: m.Content})
+	}
+	for _, p := range m.Parts {
+		url := p.URL
+		if url == "" && p.Data != "" {
+			url = "data:" + p.MimeType + ";base64," + p.Data
+		}
+		if p.Type != message.PartImage || url == "" {
+			continue
+		}
+		content = append(content, contentItem{Type: "input_image", ImageURL: url})
+	}
+	if len(content) == 0 {
+		if m.Content == "" {
+			return nil
+		}
+		return m.Content
+	}
+	return content
 }
 
 // toolDef is one flattened tool.
@@ -120,7 +163,7 @@ func buildInput(messages []message.Message) (string, []inputItem) {
 				continue
 			}
 		}
-		items = append(items, inputItem{Role: string(m.Role), Content: m.Content})
+		items = append(items, inputItem{Role: string(m.Role), Content: wireContent(m)})
 	}
 	return instructions, items
 }

@@ -365,6 +365,8 @@ type OpenCodeGoConfig struct {
 | RSP17 | empty stream | no events | retryable "empty stream" |
 | RSP18 | connect timeout | headers never sent; `ConnectTimeout` 50 ms | retryable `*provider.Error` |
 | RSP19 | idle timeout | text delta, then silence; `IdleTimeout` 50 ms | retryable; text kept |
+| RSP20 | image message sends a content array | a user message with text and a PNG part | `content` is `[input_text, input_image]` with a `data:` URL |
+| RSP21 | text-only content stays a string | `User("hi")` | `content` is the string `"hi"` |
 | MSG01 | plain text turn | `message_start`, text block, `message_delta(end_turn)`, `message_stop` | one text delta; content; finish `stop` |
 | MSG02 | request body shape | any turn | `model`, `system`, `messages`, `tools.input_schema`, `max_tokens`, `stream:true` |
 | MSG03 | headers | any request | `x-api-key` and `anthropic-version: 2023-06-01` |

@@ -400,3 +400,48 @@ func FuzzResponsesStream(f *testing.F) {
 		_, _ = p.Stream(context.Background(), provider.Request{Model: "m"}, nil)
 	})
 }
+
+func TestResponses_RSP20_ImageMessageContentArray(t *testing.T) {
+	p, srv := newProvider(t, Config{}, sse("response.completed", `{"type":"response.completed","response":{"usage":{}}}`))
+	_, _, err := run(t, p, provider.Request{Model: "m", Messages: []message.Message{
+		message.UserParts("what is this?", message.ImagePart("image/png", "aGk=")),
+	}})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(srv.Requests()[0].Body), &body); err != nil {
+		t.Fatal(err)
+	}
+	input, _ := body["input"].([]any)
+	if len(input) != 1 {
+		t.Fatalf("input = %v, want 1 item", input)
+	}
+	content, ok := input[0].(map[string]any)["content"].([]any)
+	if !ok || len(content) != 2 {
+		t.Fatalf("content = %v, want [input_text, input_image]", input[0].(map[string]any)["content"])
+	}
+	if content[0].(map[string]any)["type"] != "input_text" {
+		t.Errorf("first block = %v, want input_text", content[0])
+	}
+	second, _ := content[1].(map[string]any)
+	if second["type"] != "input_image" || second["image_url"] != "data:image/png;base64,aGk=" {
+		t.Errorf("second block = %v, want an input_image data URL", second)
+	}
+}
+
+func TestResponses_RSP21_TextOnlyContentStaysString(t *testing.T) {
+	p, srv := newProvider(t, Config{}, sse("response.completed", `{"type":"response.completed","response":{"usage":{}}}`))
+	_, _, err := run(t, p, provider.Request{Model: "m", Messages: []message.Message{{Role: message.RoleUser, Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(srv.Requests()[0].Body), &body); err != nil {
+		t.Fatal(err)
+	}
+	got := body["input"].([]any)[0].(map[string]any)["content"]
+	if got != "hi" {
+		t.Errorf("content = %T %v, want the string \"hi\"", got, got)
+	}
+}

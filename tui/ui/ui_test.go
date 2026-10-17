@@ -489,7 +489,7 @@ func TestUI_EDI17_WindowFollowsCursor(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("L%02d", i))
 	}
 	m.setEditorText(strings.Join(lines, "\n"))
-	view := m.editor.View()
+	view := m.editorView()
 	if !strings.Contains(view, "L20") {
 		t.Fatalf("editor view does not show the last line\n%s", view)
 	}
@@ -498,6 +498,50 @@ func TestUI_EDI17_WindowFollowsCursor(t *testing.T) {
 	}
 	if strings.Contains(view, "L01") {
 		t.Fatalf("editor view still shows the first line\n%s", view)
+	}
+}
+
+func TestUI_EDI19_WheelScrollsEditor(t *testing.T) {
+	m, _, _ := newModel(t)
+	for i := 0; i < 100; i++ {
+		m.transcript.AddUser(fmt.Sprintf("turn %d", i), nil)
+	}
+	m.syncList()
+	var lines []string
+	for i := 1; i <= 20; i++ {
+		lines = append(lines, fmt.Sprintf("L%02d", i))
+	}
+	m.setEditorText(strings.Join(lines, "\n"))
+	if !strings.Contains(m.editorView(), "L20") {
+		t.Fatalf("editor does not start at the cursor\n%s", m.editorView())
+	}
+	update(m, tea.MouseWheelMsg{Button: tea.MouseWheelUp, X: 1, Y: m.layout.Editor.Y})
+	view := m.editorView()
+	if !strings.Contains(view, "L08") {
+		t.Fatalf("wheel up did not scroll the editor\n%s", view)
+	}
+	if strings.Contains(view, "L20") {
+		t.Fatalf("wheel up left the window at the bottom\n%s", view)
+	}
+	if !m.list.Following() {
+		t.Fatal("wheel over the editor also scrolled the transcript")
+	}
+}
+
+func TestUI_EDI20_TypingReturnsToCursor(t *testing.T) {
+	m, _, _ := newModel(t)
+	var lines []string
+	for i := 1; i <= 20; i++ {
+		lines = append(lines, fmt.Sprintf("L%02d", i))
+	}
+	m.setEditorText(strings.Join(lines, "\n"))
+	update(m, tea.MouseWheelMsg{Button: tea.MouseWheelUp, X: 1, Y: m.layout.Editor.Y})
+	if strings.Contains(m.editorView(), "L20") {
+		t.Fatal("test setup: the window did not scroll away from the cursor")
+	}
+	update(m, runeKey('x'))
+	if !strings.Contains(m.editorView(), "L20") {
+		t.Fatalf("typing did not bring the window back to the cursor\n%s", m.editorView())
 	}
 }
 

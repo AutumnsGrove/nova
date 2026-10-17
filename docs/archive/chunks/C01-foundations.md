@@ -266,6 +266,8 @@ func NoLeaks(t testing.TB)                  // registers a cleanup that checks g
 | PRV18 | registry `Get` missing; `Names` sorted | | false; sorted |
 | PRV19 | `RegisterModel` empty ID panics; replaces same ID | | panic; replaced |
 | PRV20 | `Models` sorted by provider then id | | sorted |
+| PRV21 | `AcceptsImages` table | nil, `["text"]`, `["image"]`, `["text","image"]`, `["text","file"]` | false, false, true, true, false |
+| PRV22 | registered model keeps `InputModalities` | a model with text+image | `AcceptsImages` true after `GetModel` |
 | TKC01 | `FakeClock` does not read real time | `Now()` after `Advance(1h)` | start + 1h, instantly |
 | TKC02 | `Advance` fires timers in deadline order | timers at 3s, 1s, 2s | fire 1s, 2s, 3s |
 | TKC03 | `Sleep` returns on advance | | returns nil |

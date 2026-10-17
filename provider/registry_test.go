@@ -76,3 +76,33 @@ func TestProvider_PRV20_ModelsSorted(t *testing.T) {
 		}
 	}
 }
+
+func TestProvider_PRV21_AcceptsImages(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		want bool
+	}{
+		{"nil is text only", nil, false},
+		{"text only", []string{"text"}, false},
+		{"image only", []string{"image"}, true},
+		{"text and image", []string{"text", "image"}, true},
+		{"unrelated kinds", []string{"text", "file"}, false},
+	}
+	for _, tc := range cases {
+		if got := (Model{InputModalities: tc.in}).AcceptsImages(); got != tc.want {
+			t.Errorf("%s: AcceptsImages() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestProvider_PRV22_ModelKeepsInputModalities(t *testing.T) {
+	RegisterModel(Model{ID: "prv22", Provider: "x", InputModalities: []string{"text", "image"}})
+	got, ok := GetModel("prv22")
+	if !ok {
+		t.Fatal("GetModel(prv22) not found")
+	}
+	if !got.AcceptsImages() {
+		t.Errorf("registered model lost its modalities: %+v", got)
+	}
+}

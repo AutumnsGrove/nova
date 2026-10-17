@@ -24,6 +24,21 @@ type Model struct {
 	// InPerM and OutPerM are listed dollars per million tokens.
 	InPerM  float64
 	OutPerM float64
+	// InputModalities lists the input kinds the model accepts, such as "text"
+	// and "image". Empty means text only, the safe default for a model Nova
+	// does not know. It mirrors OpenRouter's input_modalities.
+	InputModalities []string
+}
+
+// AcceptsImages reports whether the model declares image input. A model with
+// no modalities is text only, so this is false for anything Nova does not know.
+func (m Model) AcceptsImages() bool {
+	for _, kind := range m.InputModalities {
+		if kind == "image" {
+			return true
+		}
+	}
+	return false
 }
 
 var (

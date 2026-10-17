@@ -7,24 +7,24 @@ import (
 
 // Steer queues a message injected after the current turn's tool results, and
 // reports ErrNotRunning when idle. It is safe from any goroutine.
-func (a *Agent) Steer(text string) error {
-	return a.enqueue(&a.steering, text)
+func (a *Agent) Steer(m message.Message) error {
+	return a.enqueue(&a.steering, m)
 }
 
 // FollowUp queues a message run once the agent would otherwise end, and reports
 // ErrNotRunning when idle. It is safe from any goroutine.
-func (a *Agent) FollowUp(text string) error {
-	return a.enqueue(&a.followUp, text)
+func (a *Agent) FollowUp(m message.Message) error {
+	return a.enqueue(&a.followUp, m)
 }
 
 // enqueue appends to one queue and emits a queue_update.
-func (a *Agent) enqueue(list *[]string, text string) error {
+func (a *Agent) enqueue(list *[]message.Message, m message.Message) error {
 	a.mu.Lock()
 	if !a.running {
 		a.mu.Unlock()
 		return ErrNotRunning
 	}
-	*list = append(*list, text)
+	*list = append(*list, m)
 	steering := len(a.steering)
 	followUp := len(a.followUp)
 	run := a.runID
@@ -47,12 +47,13 @@ func (a *Agent) Running() bool {
 	return a.running
 }
 
-// Abort cancels the active run and returns the unconsumed queues, emptying
-// them. It is harmless when idle and idempotent.
+// Abort cancels the active run and returns the unconsumed queues' text,
+// emptying them. An image on a queued message is not restored; the caller can
+// ask for it again. It is harmless when idle and idempotent.
 func (a *Agent) Abort() (steering, followUp []string) {
 	a.mu.Lock()
-	steering = a.steering
-	followUp = a.followUp
+	steering = contents(a.steering)
+	followUp = contents(a.followUp)
 	a.steering = nil
 	a.followUp = nil
 	cancel := a.cancel
@@ -63,6 +64,15 @@ func (a *Agent) Abort() (steering, followUp []string) {
 	return steering, followUp
 }
 
+// contents maps queued messages to their text, for the abort response.
+func contents(msgs []message.Message) []string {
+	out := make([]string, len(msgs))
+	for i, m := range msgs {
+		out[i] = m.Content
+	}
+	return out
+}
+
 // drainSteering removes and appends every queued steering message, in order.
 func (r *run) drainSteering() (int, error) {
 	a := r.a
@@ -71,8 +81,8 @@ func (r *run) drainSteering() (int, error) {
 	a.steering = nil
 	a.mu.Unlock()
 
-	for _, text := range items {
-		if err := r.record(message.User(text), nil); err != nil {
+	for _, m := range items {
+		if err := r.record(m, nil); err != nil {
 			return 0, err
 		}
 	}
@@ -80,14 +90,14 @@ func (r *run) drainSteering() (int, error) {
 }
 
 // popFollowUp removes the first queued follow-up message, if any.
-func (r *run) popFollowUp() (string, bool) {
+func (r *run) popFollowUp() (message.Message, bool) {
 	a := r.a
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if len(a.followUp) == 0 {
-		return "", false
+		return message.Message{}, false
 	}
-	text := a.followUp[0]
+	m := a.followUp[0]
 	a.followUp = a.followUp[1:]
-	return text, true
+	return m, true
 }

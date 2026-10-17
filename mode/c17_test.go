@@ -387,16 +387,21 @@ func TestHandlers_SVA14_TextOnlyModelRejectsPromptImage(t *testing.T) {
 	}
 }
 
-func TestHandlers_SVA15_QueuedAttachmentRejected(t *testing.T) {
+func TestHandlers_SVA15_SteerAttachmentAccepted(t *testing.T) {
+	provider.RegisterModel(provider.Model{ID: "sva15-vision", Slug: "vision", Provider: "test", InputModalities: []string{"text", "image"}})
 	s, _ := testServer(t, testkit.Turn{Hang: true})
+	s.cfg.Model = "sva15-vision"
 	events, cancel := s.Subscribe(64)
 	defer cancel()
 	s.Handle(context.Background(), proto.Command{Type: proto.CmdPrompt, Text: "one"})
 	waitFor(t, events, proto.EventRunStart)
 
 	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdSteer, Text: "two", Attachments: []proto.Attachment{imageAttachment(t)}})
-	if resp.OK || resp.Error.Code != proto.CodeBadRequest {
-		t.Fatalf("steer = %+v, want bad_request until queues carry messages", resp)
+	if !resp.OK {
+		t.Fatalf("steer = %+v, want the attachment queued", resp)
+	}
+	if steering, _ := s.agent.Queued(); steering != 1 {
+		t.Fatalf("steering = %d, want 1", steering)
 	}
 	s.Handle(context.Background(), proto.Command{Type: proto.CmdAbort})
 }

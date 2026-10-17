@@ -387,6 +387,7 @@ history as given, as before.
 | LPI05 | two tools' images combine into one message | two image tools in one batch | one synthetic message with both parts |
 | LPI06 | `Context.Inject` queues a message after the batch | an injected user message with an image | recorded after the tool result, image intact |
 | LPI07 | a tool's nested usage is counted | `Context.AddUsage` with 12 tokens and a cost | run usage and a `usage` event include it |
+| LPI08 | a steered message keeps its image | steer a user message with an image during a tool turn | the next request carries the image |
 
 ## Fuzz and property tests
 

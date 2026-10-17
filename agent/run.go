@@ -202,8 +202,8 @@ func (r *run) loop() (*Result, error) {
 			if steered > 0 || continueTurn || injected > 0 {
 				continue
 			}
-			if text, ok := r.popFollowUp(); ok {
-				if err := r.record(message.User(text), nil); err != nil {
+			if m, ok := r.popFollowUp(); ok {
+				if err := r.record(m, nil); err != nil {
 					return r.finish(r.result("error"), err)
 				}
 				continue

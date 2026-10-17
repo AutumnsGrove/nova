@@ -107,10 +107,7 @@ func (s *Server) dispatch(ctx context.Context, cmd proto.Command) proto.Response
 
 // handlePrompt accepts a prompt and starts a run in the background.
 func (s *Server) handlePrompt(cmd proto.Command) proto.Response {
-	s.mu.Lock()
-	accepts := attach.Accepts(modelModalities(s.cfg.Model))
-	s.mu.Unlock()
-	msg, err := attach.Message(cmd.Text, cmd.Attachments, accepts)
+	msg, err := s.commandMessage(cmd.Text, cmd.Attachments)
 	if err != nil {
 		return failResponse(cmd, proto.CodeBadRequest, err.Error())
 	}
@@ -126,10 +123,7 @@ func (s *Server) handlePrompt(cmd proto.Command) proto.Response {
 		if !cmd.Queue {
 			return failResponse(cmd, proto.CodeBusy, "a run is already in progress")
 		}
-		if len(msg.Parts) > 0 {
-			return failResponse(cmd, proto.CodeBadRequest, "a queued prompt cannot carry an attachment yet")
-		}
-		if err := s.agent.FollowUp(msg.Content); err != nil {
+		if err := s.agent.FollowUp(msg); err != nil {
 			return failResponse(cmd, proto.CodeBadRequest, err.Error())
 		}
 		return okResponse(cmd, nil)
@@ -167,13 +161,14 @@ func (s *Server) signInProblem() string {
 
 // handleSteer queues a steering message for the active run.
 func (s *Server) handleSteer(cmd proto.Command) proto.Response {
-	if len(cmd.Attachments) > 0 {
-		return failResponse(cmd, proto.CodeBadRequest, "a steer message cannot carry an attachment yet")
-	}
 	if !s.agent.Running() {
 		return failResponse(cmd, proto.CodeBadRequest, "not running")
 	}
-	if err := s.agent.Steer(cmd.Text); err != nil {
+	msg, err := s.commandMessage(cmd.Text, cmd.Attachments)
+	if err != nil {
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	if err := s.agent.Steer(msg); err != nil {
 		return failResponse(cmd, proto.CodeBadRequest, err.Error())
 	}
 	return okResponse(cmd, nil)
@@ -181,19 +176,29 @@ func (s *Server) handleSteer(cmd proto.Command) proto.Response {
 
 // handleFollowUp queues work after the active run, or starts one when idle.
 func (s *Server) handleFollowUp(cmd proto.Command) proto.Response {
-	if len(cmd.Attachments) > 0 {
-		return failResponse(cmd, proto.CodeBadRequest, "a follow-up message cannot carry an attachment yet")
+	msg, err := s.commandMessage(cmd.Text, cmd.Attachments)
+	if err != nil {
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
 	}
 	if s.agent.Running() {
-		if err := s.agent.FollowUp(cmd.Text); err != nil {
+		if err := s.agent.FollowUp(msg); err != nil {
 			return failResponse(cmd, proto.CodeBadRequest, err.Error())
 		}
 		return okResponse(cmd, nil)
 	}
-	if err := s.startRun(message.User(cmd.Text)); err != nil {
+	if err := s.startRun(msg); err != nil {
 		return startFailure(cmd, err)
 	}
 	return okResponse(cmd, nil)
+}
+
+// commandMessage builds a prompt, steer, or follow-up message from a command,
+// using the selected model's image capability.
+func (s *Server) commandMessage(text string, atts []proto.Attachment) (message.Message, error) {
+	s.mu.Lock()
+	accepts := attach.Accepts(modelModalities(s.cfg.Model))
+	s.mu.Unlock()
+	return attach.Message(text, atts, accepts)
 }
 
 // handleAbort cancels the active run and returns the queued messages.

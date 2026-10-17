@@ -357,7 +357,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | SVA12 | `Complete` resolves a requested catalog model | `ModelID` for a registered model | the provider sees that model's slug |
 | SVA13 | a prompt attachment reaches the provider | a prompt with a base64 PNG, vision model | the request's last message carries an image part |
 | SVA14 | a text-only model rejects a prompt image | a PNG attachment, no modalities | `bad_request` naming the capability |
-| SVA15 | a steer attachment is refused until queues carry messages | steer with an image while a run is active | `bad_request`, not a silent drop |
+| SVA15 | a steer attachment is queued when the model takes images | steer with a PNG while a run is active, vision model | `ok`; one steering message queued |
 | CLB01 | osascript pasteboard data is decoded | `«data PNGf<hex>»`; junk | the PNG bytes; `ErrNoImage` |
 | CLB02 | command reader errors | a missing binary; a command with no output | `ErrUnavailable`; `ErrNoImage` |
 | CLB03 | the test fake | a configured image; a configured error | returns them and counts calls |

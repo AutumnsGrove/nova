@@ -215,3 +215,27 @@ func Test_LPI07_ToolUsageIsCounted(t *testing.T) {
 		t.Error("no usage event carried the tool's nested usage")
 	}
 }
+
+func Test_LPI08_SteerCarriesImage(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	var a *Agent
+	steerTool := toolOf("steer", false, func(context.Context, json.RawMessage, *tool.Context) (tool.Result, error) {
+		_ = a.Steer(message.UserParts("look", message.ImagePart("image/png", "aGk=")))
+		return tool.Text("ok"), nil
+	})
+	p := testkit.NewProvider(clock, namedToolTurn("steer"), textTurn("done"))
+	a = New(Config{Provider: p, Model: "m", Clock: clock, Tools: registry(steerTool), InputModalities: []string{"text", "image"}})
+	if _, err := a.Run(context.Background(), nil, message.User("go")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	reqs := p.Requests()
+	if len(reqs) < 2 {
+		t.Fatalf("requests = %d, want 2", len(reqs))
+	}
+	for _, m := range reqs[1].Messages {
+		if m.Content == "look" && m.HasImages() {
+			return
+		}
+	}
+	t.Fatalf("steered image not in the next request: %+v", reqs[1].Messages)
+}

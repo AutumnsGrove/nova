@@ -36,7 +36,7 @@ func Test_LPQ01_SteerDuringTool(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	var a *Agent
 	tl := toolOf("steer", false, func(context.Context, json.RawMessage, *tool.Context) (tool.Result, error) {
-		_ = a.Steer("steered")
+		_ = a.Steer(message.User("steered"))
 		return tool.Text("ok"), nil
 	})
 	p := testkit.NewProvider(clock, namedToolTurn("steer"), textTurn("done"))
@@ -68,7 +68,7 @@ func Test_LPQ02_SteerDuringStreaming(t *testing.T) {
 	p := &steerProvider{}
 	c := &collector{}
 	a := New(Config{Provider: p, Model: "m", Clock: clock, Emit: c.emit})
-	p.steer = func() { _ = a.Steer("stream-steer") }
+	p.steer = func() { _ = a.Steer(message.User("stream-steer")) }
 	res, err := a.Run(context.Background(), nil, message.User("go"))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -94,8 +94,8 @@ func Test_LPQ03_SeveralSteeringMessages(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	var a *Agent
 	tl := toolOf("steer", false, func(context.Context, json.RawMessage, *tool.Context) (tool.Result, error) {
-		_ = a.Steer("s1")
-		_ = a.Steer("s2")
+		_ = a.Steer(message.User("s1"))
+		_ = a.Steer(message.User("s2"))
 		return tool.Text("ok"), nil
 	})
 	p := testkit.NewProvider(clock, namedToolTurn("steer"), textTurn("done"))
@@ -128,7 +128,7 @@ func Test_LPQ04_SteerAfterFinalAnswer(t *testing.T) {
 	cfg := Config{Provider: p, Model: "m", Clock: clock, OnMessage: func(m message.Message, _ *provider.Usage) error {
 		if m.Role == message.RoleAssistant && !steered {
 			steered = true
-			_ = a.Steer("late")
+			_ = a.Steer(message.User("late"))
 		}
 		return nil
 	}}
@@ -150,7 +150,7 @@ func Test_LPQ05_FollowUpWhenWouldEnd(t *testing.T) {
 	cfg := Config{Provider: p, Model: "m", Clock: clock, OnMessage: func(m message.Message, _ *provider.Usage) error {
 		if m.Role == message.RoleAssistant && !queued {
 			queued = true
-			_ = a.FollowUp("more")
+			_ = a.FollowUp(message.User("more"))
 		}
 		return nil
 	}}
@@ -172,7 +172,7 @@ func Test_LPQ06_TwoFollowUpsInOrder(t *testing.T) {
 	cfg := Config{Provider: p, Model: "m", Clock: clock, OnMessage: func(m message.Message, _ *provider.Usage) error {
 		if m.Role == message.RoleAssistant && queued < 2 {
 			queued++
-			_ = a.FollowUp(fmt.Sprintf("f%d", queued))
+			_ = a.FollowUp(message.User(fmt.Sprintf("f%d", queued)))
 		}
 		return nil
 	}}
@@ -203,8 +203,8 @@ func Test_LPQ07_SteeringBeforeFollowUp(t *testing.T) {
 	cfg := Config{Provider: p, Model: "m", Clock: clock, OnMessage: func(m message.Message, _ *provider.Usage) error {
 		if m.Role == message.RoleAssistant && !queued {
 			queued = true
-			_ = a.Steer("s")
-			_ = a.FollowUp("f")
+			_ = a.Steer(message.User("s"))
+			_ = a.FollowUp(message.User("f"))
 		}
 		return nil
 	}}
@@ -229,10 +229,10 @@ func Test_LPQ07_SteeringBeforeFollowUp(t *testing.T) {
 
 func Test_LPQ08_QueueWhenIdle(t *testing.T) {
 	a := New(Config{Provider: testkit.NewProvider(testkit.NewFakeClock(baseTime)), Model: "m"})
-	if err := a.Steer("x"); err != ErrNotRunning {
+	if err := a.Steer(message.User("x")); err != ErrNotRunning {
 		t.Fatalf("Steer err = %v, want ErrNotRunning", err)
 	}
-	if err := a.FollowUp("x"); err != ErrNotRunning {
+	if err := a.FollowUp(message.User("x")); err != ErrNotRunning {
 		t.Fatalf("FollowUp err = %v, want ErrNotRunning", err)
 	}
 }
@@ -246,10 +246,10 @@ func Test_LPQ09_QueueUpdateEvents(t *testing.T) {
 	done := make(chan runOutcome, 1)
 	go func() { done <- runAsyncCtx(a, context.Background()) }()
 	<-started
-	if err := a.Steer("s"); err != nil {
+	if err := a.Steer(message.User("s")); err != nil {
 		t.Fatalf("Steer: %v", err)
 	}
-	if err := a.FollowUp("f"); err != nil {
+	if err := a.FollowUp(message.User("f")); err != nil {
 		t.Fatalf("FollowUp: %v", err)
 	}
 	a.Abort()
@@ -270,9 +270,9 @@ func Test_LPQ10_AbortReturnsQueued(t *testing.T) {
 		close(done)
 	}()
 	<-started
-	_ = a.Steer("s1")
-	_ = a.Steer("s2")
-	_ = a.FollowUp("f1")
+	_ = a.Steer(message.User("s1"))
+	_ = a.Steer(message.User("s2"))
+	_ = a.FollowUp(message.User("f1"))
 	steering, followUp := a.Abort()
 	if fmt.Sprint(steering) != fmt.Sprint([]string{"s1", "s2"}) {
 		t.Fatalf("steering = %v", steering)
@@ -314,8 +314,8 @@ func Test_LPQ12_ConcurrentQueue(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_ = a.Steer(fmt.Sprintf("s%d", i))
-			_ = a.FollowUp(fmt.Sprintf("f%d", i))
+			_ = a.Steer(message.User(fmt.Sprintf("s%d", i)))
+			_ = a.FollowUp(message.User(fmt.Sprintf("f%d", i)))
 		}(i)
 	}
 	wg.Wait()

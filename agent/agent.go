@@ -191,8 +191,8 @@ type Agent struct {
 	cancel   context.CancelFunc
 	runCount int
 	runID    string
-	steering []string
-	followUp []string
+	steering []message.Message
+	followUp []message.Message
 
 	emitMu sync.Mutex
 	seq    int64

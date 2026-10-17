@@ -37,6 +37,7 @@ One module: `github.com/AutumnsGrove/nova`.
 ```
 nova/
   message/        transcript types                              ≤ 250 lines
+  media/          image decode, resize, bounds                  ≤ 320
   provider/       Provider interface, registry, model catalog   ≤ 500
     openaicompat/ chat-completions + SSE                        ≤ 600
     responses/    OpenAI Responses API + SSE                    ≤ 480
@@ -92,6 +93,8 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
 ```
 
 - `message` imports nothing.
+- `media` imports `message`. It is the one place image bytes are decoded,
+  oriented, resized, and bounded.
 - `provider` imports `message`. `tool` imports `message` and `provider`.
 - `proto` imports `message` and `provider` and nothing above them.
 - `permission` imports `tool`. `usage` imports `provider` and `session`.

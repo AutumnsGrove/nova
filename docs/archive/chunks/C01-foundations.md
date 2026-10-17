@@ -1,8 +1,8 @@
 ---
 chunk: C01
 title: "Message, provider contract, testkit"
-packages: [./message, ./provider, ./testkit]
-budgets: { ./message: 250, ./provider: 500, ./testkit: 1200 }
+packages: [./message, ./provider, ./testkit, ./media]
+budgets: { ./message: 250, ./provider: 500, ./testkit: 1200, ./media: 320 }
 depends: [C00]
 ---
 
@@ -246,6 +246,13 @@ func NoLeaks(t testing.TB)                  // registers a cleanup that checks g
 | MSG18 | `Parts` round trips and `HasImages` reports media | a user message with two image parts; a text-only one | equal after marshal and unmarshal; true then false |
 | MSG19 | `UserParts` copies its parts, and `Synthetic` serializes | mutate the caller's slice; set `Synthetic` true and false | stored data unchanged; `synthetic` present then absent |
 | MSG20 | `Clone` isolates `Parts` | append to the clone's slice | original length unchanged |
+| MED01 | `Sniff` recognizes images | png, jpeg, gif, tiff; plain text | mime returned; false for text |
+| MED02 | `Normalize` a small PNG | a 2x2 PNG | an `image/png` part, same dims, no hints |
+| MED03 | `Normalize` resizes a large image | a 4000px-wide image | longest edge 2000, a resize hint |
+| MED04 | `Normalize` re-encodes a JPEG | a JPEG | an `image/jpeg` part |
+| MED05 | `Normalize` rejects a pixel bomb | a PNG header claiming 100000x100000 | `ErrTooLarge` before a full decode |
+| MED06 | EXIF orientation is applied | a 2x1 image, orientation 6 | output 1x2 with the pixels swapped |
+| MED07 | fuzzed input never panics or exceeds the byte cap | arbitrary bytes and mime | error, or a part under `MaxBytes` |
 | PRV01 | `MergeOptions` returns a new map | modify the result | inputs unchanged |
 | PRV02 | `MergeOptions` replaces scalars | `{a:1}` + `{a:2}` | `{a:2}` |
 | PRV03 | `MergeOptions` merges nested maps | `{p:{x:1}}` + `{p:{y:2}}` | `{p:{x:1,y:2}}` |

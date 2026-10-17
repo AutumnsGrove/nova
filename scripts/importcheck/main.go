@@ -57,9 +57,10 @@ func run(args []string, stdout, stderr io.Writer, env []string) int {
 // because it is where everything is wired together.
 var layerAllowed = map[string][]string{
 	"message":    {},
+	"media":      {"message"},
 	"provider":   {"message"},
 	"tool":       {"message", "provider"},
-	"tools":      {"message", "provider", "tool", "permission"},
+	"tools":      {"message", "provider", "tool", "permission", "media"},
 	"proto":      {"message", "provider"},
 	"permission": {"message", "provider", "tool"},
 	"usage":      {"message", "provider", "session"},
@@ -89,6 +90,7 @@ var allowedImports = []importRule{
 	{path: "github.com/charmbracelet/", allow: under("tui", "bundled")},
 	{path: "github.com/alecthomas/chroma/v2", allow: under("tui", "bundled")},
 	{path: "golang.org/x/sys", allow: under("tui", "testkit", "bundled")},
+	{path: "golang.org/x/image", allow: under("media")},
 }
 
 func (r importRule) matches(imp string) bool {

@@ -11,7 +11,7 @@ type Rect struct{ X, Y, W, H int }
 // Inputs describes the screen and the desired region sizes.
 type Inputs struct {
 	Width, Height int
-	EditorLines   int // desired height of the editor, 1 to 8
+	EditorLines   int // desired height of the editor, 1 to MaxEditorLines
 	AboveLines    int // widgets above the editor
 	BelowLines    int
 	WantSidebar   bool
@@ -25,8 +25,8 @@ type Regions struct{ Header, Main, Above, Editor, Below, Footer, Sidebar Rect }
 // negative size.
 func Compute(in Inputs) Regions {
 	width, height := in.Width, in.Height
-	if width < minWidth {
-		width = minWidth
+	if width < MinWidth {
+		width = MinWidth
 	}
 	if height < 0 {
 		height = 0
@@ -61,7 +61,7 @@ func Compute(in Inputs) Regions {
 	}
 	space := remaining - mainMin // room for the editor and widgets
 
-	editorWant := clamp(in.EditorLines, 1, 8)
+	editorWant := clamp(in.EditorLines, 1, MaxEditorLines)
 	aboveWant := clamp(in.AboveLines, 0, 8)
 	belowWant := clamp(in.BelowLines, 0, 8)
 	if short {
@@ -107,7 +107,13 @@ func Compute(in Inputs) Regions {
 
 // Layout thresholds, named so the behaviour is readable and testable.
 const (
-	minWidth     = 20 // layout never goes below this, so no rectangle goes negative
+	// MinWidth is the smallest width the layout uses. Narrower screens are laid
+	// out as if they were this wide, so no rectangle ever goes negative.
+	MinWidth = 20
+	// MaxEditorLines is the tallest the editor may grow. Above it the editor
+	// keeps this height and scrolls with the cursor.
+	MaxEditorLines = 10
+
 	shortScreen  = 8  // under this, widgets, header, and sidebar are dropped
 	headerMin    = 12 // the header appears only at or above this height
 	sidebarMin   = 120

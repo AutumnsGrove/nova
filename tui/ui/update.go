@@ -273,6 +273,7 @@ func (m *Model) handlePaste(content string) tea.Cmd {
 		return nil
 	}
 	m.editor.InsertString(content)
+	m.recompute()
 	return m.afterEditorChange()
 }
 

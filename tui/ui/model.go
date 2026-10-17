@@ -8,6 +8,7 @@ package ui
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -178,6 +179,15 @@ func New(opt Options) *Model {
 	ed.ShowLineNumbers = false
 	ed.Prompt = "> "
 	ed.CharLimit = 0
+	// DynamicHeight sizes the editor to its visual rows, so a soft-wrapped
+	// line grows it just as newlines do. MaxHeight caps the viewport at the
+	// layout's ceiling; MaxContentHeight disables the library's legacy input
+	// cap that MaxHeight would otherwise impose, so a long prompt is still
+	// accepted and the window follows the cursor.
+	ed.DynamicHeight = true
+	ed.MinHeight = 1
+	ed.MaxHeight = layout.MaxEditorLines
+	ed.MaxContentHeight = math.MaxInt
 	ed.Blur()
 	if opt.CWD == "" {
 		opt.CWD, _ = os.Getwd()
@@ -305,7 +315,11 @@ func (m *Model) Transcript() *chat.Transcript { return m.transcript }
 
 // recompute recalculates the layout and resizes the list and editor.
 func (m *Model) recompute() {
-	lines := m.editor.LineCount()
+	// Size the editor width first: its height is measured in visual rows, and
+	// those depend on how the text wraps. The editor spans the whole screen
+	// width (clamped by the layout), independent of the vertical split.
+	m.editor.SetWidth(max(max(m.width, layout.MinWidth)-3, 1))
+	lines := m.editor.Height()
 	aboveH, belowH := 0, 0
 	if m.widgets != nil {
 		aboveH = m.widgets.Height("above_editor", m.width, widgetMaxLines)
@@ -321,7 +335,11 @@ func (m *Model) recompute() {
 	})
 	main, editor := m.layout.Main, m.layout.Editor
 	m.list.Resize(main.W, main.H)
-	m.editor.SetWidth(max(editor.W-3, 1))
+	// The textarea only materialises its scrollable content when View runs, so
+	// render its content before SetHeight repositions the window on the cursor.
+	// Without this, a programmatic SetValue or InsertString leaves the window
+	// at the top instead of following the cursor past the height cap.
+	_ = m.editor.View()
 	m.editor.SetHeight(max(editor.H, 1))
 }
 

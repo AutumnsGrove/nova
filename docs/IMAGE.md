@@ -7,9 +7,9 @@ the reference for issue [#20](https://github.com/AutumnsGrove/nova/issues/20) an
 for the Polaris integration ([#22](https://github.com/AutumnsGrove/nova/issues/22),
 see [`INTEGRATION.md`](INTEGRATION.md)).
 
-Status: **designed, not built.** The decisions here are recorded as D115 to D117
-in [`DECISIONS.md`](DECISIONS.md). Implementation lands in slices; each slice
-changes this document in the same commit when it changes the contract.
+Status: **built.** The decisions here are recorded as D115 to D129 in
+[`DECISIONS.md`](DECISIONS.md). Each slice changed this document in the same
+commit that changed the contract.
 
 ## Goals
 
@@ -229,16 +229,14 @@ type Attachment struct {
   "look at this" keeps its image instead of degrading to text. `queue_update`
   still reports counts.
 
-**The upload endpoint is the follow-up, and its shape is fixed now.** Inline
-`Data` is the first slice because it needs no server storage. A later
-`POST /v1/attachments` takes the same bytes as a request body, validates them,
-writes them beside the session, and answers `{id, name, mime_type, size_bytes}`;
-`prompt`/`steer`/`follow_up` accept `Attachment{ID: ...}` as an alternative to
-`Data`, resolved to bytes server-side. Exactly one of `id` or `data`/`path` is
-set, so the struct is stable across both slices. An attachment not referenced by a
-turn expires with its session; the endpoint is `serve`-only and validates size and
-mime before it writes. `serve.MaxBody` (`mode/serve/serve.go:31`) rises until the
-upload endpoint exists, enough for the per-message image limit plus JSON.
+**The upload endpoint is built.** Inline `Data` still works for a one-step
+caller; `POST /v1/attachments` is the two-step form a browser or a remote client
+uses. It takes the bytes as the request body (the `Content-Type` is the mime
+type, `?name=` the display name), validates them through the server's store, and
+answers `{id, name, mime_type, size_bytes}`. `prompt`/`steer`/`follow_up` accept
+`Attachment{ID: ...}` as an alternative to `Data`, resolved to bytes
+server-side. Exactly one of `id` or `data`/`path` is set. The store lives in
+memory in the server and expires when it closes; `serve.MaxBody` is 32 MiB.
 
 **Additive, version stays 1.** Parts are new optional fields on existing types, so
 an old client ignores them. The extension `tool_result` frame gains a `parts`

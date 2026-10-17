@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/png"
 	"io"
 	"log"
 	"net"
@@ -571,5 +573,35 @@ func TestServe_HTP16_NoWriteDeadlineOnEvents(t *testing.T) {
 	<-done
 	if rec.set {
 		t.Fatalf("event stream got a write deadline %v; it must stay open", rec.deadline)
+	}
+}
+
+func TestServe_ATH20_AttachmentUpload(t *testing.T) {
+	s, _ := newModeServer(t, baseConfig())
+	ts, _ := newTestHTTP(t, s, Options{})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Post(ts.URL+"/v1/attachments?name=shot.png", "image/png", bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	var out struct {
+		ID        string `json:"id"`
+		MimeType  string `json:"mime_type"`
+		SizeBytes int    `json:"size_bytes"`
+	}
+	decodeJSON(t, resp, &out)
+	if resp.StatusCode != http.StatusOK || out.ID == "" || out.MimeType != "image/png" || out.SizeBytes == 0 {
+		t.Fatalf("upload = %d %+v", resp.StatusCode, out)
+	}
+	bad, err := http.Post(ts.URL+"/v1/attachments", "image/png", strings.NewReader("not an image"))
+	if err != nil {
+		t.Fatalf("bad upload: %v", err)
+	}
+	bad.Body.Close()
+	if bad.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad upload status = %d, want 400", bad.StatusCode)
 	}
 }

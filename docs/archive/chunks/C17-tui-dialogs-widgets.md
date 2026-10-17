@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
-budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2240, ./mode/attach: 160, ./tui/ui: 2740, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
+budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2320, ./mode/attach: 160, ./tui/ui: 2740, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -358,6 +358,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | SVA13 | a prompt attachment reaches the provider | a prompt with a base64 PNG, vision model | the request's last message carries an image part |
 | SVA14 | a text-only model rejects a prompt image | a PNG attachment, no modalities | `bad_request` naming the capability |
 | SVA15 | a steer attachment is queued when the model takes images | steer with a PNG while a run is active, vision model | `ok`; one steering message queued |
+| SVA16 | a stored attachment resolves by id | `StoreAttachment`, then a prompt referencing the id | the message carries the image; an unknown id errors |
 | CLB01 | osascript pasteboard data is decoded | `«data PNGf<hex>»`; junk | the PNG bytes; `ErrNoImage` |
 | CLB02 | command reader errors | a missing binary; a command with no output | `ErrUnavailable`; `ErrNoImage` |
 | CLB03 | the test fake | a configured image; a configured error | returns them and counts calls |

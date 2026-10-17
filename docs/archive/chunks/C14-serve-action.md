@@ -2,7 +2,7 @@
 chunk: C14
 title: "The serve mode and the GitHub Action"
 packages: [./mode/serve, ./mode/action]
-budgets: { ./mode/serve: 410, ./mode/action: 700 }
+budgets: { ./mode/serve: 430, ./mode/action: 700 }
 depends: [C12]
 ---
 
@@ -237,6 +237,7 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | ATH17 | CORS with an origin | exact match; non-matching origin | echoed; not echoed; `Vary: Origin` |
 | ATH18 | `*` rejected | | configuration error |
 | ATH19 | preflight | | correct headers |
+| ATH20 | `POST /v1/attachments` stores an image | a PNG body; a non-image body | `{id, mime_type, size_bytes}`; `bad_request` |
 | HTP01 | command round trip | `get_state` | JSON response frame |
 | HTP02 | protocol error is HTTP 200 | unknown command | `{ok:false}` with 200 |
 | HTP03 | wrong content type | `text/plain` | 415 |

@@ -405,3 +405,27 @@ func TestHandlers_SVA15_SteerAttachmentAccepted(t *testing.T) {
 	}
 	s.Handle(context.Background(), proto.Command{Type: proto.CmdAbort})
 }
+
+func TestHandlers_SVA16_StoredAttachmentResolves(t *testing.T) {
+	provider.RegisterModel(provider.Model{ID: "sva16-vision", Slug: "vision", Provider: "test", InputModalities: []string{"text", "image"}})
+	s, _ := testServer(t)
+	s.cfg.Model = "sva16-vision"
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.StoreAttachment("shot.png", "image/png", buf.Bytes())
+	if err != nil {
+		t.Fatalf("StoreAttachment: %v", err)
+	}
+	msg, err := s.commandMessage("look", []proto.Attachment{{ID: id}})
+	if err != nil {
+		t.Fatalf("commandMessage: %v", err)
+	}
+	if !msg.HasImages() {
+		t.Fatalf("message = %+v, want the stored image", msg)
+	}
+	if _, err := s.commandMessage("look", []proto.Attachment{{ID: "nope"}}); err == nil {
+		t.Fatal("an unknown attachment id did not error")
+	}
+}

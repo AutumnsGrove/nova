@@ -195,6 +195,10 @@ func (s *Server) handleFollowUp(cmd proto.Command) proto.Response {
 // commandMessage builds a prompt, steer, or follow-up message from a command,
 // using the selected model's image capability.
 func (s *Server) commandMessage(text string, atts []proto.Attachment) (message.Message, error) {
+	atts, err := s.resolveAttachments(atts)
+	if err != nil {
+		return message.Message{}, err
+	}
 	s.mu.Lock()
 	accepts := attach.Accepts(modelModalities(s.cfg.Model))
 	s.mu.Unlock()

@@ -28,7 +28,7 @@ const (
 	defaultListen    = "127.0.0.1:8080"
 	defaultRingSize  = 1000
 	defaultHeartbeat = 15 * time.Second
-	defaultMaxBody   = 16 << 20
+	defaultMaxBody   = 32 << 20
 	defaultHeader    = 10 * time.Second
 	idleTimeout      = 120 * time.Second
 	writeTimeout     = 30 * time.Second
@@ -118,6 +118,7 @@ func newServer(s *mode.Server, opt Options) (*server, error) {
 	srv := &server{mode: s, opt: opt, clients: map[chan streamItem]struct{}{}, done: make(chan struct{}), pending: map[string]struct{}{}}
 	srv.mux = http.NewServeMux()
 	srv.mux.HandleFunc("POST /v1/commands", srv.handleCommands)
+	srv.mux.HandleFunc("POST /v1/attachments", srv.handleAttachments)
 	srv.mux.HandleFunc("GET /v1/events", srv.handleEvents)
 	srv.mux.HandleFunc("POST /v1/ui_response", srv.handleUIResponse)
 	srv.mux.HandleFunc("GET /v1/state", func(w http.ResponseWriter, r *http.Request) {
@@ -238,6 +239,29 @@ func (s *server) handleCommands(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.mode.Handle(r.Context(), cmd))
+}
+
+// handleAttachments accepts one image's raw bytes and returns an id a later
+// command can reference in an Attachment. It is the two-step upload a browser
+// or another client uses; the inline data form still works. The bytes are
+// validated and bounded by the server's store, not by this transport.
+func (s *server) handleAttachments(w http.ResponseWriter, r *http.Request) {
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.opt.MaxBody))
+	if err != nil {
+		writeJSON(w, http.StatusRequestEntityTooLarge, fail(proto.CodeBadRequest, "request body too large"))
+		return
+	}
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		name = r.Header.Get("X-Attachment-Name")
+	}
+	mime := r.Header.Get("Content-Type")
+	id, err := s.mode.StoreAttachment(name, mime, data)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, fail(proto.CodeBadRequest, err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": name, "mime_type": mime, "size_bytes": len(data)})
 }
 
 // handleUIResponse routes an answer to the request that is waiting for it.

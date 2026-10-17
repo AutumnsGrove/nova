@@ -116,6 +116,9 @@ type Server struct {
 	usage   provider.Usage
 	mem     []message.Message // transcript when NoSession
 	path    string            // session file path, "" when NoSession
+	// attachments holds uploads from POST /v1/attachments, by id, until the
+	// server closes.
+	attachments map[string]proto.Attachment
 
 	uiMu      sync.Mutex
 	uiHandler func(context.Context, proto.UIRequest) (proto.UIResponse, error)

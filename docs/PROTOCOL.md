@@ -215,6 +215,10 @@ Error codes are stable strings: `bad_request`, `busy`, `not_found`,
 - `GET /v1/events` is a server-sent-event stream; each event frame is one `data:` line.
 - `POST /v1/ui_response` answers a `ui_request`.
 - `GET /v1/state` is the same as `get_state`.
+- `POST /v1/attachments` stores one image's raw bytes (the `Content-Type` is the
+  mime type, an optional `?name=` is the display name) and returns
+  `{id, name, mime_type, size_bytes}`. A later command references the id in
+  `attachments`. The store lives until the server closes.
 
 Authentication is a bearer token set with `--token` or `NOVA_SERVE_TOKEN`. The
 server refuses to listen on a non-loopback address without one. Multi-user session

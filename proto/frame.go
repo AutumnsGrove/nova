@@ -16,6 +16,9 @@ type Error struct {
 
 // Attachment is one item attached to a prompt.
 type Attachment struct {
+	// ID names a stored upload from POST /v1/attachments. Exactly one of ID or
+	// Data is set.
+	ID string `json:"id,omitempty"`
 	// Kind is "image" or "text"; empty with an image mime type means image.
 	Kind string `json:"kind,omitempty"`
 	Name string `json:"name,omitempty"`

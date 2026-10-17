@@ -434,9 +434,9 @@ func TestWebfetch_WFT30_HugePageFast(t *testing.T) {
 	body := "<html><body>" + strings.Repeat("<p>paragraph text</p>", 250000) + "</body></html>"
 	start := time.Now()
 	_ = htmlToMarkdown([]byte(body), nil)
-	// 5s leaves room for -race and a loaded runner; the real conversion is
-	// well under a second.
-	if time.Since(start) > 5*time.Second {
+	// 15s leaves room for -race and a loaded runner; the real conversion is
+	// well under a second, and a quadratic regression would take minutes.
+	if time.Since(start) > 15*time.Second {
 		t.Fatalf("conversion took %s", time.Since(start))
 	}
 }

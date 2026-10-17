@@ -58,7 +58,7 @@ silently. All tui files carry `//go:build !notui`.
 type Rect struct{ X, Y, W, H int }
 type Inputs struct {
     Width, Height int
-    EditorLines   int // desired height of the editor, 1 to 8
+    EditorLines   int // desired height of the editor, 1 to 10
     AboveLines    int // widgets above the editor
     BelowLines    int
     WantSidebar   bool
@@ -140,7 +140,7 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 ### Layout
 
 1. `Compute` is pure and deterministic. The header is 1 line when `Height >= 12`, else 0. The footer
-   is 1 line. The editor height is `EditorLines` clamped to `[1, 8]`, and is further limited so the
+   is 1 line. The editor height is `EditorLines` clamped to `[1, 10]`, and is further limited so the
    main area keeps at least 3 lines. `Above` and `Below` are each clamped to 8 lines and to what
    fits. Main takes all remaining height. The sidebar exists only when `WantSidebar` and
    `Width >= 120`, is 32 columns, and is carved from the right of Main.
@@ -220,7 +220,7 @@ func Run(ctx context.Context, srv *mode.Server, opt RunOptions) error
 19. `Init` issues `get_state`, `get_commands`, `get_messages`, and the first `Next`.
 20. `WindowSizeMsg` recomputes the layout and resizes the list and the editor.
 21. **Editor.** A multi-line `bubbles/textarea`. `enter` submits; `shift+enter` inserts a newline;
-    `ctrl+g` opens `$EDITOR` through `tea.ExecProcess` and replaces the text on return. The editor grows to at most 8 lines. Pasted text over 8,000 characters is
+    `ctrl+g` opens `$EDITOR` through `tea.ExecProcess` and replaces the text on return. The editor grows to at most 10 visual rows (soft wraps count too) and follows the cursor past that. Pasted text over 8,000 characters is
     attached as a block, shown as `[pasted 12,400 chars]`, and sent in full.
 22. **Submit rules.** Trim the text; ignore empty. If a run is **not** active: `/name args` →
     `run_command`; `!cmd` → `bash`; `!!cmd` → `bash` flagged not-in-context; anything else → `prompt`. If a
@@ -267,7 +267,7 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | LYT01 | typical 80 by 24 | | header 1, footer 1, editor 1, main fills the rest; rectangles tile the screen |
 | LYT02 | no overlap, all inside | property over random sizes 1..300 and inputs | true |
 | LYT03 | header dropped when short | height 10 | header height 0 |
-| LYT04 | editor grows to 8 and no further | `EditorLines` 20 | 8 |
+| LYT04 | editor grows to 10 and no further | `EditorLines` 20 | 10 |
 | LYT05 | main keeps at least 3 lines | tall editor and widgets on a short screen | main at least 3 where the screen allows |
 | LYT06 | widgets clamp to 8 each | 50 | 8 |
 | LYT07 | sidebar only when wide | width 119 and 120 | absent; present (32 wide) |
@@ -346,11 +346,15 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | EDI07 | alt+enter while idle | | sends a `prompt`, the same as `enter` |
 | EDI08 | shift+enter | | newline in the editor |
 | EDI09 | unknown slash command | | notice; text kept |
-| EDI10 | editor height grows to 8 | 20 lines | height 8; scrolls inside |
+| EDI10 | editor height grows to 10 | 20 lines | height 10; scrolls inside |
 | EDI11 | large paste | 20,000 characters | shown as `[pasted …]`; full text sent |
 | EDI12 | `ctrl+g` | `$EDITOR` set to a script | text replaced on return |
 | EDI13 | `ctrl+g` with no `$EDITOR` | | notice |
 | EDI14 | `/quit` and `/exit` | idle | `shutdown` sent; the editor cleared |
+| EDI15 | paste grows the editor | 14 lines pasted | height 10 |
+| EDI16 | a soft-wrapped line grows the editor | 300 characters at width 80 | height above 1, at most 10 |
+| EDI17 | the window follows the cursor | 20 lines | the last line and a 10-row tail are visible |
+| EDI18 | a tall prompt on a short screen | height 10, 20 lines | main keeps 3 rows; editor at least 1 |
 | KEY01 | esc aborts a run | | `abort`; queued messages returned to the editor |
 | KEY02 | esc with no run | | closes completion only |
 | KEY03 | ctrl+c clears a non-empty editor | | cleared |
@@ -417,6 +421,7 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | GLD06 | footer at three widths | golden | matches |
 | GLD07 | `NO_COLOR` view | golden | no colour escapes |
 | GLD08 | recorded replay | the `testdata/events` fixtures | golden |
+| GLD09 | tall editor | a 12-line prompt at three widths | golden |
 | PRF01 | 10,000-item transcript scrolls | benchmark | under 5 ms per frame |
 | PRF02 | token stream | 1,000 deltas | under 1 ms per delta of render work |
 | PTY01 | the TUI starts and quits | a pseudo-terminal; skipped unless `NOVA_PTY=1` | starts; `ctrl+c` twice exits 0 |

@@ -47,10 +47,10 @@ func TestLayout_LYT03_HeaderDroppedWhenShort(t *testing.T) {
 	}
 }
 
-func TestLayout_LYT04_EditorGrowsToEight(t *testing.T) {
+func TestLayout_LYT04_EditorGrowsToTen(t *testing.T) {
 	r := Compute(Inputs{Width: 80, Height: 40, EditorLines: 20})
-	if r.Editor.H != 8 {
-		t.Fatalf("editor height = %d, want 8", r.Editor.H)
+	if r.Editor.H != 10 {
+		t.Fatalf("editor height = %d, want 10", r.Editor.H)
 	}
 }
 

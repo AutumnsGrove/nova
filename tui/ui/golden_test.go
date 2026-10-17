@@ -115,6 +115,16 @@ func hasColourEscape(s string) bool {
 	return false
 }
 
+func TestUI_GLD09_TallEditor(t *testing.T) {
+	golden.RequireEqual(t, goldAt(t, func(m *Model) {
+		var lines []string
+		for i := 1; i <= 12; i++ {
+			lines = append(lines, fmt.Sprintf("line %d", i))
+		}
+		m.setEditorText(strings.Join(lines, "\n"))
+	}))
+}
+
 func TestUI_GLD08_RecordedReplay(t *testing.T) {
 	out := goldAt(t, func(m *Model) {
 		f, err := os.Open("../chat/testdata/events/basic.jsonl")

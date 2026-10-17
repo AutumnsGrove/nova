@@ -458,8 +458,58 @@ func TestUI_EDI09_UnknownSlashKept(t *testing.T) {
 func TestUI_EDI10_EditorHeightGrows(t *testing.T) {
 	m, _, _ := newModel(t)
 	m.setEditorText(strings.Repeat("line\n", 19) + "line")
-	if m.layout.Editor.H != 8 {
-		t.Fatalf("editor height = %d, want 8", m.layout.Editor.H)
+	if m.layout.Editor.H != 10 {
+		t.Fatalf("editor height = %d, want 10", m.layout.Editor.H)
+	}
+}
+
+func TestUI_EDI15_PasteGrowsEditor(t *testing.T) {
+	m, _, _ := newModel(t)
+	update(m, tea.PasteMsg{Content: strings.Repeat("L\n", 13) + "L14"})
+	if m.layout.Editor.H != 10 {
+		t.Fatalf("paste left the editor at height %d, want 10", m.layout.Editor.H)
+	}
+}
+
+func TestUI_EDI16_WrappedLineGrowsEditor(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.setEditorText(strings.Repeat("x", 300))
+	if m.layout.Editor.H < 2 {
+		t.Fatalf("a wrapped line left the editor at height %d, want it to grow", m.layout.Editor.H)
+	}
+	if m.layout.Editor.H > 10 {
+		t.Fatalf("editor height = %d, want at most 10", m.layout.Editor.H)
+	}
+}
+
+func TestUI_EDI17_WindowFollowsCursor(t *testing.T) {
+	m, _, _ := newModel(t)
+	var lines []string
+	for i := 1; i <= 20; i++ {
+		lines = append(lines, fmt.Sprintf("L%02d", i))
+	}
+	m.setEditorText(strings.Join(lines, "\n"))
+	view := m.editor.View()
+	if !strings.Contains(view, "L20") {
+		t.Fatalf("editor view does not show the last line\n%s", view)
+	}
+	if !strings.Contains(view, "L11") {
+		t.Fatalf("editor view does not show a ten-row tail\n%s", view)
+	}
+	if strings.Contains(view, "L01") {
+		t.Fatalf("editor view still shows the first line\n%s", view)
+	}
+}
+
+func TestUI_EDI18_ShortScreenKeepsTranscript(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.height = 10
+	m.setEditorText(strings.Repeat("line\n", 19) + "line")
+	if m.layout.Main.H < 3 {
+		t.Fatalf("main height = %d, want at least 3", m.layout.Main.H)
+	}
+	if m.layout.Editor.H < 1 {
+		t.Fatalf("editor height = %d, want at least 1", m.layout.Editor.H)
 	}
 }
 

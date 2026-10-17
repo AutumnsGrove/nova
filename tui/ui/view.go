@@ -117,9 +117,17 @@ func (m *Model) mainView() string {
 	return strings.Join(lines, "\n")
 }
 
-// editorView is the input area.
+// editorView is the input area, clipped to the rows the layout gives it. The
+// editor renders its whole content; the scroll offset chooses the window, so
+// the wheel can scroll it without moving the cursor.
 func (m *Model) editorView() string {
-	return m.editor.View()
+	h := m.layout.Editor.H
+	if h <= 0 {
+		return ""
+	}
+	lines := strings.Split(m.editor.View(), "\n")
+	top := min(max(m.editorScroll, 0), max(len(lines)-h, 0))
+	return strings.Join(lines[top:min(top+h, len(lines))], "\n")
 }
 
 // footer is the one-line status bar with built-in and extension segments.

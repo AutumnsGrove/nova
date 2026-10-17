@@ -272,6 +272,7 @@ func (m *Model) handlePaste(content string) tea.Cmd {
 		m.editor.InsertString(marker)
 		return nil
 	}
+	m.editorScrollFree = false
 	m.editor.InsertString(content)
 	m.recompute()
 	return m.afterEditorChange()

@@ -102,14 +102,23 @@ type Model struct {
 
 	width, height int
 	editorLines   int
+	// editorScroll is the first visual row of the editor window, and
+	// editorScrollFree records that the wheel moved the window away from the
+	// cursor; the next edit pulls it back.
+	editorScroll     int
+	editorScrollFree bool
 
 	transcript *chat.Transcript
 	registry   *Registry
 	list       *list.List
 	editor     textarea.Model
-	history    history
-	pasted     map[string]string
-	pasteSeq   int
+	// editorProbe mirrors the editor's text and cursor to compute where the
+	// cursor-following window starts, without moving the real editor's
+	// viewport away from the top.
+	editorProbe textarea.Model
+	history     history
+	pasted      map[string]string
+	pasteSeq    int
 
 	commands    []commandInfo
 	completion  completion
@@ -175,20 +184,8 @@ func New(opt Options) *Model {
 	if opt.Height == 0 {
 		opt.Height = 24
 	}
-	ed := textarea.New()
-	ed.ShowLineNumbers = false
-	ed.Prompt = "> "
-	ed.CharLimit = 0
-	// DynamicHeight sizes the editor to its visual rows, so a soft-wrapped
-	// line grows it just as newlines do. MaxHeight caps the viewport at the
-	// layout's ceiling; MaxContentHeight disables the library's legacy input
-	// cap that MaxHeight would otherwise impose, so a long prompt is still
-	// accepted and the window follows the cursor.
-	ed.DynamicHeight = true
-	ed.MinHeight = 1
-	ed.MaxHeight = layout.MaxEditorLines
-	ed.MaxContentHeight = math.MaxInt
-	ed.Blur()
+	ed := newEditor()
+	probe := newEditor()
 	if opt.CWD == "" {
 		opt.CWD, _ = os.Getwd()
 	}
@@ -214,6 +211,7 @@ func New(opt Options) *Model {
 		registry:    registry,
 		list:        list.New(),
 		editor:      ed,
+		editorProbe: probe,
 		pasted:      map[string]string{},
 		overlay:     dialog.NewOverlay(),
 		widgets:     widget.NewStore(),
@@ -318,8 +316,9 @@ func (m *Model) recompute() {
 	// Size the editor width first: its height is measured in visual rows, and
 	// those depend on how the text wraps. The editor spans the whole screen
 	// width (clamped by the layout), independent of the vertical split.
-	m.editor.SetWidth(max(max(m.width, layout.MinWidth)-3, 1))
-	lines := m.editor.Height()
+	width := max(max(m.width, layout.MinWidth)-3, 1)
+	m.editor.SetWidth(width)
+	full := max(m.editor.Height(), 1)
 	aboveH, belowH := 0, 0
 	if m.widgets != nil {
 		aboveH = m.widgets.Height("above_editor", m.width, widgetMaxLines)
@@ -329,18 +328,53 @@ func (m *Model) recompute() {
 	m.layout = layout.Compute(layout.Inputs{
 		Width:       m.width,
 		Height:      m.height,
-		EditorLines: lines,
+		EditorLines: full,
 		AboveLines:  aboveH,
 		BelowLines:  belowH,
 	})
 	main, editor := m.layout.Main, m.layout.Editor
 	m.list.Resize(main.W, main.H)
-	// The textarea only materialises its scrollable content when View runs, so
-	// render its content before SetHeight repositions the window on the cursor.
-	// Without this, a programmatic SetValue or InsertString leaves the window
-	// at the top instead of following the cursor past the height cap.
-	_ = m.editor.View()
-	m.editor.SetHeight(max(editor.H, 1))
+	region := max(editor.H, 1)
+	if !m.editorScrollFree {
+		m.editorScroll = m.followOffset(width, region, full)
+	}
+	m.editorScroll = min(max(m.editorScroll, 0), max(full-region, 0))
+}
+
+// newEditor builds a textarea that renders all of its content so the UI can
+// clip any window out of it. MaxHeight is zero and MaxContentHeight is off, so
+// a long prompt is neither capped nor truncated.
+func newEditor() textarea.Model {
+	ed := textarea.New()
+	ed.ShowLineNumbers = false
+	ed.Prompt = "> "
+	ed.CharLimit = 0
+	ed.DynamicHeight = true
+	ed.MinHeight = 1
+	ed.MaxHeight = 0
+	ed.MaxContentHeight = math.MaxInt
+	ed.Blur()
+	return ed
+}
+
+// followOffset returns the first visual row of the window that keeps the
+// editor cursor visible, as the textarea's own cursor-following would choose.
+// It mirrors the text and cursor in editorProbe so the real editor's viewport
+// stays at the top and can render the whole buffer.
+func (m *Model) followOffset(width, region, full int) int {
+	p := &m.editorProbe
+	p.SetWidth(width)
+	p.SetValue(m.editor.Value())
+	p.MoveToBegin()
+	target := m.editor.Line()
+	for i := 0; i <= full && p.Line() < target; i++ {
+		p.CursorDown()
+	}
+	p.SetCursorColumn(m.editor.Column())
+	// Materialise the probe's content before SetHeight repositions it.
+	_ = p.View()
+	p.SetHeight(region)
+	return p.ScrollYOffset()
 }
 
 // widgetMaxLines caps one widget placement, matching the widget package.

@@ -23,8 +23,10 @@ const pasteLimit = 8000
 // errNoEditor is returned when ctrl+g is pressed without $EDITOR.
 var errNoEditor = errors.New("no $EDITOR set")
 
-// setEditorText replaces the editor contents.
+// setEditorText replaces the editor contents and pulls the window back to the
+// cursor.
 func (m *Model) setEditorText(s string) {
+	m.editorScrollFree = false
 	m.editor.SetValue(s)
 	m.recompute()
 }

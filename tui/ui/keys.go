@@ -15,12 +15,19 @@ const quitWindow = 2 * time.Second
 // wheelScroll is how many lines one wheel notch moves the transcript.
 const wheelScroll = 3
 
-// handleMouse routes a mouse event. The wheel scrolls the transcript and a
-// left click toggles the block under the pointer. ItemAt rejects a click
+// editorWheelLines is how many visual rows one wheel notch moves the editor.
+const editorWheelLines = 3
+
+// handleMouse routes a mouse event. The wheel scrolls the editor when the
+// pointer is over it and its content overflows, and the transcript otherwise;
+// a left click toggles the block under the pointer. ItemAt rejects a click
 // outside the main region, so only the overlay needs guarding.
 func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
+		if m.scrollEditor(msg) {
+			return nil
+		}
 		switch msg.Button {
 		case tea.MouseWheelUp:
 			m.list.ScrollBy(-wheelScroll)
@@ -35,6 +42,32 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// scrollEditor moves the editor window when the pointer is over it and its
+// content overflows the region. It reports whether it handled the wheel, so
+// the transcript keeps the event when the editor has nothing to scroll.
+func (m *Model) scrollEditor(msg tea.MouseWheelMsg) bool {
+	e := m.layout.Editor
+	if e.H <= 0 || msg.Y < e.Y || msg.Y >= e.Y+e.H {
+		return false
+	}
+	full := max(m.editor.Height(), 1)
+	maxTop := max(full-e.H, 0)
+	if maxTop == 0 {
+		return false
+	}
+	delta := editorWheelLines
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		delta = -delta
+	case tea.MouseWheelDown:
+	default:
+		return false
+	}
+	m.editorScrollFree = true
+	m.editorScroll = min(max(m.editorScroll+delta, 0), maxTop)
+	return true
 }
 
 // toggleExpanded flips both expansion flags together, as ctrl+o does.
@@ -100,6 +133,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "alt+enter":
 		return m.submit("follow_up")
 	case "shift+enter":
+		m.editorScrollFree = false
 		m.editor.InsertString("\n")
 		m.recompute()
 		return m.afterEditorChange()
@@ -146,6 +180,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.openEditor()
 	}
 	var cmd tea.Cmd
+	m.editorScrollFree = false
 	m.editor, cmd = m.editor.Update(msg)
 	m.lastInput = m.clock.Now()
 	m.recompute()

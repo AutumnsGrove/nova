@@ -67,7 +67,7 @@ nova/
   testkit/        fake provider and server, clock, golden       ≤ 1200
   bundled/        in-tree extensions: tasks, ask, plan,
                   subagent, webfetch                            ≤ 2500 total
-  tui/            the terminal UI                               ≤ 9000
+  tui/            the terminal UI                               ≤ 9200
     cli/          fang-styled help and errors (full build only) ≤ 150
   cmd/nova/       main, cobra commands, doctor, version         ≤ 1260
   doctor/         environment checks                            ≤ 440

@@ -384,6 +384,8 @@ type OpenCodeGoConfig struct {
 | MSG15 | empty stream | no events | retryable "empty stream" |
 | MSG16 | connect timeout | headers never sent; `ConnectTimeout` 50 ms | retryable `*provider.Error` |
 | MSG17 | idle timeout | text block, then silence; `IdleTimeout` 50 ms | retryable; text kept |
+| MSG18 | image message block | a user message with text and a PNG part | `content` is `[text, image]` with a base64 source |
+| MSG19 | text-only message block | `User("hi")` | `content` is one text block, no image |
 | OPG01 | `New` names the provider | any config | `Name()` is `opencodego` |
 | OPG02 | chat model routes to chat | `APIFor("opencode-go/glm-5.3")` | `DialectChat` |
 | OPG03 | responses model routes to Responses | `APIFor("opencode-go/grok-4.7")` | `DialectResponses` |

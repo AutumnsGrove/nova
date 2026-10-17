@@ -366,3 +366,46 @@ func FuzzMessagesStream(f *testing.F) {
 		_, _ = p.Stream(context.Background(), provider.Request{Model: "m"}, nil)
 	})
 }
+
+func TestMessages_MSG18_ImageMessageBlock(t *testing.T) {
+	p, srv := newProvider(t, Config{}, sse("message_stop", `{"type":"message_stop"}`))
+	_, _, err := run(t, p, provider.Request{Model: "m", Messages: []message.Message{
+		message.UserParts("what is this?", message.ImagePart("image/png", "aGk=")),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(srv.Requests()[0].Body), &body); err != nil {
+		t.Fatal(err)
+	}
+	msgs, _ := body["messages"].([]any)
+	content, _ := msgs[0].(map[string]any)["content"].([]any)
+	if len(content) != 2 {
+		t.Fatalf("content = %v, want [text, image]", content)
+	}
+	if content[0].(map[string]any)["type"] != "text" {
+		t.Errorf("first block = %v, want text", content[0])
+	}
+	img, _ := content[1].(map[string]any)
+	src, _ := img["source"].(map[string]any)
+	if img["type"] != "image" || src["type"] != "base64" || src["media_type"] != "image/png" || src["data"] != "aGk=" {
+		t.Errorf("image block = %v, want a base64 image source", img)
+	}
+}
+
+func TestMessages_MSG19_TextOnlyStaysTextBlock(t *testing.T) {
+	p, srv := newProvider(t, Config{}, sse("message_stop", `{"type":"message_stop"}`))
+	_, _, err := run(t, p, provider.Request{Model: "m", Messages: []message.Message{{Role: message.RoleUser, Content: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(srv.Requests()[0].Body), &body); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := body["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	if len(content) != 1 || content[0].(map[string]any)["type"] != "text" {
+		t.Errorf("content = %v, want one text block", content)
+	}
+}

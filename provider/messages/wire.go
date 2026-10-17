@@ -2,6 +2,7 @@ package messages
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
@@ -34,6 +35,44 @@ type block struct {
 	Input     json.RawMessage `json:"input,omitempty"`
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	Content   string          `json:"content,omitempty"`
+	Source    *imageSource    `json:"source,omitempty"`
+}
+
+// imageSource is the Anthropic image source object. This dialect takes base64
+// only here; a remote URL is not supported and is skipped.
+type imageSource struct {
+	Type      string `json:"type"` // "base64"
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
+// imageBlock converts an image part to an Anthropic image block. It accepts
+// base64 Data or a data: URL, and returns false for anything else so an unknown
+// or unsupported part is skipped rather than corrupting the request.
+func imageBlock(p message.ContentPart) (block, bool) {
+	if p.Type != message.PartImage {
+		return block{}, false
+	}
+	data, mime := p.Data, p.MimeType
+	if data == "" {
+		rest, ok := strings.CutPrefix(p.URL, "data:")
+		if !ok {
+			return block{}, false
+		}
+		comma := strings.IndexByte(rest, ',')
+		if comma < 0 {
+			return block{}, false
+		}
+		header, payload := rest[:comma], rest[comma+1:]
+		data = payload
+		if mime == "" {
+			mime, _, _ = strings.Cut(header, ";")
+		}
+	}
+	if data == "" || mime == "" {
+		return block{}, false
+	}
+	return block{Type: "image", Source: &imageSource{Type: "base64", MediaType: mime, Data: data}}, true
 }
 
 // toolDef is one tool.
@@ -104,6 +143,11 @@ func buildMessages(messages []message.Message) (string, []wireMessage) {
 		var blocks []block
 		if m.Content != "" {
 			blocks = append(blocks, block{Type: "text", Text: m.Content})
+		}
+		for _, p := range m.Parts {
+			if b, ok := imageBlock(p); ok {
+				blocks = append(blocks, b)
+			}
 		}
 		for _, tc := range m.ToolCalls {
 			args := tc.Function.Arguments

@@ -38,6 +38,7 @@ One module: `github.com/AutumnsGrove/nova`.
 nova/
   message/        transcript types                              ≤ 250 lines
   media/          image decode, resize, bounds                  ≤ 320
+  clipboard/      OS clipboard image reader (TUI support)        ≤ 180
   provider/       Provider interface, registry, model catalog   ≤ 500
     openaicompat/ chat-completions + SSE                        ≤ 600
     responses/    OpenAI Responses API + SSE                    ≤ 480

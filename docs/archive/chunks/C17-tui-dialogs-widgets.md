@@ -1,8 +1,8 @@
 ---
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
-packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova]
-budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2240, ./mode/attach: 160, ./tui/ui: 2600, ./cmd/nova: 1260 }
+packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard]
+budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2240, ./mode/attach: 160, ./tui/ui: 2600, ./clipboard: 180, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -358,6 +358,10 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | SVA13 | a prompt attachment reaches the provider | a prompt with a base64 PNG, vision model | the request's last message carries an image part |
 | SVA14 | a text-only model rejects a prompt image | a PNG attachment, no modalities | `bad_request` naming the capability |
 | SVA15 | a steer attachment is refused until queues carry messages | steer with an image while a run is active | `bad_request`, not a silent drop |
+| CLB01 | osascript pasteboard data is decoded | `«data PNGf<hex>»`; junk | the PNG bytes; `ErrNoImage` |
+| CLB02 | command reader errors | a missing binary; a command with no output | `ErrUnavailable`; `ErrNoImage` |
+| CLB03 | the test fake | a configured image; a configured error | returns them and counts calls |
+| CLB04 | a wedged clipboard times out | `sleep 5` with a 50 ms timeout | `ErrNoImage`, no hang |
 
 ## Fuzz and property tests
 

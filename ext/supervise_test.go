@@ -46,7 +46,14 @@ func rawHost(t *testing.T, opt HostOptions) *Host {
 // waitFor polls cond until it is true or the deadline passes.
 func waitFor(t *testing.T, cond func() bool, msg string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	waitForWithin(t, 5*time.Second, cond, msg)
+}
+
+// waitForWithin is waitFor with an explicit real-time budget, for a test whose
+// subprocess may be slow under -race.
+func waitForWithin(t *testing.T, d time.Duration, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(d)
 	for time.Now().Before(deadline) {
 		if cond() {
 			return
@@ -215,9 +222,13 @@ func TestSupervise_SUP10_RestartLimit(t *testing.T) {
 	var events int
 	var mu sync.Mutex
 	dir := echoDir(t, "echo", "restart: {max: 1}\n")
+	// Crash on demand (one tool call) rather than immediately after registering:
+	// the test then knows the process is down when it advances the fake clock, so
+	// it never accrues the healthyAfter uptime that would reset the restart
+	// counter, and a slow -race build cannot change the outcome.
 	h := rawHost(t, HostOptions{
 		Dirs: []string{dir}, Registry: reg, Clock: clk,
-		Env: envWith("ECHO_CRASH_AFTER_REGISTER=1"),
+		Env: envWith("ECHO_EXIT_AFTER=1"),
 		Emit: func(ev proto.Event) {
 			if ev.Type == proto.EventExtensionError {
 				mu.Lock()
@@ -227,22 +238,30 @@ func TestSupervise_SUP10_RestartLimit(t *testing.T) {
 		},
 	})
 	h.Start(context.Background())
-	// Pump the fake clock while the real process crashes and restarts. A fixed
-	// iteration count is racy under -race; wait for the disabled state instead.
-	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) && stateOf(h, "echo") != stateDisabled {
-		clk.Advance(time.Second)
+	ctx := context.Background()
+	waitForWithin(t, 20*time.Second, func() bool { _, ok := reg.Get("echo"); return ok }, "registered")
+	_ = reg.Execute(ctx, "echo", nil, &tool.Context{})
+	waitForWithin(t, 20*time.Second, func() bool { _, ok := reg.Get("echo"); return !ok }, "first crash")
+	// The process is down during its backoff, so advancing the clock here cannot
+	// count as healthy uptime; stop as soon as it has restarted.
+	for i := 0; i < 40; i++ {
 		time.Sleep(5 * time.Millisecond)
+		if _, ok := reg.Get("echo"); ok {
+			break
+		}
+		clk.Advance(500 * time.Millisecond)
 	}
-	waitFor(t, func() bool { return stateOf(h, "echo") == stateDisabled }, "disabled after restart limit")
+	waitForWithin(t, 20*time.Second, func() bool { _, ok := reg.Get("echo"); return ok }, "restarted")
+	_ = reg.Execute(ctx, "echo", nil, &tool.Context{})
+	waitForWithin(t, 20*time.Second, func() bool { return stateOf(h, "echo") == stateDisabled }, "disabled after restart limit")
 	if _, ok := reg.Get("echo"); ok {
 		t.Fatal("tool still registered after disable")
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if events < 1 {
-		t.Fatalf("extension_error events = %d, want at least 1", events)
-	}
+	waitForWithin(t, 20*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return events >= 1
+	}, "extension_error emitted")
 }
 
 func TestSupervise_SUP11_RestartCounterResets(t *testing.T) {

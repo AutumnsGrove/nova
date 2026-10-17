@@ -61,7 +61,7 @@ func (m *Model) afterEditorChange() tea.Cmd {
 // active.
 func (m *Model) submit(action string) tea.Cmd {
 	raw := strings.TrimSpace(m.editor.Value())
-	if raw == "" {
+	if raw == "" && len(m.pendingAtts) == 0 {
 		return nil
 	}
 	text := m.expandPasted(raw)
@@ -91,10 +91,13 @@ func (m *Model) submit(action string) tea.Cmd {
 	case m.runActive:
 		kind = "steer"
 	}
+	atts := m.attachmentRefs()
+	names := m.attachmentNames()
 	m.setEditorText("")
 	m.history.add(raw)
-	m.pending = pendingSend{kind: kind, text: text}
-	return m.client.Send(proto.Command{Type: cmdFor(kind), Text: text})
+	m.pendingAtts = nil
+	m.pending = pendingSend{kind: kind, text: text, atts: names}
+	return m.client.Send(proto.Command{Type: cmdFor(kind), Text: text, Attachments: atts})
 }
 
 // cmdFor maps a send kind to its protocol command.

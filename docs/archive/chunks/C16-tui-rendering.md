@@ -2,7 +2,7 @@
 chunk: C16
 title: "TUI rendering: thinking block, tool cards, diffs, themes, splash"
 packages: [./tui/render, ./tui/diff, ./tui/chat, ./tui/styles, ./tui/ui]
-budgets: { ./tui/render: 745, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 2600 }
+budgets: { ./tui/render: 745, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 2720 }
 depends: [C15]
 ---
 

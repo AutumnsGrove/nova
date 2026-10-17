@@ -54,6 +54,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = msg.text
 		return m, nil
 
+	case clipboardMsg:
+		m.applyClipboard(msg)
+		return m, nil
+
 	case completionMsg:
 		m.applyCompletion(msg)
 		return m, nil

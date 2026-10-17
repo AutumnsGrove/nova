@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 
 	"github.com/AutumnsGrove/nova/auth/providerauth"
+	"github.com/AutumnsGrove/nova/clipboard"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
@@ -58,7 +59,8 @@ type Options struct {
 	Width, Height int
 	Profile       colorprofile.Profile
 	Renderer      chat.Renderer
-	Display       chat.Display // saved display preferences; zero uses the defaults
+	Display       chat.Display     // saved display preferences; zero uses the defaults
+	Clipboard     clipboard.Reader // nil uses the OS clipboard
 }
 
 // commandInfo is one slash command from get_commands.
@@ -119,6 +121,8 @@ type Model struct {
 	history     history
 	pasted      map[string]string
 	pasteSeq    int
+	clipboard   clipboard.Reader
+	pendingAtts []pendingAttachment
 
 	commands    []commandInfo
 	completion  completion
@@ -200,6 +204,7 @@ func New(opt Options) *Model {
 	m := &Model{
 		client:      opt.Client,
 		clock:       opt.Clock,
+		clipboard:   opt.Clipboard,
 		renderer:    opt.Renderer,
 		st:          st,
 		theme:       opt.Theme,
@@ -220,6 +225,9 @@ func New(opt Options) *Model {
 		splashStart: opt.Clock.Now(),
 	}
 	m.width, m.height = opt.Width, opt.Height
+	if m.clipboard == nil {
+		m.clipboard = clipboard.Detect()
+	}
 	m.editor.Focus()
 	m.themes = styles.LoadThemes(themeDirs(opt.CWD, home))
 	m.display = m.transcript.Display()

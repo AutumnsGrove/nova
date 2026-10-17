@@ -166,6 +166,8 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+o":
 		m.toggleExpanded()
 		return nil
+	case "ctrl+v":
+		return m.pasteImage()
 	case "?":
 		if strings.TrimSpace(m.editor.Value()) == "" {
 			return m.openHelp()

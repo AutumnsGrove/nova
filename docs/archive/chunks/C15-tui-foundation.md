@@ -2,7 +2,7 @@
 chunk: C15
 title: "TUI foundation"
 packages: [./tui/layout, ./tui/list, ./tui/styles, ./tui/client, ./tui/chat, ./tui/ui]
-budgets: { ./tui/layout: 150, ./tui/list: 350, ./tui/styles: 450, ./tui/client: 200, ./tui/chat: 1300, ./tui/ui: 2600 }
+budgets: { ./tui/layout: 150, ./tui/list: 350, ./tui/styles: 450, ./tui/client: 200, ./tui/chat: 1300, ./tui/ui: 2720 }
 depends: [C12]
 ---
 
@@ -415,6 +415,8 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | RUN02 | `NO_COLOR` | | mono theme and no colour escapes in the view |
 | RUN03 | crash log used | | a report is written to `crash.log` and its path is printed |
 | RUN04 | `cmd/nova` mode selection | terminal and no flags; `-p` set | TUI; print mode |
+| PST01 | a pasted clipboard image becomes an attachment | ctrl+v with a fake clipboard image | a chip line, then a prompt carrying the base64 attachment; cleared after send |
+| PST02 | a clipboard with no image notices | the fake returns `ErrNoImage` | a notice, no attachment |
 | GLD01 | empty session at 40, 80, 120 | golden | matches |
 | GLD02 | a text turn at three widths | golden | matches |
 | GLD03 | a tool turn at three widths | golden | matches |

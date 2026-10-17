@@ -4,6 +4,7 @@ package ui
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 
+	"github.com/AutumnsGrove/nova/clipboard"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
@@ -1083,5 +1085,49 @@ func TestUI_RUN04_ModeSelection(t *testing.T) {
 		if got := Interactive(c.mode, c.in, c.out); got != c.want {
 			t.Fatalf("Interactive(%q, %v, %v) = %v, want %v", c.mode, c.in, c.out, got, c.want)
 		}
+	}
+}
+
+func TestUI_PST01_PasteImageAttachesAndSends(t *testing.T) {
+	m, f, _ := newModel(t)
+	fake := &clipboard.Fake{Image: clipboard.Image{Data: []byte("png"), MimeType: "image/png", Name: "clip.png"}}
+	m.clipboard = fake
+
+	cmd := update(m, ctrlKey('v'))
+	msg := do(cmd)
+	if msg == nil {
+		t.Fatal("ctrl+v produced no command")
+	}
+	update(m, msg)
+
+	if len(m.pendingAtts) != 1 || fake.Calls != 1 {
+		t.Fatalf("pending = %+v, calls = %d", m.pendingAtts, fake.Calls)
+	}
+	if chips := m.chipLine(); !strings.Contains(chips, "clip.png") {
+		t.Fatalf("chip line = %q", chips)
+	}
+	execAll(update(m, enterKey))
+	if len(f.sends) != 1 {
+		t.Fatalf("sends = %+v", f.sends)
+	}
+	sent := f.sends[0]
+	if sent.Type != proto.CmdPrompt || len(sent.Attachments) != 1 {
+		t.Fatalf("command = %+v", sent)
+	}
+	want := base64.StdEncoding.EncodeToString([]byte("png"))
+	if sent.Attachments[0].Data != want || sent.Attachments[0].MimeType != "image/png" {
+		t.Fatalf("attachment = %+v", sent.Attachments[0])
+	}
+	if len(m.pendingAtts) != 0 {
+		t.Fatalf("pending not cleared: %+v", m.pendingAtts)
+	}
+}
+
+func TestUI_PST02_NoImageNotice(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.clipboard = &clipboard.Fake{Err: clipboard.ErrNoImage}
+	update(m, do(update(m, ctrlKey('v'))))
+	if !strings.Contains(m.notice, "no image") {
+		t.Fatalf("notice = %q, want a no-image message", m.notice)
 	}
 }

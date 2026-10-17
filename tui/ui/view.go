@@ -127,7 +127,15 @@ func (m *Model) editorView() string {
 	}
 	lines := strings.Split(m.editor.View(), "\n")
 	top := min(max(m.editorScroll, 0), max(len(lines)-h, 0))
-	return strings.Join(lines[top:min(top+h, len(lines))], "\n")
+	out := lines[top:min(top+h, len(lines))]
+	if chips := m.chipLine(); chips != "" {
+		// The chip row takes the first editor row, so the area keeps its height.
+		out = append([]string{chips}, out...)
+		if len(out) > h {
+			out = out[:h]
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // footer is the one-line status bar with built-in and extension segments.

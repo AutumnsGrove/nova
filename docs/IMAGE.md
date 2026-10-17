@@ -7,8 +7,8 @@ the reference for issue [#20](https://github.com/AutumnsGrove/nova/issues/20) an
 for the Polaris integration ([#22](https://github.com/AutumnsGrove/nova/issues/22),
 see [`INTEGRATION.md`](INTEGRATION.md)).
 
-Status: **designed, not built.** The decisions here are recorded as D115 in
-[`DECISIONS.md`](DECISIONS.md). Implementation lands in slices; each slice
+Status: **designed, not built.** The decisions here are recorded as D115 to D117
+in [`DECISIONS.md`](DECISIONS.md). Implementation lands in slices; each slice
 changes this document in the same commit when it changes the contract.
 
 ## Goals
@@ -76,7 +76,10 @@ assistant or tool message. A tool that has an image returns it in its result, an
 the loop appends a synthetic user message after the *entire* tool batch — the
 rule DeepSeek and OpenAI both depend on. Polaris does the same thing
 (`agent/driver.go` flushes `ctx.PendingImageMessages` after every tool result,
-never between them).
+never between them). The synthetic message is marked (`message.Message.Synthetic`),
+carried in the session and the events, so a client renders the image in the tool
+card (pi's placement) rather than as a user bubble, and a replayed transcript does
+not look like the user typed it.
 
 ### Capability
 
@@ -85,12 +88,25 @@ mirroring OpenRouter's `input_modalities` and Polaris's `Multimodal bool`. It is
 reported by `list_models` and in `state_changed` so a client can warn before a
 prompt is sent.
 
-- A prompt carrying images for a text-only model fails with `bad_request` before
-  the run starts, with a message that names the model and the fix.
-- A *tool* image on a text-only model is replaced with the note
+**The agent enforces capability, on every request, not only on new images.**
+`agent.turnRequest` drops parts from the request messages when the model cannot
+take images and substitutes a one-line text placeholder per dropped part; the
+transcript and the session keep the parts, so the TUI still shows them. Stripping
+at request time is what makes a resumed session safe: a conversation that already
+holds images, continued on a text-only model, must not resend them. The provider
+stays wire-thin and never consults the catalog.
+
+- A new prompt carrying images for a text-only model is rejected by `mode` before
+the run starts with `bad_request`, naming the model and the fix — a better error
+than the placeholder the agent would otherwise produce.
+- A tool or history image on a text-only model becomes
   `[model does not support images; the image was omitted]`, so the run continues.
-  This matches pi's `read` (`[Current model does not support images. The image
-  will be omitted from this request.]`).
+  This matches pi's `read` note.
+- An **unknown model id** (an embedder's catalog Nova does not have) is text-only
+  by default. An embedder that serves image models registers them with
+  `provider.RegisterModel(... InputModalities: []string{"text", "image"})`, or
+  sets `agent.Config.InputModalities` for its one model. Polaris registers its
+  catalog; that is a small adapter and the documented price of the safe default.
 - Never silently drop an image, and never send bytes a model cannot accept.
 
 ## Normalization and bounds
@@ -98,8 +114,10 @@ prompt is sent.
 Every image is normalized exactly once, on the way into the transcript, whoever
 produced it. The rules follow pi's `processImage` / `resizeImage`:
 
-- **Accepted types:** `image/png`, `image/jpeg`, `image/gif`, `image/webp`.
-  Anything else that decodes as an image is converted to PNG.
+- **Accepted decode types:** `image/png`, `image/jpeg`, `image/gif`,
+  `image/webp`, and `image/tiff` (macOS screenshots). The stored part keeps
+  PNG/JPEG/GIF/WebP; TIFF and any other decodable image are converted to PNG. The
+  TUI transcodes a non-PNG to PNG only for Kitty display.
 - **Resize:** longest edge capped at 2000 px (pi's default), aspect preserved,
   never upscaled. A caller may lower the cap per model.
 - **Encoded size:** under 4.5 MiB, pi's `DEFAULT_MAX_BYTES`. If a resize still
@@ -112,11 +130,37 @@ produced it. The rules follow pi's `processImage` / `resizeImage`:
   anything; it must not be able to overflow the provider request or the session.
   pi's `normalizeToolResultImages` keeps the original on a normalization failure
   rather than deleting the tool's output; Nova does the same, with a text note.
-- **WebP decode needs a dependency.** `golang.org/x/image/webp` (and
-  `golang.org/x/image/draw` if it does the resize) is a D46 stop-and-ask item: an
-  allow-list row in `scripts/importcheck` and a `DECISIONS.md` entry. The
-  alternative is refusing WebP, which would diverge from Polaris. Recommendation:
-  add it, scoped to the image package.
+- **Codecs come from `golang.org/x/image`.** `webp` and `tiff` for decode, `draw`
+  for the resize filter (the standard library has no scaler). This is a D46
+  addition: an allow-list row in `scripts/importcheck` scoped to the media package,
+  and a `DECISIONS.md` entry. Without it WebP (which Polaris accepts) and TIFF
+  (macOS clipboard screenshots) would be refused and resize quality would fall back
+  to nearest-neighbour.
+- **EXIF orientation is applied.** A JPEG from a phone carries its rotation in
+  EXIF and Go's `image/jpeg` ignores it, so a portrait photo would be described and
+  rendered sideways. Read the orientation tag (0x0112) from the APP1 segment and
+  rotate on decode. A small internal reader, not another dependency.
+- **Decode is bounded before it allocates.** `image.DecodeConfig` runs first; an
+  image whose dimensions exceed the pixel cap is refused without a full decode, so
+  a decompression bomb cannot exhaust memory. The normalizer takes untrusted input
+  and gets a fuzz test (`TESTING.md` section 5).
+
+### Limits
+
+v1, enforced before a message enters the transcript or a command is accepted:
+
+- Longest edge 2000 px after resize (pi's default), never upscaled.
+- One encoded image ≤ 4.5 MiB (pi's `DEFAULT_MAX_BYTES`).
+- At most 4 images per message, and ≤ 8 MiB of encoded image bytes per message.
+  The **per-message total** is the number that matters: the session line and the
+  `proto`/`ext` line caps are 16 MiB (`proto/codec.go:23`, `ext/conn.go:15`), and
+  JSON escaping plus surrounding fields need headroom.
+- Decoded pixel cap 80 megapixels, checked via `image.DecodeConfig`.
+- A prompt or tool result over a limit is refused with a specific message, never
+  truncated silently.
+
+These are constants in the media package, so a test asserts the exact boundary
+and one comment explains the 16 MiB ceiling they exist to respect.
 
 ### Where the bytes live
 
@@ -132,6 +176,11 @@ on disk, no wire change.
 Compaction and the token estimate treat a part as a fixed placeholder
 (`[image]`), not as text; the summariser cannot describe pixels and must not try
 to tokenise base64.
+
+**Fork copies bytes.** `session.Fork` (`session/list.go:102`) rewrites every
+branch entry into a new file, so a fork of an image-heavy session duplicates the
+base64. Bounded by the limits above and acceptable for v1; if it hurts, the `Ref`
+sidecar is the escape hatch and fork can share it by hash.
 
 ## Front doors
 
@@ -162,6 +211,17 @@ type Attachment struct {
 - `get_messages` returns messages with their parts, so a client can replay and
   re-render a conversation. The TUI uses the same events.
 
+**The upload endpoint is the follow-up, and its shape is fixed now.** Inline
+`Data` is the first slice because it needs no server storage. A later
+`POST /v1/attachments` takes the same bytes as a request body, validates them,
+writes them beside the session, and answers `{id, name, mime_type, size_bytes}`;
+`prompt`/`steer`/`follow_up` accept `Attachment{ID: ...}` as an alternative to
+`Data`, resolved to bytes server-side. Exactly one of `id` or `data`/`path` is
+set, so the struct is stable across both slices. An attachment not referenced by a
+turn expires with its session; the endpoint is `serve`-only and validates size and
+mime before it writes. `serve.MaxBody` (`mode/serve/serve.go:31`) rises until the
+upload endpoint exists, enough for the per-message image limit plus JSON.
+
 ## The tool API
 
 A tool that produces an image should not think about the wire. Two seams:
@@ -177,7 +237,8 @@ type Result struct {
 
 type Context struct {
     // ...existing fields...
-    Inject func(message.Message) // queue a message after this tool batch
+    Inject   func(message.Message) // queue a message after this tool batch
+    AddUsage func(provider.Usage)  // report a nested call's tokens and cost
 }
 ```
 
@@ -191,15 +252,37 @@ type Context struct {
 - **Subprocess extensions carry parts too.** The `tool_result` frame and
   `ext/sdk`'s `Result` gain a `parts` field. A declarative `exec` tool produces
   text, which is the correct limit; a real image tool is protocol code.
-- **Nested vision calls work already.** `Context.Complete` takes a
-  `provider.Request`, so a "describe this image" tool builds a request with one
-  image part and gets text back. A fallback vision model is the app's choice: the
-  app supplies `Complete` (as `mode` does today) and can route it to a different
-  model.
+- **Nested model calls report their usage and may name a model.** `Complete`
+  takes a `provider.Request`, so a "describe this image" tool puts an image part
+  in it; `AddUsage` folds the response usage into the run, so a vision describe is
+  counted in the footer, `get_usage`, and the session cost like any other call.
+  `mode/ext.go:102` changes with it: today it forces `req.Model` to the current
+  model and discards the response usage. An empty `ModelID`/`Model` means "the
+  current model"; a non-empty catalog `ModelID` is selected through the router, so
+  a tool can ask for a fallback vision model (Polaris's `MultimodalModel`), or the
+  embedder supplies its own `Complete`.
 - **`read` on an image path** returns
   `Result{Content: "Read image file [image/png]", Parts: [...]}` and normalizes
   first. This is pi's `read` (`dist/core/tools/read.js`), and it makes
   `@screenshot.png` and "point the model at this file" work.
+
+## Package layout
+
+Three new leaves, each with its own budget in the nearest chunk spec and in
+[`ARCHITECTURE.md`](ARCHITECTURE.md), and each with a layer rule in
+`scripts/importcheck`:
+
+- **`media`** — decode, resize, transcode, dimension parsing, EXIF orientation,
+  and the limits. It imports `message` (a leaf) and returns `message.ContentPart`
+  values. Imported by `agent` (the request-time strip and tool injection), `mode`
+  (protocol attachments), and `tools/fs` (the image branch of `read`).
+- **`tui/image`** — capability detection, Kitty/iTerm2 encoding, and cell-size
+  math, so `tui/render`'s budget is untouched. Imports `media` for dimensions.
+  `tui/chat` is its only consumer.
+- **`clipboard`** — the OS clipboard seam and per-platform readers. A leaf with no
+  Nova imports, used by `tui/ui`; the fake lives in `testkit`.
+
+A `message.ContentPart` is the only shape that crosses all three.
 
 ## Inline rendering in the TUI
 
@@ -241,10 +324,12 @@ capability detection. Nova does the same. The pi implementation is the reference
   `[Image: ~/path/shot.png image/png 1280x800]`, path shortened and, where OSC 8
   hyperlinks are supported, linked to `file://`. This is what `NO_COLOR` and a
   non-graphics terminal get.
-- **Settings.** pi offers "show images" and "image width cells" (only when the
-  terminal supports images) and an always-available "auto-resize images". Nova's
-  `/settings` dialog (D114) is where `display.show_images` and
-  `display.image_width_cells` go.
+- **Settings.** pi offers "show images", "image width cells" (only when the
+  terminal supports images), an always-available "auto-resize images", and "block
+  images", which stops images reaching the provider at all. Nova's `/settings`
+  dialog (D114) is where `display.show_images`, `display.image_width_cells`,
+  `display.auto_resize_images`, and `display.block_images` go, persisted with
+  `config.SetUser` like the existing display rows.
 
 ### The Nova risk to settle first
 
@@ -291,11 +376,12 @@ The rest of the Polaris adoption (the loop, hooks, tool gating, events) is in
 
 ## Open questions
 
-- **WebP dependency.** Add `golang.org/x/image`, or refuse WebP. Recommendation:
-  add it (see above).
 - **iTerm2 support timing.** Kitty first; iTerm2 once the Bubble Tea repaint
   interaction is proven. If the proof is bad, iTerm2 stays on the text fallback
   and the doc says so.
 - **`serve` bandwidth.** A base64 image in a `get_messages` response and in an
-  event is real traffic over Tailscale. Bounded by the caps; revisit only if a
+  event is real traffic over Tailscale. Bounded by the limits; revisit only if a
   real conversation makes it hurt.
+- **Fork growth.** `session.Fork` duplicates image bytes; acceptable under the
+  limits, but the first session with a dozen images will say whether the `Ref`
+  sidecar is needed sooner.

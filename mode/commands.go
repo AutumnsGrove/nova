@@ -11,6 +11,7 @@ import (
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
 )
 
@@ -190,17 +191,18 @@ func (s *Server) handleGetState(cmd proto.Command) proto.Response {
 	settings := s.compactor.Settings
 	settings.ContextLimit = s.limit
 	state := map[string]any{
-		"model":           s.cfg.Model,
-		"thinking":        s.think,
-		"context_limit":   s.limit,
-		"session":         s.sessionID(),
-		"path":            s.path,
-		"leaf":            s.leafID(),
-		"running":         s.agent.Running(),
-		"context_tokens":  compaction.Estimate(msgs),
-		"effective_limit": compaction.EffectiveLimit(settings),
-		"usage":           s.usage,
-		"cwd":             s.cwd,
+		"model":            s.cfg.Model,
+		"thinking":         s.think,
+		"context_limit":    s.limit,
+		"session":          s.sessionID(),
+		"path":             s.path,
+		"leaf":             s.leafID(),
+		"running":          s.agent.Running(),
+		"context_tokens":   compaction.Estimate(msgs),
+		"effective_limit":  compaction.EffectiveLimit(settings),
+		"usage":            s.usage,
+		"cwd":              s.cwd,
+		"input_modalities": modelModalities(s.cfg.Model),
 	}
 	steering, followUp := s.agent.Queued()
 	state["steering"] = steering
@@ -304,14 +306,25 @@ func (s *Server) recordEntry(entry session.Entry) {
 func (s *Server) emitState() {
 	s.mu.Lock()
 	state := map[string]any{
-		"model":         s.cfg.Model,
-		"thinking":      s.think,
-		"context_limit": s.limit,
-		"tools":         s.active,
+		"model":            s.cfg.Model,
+		"thinking":         s.think,
+		"context_limit":    s.limit,
+		"tools":            s.active,
+		"input_modalities": modelModalities(s.cfg.Model),
 	}
 	s.mu.Unlock()
 	raw, _ := json.Marshal(state)
 	s.emit(proto.Event{Type: proto.EventStateChanged, State: raw})
+}
+
+// modelModalities returns a catalog model's declared input kinds, or nil when
+// the model is unknown (which the protocol treats as text only). It does not
+// take s.mu, so callers already holding it can use it.
+func modelModalities(id string) []string {
+	if m, ok := provider.GetModel(id); ok {
+		return m.InputModalities
+	}
+	return nil
 }
 
 // okResponse builds a successful response with optional JSON data.

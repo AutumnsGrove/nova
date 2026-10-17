@@ -39,13 +39,14 @@ func (s *Server) handleGetMessages(cmd proto.Command) proto.Response {
 // modelInfo is one catalog entry as the protocol carries it. The field names
 // are the wire contract for list_models.
 type modelInfo struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	Provider      string  `json:"provider"`
-	ContextWindow int     `json:"context_window"`
-	InPerM        float64 `json:"in_per_m"`
-	OutPerM       float64 `json:"out_per_m"`
-	Current       bool    `json:"current"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Provider        string   `json:"provider"`
+	ContextWindow   int      `json:"context_window"`
+	InPerM          float64  `json:"in_per_m"`
+	OutPerM         float64  `json:"out_per_m"`
+	InputModalities []string `json:"input_modalities,omitempty"`
+	Current         bool     `json:"current"`
 }
 
 // handleListModels returns the model catalog, optionally filtered by a query.
@@ -61,13 +62,14 @@ func (s *Server) handleListModels(cmd proto.Command) proto.Response {
 			continue
 		}
 		out = append(out, modelInfo{
-			ID:            m.ID,
-			Name:          m.Name,
-			Provider:      m.Provider,
-			ContextWindow: m.ContextWindow,
-			InPerM:        m.InPerM,
-			OutPerM:       m.OutPerM,
-			Current:       m.ID == current,
+			ID:              m.ID,
+			Name:            m.Name,
+			Provider:        m.Provider,
+			ContextWindow:   m.ContextWindow,
+			InPerM:          m.InPerM,
+			OutPerM:         m.OutPerM,
+			InputModalities: m.InputModalities,
+			Current:         m.ID == current,
 		})
 	}
 	return okResponse(cmd, out)

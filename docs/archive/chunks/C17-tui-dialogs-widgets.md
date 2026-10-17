@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./tui/ui, ./cmd/nova]
-budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2200, ./tui/ui: 2600, ./cmd/nova: 1260 }
+budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2230, ./tui/ui: 2600, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -352,6 +352,8 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | SVA07 | a deny rule still wins | config denies the tool | still denied |
 | SVA08 | `remember` ignored for other requests | | no rule added |
 | SVA09 | `remember` with `ok:false` | | no rule added |
+| SVA10 | `list_models` carries input modalities | a text+image model and a text-only one | `input_modalities` present for the first, absent for the second |
+| SVA11 | `get_state` carries the current model's input modalities | a text+image model selected | `input_modalities` = `[text image]` |
 
 ## Fuzz and property tests
 

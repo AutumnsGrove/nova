@@ -281,3 +281,39 @@ func TestUI_UXB09_ExtensionFormRoundTrip(t *testing.T) {
 		t.Fatalf("extension got answers = %+v", r.resp.Answers)
 	}
 }
+
+func TestHandlers_SVA10_ListModelsInputModalities(t *testing.T) {
+	provider.RegisterModel(provider.Model{ID: "sva10-vision", Name: "Vision", Provider: "test", InputModalities: []string{"text", "image"}})
+	provider.RegisterModel(provider.Model{ID: "sva10-text", Name: "Text", Provider: "test"})
+	s, _ := testServer(t)
+	rows := decodeArray(t, s.Handle(context.Background(), proto.Command{Type: proto.CmdListModels, Text: "sva10-vision"}))
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	got, _ := rows[0]["input_modalities"].([]any)
+	if len(got) != 2 || got[0] != "text" || got[1] != "image" {
+		t.Fatalf("input_modalities = %v, want [text image]", rows[0]["input_modalities"])
+	}
+	text := decodeArray(t, s.Handle(context.Background(), proto.Command{Type: proto.CmdListModels, Text: "sva10-text"}))
+	if len(text) != 1 {
+		t.Fatalf("text rows = %d, want 1", len(text))
+	}
+	if _, ok := text[0]["input_modalities"]; ok {
+		t.Fatalf("text-only model should omit input_modalities: %v", text[0])
+	}
+}
+
+func TestHandlers_SVA11_StateInputModalities(t *testing.T) {
+	provider.RegisterModel(provider.Model{ID: "sva11-vision", Name: "Vision", Provider: "test", InputModalities: []string{"text", "image"}})
+	s, _ := testServer(t)
+	s.cfg.Model = "sva11-vision"
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdGetState})
+	var state map[string]any
+	if err := json.Unmarshal(resp.Data, &state); err != nil {
+		t.Fatalf("decode state: %v", err)
+	}
+	got, _ := state["input_modalities"].([]any)
+	if len(got) != 2 || got[0] != "text" || got[1] != "image" {
+		t.Fatalf("input_modalities = %v, want [text image]", state["input_modalities"])
+	}
+}

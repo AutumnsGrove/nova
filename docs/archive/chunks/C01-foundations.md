@@ -241,6 +241,11 @@ func NoLeaks(t testing.TB)                  // registers a cleanup that checks g
 | MSG13 | system message at index 2 | | error |
 | MSG14 | system message at index 0 | | `nil` |
 | MSG15 | result for a call from an earlier assistant turn | `a1(c1)`, `u`, `tool(c1)` | error |
+| MSG16 | `ContentPart` round trips and omits empty fields | image part with mime/data/name; bare part | equal after marshal and unmarshal; absent fields omitted |
+| MSG17 | `Parts` is omitted when empty | `User("hi")` | JSON is `{"role":"user","content":"hi"}` |
+| MSG18 | `Parts` round trips and `HasImages` reports media | a user message with two image parts; a text-only one | equal after marshal and unmarshal; true then false |
+| MSG19 | `UserParts` copies its parts, and `Synthetic` serializes | mutate the caller's slice; set `Synthetic` true and false | stored data unchanged; `synthetic` present then absent |
+| MSG20 | `Clone` isolates `Parts` | append to the clone's slice | original length unchanged |
 | PRV01 | `MergeOptions` returns a new map | modify the result | inputs unchanged |
 | PRV02 | `MergeOptions` replaces scalars | `{a:1}` + `{a:2}` | `{a:2}` |
 | PRV03 | `MergeOptions` merges nested maps | `{p:{x:1}}` + `{p:{y:2}}` | `{p:{x:1,y:2}}` |

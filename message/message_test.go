@@ -81,3 +81,95 @@ func TestMessage_MSG05_ReasoningAndNameSerialize(t *testing.T) {
 		t.Errorf("empty reasoning and name should be omitted: %s", empty)
 	}
 }
+
+func TestMessage_MSG16_ContentPartRoundTrip(t *testing.T) {
+	original := ImagePart("image/png", "aGk=")
+	original.Name = "shot.png"
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var restored ContentPart
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(original, restored) {
+		t.Errorf("round trip = %+v, want %+v", restored, original)
+	}
+
+	empty, err := json.Marshal(ContentPart{Type: PartImage})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(empty), "mime_type") || strings.Contains(string(empty), "data") || strings.Contains(string(empty), "url") {
+		t.Errorf("empty part fields should be omitted: %s", empty)
+	}
+}
+
+func TestMessage_MSG17_PartsOmittedWhenEmpty(t *testing.T) {
+	got, err := json.Marshal(User("hi"))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if want := `{"role":"user","content":"hi"}`; string(got) != want {
+		t.Errorf("JSON = %s, want %s", got, want)
+	}
+}
+
+func TestMessage_MSG18_PartsRoundTripAndHasImages(t *testing.T) {
+	original := User("look").WithParts(ImagePart("image/png", "aGk="), ImagePart("image/jpeg", "bm8="))
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var restored Message
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(original, restored) {
+		t.Errorf("round trip = %+v, want %+v", restored, original)
+	}
+	if !restored.HasImages() {
+		t.Error("HasImages() = false, want true")
+	}
+	if User("no images").HasImages() {
+		t.Error("HasImages() = true for a text-only message")
+	}
+}
+
+func TestMessage_MSG19_UserPartsCopiesAndSyntheticSerializes(t *testing.T) {
+	parts := []ContentPart{ImagePart("image/png", "aGk=")}
+	m := UserParts("caption", parts...)
+	parts[0].Data = "changed"
+	if m.Parts[0].Data != "aGk=" {
+		t.Errorf("UserParts kept a reference to the caller's parts: %q", m.Parts[0].Data)
+	}
+
+	m.Synthetic = true
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"synthetic":true`) {
+		t.Errorf("synthetic not serialized: %s", data)
+	}
+	plain, err := json.Marshal(UserParts("caption"))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(plain), "synthetic") {
+		t.Errorf("false synthetic should be omitted: %s", plain)
+	}
+}
+
+func TestMessage_MSG20_CloneIsolatesParts(t *testing.T) {
+	original := UserParts("x", ImagePart("image/png", "aGk="))
+	clone := original.Clone()
+	clone.Parts = append(clone.Parts, ImagePart("image/png", "bm8="))
+	if len(original.Parts) != 1 {
+		t.Errorf("original Parts len = %d, want 1", len(original.Parts))
+	}
+	if len(clone.Parts) != 2 {
+		t.Errorf("clone Parts len = %d, want 2", len(clone.Parts))
+	}
+}

@@ -1,8 +1,8 @@
 ---
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
-packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard]
-budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2240, ./mode/attach: 160, ./tui/ui: 2600, ./clipboard: 180, ./cmd/nova: 1260 }
+packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
+budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2240, ./mode/attach: 160, ./tui/ui: 2600, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -362,6 +362,11 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | CLB02 | command reader errors | a missing binary; a command with no output | `ErrUnavailable`; `ErrNoImage` |
 | CLB03 | the test fake | a configured image; a configured error | returns them and counts calls |
 | CLB04 | a wedged clipboard times out | `sleep 5` with a 50 ms timeout | `ErrNoImage`, no hang |
+| IMG01 | protocol detection | ghostty, kitty, wezterm, iterm, tmux, `NO_COLOR`, forced values | the protocol, or none |
+| IMG02 | cell size preserves aspect | 1000x500 at 80 cells; a degenerate size | 80x20; 1x1 |
+| IMG03 | fallback text | a named PNG with dimensions; empty | a labelled line; `[image]` |
+| IMG04 | Kitty encoding chunks | a short payload; one over 4096 chars | params with `C=1`; `m=1` then `m=0` |
+| IMG05 | render returns the rows an image covers | a Kitty part; iTerm2; no data | lines starting `\x1b_G`; false for the last two |
 
 ## Fuzz and property tests
 

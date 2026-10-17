@@ -71,6 +71,7 @@ nova/
   bundled/        in-tree extensions: tasks, ask, plan,
                   subagent, webfetch                            ≤ 2500 total
   tui/            the terminal UI                               ≤ 9200
+    image/        inline image capability and Kitty encoding   ≤ 260
     cli/          fang-styled help and errors (full build only) ≤ 150
   cmd/nova/       main, cobra commands, doctor, version         ≤ 1260
   doctor/         environment checks                            ≤ 440

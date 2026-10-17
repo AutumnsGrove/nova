@@ -176,3 +176,13 @@ func TestMedia_MED06_Orientation(t *testing.T) {
 		t.Errorf("pixels = top %v bottom %v, want red then blue", got.At(0, 0), got.At(0, 1))
 	}
 }
+
+func TestMedia_MED08_Dimensions(t *testing.T) {
+	w, h, ok := Dimensions(pngOf(3, 5))
+	if !ok || w != 3 || h != 5 {
+		t.Fatalf("Dimensions = %d,%d,%v, want 3,5,true", w, h, ok)
+	}
+	if _, _, ok := Dimensions([]byte("not an image")); ok {
+		t.Fatal("Dimensions accepted junk")
+	}
+}

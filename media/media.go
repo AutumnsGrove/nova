@@ -68,6 +68,16 @@ func Sniff(data []byte) (string, bool) {
 	return mime, ok
 }
 
+// Dimensions reports an encoded image's pixel size without decoding it fully,
+// for a renderer that only needs the aspect ratio.
+func Dimensions(data []byte) (w, h int, ok bool) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return 0, 0, false
+	}
+	return cfg.Width, cfg.Height, true
+}
+
 // Normalize decodes data, applies EXIF orientation, resizes it to fit the
 // limits, and re-encodes it under MaxBytes. mimeType is a hint; the decoded
 // format decides how it is re-encoded. name is display only.

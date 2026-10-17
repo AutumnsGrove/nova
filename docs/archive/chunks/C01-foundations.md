@@ -253,6 +253,7 @@ func NoLeaks(t testing.TB)                  // registers a cleanup that checks g
 | MED05 | `Normalize` rejects a pixel bomb | a PNG header claiming 100000x100000 | `ErrTooLarge` before a full decode |
 | MED06 | EXIF orientation is applied | a 2x1 image, orientation 6 | output 1x2 with the pixels swapped |
 | MED07 | fuzzed input never panics or exceeds the byte cap | arbitrary bytes and mime | error, or a part under `MaxBytes` |
+| MED08 | `Dimensions` reports pixel size | a 3x5 PNG; junk | 3,5,true; false |
 | PRV01 | `MergeOptions` returns a new map | modify the result | inputs unchanged |
 | PRV02 | `MergeOptions` replaces scalars | `{a:1}` + `{a:2}` | `{a:2}` |
 | PRV03 | `MergeOptions` merges nested maps | `{p:{x:1}}` + `{p:{y:2}}` | `{p:{x:1,y:2}}` |

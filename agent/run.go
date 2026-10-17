@@ -214,18 +214,35 @@ func (r *run) loop() (*Result, error) {
 }
 
 // dispatchTools runs the assistant message's tool calls and appends one result
-// message per call, in call order.
+// message per call, in call order. After every result it appends the messages
+// the tools queued (Context.Inject) and one synthetic user message for every
+// image the batch produced, because providers allow media only on user
+// messages and never between a tool call and its result.
 func (r *run) dispatchTools(assistant message.Message) ([]tool.Result, error) {
 	if len(assistant.ToolCalls) == 0 {
 		return nil, nil
 	}
-	results := r.dispatch(assistant.ToolCalls)
+	outcomes := r.dispatch(assistant.ToolCalls)
+	results := make([]tool.Result, len(outcomes))
 	for i, call := range assistant.ToolCalls {
-		content := results[i].Content
+		results[i] = outcomes[i].result
+		content := outcomes[i].result.Content
 		if content == "" {
 			content = "(empty result)"
 		}
 		if err := r.record(message.ToolResult(call.ID, content), nil); err != nil {
+			return results, err
+		}
+	}
+	for _, o := range outcomes {
+		for _, m := range o.injected {
+			if err := r.record(m, nil); err != nil {
+				return results, err
+			}
+		}
+	}
+	if img := toolImageMessage(outcomes); img != nil {
+		if err := r.record(*img, nil); err != nil {
 			return results, err
 		}
 	}

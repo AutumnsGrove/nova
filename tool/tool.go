@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
 )
 
@@ -31,6 +32,10 @@ type Context struct {
 	Emit func(Update)
 	// Complete performs a nested model call, for a tool that needs one.
 	Complete func(ctx context.Context, req provider.Request) (*provider.Response, error)
+	// Inject queues a message to append after this tool's batch, for a tool that
+	// needs a message of its own rather than Result.Parts. It is per call and
+	// ordered with the rest of the batch. It may be nil.
+	Inject func(message.Message)
 }
 
 // Progress sends a progress update, or does nothing when Emit is nil.
@@ -54,6 +59,13 @@ type Result struct {
 	// Details carries structured data for renderers. It is never sent to the
 	// model.
 	Details json.RawMessage
+	// Parts are images the model should see. An OpenAI-compatible provider
+	// allows media only on a user message, so the loop appends one synthetic
+	// user message after the whole tool batch carrying every part, in call
+	// order, rather than putting them on the tool result.
+	Parts []message.ContentPart
+	// Caption is the text of that synthetic message, when Parts is set.
+	Caption string
 }
 
 // Info is a tool's model-facing definition plus behavioral annotations.

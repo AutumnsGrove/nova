@@ -74,3 +74,31 @@ func dropImages(m message.Message) message.Message {
 	}
 	return m
 }
+
+// toolImageMessage builds the one user message that carries every image a tool
+// batch produced. Providers reject media on a tool message, so the images ride
+// a synthetic user turn after the whole batch, in call order, with the results'
+// captions joined as its text.
+func toolImageMessage(outcomes []callOutcome) *message.Message {
+	var parts []message.ContentPart
+	var captions []string
+	for _, o := range outcomes {
+		if len(o.result.Parts) == 0 {
+			continue
+		}
+		parts = append(parts, o.result.Parts...)
+		if o.result.Caption != "" {
+			captions = append(captions, o.result.Caption)
+		}
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	text := strings.Join(captions, "\n")
+	if text == "" {
+		text = "[image from a tool result]"
+	}
+	m := message.UserParts(text, parts...)
+	m.Synthetic = true
+	return &m
+}

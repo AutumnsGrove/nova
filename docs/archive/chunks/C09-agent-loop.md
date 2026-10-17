@@ -383,6 +383,9 @@ history as given, as before.
 | LPI01 | text-only model strips images from the request | a prompt with an image, no modalities | no image part on the wire; omission note in the text; transcript keeps the part |
 | LPI02 | vision model keeps images | `InputModalities` text+image | image part still on the wire |
 | LPI03 | `InputModalitiesFunc` is read per request | a text-only first run, then vision | first request stripped, second kept |
+| LPI04 | a tool's `Result.Parts` becomes a synthetic user message | a tool that returns an image and a caption | after the tool result, one synthetic user message with the image and caption |
+| LPI05 | two tools' images combine into one message | two image tools in one batch | one synthetic message with both parts |
+| LPI06 | `Context.Inject` queues a message after the batch | an injected user message with an image | recorded after the tool result, image intact |
 
 ## Fuzz and property tests
 

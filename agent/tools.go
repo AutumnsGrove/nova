@@ -33,22 +33,29 @@ func (r *run) parallelCapable(call message.ToolCall) bool {
 	return ok && info.Parallel
 }
 
-// dispatch runs every call and returns the results in call order, whatever the
+// callOutcome is one dispatched call's result plus any messages the tool asked
+// the loop to inject after the batch.
+type callOutcome struct {
+	result   tool.Result
+	injected []message.Message
+}
+
+// dispatch runs every call and returns the outcomes in call order, whatever the
 // completion order. Parallel-capable runs run in groups; a non-parallel call
 // runs alone as a barrier. Sequential mode runs one at a time.
-func (r *run) dispatch(calls []message.ToolCall) []tool.Result {
-	results := make([]tool.Result, len(calls))
+func (r *run) dispatch(calls []message.ToolCall) []callOutcome {
+	outcomes := make([]callOutcome, len(calls))
 	done := make([]bool, len(calls))
 
 	if r.cfg.ToolExecution == Sequential || r.maxParallel() == 1 {
 		for i := range calls {
-			results[i] = r.runCall(calls[i])
+			outcomes[i] = r.runCall(calls[i])
 			done[i] = true
 		}
 	} else {
 		for i := 0; i < len(calls); {
 			if !r.parallelCapable(calls[i]) {
-				results[i] = r.runCall(calls[i])
+				outcomes[i] = r.runCall(calls[i])
 				done[i] = true
 				i++
 				continue
@@ -65,7 +72,7 @@ func (r *run) dispatch(calls []message.ToolCall) []tool.Result {
 					defer wg.Done()
 					sem <- struct{}{}
 					defer func() { <-sem }()
-					results[k] = r.runCall(calls[k])
+					outcomes[k] = r.runCall(calls[k])
 					done[k] = true
 				}(k)
 			}
@@ -78,31 +85,35 @@ func (r *run) dispatch(calls []message.ToolCall) []tool.Result {
 	// result, or the recorded assistant message would be unanswerable.
 	for i := range calls {
 		if !done[i] {
-			results[i] = tool.Errorf("cancelled")
+			outcomes[i] = callOutcome{result: tool.Errorf("cancelled")}
 		}
 	}
-	return results
+	return outcomes
 }
 
 // runCall runs one tool call: cancellation check, permission, the ToolCall
 // hook, tool_start, execution with progress, and the ToolResult hook. A panic
 // anywhere is recovered into that call's error result.
-func (r *run) runCall(call message.ToolCall) (res tool.Result) {
+func (r *run) runCall(call message.ToolCall) (out callOutcome) {
+	var injected []message.Message
 	defer func() {
 		if rec := recover(); rec != nil {
 			_, _ = diag.Report(rec, "tool "+call.Function.Name)
-			res = tool.Errorf("internal error running %s: %v", call.Function.Name, rec)
-			r.emitToolEnd(call, res)
+			out.result = tool.Errorf("internal error running %s: %v", call.Function.Name, rec)
+			out.injected = injected
+			r.emitToolEnd(call, out.result)
 		}
 	}()
 
 	if r.ctx.Err() != nil {
-		return tool.Errorf("cancelled")
+		out.result = tool.Errorf("cancelled")
+		return out
 	}
 
 	args := json.RawMessage(call.Function.Arguments)
-	if blocked, out := r.checkPermission(call, args); blocked {
-		return r.finishCall(call, out)
+	if blocked, blockedResult := r.checkPermission(call, args); blocked {
+		out.result = r.finishCall(call, blockedResult)
+		return out
 	}
 
 	if h := r.cfg.Hooks.ToolCall; h != nil {
@@ -111,7 +122,8 @@ func (r *run) runCall(call message.ToolCall) (res tool.Result) {
 		})
 		if ok && decision != nil {
 			if decision.Block {
-				return r.finishCall(call, tool.Errorf("blocked: %s", decision.Reason))
+				out.result = r.finishCall(call, tool.Errorf("blocked: %s", decision.Reason))
+				return out
 			}
 			if decision.Arguments != nil {
 				args = decision.Arguments
@@ -124,13 +136,17 @@ func (r *run) runCall(call message.ToolCall) (res tool.Result) {
 	progress := newProgress(r, call.ID)
 	tctx := r.toolContext()
 	tctx.Emit = progress.emit
+	tctx.Inject = func(m message.Message) { injected = append(injected, m) }
+	var res tool.Result
 	if r.cfg.Tools != nil {
 		res = r.cfg.Tools.Execute(r.ctx, call.Function.Name, args, tctx)
 	} else {
 		res = tool.Errorf("no tools are registered")
 	}
 	progress.close()
-	return r.finishCall(call, res)
+	out.result = r.finishCall(call, res)
+	out.injected = injected
+	return out
 }
 
 // finishCall applies the empty-result rule and the ToolResult hook, then emits

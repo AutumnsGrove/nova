@@ -47,7 +47,7 @@ nova/
     openrouter/   preset: routing options, headers, usage       ≤ 300
   auth/           OAuth PKCE login, key store                   ≤ 500
   tool/           Tool contract, registry, schema validation    ≤ 550
-  tools/          fs (read write edit list)                     ≤ 1000
+  tools/          fs (read write edit list)                     ≤ 1060
                   search (glob grep)                            ≤ 700
                   bash                                          ≤ 400
   permission/     allow/ask/deny policy                         ≤ 300

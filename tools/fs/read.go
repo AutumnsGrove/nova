@@ -8,14 +8,58 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/AutumnsGrove/nova/media"
+	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
 // utf8BOM is the byte-order mark some editors put at the start of a file.
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// maxImageBytes caps an image read before it is decoded; media.Normalize then
+// bounds the decoded size and the stored bytes.
+const maxImageBytes = 64 << 20
+
+// imageExts are the extensions read treats as an image candidate. The decoded
+// header decides whether the file really is one.
+var imageExts = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".gif": true,
+	".webp": true, ".tif": true, ".tiff": true, ".bmp": true,
+}
+
+// isImagePath reports whether a path's extension is an image candidate.
+func isImagePath(path string) bool {
+	return imageExts[strings.ToLower(filepath.Ext(path))]
+}
+
+// readImage decodes and normalizes an image file into a result the model can
+// see. media.Normalize applies the one set of size and format limits.
+func readImage(abs string) tool.Result {
+	info, err := os.Stat(abs)
+	if err != nil {
+		return tool.Errorf("%v", err)
+	}
+	if info.Size() > maxImageBytes {
+		return tool.Errorf("%s is %d bytes; images over %d MiB are not read", abs, info.Size(), maxImageBytes>>20)
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return tool.Errorf("%v", err)
+	}
+	res, err := media.Normalize(data, "", filepath.Base(abs))
+	if err != nil {
+		return tool.Errorf("%v", err)
+	}
+	text := fmt.Sprintf("Read image file [%s]", res.Part.MimeType)
+	if len(res.Hints) > 0 {
+		text += "\n" + strings.Join(res.Hints, "\n")
+	}
+	return tool.Result{Content: text, Parts: []message.ContentPart{res.Part}}
+}
 
 // readDetails is the structured data read attaches to Result.Details.
 type readDetails struct {
@@ -32,7 +76,7 @@ type readDetails struct {
 func Read() tool.Tool {
 	return tool.New(tool.Info{
 		Name:        "read",
-		Description: "Read a UTF-8 text file and return its contents with line numbers. Use offset and limit to page through large files.",
+		Description: "Read a UTF-8 text file or an image (png, jpeg, gif, webp, tiff, bmp). Text comes back with line numbers; an image comes back as an attachment the model can see. Use offset and limit to page through large text files.",
 		ReadOnly:    true,
 		Parallel:    true,
 		Parameters: map[string]any{
@@ -56,6 +100,9 @@ func Read() tool.Tool {
 		abs, err := resolve(tctx, in.Path)
 		if err != nil {
 			return tool.Errorf("%v", err), nil
+		}
+		if isImagePath(abs) {
+			return readImage(abs), nil
 		}
 		offset := 1
 		if in.Offset != nil {

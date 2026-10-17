@@ -1,8 +1,11 @@
 package fs
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -430,5 +434,40 @@ func TestRead_RDF31_Annotations(t *testing.T) {
 	info := Read().Info()
 	if !info.ReadOnly || !info.Parallel {
 		t.Fatalf("annotations = %+v, want read-only and parallel", info)
+	}
+}
+
+// pngFile writes a tiny PNG and returns its path.
+func pngFile(t *testing.T, dir, name string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write png: %v", err)
+	}
+	return path
+}
+
+func TestRead_RDF32_ImagePathReturnsPart(t *testing.T) {
+	dir := t.TempDir()
+	pngFile(t, dir, "shot.png")
+	res := run(t, Read(), &tool.Context{WorkDir: dir}, map[string]any{"path": "shot.png"})
+	if len(res.Parts) != 1 || res.Parts[0].Type != message.PartImage || res.Parts[0].MimeType != "image/png" {
+		t.Fatalf("parts = %+v, want one image/png part", res.Parts)
+	}
+	if !strings.Contains(res.Content, "Read image file [image/png]") {
+		t.Errorf("content = %q, want the read-image note", res.Content)
+	}
+}
+
+func TestRead_RDF33_TextPathHasNoParts(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.txt"), "a\nb\n")
+	res := run(t, Read(), &tool.Context{WorkDir: dir}, map[string]any{"path": "a.txt"})
+	if len(res.Parts) != 0 {
+		t.Fatalf("parts = %+v, want none for a text file", res.Parts)
 	}
 }

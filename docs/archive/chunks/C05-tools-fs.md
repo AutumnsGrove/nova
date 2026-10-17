@@ -2,7 +2,7 @@
 chunk: C05
 title: "Filesystem tools"
 packages: [./tools/fs]
-budgets: { ./tools/fs: 1000 }
+budgets: { ./tools/fs: 1060 }
 depends: [C04]
 ---
 
@@ -209,6 +209,8 @@ diffMaxLines   = 5000
 | RDF29 | file shrinks while reading | | no panic; returns what was read |
 | RDF30 | `Details` content | | path, start, end, total, line endings, bom |
 | RDF31 | tool annotations | | `ReadOnly` and `Parallel` true |
+| RDF32 | an image path returns an image part | a PNG file | one `image/png` part and a read-image note |
+| RDF33 | a text path has no parts | a `.txt` file | no parts, text as before |
 | WRT01 | create a new file | | file exists; message says `created` |
 | WRT02 | overwrite | | content replaced; says `overwrote` |
 | WRT03 | creates parent directories | `a/b/c.txt` | exists; dirs 0755 |

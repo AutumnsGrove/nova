@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1129,5 +1131,27 @@ func TestUI_PST02_NoImageNotice(t *testing.T) {
 	update(m, do(update(m, ctrlKey('v'))))
 	if !strings.Contains(m.notice, "no image") {
 		t.Fatalf("notice = %q, want a no-image message", m.notice)
+	}
+}
+
+func TestUI_PST03_PathAutoAttaches(t *testing.T) {
+	m, f, _ := newModel(t)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(m.cwd, "shot.png"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m.setEditorText("describe shot.png")
+	execAll(update(m, enterKey))
+	if len(f.sends) != 1 || len(f.sends[0].Attachments) != 1 {
+		t.Fatalf("sends = %+v", f.sends)
+	}
+	if f.sends[0].Text != "describe shot.png" {
+		t.Fatalf("text = %q, want the path replaced by the base name", f.sends[0].Text)
+	}
+	if f.sends[0].Attachments[0].Name != "shot.png" {
+		t.Fatalf("attachment = %+v", f.sends[0].Attachments[0])
 	}
 }

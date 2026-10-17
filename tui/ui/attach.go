@@ -6,13 +6,20 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/clipboard"
+	"github.com/AutumnsGrove/nova/media"
 	"github.com/AutumnsGrove/nova/proto"
 )
+
+// maxPathAttachBytes caps a file the editor reads for @path auto-attach, so a
+// mistyped huge file cannot be pulled into memory.
+const maxPathAttachBytes = 16 << 20
 
 // pendingAttachment is an image attached to the next prompt but not yet sent.
 type pendingAttachment struct {
@@ -79,6 +86,47 @@ func (m *Model) attachmentNames() []string {
 		out[i] = a.Name
 	}
 	return out
+}
+
+// attachPaths converts whitespace-delimited tokens in text that name an image
+// file into pending attachments, replacing each token with the file's base
+// name. A token that is not an image is left alone.
+func (m *Model) attachPaths(text string) string {
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return text
+	}
+	changed := false
+	for i, f := range fields {
+		path := strings.Trim(f, `"'`)
+		if path == "" || strings.HasPrefix(path, "-") {
+			continue
+		}
+		abs := path
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(m.cwd, abs)
+		}
+		info, err := os.Stat(abs)
+		if err != nil || info.IsDir() || info.Size() > maxPathAttachBytes {
+			continue
+		}
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			continue
+		}
+		mime, ok := media.Sniff(data)
+		if !ok {
+			continue
+		}
+		name := filepath.Base(abs)
+		m.pendingAtts = append(m.pendingAtts, pendingAttachment{Name: name, MimeType: mime, Data: data})
+		fields[i] = name
+		changed = true
+	}
+	if !changed {
+		return text
+	}
+	return strings.Join(fields, " ")
 }
 
 // chipLine renders the pending attachments as one muted line, or "".

@@ -91,6 +91,7 @@ func (m *Model) submit(action string) tea.Cmd {
 	case m.runActive:
 		kind = "steer"
 	}
+	text = m.attachPaths(text)
 	atts := m.attachmentRefs()
 	names := m.attachmentNames()
 	m.setEditorText("")

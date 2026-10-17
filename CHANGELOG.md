@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- The editor grows with the prompt to 10 visual rows, counting soft wraps as well as newlines, and follows the
+  cursor past that; a paste, a history recall, or a resize grows it too. The old cap was 8, and a paste did not
+  grow it at all (#18).
 - Tool cards are full-width panels with one cell of padding and a background tinted by state: pending while
   running, success when ok, error on failure. The panel wraps every tool, the `subagent` card included, and the
   new theme tokens are `panel`, `panelok`, `panelerr`, and `paneluser` for the user's own messages, which now get

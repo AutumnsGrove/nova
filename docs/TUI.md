@@ -119,7 +119,8 @@ child's tool activity as progress lines inside the same panel. Under `mono` or
 ## Input
 
 - Multi-line editor (`bubbles/v2/textarea`). `enter` sends, `shift+enter` or `alt+enter`
-  newline, `ctrl+g` opens `$EDITOR`. Its prompt, text, placeholder, and cursor use the active theme.
+  newline, `ctrl+g` opens `$EDITOR`. It grows to 10 visual rows (soft wraps count too) and
+  follows the cursor past that. Its prompt, text, placeholder, and cursor use the active theme.
 - `/` opens command completion: built-ins, prompt templates, and extension commands.
 - `@` completes file paths.
 - `!cmd` runs a shell command and shows the output; `!!cmd` runs it without adding it

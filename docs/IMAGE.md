@@ -66,6 +66,16 @@ Rules:
   renderer only and is never sent to the model; images there are invisible to the
   model. Keeping one `ContentPart` used by `message`, the providers, `tool`,
   `proto`, and the extensions stops five shapes from drifting apart.
+- **Text first, then media.** Every dialect orders a text block before the image
+  blocks, matching Polaris and OpenAI. Anthropic accepts either order; one order
+  keeps the builders testable against a single golden.
+- **Unknown types are rejected at the front door and dropped by a provider.** A
+  `bad_request` names the offending `type` when a command carries one; a provider
+  that meets an unknown type in resumed history drops that part and leaves the
+  rest, so an old session stays usable after a Nova upgrade.
+- **A `data:` URL is normalized to `Data`.** A remote `http(s)` URL passes through
+  only on a dialect that accepts a URL; on a dialect that needs base64 (Anthropic)
+  it is omitted with a text note. Nova never fetches a model-supplied URL.
 
 ### Media only on user messages
 
@@ -174,8 +184,12 @@ ever needed, add a `Ref` field to `ContentPart` and write sidecars then — addi
 on disk, no wire change.
 
 Compaction and the token estimate treat a part as a fixed placeholder
-(`[image]`), not as text; the summariser cannot describe pixels and must not try
-to tokenise base64.
+(`[image]`, counted as about 1000 tokens so compaction still triggers), not as
+text; the summariser cannot describe pixels and must not try to tokenise base64.
+At request time, `compaction.PruneToolOutput`'s window also drops media parts
+older than the kept turns, replacing each with `[image pruned]`, so a long
+conversation does not carry stale pixels into every request. The session keeps
+them, so the transcript still renders.
 
 **Fork copies bytes.** `session.Fork` (`session/list.go:102`) rewrites every
 branch entry into a new file, so a fork of an image-heavy session duplicates the
@@ -210,6 +224,10 @@ type Attachment struct {
   starts, and fail `bad_request` with a specific message.
 - `get_messages` returns messages with their parts, so a client can replay and
   re-render a conversation. The TUI uses the same events.
+- **Steer and follow-up carry the same attachments.** The agent's two queues
+  change from `[]string` to `[]message.Message` (`agent/queue.go`), so a queued
+  "look at this" keeps its image instead of degrading to text. `queue_update`
+  still reports counts.
 
 **The upload endpoint is the follow-up, and its shape is fixed now.** Inline
 `Data` is the first slice because it needs no server storage. A later
@@ -221,6 +239,12 @@ set, so the struct is stable across both slices. An attachment not referenced by
 turn expires with its session; the endpoint is `serve`-only and validates size and
 mime before it writes. `serve.MaxBody` (`mode/serve/serve.go:31`) rises until the
 upload endpoint exists, enough for the per-message image limit plus JSON.
+
+**Additive, version stays 1.** Parts are new optional fields on existing types, so
+an old client ignores them. The extension `tool_result` frame gains a `parts`
+array (the SDK's `Result.Parts`) without a protocol bump; a declarative `exec`
+tool has no way to produce one, which is the intended limit. The session entry
+format changes only inside `message.Message`, so no session migration.
 
 ## The tool API
 
@@ -243,9 +267,11 @@ type Context struct {
 ```
 
 - **`Result.Parts` is the common case.** After the loop records every tool result
-  in a batch, it appends one synthetic user message per result that has parts,
-  with `Caption` (or a neutral caption) as the text. Order is deterministic and
-  the batch is never interleaved.
+  in a batch, it appends **one** synthetic user message carrying every image from
+  the batch in call order, with the results' captions joined as its text. One
+  message, not one per result: consecutive user messages are awkward for several
+  providers, and a batch's images belong to the same model turn. Order is
+  deterministic and the batch is never interleaved.
 - **`Context.Inject` is the escape hatch**, for a tool that needs a custom role,
   multiple messages, or app-supplied text — Polaris's
   `ctx.AddPendingImageMessage` maps directly onto it.
@@ -324,12 +350,12 @@ capability detection. Nova does the same. The pi implementation is the reference
   `[Image: ~/path/shot.png image/png 1280x800]`, path shortened and, where OSC 8
   hyperlinks are supported, linked to `file://`. This is what `NO_COLOR` and a
   non-graphics terminal get.
-- **Settings.** pi offers "show images", "image width cells" (only when the
-  terminal supports images), an always-available "auto-resize images", and "block
-  images", which stops images reaching the provider at all. Nova's `/settings`
-  dialog (D114) is where `display.show_images`, `display.image_width_cells`,
-  `display.auto_resize_images`, and `display.block_images` go, persisted with
-  `config.SetUser` like the existing display rows.
+- **Settings.** `display.show_images` (default true when the terminal is
+  image-capable), `display.image_width_cells` (default 60; choices 60/80/120),
+  `display.auto_resize_images` (default true), and `images.block_images` (default
+  false, agent-enforced: it strips parts from every provider request while the
+  session and TUI keep them). Persisted with `config.SetUser` like the existing
+  display rows.
 
 ### The Nova risk to settle first
 
@@ -347,16 +373,37 @@ renderer with image metadata, placement-only commands, and crop-on-scroll
 3. Cache by `(data hash, mime, widthCells)` so a re-render is a no-op, and keep
    the image **out of the text export** (pi's `getRenderedTextOutput(result,
    showImages)`).
-4. Ship it **off by default** behind `display.show_images`, and verify on a real
-   Kitty-family terminal and a real iTerm2 before claiming support. A PTY smoke
-   test under `testkit` covers detection and line accounting, not pixels.
+4. Show it when the terminal supports it (`display.show_images`, default true
+   when `tui/image` detects a protocol, false otherwise), and verify on a real
+   Kitty-family terminal before claiming support. A PTY smoke test under
+   `testkit` covers detection and line accounting, not pixels.
 
 The capability detector and encoders belong in a small leaf package (`tui/image`)
 with its own line budget, consumed by `tui/chat`; the detector is a seam with a
-fake so no test reads the real environment or draws a real image. The clipboard
-reader (`ctrl+v` → OS clipboard image bytes) is a separate leaf package with a
-fake, per-platform exec (macOS `osascript` PNGf, Linux `wl-paste`/`xclip`, WSL
-PowerShell), and a clear notice where none is available.
+fake so no test reads the real environment or draws a real image.
+
+**Clipboard.** `ctrl+v` (pi's key) reads the OS clipboard image through the
+`clipboard` leaf: macOS `osascript` asking for `«class PNGf»` (the pasteboard
+converts on request), Wayland `wl-paste --type image/png`, X11
+`xclip -selection clipboard -t image/png -o`, WSL PowerShell. Every reader runs
+under a short timeout (2 s) so a wedged clipboard cannot hang the TUI, and a host
+with no clipboard (SSH, container, headless) gets a clear notice, not silence. The
+reader returns normalized bytes plus a name and mime type, never a path. The bytes
+are written to `os.TempDir()/nova-clipboard-<pid>/<n>.<ext>` so the editor can show
+a path and a Finder-style drag works, and the same bytes ride the `prompt`
+attachment; the directory is removed on a clean exit and swept on the next start.
+
+**Pending attachments.** A pasted or `@`-picked file is a chip in a one-row list
+above the editor (`name ×`), removed with backspace or a click. `pendingSend.atts`
+(`tui/ui/update.go`) already carries names for the user bubble; the protocol
+attachment carries the bytes. The row is one line on top of the editor height from
+#18.
+
+**`@path` attaches on submit.** The editor already completes file paths
+(`tui/ui/complete.go`). On submit, a whitespace-delimited token that resolves to a
+file whose header decodes as an image is read into an attachment and the token in
+the text is replaced with the file's base name; a path that is not an image is
+left alone. This is the same end state as `ctrl+v`, reached by typing.
 
 ## Polaris mapping
 

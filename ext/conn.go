@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 )
 
@@ -59,13 +60,14 @@ type outFrame struct {
 
 // reply is the subset of an extension's answer the host reads.
 type reply struct {
-	Type    string          `json:"type"`
-	ID      string          `json:"id,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Content string          `json:"content,omitempty"`
-	IsError bool            `json:"is_error,omitempty"`
-	Details json.RawMessage `json:"details,omitempty"`
-	Error   *proto.Error    `json:"error,omitempty"`
+	Type    string                `json:"type"`
+	ID      string                `json:"id,omitempty"`
+	Result  json.RawMessage       `json:"result,omitempty"`
+	Content string                `json:"content,omitempty"`
+	IsError bool                  `json:"is_error,omitempty"`
+	Details json.RawMessage       `json:"details,omitempty"`
+	Parts   []message.ContentPart `json:"parts,omitempty"`
+	Error   *proto.Error          `json:"error,omitempty"`
 }
 
 // handler receives one unsolicited frame from an extension. typ "__log" is the

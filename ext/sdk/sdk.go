@@ -78,12 +78,25 @@ type Flag struct {
 	Default     string
 }
 
+// Part is one image an extension's tool result shows the model. Type is
+// "image"; Data is base64 bytes.
+type Part struct {
+	Type     string `json:"type"`
+	MimeType string `json:"mime_type,omitempty"`
+	Data     string `json:"data,omitempty"`
+	URL      string `json:"url,omitempty"`
+	Name     string `json:"name,omitempty"`
+}
+
 // Result is a tool result.
 type Result struct {
 	Content string
 	IsError bool
 	Details any
 	Render  string
+	// Parts are images the model should see; the host turns them into one
+	// synthetic user message after the tool batch.
+	Parts []Part
 }
 
 // Text builds a successful result. With no args, format is used verbatim.
@@ -369,7 +382,7 @@ func (h *Host) handleTool(line []byte) {
 	}
 	h.mu.Unlock()
 	res := invokeTool(fn, call)
-	h.reply("tool_result", f.ID, map[string]any{"content": res.Content, "is_error": res.IsError, "details": res.Details})
+	h.reply("tool_result", f.ID, map[string]any{"content": res.Content, "is_error": res.IsError, "details": res.Details, "parts": res.Parts})
 }
 
 // invokeTool runs a tool handler, turning a panic into an error result.

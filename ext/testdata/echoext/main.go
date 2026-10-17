@@ -159,6 +159,9 @@ func main() {
 			name, _ := f["name"].(string)
 			args, _ := json.Marshal(f["arguments"])
 			reply := map[string]any{"type": "tool_result", "id": id, "content": name + ":" + string(args), "is_error": false}
+			if env("ECHO_IMAGE") {
+				reply["parts"] = []map[string]any{{"type": "image", "mime_type": "image/png", "data": "aGk="}}
+			}
 			send(reply)
 			if env("ECHO_ANSWER_TWICE") {
 				send(reply)

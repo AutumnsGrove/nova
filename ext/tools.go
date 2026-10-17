@@ -54,7 +54,7 @@ func (t *protocolTool) Run(ctx context.Context, args json.RawMessage, tctx *tool
 	if reply.Error != nil {
 		return tool.Errorf("extension %s: %s", t.inst.manifest.Name, reply.Error.Message), nil
 	}
-	return tool.Result{Content: reply.Content, IsError: reply.IsError, Details: reply.Details}, nil
+	return tool.Result{Content: reply.Content, IsError: reply.IsError, Details: reply.Details, Parts: reply.Parts}, nil
 }
 
 // failure renders the error result text for a failed request.

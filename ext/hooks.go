@@ -39,9 +39,10 @@ type toolCallResult struct {
 
 // toolResult is the result payload shared by the tool_result hook.
 type toolResult struct {
-	Content string          `json:"content"`
-	IsError bool            `json:"is_error,omitempty"`
-	Details json.RawMessage `json:"details,omitempty"`
+	Content string                `json:"content"`
+	IsError bool                  `json:"is_error,omitempty"`
+	Details json.RawMessage       `json:"details,omitempty"`
+	Parts   []message.ContentPart `json:"parts,omitempty"`
 }
 
 // hookWire is the generic event/result envelope for the chain hooks.
@@ -242,14 +243,14 @@ func (h *Host) hookToolResult(ctx context.Context, c agent.ToolCall, r tool.Resu
 			}
 			continue
 		}
-		event := hookWire{Tool: c.Name, Result: &toolResult{Content: out.Content, IsError: out.IsError, Details: out.Details}}
+		event := hookWire{Tool: c.Name, Result: &toolResult{Content: out.Content, IsError: out.IsError, Details: out.Details, Parts: out.Parts}}
 		var res struct {
 			Result *toolResult `json:"result"`
 		}
 		if !h.callHook(ctx, inst, "tool_result", event, &res) || res.Result == nil {
 			continue
 		}
-		out = tool.Result{Content: res.Result.Content, IsError: res.Result.IsError, Details: res.Result.Details}
+		out = tool.Result{Content: res.Result.Content, IsError: res.Result.IsError, Details: res.Result.Details, Parts: res.Result.Parts}
 	}
 	return out
 }

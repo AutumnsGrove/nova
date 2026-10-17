@@ -179,7 +179,7 @@ ext  → host  {"type":"register","tools":[…],"commands":[…],"hooks":["tool_
 host → ext   {"type":"hook","id":"h1","hook":"tool_call","event":{…},"deadline_ms":2000}
 ext  → host  {"type":"hook_result","id":"h1","result":{"block":true,"reason":"…"}}
 host → ext   {"type":"tool_call","id":"t1","name":"todo","arguments":{…},"call_id":"…"}
-ext  → host  {"type":"tool_result","id":"t1","content":"…","is_error":false,"details":{…}}
+ext  → host  {"type":"tool_result","id":"t1","content":"…","is_error":false,"details":{…},"parts":[{"type":"image","mime_type":"image/png","data":"…"}]}
 host → ext   {"type":"command","id":"c1","name":"todos","args":"…"}
 ext  → host  {"type":"ui_request",…}   // same UI methods as above
 ext  → host  {"type":"append_entry","kind":"todo.state","data":{…},"keep":true}

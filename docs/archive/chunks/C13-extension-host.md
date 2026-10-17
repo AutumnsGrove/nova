@@ -359,6 +359,7 @@ twice, answer slowly, answer twice, print garbage to stdout, exit after N calls,
 | HST22 | two tools called concurrently | | both answered; correct correlation |
 | HST23 | flags passed in `init` | | present |
 | HST24 | `Status` | | state, restarts, last error |
+| HST25 | an extension tool result carries image parts | `ECHO_IMAGE=1` | `tool.Result.Parts` has the image part |
 | HK01 | block: first handler wins | two extensions both block | first reason used |
 | HK02 | rewrite chains | A rewrites, B sees the rewrite | B's input is A's output |
 | HK03 | block after a rewrite | | block wins |

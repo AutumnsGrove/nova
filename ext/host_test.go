@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
@@ -218,4 +219,14 @@ func TestHost_HST01_ToolRoundTrip(t *testing.T) {
 		t.Fatalf("content = %q", res.Content)
 	}
 	_ = h
+}
+
+func TestHost_HST25_ToolResultParts(t *testing.T) {
+	reg := tool.NewRegistry()
+	dir := echoDir(t, "echo", "")
+	_ = startHost(t, []string{dir}, HostOptions{Registry: reg, Env: envWith("ECHO_IMAGE=1")})
+	res := reg.Execute(context.Background(), "echo", json.RawMessage(`{}`), &tool.Context{WorkDir: t.TempDir()})
+	if len(res.Parts) != 1 || res.Parts[0].Type != message.PartImage || res.Parts[0].Data != "aGk=" {
+		t.Fatalf("parts = %+v, want one image part", res.Parts)
+	}
 }

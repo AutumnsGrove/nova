@@ -237,16 +237,22 @@ func New(opt Options) (*Server, error) {
 	extHooks := s.ext.Hooks()
 
 	s.agent = agent.New(agent.Config{
-		Provider:      s.prov,
-		Model:         s.model,
-		System:        s.system,
-		Tools:         s.tools,
-		Policy:        &s.policy,
-		Ask:           s.ask,
-		WorkDir:       opt.CWD,
-		Roots:         []string{opt.CWD},
-		SessionID:     s.sessionID(),
-		MaxTurns:      cfg.MaxTurns,
+		Provider:  s.prov,
+		Model:     s.model,
+		System:    s.system,
+		Tools:     s.tools,
+		Policy:    &s.policy,
+		Ask:       s.ask,
+		WorkDir:   opt.CWD,
+		Roots:     []string{opt.CWD},
+		SessionID: s.sessionID(),
+		MaxTurns:  cfg.MaxTurns,
+		// Read per request, so a model switch mid-session is honoured.
+		InputModalitiesFunc: func() []string {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return modelModalities(s.cfg.Model)
+		},
 		ToolExecution: agent.Parallel,
 		Retry: agent.RetryPolicy{
 			Max:    cfg.Retry.Max,

@@ -130,9 +130,18 @@ type Config struct {
 	MaxTokens       int
 	ReasoningEffort string
 	ProviderOptions map[string]any
-	Retry           RetryPolicy
-	HookTimeout     time.Duration // default 5s
-	Clock           Clock         // default real; tests inject a fake
+	// InputModalities lists the input kinds the model accepts, such as "text"
+	// and "image". Empty means text only, the safe default. When the model does
+	// not take images, image parts are dropped from the request with a note; the
+	// transcript keeps them so the UI still shows what the user sent.
+	InputModalities []string
+	// InputModalitiesFunc, when non-nil, returns the current model's input kinds
+	// and takes precedence over InputModalities. A server that can switch models
+	// mid-session uses it so the gate follows the switch.
+	InputModalitiesFunc func() []string
+	Retry               RetryPolicy
+	HookTimeout         time.Duration // default 5s
+	Clock               Clock         // default real; tests inject a fake
 
 	Hooks Hooks
 

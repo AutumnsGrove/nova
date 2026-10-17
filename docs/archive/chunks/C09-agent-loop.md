@@ -2,7 +2,7 @@
 chunk: C09
 title: "The agent loop"
 packages: [./agent]
-budgets: { ./agent: 950 }
+budgets: { ./agent: 1080 }
 depends: [C01, C04, C08]
 ---
 
@@ -380,6 +380,9 @@ history as given, as before.
 | LPU04 | `message_end` and `usage` events carry usage and totals | | verified |
 | LPU05 | reasoning tokens summed | | included |
 | LPU06 | `run_end` carries the total | | verified |
+| LPI01 | text-only model strips images from the request | a prompt with an image, no modalities | no image part on the wire; omission note in the text; transcript keeps the part |
+| LPI02 | vision model keeps images | `InputModalities` text+image | image part still on the wire |
+| LPI03 | `InputModalitiesFunc` is read per request | a text-only first run, then vision | first request stripped, second kept |
 
 ## Fuzz and property tests
 

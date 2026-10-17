@@ -71,7 +71,7 @@ func (r *run) turnRequest() (message.Message, provider.Usage, error) {
 			req = next
 		}
 	}
-	return r.callProvider(req)
+	return r.callProvider(r.gateImages(req))
 }
 
 // callProvider performs the request and retries a retryable provider error,

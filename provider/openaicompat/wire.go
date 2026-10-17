@@ -11,11 +11,60 @@ import (
 // assistants that answer with only tool calls expect.
 type wireMessage struct {
 	Role       message.Role       `json:"role"`
-	Content    string             `json:"content,omitempty"`
+	Content    any                `json:"content,omitempty"`
 	Reasoning  string             `json:"reasoning,omitempty"`
 	ToolCalls  []message.ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string             `json:"tool_call_id,omitempty"`
 	Name       string             `json:"name,omitempty"`
+}
+
+// contentPart is one entry of the array form of a message's content, used only
+// when the message carries image parts. A text-only message keeps the plain
+// string form, so its bytes are unchanged.
+type contentPart struct {
+	Type     string        `json:"type"`
+	Text     string        `json:"text,omitempty"`
+	ImageURL *contentImage `json:"image_url,omitempty"`
+}
+
+// contentImage is the image_url object of an image content part.
+type contentImage struct {
+	URL string `json:"url"`
+}
+
+// wireContent renders a message's content as a plain string, or as a content
+// array when it carries image parts. A message with neither returns nil so the
+// field stays omitted, which is the shape some providers expect for an
+// assistant message that only requests tools. Text precedes the images, an
+// unknown part kind is skipped, and a part with no bytes or URL is dropped.
+func wireContent(m message.Message) any {
+	if len(m.Parts) == 0 {
+		if m.Content == "" {
+			return nil
+		}
+		return m.Content
+	}
+	parts := make([]contentPart, 0, len(m.Parts)+1)
+	if m.Content != "" {
+		parts = append(parts, contentPart{Type: "text", Text: m.Content})
+	}
+	for _, p := range m.Parts {
+		url := p.URL
+		if url == "" && p.Data != "" {
+			url = "data:" + p.MimeType + ";base64," + p.Data
+		}
+		if p.Type != message.PartImage || url == "" {
+			continue
+		}
+		parts = append(parts, contentPart{Type: "image_url", ImageURL: &contentImage{URL: url}})
+	}
+	if len(parts) == 0 {
+		if m.Content == "" {
+			return nil
+		}
+		return m.Content
+	}
+	return parts
 }
 
 // chatRequest is the request body. MaxTokens is a pointer so "unset" and "zero"

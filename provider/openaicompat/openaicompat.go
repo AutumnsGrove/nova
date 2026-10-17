@@ -135,7 +135,7 @@ func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 	for i, m := range req.Messages {
 		wm := wireMessage{
 			Role:       m.Role,
-			Content:    m.Content,
+			Content:    wireContent(m),
 			ToolCalls:  m.ToolCalls,
 			ToolCallID: m.ToolCallID,
 			Name:       m.Name,

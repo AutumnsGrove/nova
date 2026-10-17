@@ -1330,3 +1330,66 @@ func funcDelta(name, args string) struct {
 		Arguments string `json:"arguments"`
 	}{Name: name, Arguments: args}
 }
+
+func TestStream_OAI63_ImageMessageContentArray(t *testing.T) {
+	p, srv := served(t, Config{}, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	req := provider.Request{Model: "m", Messages: []message.Message{
+		message.UserParts("what is this?", message.ImagePart("image/png", "aGk=")),
+	}}
+	if _, err := p.Stream(context.Background(), req, nil); err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	msgs, _ := bodyOf(t, srv)["messages"].([]any)
+	if len(msgs) != 1 {
+		t.Fatalf("messages = %v, want 1", msgs)
+	}
+	content, ok := msgs[0].(map[string]any)["content"].([]any)
+	if !ok {
+		t.Fatalf("content = %T, want an array", msgs[0].(map[string]any)["content"])
+	}
+	if len(content) != 2 {
+		t.Fatalf("content blocks = %d, want 2: %v", len(content), content)
+	}
+	first, _ := content[0].(map[string]any)
+	if first["type"] != "text" || first["text"] != "what is this?" {
+		t.Errorf("first block = %v, want a text block", first)
+	}
+	second, _ := content[1].(map[string]any)
+	if second["type"] != "image_url" {
+		t.Errorf("second block type = %v, want image_url", second["type"])
+	}
+	img, _ := second["image_url"].(map[string]any)
+	if img["url"] != "data:image/png;base64,aGk=" {
+		t.Errorf("image url = %v, want the data URL", img["url"])
+	}
+}
+
+func TestStream_OAI64_ImageOnlyMessage(t *testing.T) {
+	p, srv := served(t, Config{}, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	req := provider.Request{Model: "m", Messages: []message.Message{
+		message.UserParts("", message.ImagePart("image/jpeg", "bm8=")),
+	}}
+	if _, err := p.Stream(context.Background(), req, nil); err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	msgs, _ := bodyOf(t, srv)["messages"].([]any)
+	content, ok := msgs[0].(map[string]any)["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("content = %v, want one image block", msgs[0].(map[string]any)["content"])
+	}
+	if content[0].(map[string]any)["type"] != "image_url" {
+		t.Errorf("block = %v, want image_url", content[0])
+	}
+}
+
+func TestStream_OAI65_TextOnlyContentStaysString(t *testing.T) {
+	p, srv := served(t, Config{}, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	if _, err := p.Stream(context.Background(), textRequest("m"), nil); err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	msgs, _ := bodyOf(t, srv)["messages"].([]any)
+	got := msgs[0].(map[string]any)["content"]
+	if got != "hi" {
+		t.Errorf("content = %T %v, want the string \"hi\"", got, got)
+	}
+}

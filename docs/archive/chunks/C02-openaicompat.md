@@ -196,6 +196,9 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 | OAI60 | unknown extra fields everywhere | | ignored |
 | OAI61 | request is not mutated | compare `req` before and after | unchanged |
 | OAI62 | `Name()` and `BaseURL()` | trailing slash on config | trimmed |
+| OAI63 | image message sends a content array | a user message with text and a PNG part | `content` is `[text, image_url]` with a `data:` URL |
+| OAI64 | image-only message sends a content array | a user message with one image and no text | `content` is one `image_url` block |
+| OAI65 | text-only content stays a string | `User("hi")` | `content` is the string `"hi"`, not an array |
 
 ## Fuzz and property tests
 

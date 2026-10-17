@@ -145,9 +145,11 @@ child's tool activity as progress lines inside the same panel. Under `mono` or
 | `home` / `end` | jump to the top / bottom of the transcript |
 | `tab` | complete |
 
-Mouse wheel and trackpad scroll the transcript. Scrolling up stops auto-follow and
-keeps the viewport anchored while new content streams in; scrolling back to the
-bottom resumes it.
+Mouse wheel and trackpad scroll the transcript. Over a multi-line editor that
+overflows its rows, the wheel scrolls the editor window instead, without moving
+the cursor; the next edit snaps the window back to the cursor. Scrolling the
+transcript up stops auto-follow and keeps the viewport anchored while new content
+streams in; scrolling back to the bottom resumes it.
 
 ### Slash commands
 

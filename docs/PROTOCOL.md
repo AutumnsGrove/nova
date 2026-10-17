@@ -99,7 +99,7 @@ thinking_end     { run, turn, ms, tokens }          // tokens may be null
 tool_call        { run, turn, call: {id, name, arguments} }
 tool_start       { run, call_id }
 tool_update      { run, call_id, text }             // streamed progress
-tool_end         { run, call_id, result: {content, is_error, truncated, details?} }
+tool_end         { run, call_id, result: {content, is_error, truncated, details?, parts?} }
 permission       { run, call_id, decision, reason }
 message_end      { run, turn, message, usage }
 turn_end         { run, turn, usage }

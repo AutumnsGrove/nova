@@ -322,6 +322,8 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | TRN15 | queued messages marked then normal | steer then consumed | `queued` then normal |
 | TRN16 | replay a recorded stream | fixtures in `testdata/events/*.jsonl` | final transcript equals the golden |
 | TRN17 | `SetWidth` | | items not recreated; renders at the new width |
+| TRN18 | a tool result's image renders a labelled fallback | a `tool_end` with an image part, no capabilities | the tool card contains `[Image: …]` |
+| TRN19 | a tool result's image renders a Kitty sequence | the same, with Kitty capabilities | the card contains `\x1b_G` |
 | MDK01 | paragraph and heading | | rendered through the renderer |
 | MDK02 | blocks split at blank lines | | one render per closed block |
 | MDK03 | open code fence | no closing fence | the rest is one open block |

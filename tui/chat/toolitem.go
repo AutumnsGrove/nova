@@ -5,7 +5,9 @@ package chat
 import (
 	"time"
 
+	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/image"
 	"github.com/AutumnsGrove/nova/tui/render"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
@@ -20,6 +22,8 @@ type toolItem struct {
 	display  *Display
 	call     render.Call
 	expanded bool
+	caps     image.Capabilities
+	parts    []message.ContentPart
 }
 
 func newToolItem(st styles.Styles, registry *render.Registry, display *Display, id, callID string, call *proto.ToolCall, now time.Time) *toolItem {
@@ -59,7 +63,11 @@ func (ti *toolItem) Render(width int) string {
 	if body != "" {
 		card = header + "\n" + body
 	}
-	return spaced(Panel(card, ti.call, ti.st, width))
+	out := spaced(Panel(card, ti.call, ti.st, width))
+	if imgs := renderImageParts(ti.st, ti.caps, ti.parts, width); imgs != "" {
+		out += imgs + "\n"
+	}
+	return out
 }
 
 // setNow updates the running clock.

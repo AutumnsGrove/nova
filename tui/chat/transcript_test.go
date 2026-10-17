@@ -4,6 +4,7 @@ package chat
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"math/rand"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/image"
 	"github.com/AutumnsGrove/nova/tui/list"
 	"github.com/AutumnsGrove/nova/tui/styles"
 	"github.com/charmbracelet/colorprofile"
@@ -552,5 +554,35 @@ func TestTranscript_CRD13_RestoredMatchesLive(t *testing.T) {
 	}
 	if renderItem(liveTool, 80) != renderItem(restoredTool, 80) {
 		t.Fatalf("live %q != restored %q", renderItem(liveTool, 80), renderItem(restoredTool, 80))
+	}
+}
+
+func toolWithImage(tr *Transcript, caps image.Capabilities) *toolItem {
+	if caps.Images != "" {
+		tr.SetCapabilities(caps)
+	}
+	tr.Apply(proto.Event{Type: proto.EventToolCall, Call: &proto.ToolCall{ID: "c1", Name: "read"}})
+	part := message.ImagePart("image/png", base64.StdEncoding.EncodeToString([]byte("png")))
+	tr.Apply(proto.Event{Type: proto.EventToolEnd, CallID: "c1", Result: &proto.ToolResult{Content: "ok", Parts: []message.ContentPart{part}}})
+	return findTool(tr, "c1")
+}
+
+func TestTranscript_TRN18_ImageFallback(t *testing.T) {
+	ti := toolWithImage(newTestTranscript(80), image.Capabilities{})
+	if ti == nil {
+		t.Fatal("tool item missing")
+	}
+	if got := renderItem(ti, 80); !strings.Contains(got, "[Image:") {
+		t.Fatalf("render = %q, want a labelled fallback line", got)
+	}
+}
+
+func TestTranscript_TRN19_ImageKitty(t *testing.T) {
+	ti := toolWithImage(newTestTranscript(80), image.Capabilities{Images: image.Kitty})
+	if ti == nil {
+		t.Fatal("tool item missing")
+	}
+	if got := ti.Render(80); !strings.Contains(got, "\x1b_G") {
+		t.Fatalf("render = %q, want a Kitty sequence", got)
 	}
 }

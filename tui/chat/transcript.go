@@ -13,6 +13,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/image"
 	"github.com/AutumnsGrove/nova/tui/list"
 	"github.com/AutumnsGrove/nova/tui/render"
 	"github.com/AutumnsGrove/nova/tui/styles"
@@ -25,6 +26,7 @@ type Transcript struct {
 	r        Renderer
 	registry *render.Registry
 	display  Display
+	caps     image.Capabilities
 	width    int
 	now      time.Time
 	items    []list.Item
@@ -60,6 +62,10 @@ func (t *Transcript) SetWidth(width int) { t.width = width }
 
 // Display returns the current display preferences.
 func (t *Transcript) Display() Display { return t.display }
+
+// SetCapabilities records what the terminal can draw inline. The zero value
+// means no graphics protocol, so an image renders as a labelled line.
+func (t *Transcript) SetCapabilities(caps image.Capabilities) { t.caps = caps }
 
 // SetDisplay replaces the display preferences and applies them to every item:
 // it is the bulk expand/collapse behind ctrl+o and /display. A later click can
@@ -218,6 +224,7 @@ func (t *Transcript) Apply(e proto.Event) []string {
 			id = t.nextID("tool")
 		}
 		ti := newToolItem(t.st, t.registry, &t.display, id, e.Call.ID, e.Call, t.now)
+		ti.caps = t.caps
 		if e.Call.ID != "" {
 			t.tools[e.Call.ID] = ti
 		}
@@ -245,6 +252,7 @@ func (t *Transcript) Apply(e proto.Event) []string {
 				ti.call.IsError = e.Result.IsError
 				ti.call.Truncated = e.Result.Truncated
 				ti.call.Details = e.Result.Details
+				ti.parts = e.Result.Parts
 			}
 			ti.touch()
 			return []string{ti.id}

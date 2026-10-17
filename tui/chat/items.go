@@ -3,12 +3,16 @@
 package chat
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/media"
+	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/image"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -176,4 +180,29 @@ func shortTokens(n int) string {
 	default:
 		return fmt.Sprintf("%d", n)
 	}
+}
+
+// renderImageParts draws image parts inline when the terminal supports a
+// graphics protocol, and a labelled line where it does not. It returns "" when
+// there is nothing to draw.
+func renderImageParts(st styles.Styles, caps image.Capabilities, parts []message.ContentPart, width int) string {
+	var blocks []string
+	for _, p := range parts {
+		if p.Type != message.PartImage {
+			continue
+		}
+		if lines, ok := image.Render(p, max(min(width-2, 60), 1), caps); ok {
+			blocks = append(blocks, strings.Join(lines, "\n"))
+			continue
+		}
+		w, h := 0, 0
+		if data, err := base64.StdEncoding.DecodeString(p.Data); err == nil {
+			w, h, _ = media.Dimensions(data)
+		}
+		blocks = append(blocks, st.Muted.Render(image.Fallback(p.Name, p.MimeType, w, h)))
+	}
+	if len(blocks) == 0 {
+		return ""
+	}
+	return strings.Join(blocks, "\n")
 }

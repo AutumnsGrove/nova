@@ -27,6 +27,7 @@ import (
 	"github.com/AutumnsGrove/nova/tui/chat"
 	"github.com/AutumnsGrove/nova/tui/client"
 	"github.com/AutumnsGrove/nova/tui/dialog"
+	"github.com/AutumnsGrove/nova/tui/image"
 	"github.com/AutumnsGrove/nova/tui/layout"
 	"github.com/AutumnsGrove/nova/tui/list"
 	"github.com/AutumnsGrove/nova/tui/render"
@@ -195,6 +196,7 @@ func New(opt Options) *Model {
 	}
 	home, _ := os.UserHomeDir()
 	transcript := chat.NewTranscript(opt.Width, opt.Renderer, st)
+	transcript.SetCapabilities(image.Detect())
 	if opt.Display != (chat.Display{}) {
 		transcript.SetDisplay(opt.Display)
 	}

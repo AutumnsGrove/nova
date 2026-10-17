@@ -72,6 +72,10 @@ type ToolResult struct {
 	IsError   bool            `json:"is_error"`
 	Truncated bool            `json:"truncated,omitempty"`
 	Details   json.RawMessage `json:"details,omitempty"`
+	// Parts are images the tool showed the model, for a client to render
+	// inline. They are the same parts the loop puts on the synthetic user
+	// message; a client draws them once, in the tool card.
+	Parts []message.ContentPart `json:"parts,omitempty"`
 }
 
 // Event is every event in one struct. Most fields are optional; a pointer is

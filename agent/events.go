@@ -40,7 +40,7 @@ func (r *run) emitToolCall(c message.ToolCall) {
 
 // emitToolEnd reports a call's final result.
 func (r *run) emitToolEnd(call message.ToolCall, res tool.Result) {
-	r.emit(proto.Event{Type: proto.EventToolEnd, CallID: call.ID, Result: &proto.ToolResult{Content: res.Content, IsError: res.IsError, Truncated: res.Truncated, Details: res.Details}})
+	r.emit(proto.Event{Type: proto.EventToolEnd, CallID: call.ID, Result: &proto.ToolResult{Content: res.Content, IsError: res.IsError, Truncated: res.Truncated, Details: res.Details, Parts: res.Parts}})
 }
 
 // extensionError reports a hook that panicked or exceeded its deadline.

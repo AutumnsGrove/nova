@@ -421,6 +421,7 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | PST01 | a pasted clipboard image becomes an attachment | ctrl+v with a fake clipboard image | a chip line, then a prompt carrying the base64 attachment; cleared after send |
 | PST02 | a clipboard with no image notices | the fake returns `ErrNoImage` | a notice, no attachment |
 | PST03 | an image path in the text auto-attaches | `describe shot.png` with the file present | the token becomes the base name and one attachment is sent |
+| PST04 | an `@` path in the text auto-attaches | `look at @shot.png` with the file present | the `@` is stripped, the token becomes the base name, and one attachment is sent |
 | GLD01 | empty session at 40, 80, 120 | golden | matches |
 | GLD02 | a text turn at three widths | golden | matches |
 | GLD03 | a tool turn at three widths | golden | matches |

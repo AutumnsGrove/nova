@@ -1155,3 +1155,27 @@ func TestUI_PST03_PathAutoAttaches(t *testing.T) {
 		t.Fatalf("attachment = %+v", f.sends[0].Attachments[0])
 	}
 }
+
+func TestUI_PST04_AtPathAttaches(t *testing.T) {
+	m, f, _ := newModel(t)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(m.cwd, "shot.png"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Path completion inserts an @ before the path, so submit must strip it
+	// before resolving the file.
+	m.setEditorText("look at @shot.png")
+	execAll(update(m, enterKey))
+	if len(f.sends) != 1 || len(f.sends[0].Attachments) != 1 {
+		t.Fatalf("sends = %+v", f.sends)
+	}
+	if f.sends[0].Text != "look at shot.png" {
+		t.Fatalf("text = %q, want the @ path replaced by the base name", f.sends[0].Text)
+	}
+	if f.sends[0].Attachments[0].Name != "shot.png" {
+		t.Fatalf("attachment = %+v", f.sends[0].Attachments[0])
+	}
+}

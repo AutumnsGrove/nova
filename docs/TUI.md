@@ -234,14 +234,14 @@ blue to orange, over a field of twinkling stars. It is specified in
 [`archive/chunks/C21-splash-sequence.md`](archive/chunks/C21-splash-sequence.md); the design reference
 is [`mockups/splash/`](mockups/splash/README.md).
 
-The tier is the largest of Full (96 by 21), Compact (64 by 13), Thin (46 by 10), and
-Lockup (40 by 5) that fits the transcript area. A terminal below 256 colours, the
-`mono` theme, and an area under 40 columns fall back to the static Plain tier: `nova`
-and `press any key`, centred. After the 8 second sequence nothing fades; the word keeps
-shimmering, the stars keep twinkling, and the companion keeps orbiting until the first
-keypress or event dismisses the splash. The UI drives it with a 66 ms tick that shares
-the thinking block's tick chain, so only one timer is ever pending. The header uses the
-**minimal mark** as a one-line glyph, `✦`.
+The tier is the largest of Full (96 by 21), Compact (64 by 13), Thin (46 by 10), and Lockup (40 by 5) that fits
+the five-row banner at the top of the screen. A terminal below 256 colours, the `mono` theme, and a banner
+narrower than 40 columns fall back to the static Plain tier: `nova` and `press any key`, centred. The banner
+plays for the full 8 second sequence regardless of typing or transcript events, then collapses to the one-line
+`✦ nova` header; `/display splash off` removes it immediately. The header, transcript, and editor stay visible
+and usable beneath it the whole time, and on a short screen the banner is dropped before the header, transcript,
+or editor. The UI drives it with a 66 ms tick that shares the thinking block's tick chain, so only one timer is
+ever pending. The header uses the **minimal mark** as a one-line glyph, `✦`.
 
 The README banner is the same `splash.Cells` render rasterised to an animated GIF, so
 it cannot drift from the terminal. Regenerate it with `go run ./tui/splash/splashgif`

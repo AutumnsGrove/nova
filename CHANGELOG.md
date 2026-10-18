@@ -34,6 +34,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Images. Attach one to a prompt with `ctrl+v` (reads the OS clipboard), by naming its path in the
+  prompt, or by picking it with `@` completion; it rides `prompt`, `steer`, and `follow_up` to the model.
+  The TUI shows a pending chip above the editor and the transcript renders a received image inline on a
+  Kitty terminal (off where there is no graphics protocol, and off by default in `mono`/`NO_COLOR`).
+  `display.show_images` and `display.image_width_cells` tune it (#20).
+- A model that cannot take images is handled rather than crashed into: a new prompt carrying one is refused
+  with a `bad_request` naming the model, and an image already in the session (or from a tool) is replaced
+  with a one-line omission note so the run continues. `list_models` and the state report the model's input
+  modalities (#20).
+- Tools can show the model an image: `read` on an image path returns a text note plus the image, a tool can
+  return `Result.Parts` (and an extension a `tool_result` `parts` field), and the image is normalized and
+  bounded the same way a pasted one is (#20).
+- `serve` takes an image as raw bytes at `POST /v1/attachments` and answers with an id a later `prompt` can
+  reference, so a browser or remote client can attach one without inlining base64 (#20).
 - `/settings` (alias `/config`) opens a display-settings dialog: `up`/`down` choose a row, the arrows
   or typing edit it, `enter` saves, `esc` cancels. Changes apply live and are written to the user config.
   The first two settings are the thinking-trace height (`display.thinking_lines`, default 8) and the tool

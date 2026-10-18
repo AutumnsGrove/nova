@@ -217,9 +217,10 @@ type Attachment struct {
 - **Bytes are the portable form.** `print`, `json`, `rpc`, and a remote `serve`
   client send `Data`. A remote client must never be able to name a server path,
   so `serve` ignores `Path`.
-- **Path is a local convenience.** The in-process TUI may send a `Path` for a file
-  the user just pasted; the server reads it before the run. This is the only
-  place `Path` is honoured, and only when the transport is not remote.
+- **Path is reserved, and refused.** Every transport, `serve` included, refuses
+  an attachment that carries `Path` and says to send `Data`; the in-process TUI
+  reads the file itself and sends bytes. A path would otherwise let a caller name
+  a file on the server, which is not a capability a prompt should have.
 - Validate count, mime type, and size at the command boundary, before a run
   starts, and fail `bad_request` with a specific message.
 - `get_messages` returns messages with their parts, so a client can replay and

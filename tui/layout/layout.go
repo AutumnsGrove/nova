@@ -11,6 +11,7 @@ type Rect struct{ X, Y, W, H int }
 // Inputs describes the screen and the desired region sizes.
 type Inputs struct {
 	Width, Height int
+	BannerLines   int // desired height of the splash banner, 0 to MaxBannerLines
 	EditorLines   int // desired height of the editor, 1 to MaxEditorLines
 	AboveLines    int // widgets above the editor
 	BelowLines    int
@@ -19,7 +20,7 @@ type Inputs struct {
 
 // Regions is the computed layout. A region with zero width or height is not
 // shown.
-type Regions struct{ Header, Main, Above, Editor, Below, Footer, Sidebar Rect }
+type Regions struct{ Banner, Header, Main, Above, Editor, Below, Footer, Sidebar Rect }
 
 // Compute returns the layout for the given inputs. It never returns a
 // negative size.
@@ -46,16 +47,26 @@ func Compute(in Inputs) Regions {
 		footerH = 0
 	}
 
+	// The banner is the top region while the splash plays. It is dropped before
+	// the header when it would leave the editor no room at all.
+	bannerH := 0
+	if !short && in.BannerLines > 0 {
+		bannerH = clamp(in.BannerLines, 1, MaxBannerLines)
+	}
+	if body := height - headerH - footerH; bannerH > 0 && body < mainFloor+bannerH+1 {
+		bannerH = 0
+	}
+
 	// remaining is the space left for main, widgets, and the editor after the
-	// header and footer are placed.
-	remaining := height - headerH - footerH
+	// banner, header, and footer are placed.
+	remaining := height - bannerH - headerH - footerH
 	if remaining < 0 {
 		remaining = 0
 	}
 
 	// mainMin is the main area's floor: three lines where the screen allows,
 	// less only when the screen is too short for even that.
-	mainMin := 3
+	mainMin := mainFloor
 	if remaining < mainMin {
 		mainMin = remaining
 	}
@@ -91,15 +102,16 @@ func Compute(in Inputs) Regions {
 	sidebar := Rect{}
 	if in.WantSidebar && width >= sidebarMin && !short {
 		mainW = width - sidebarWidth
-		sidebar = Rect{X: mainW, Y: headerH, W: sidebarWidth, H: mainH}
+		sidebar = Rect{X: mainW, Y: bannerH + headerH, W: sidebarWidth, H: mainH}
 	}
 
 	return Regions{
-		Header:  Rect{X: 0, Y: 0, W: width, H: headerH},
-		Main:    Rect{X: 0, Y: headerH, W: mainW, H: mainH},
-		Above:   Rect{X: 0, Y: headerH + mainH, W: width, H: aboveH},
-		Editor:  Rect{X: 0, Y: headerH + mainH + aboveH, W: width, H: editorH},
-		Below:   Rect{X: 0, Y: headerH + mainH + aboveH + editorH, W: width, H: belowH},
+		Banner:  Rect{X: 0, Y: 0, W: width, H: bannerH},
+		Header:  Rect{X: 0, Y: bannerH, W: width, H: headerH},
+		Main:    Rect{X: 0, Y: bannerH + headerH, W: mainW, H: mainH},
+		Above:   Rect{X: 0, Y: bannerH + headerH + mainH, W: width, H: aboveH},
+		Editor:  Rect{X: 0, Y: bannerH + headerH + mainH + aboveH, W: width, H: editorH},
+		Below:   Rect{X: 0, Y: bannerH + headerH + mainH + aboveH + editorH, W: width, H: belowH},
 		Footer:  Rect{X: 0, Y: height - footerH, W: width, H: footerH},
 		Sidebar: sidebar,
 	}
@@ -113,8 +125,12 @@ const (
 	// MaxEditorLines is the tallest the editor may grow. Above it the editor
 	// keeps this height and scrolls with the cursor.
 	MaxEditorLines = 10
+	// MaxBannerLines is the tallest the splash banner may be; the splash's
+	// Lockup tier is five rows.
+	MaxBannerLines = 5
 
-	shortScreen  = 8  // under this, widgets, header, and sidebar are dropped
+	mainFloor    = 3  // the main area never drops below this where the screen allows
+	shortScreen  = 8  // under this, widgets, banner, header, and sidebar are dropped
 	headerMin    = 12 // the header appears only at or above this height
 	sidebarMin   = 120
 	sidebarWidth = 32

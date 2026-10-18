@@ -31,6 +31,7 @@ func TestLayout_LYT02_NoOverlapAllInside(t *testing.T) {
 		in := Inputs{
 			Width:       rng.Intn(300) + 1,
 			Height:      rng.Intn(300) + 1,
+			BannerLines: rng.Intn(10) - 2,
 			EditorLines: rng.Intn(25) - 2,
 			AboveLines:  rng.Intn(20) - 2,
 			BelowLines:  rng.Intn(20) - 2,
@@ -150,6 +151,38 @@ func TestLayout_LYT10_Deterministic(t *testing.T) {
 	}
 }
 
+func TestLayout_LYT11_BannerDroppedFirst(t *testing.T) {
+	// Tall enough: the banner sits above the header, and both fit.
+	r := Compute(Inputs{Width: 80, Height: 24, BannerLines: 5, EditorLines: 1})
+	if r.Banner.H != 5 || r.Header.H != 1 {
+		t.Fatalf("banner = %d header = %d, want 5 and 1", r.Banner.H, r.Header.H)
+	}
+	if r.Banner.Y != 0 || r.Header.Y != r.Banner.H || r.Main.Y != r.Banner.H+r.Header.H {
+		t.Fatalf("banner is not the top region: %+v", r)
+	}
+	checkTiles(t, Inputs{Width: 80, Height: 24, BannerLines: 5, EditorLines: 1})
+
+	// A request larger than the cap is clamped, never taller.
+	if big := Compute(Inputs{Width: 80, Height: 40, BannerLines: 99, EditorLines: 1}); big.Banner.H != MaxBannerLines {
+		t.Fatalf("banner = %d, want the %d cap", big.Banner.H, MaxBannerLines)
+	}
+
+	// Sixteen lines: the banner fits above a header and a usable editor.
+	mid := Compute(Inputs{Width: 80, Height: 16, BannerLines: 5, EditorLines: 1})
+	if mid.Banner.H != 5 || mid.Editor.H < 1 || mid.Main.H < mainFloor {
+		t.Fatalf("height 16 should keep the banner and a usable editor: %+v", mid)
+	}
+
+	// Nine lines: the banner is sacrificed so the editor keeps a row.
+	short := Compute(Inputs{Width: 80, Height: 9, BannerLines: 5, EditorLines: 1})
+	if short.Banner.H != 0 {
+		t.Fatalf("the banner should be dropped at height 9 before the editor: %+v", short)
+	}
+	if short.Editor.H < 1 {
+		t.Fatalf("the editor lost its row at height 9: %+v", short)
+	}
+}
+
 // TestProperty_LYT_Tiles asserts that any layout tiles the screen without
 // overlap.
 func TestProperty_LYT_Tiles(t *testing.T) {
@@ -158,6 +191,7 @@ func TestProperty_LYT_Tiles(t *testing.T) {
 		checkTiles(t, Inputs{
 			Width:       rng.Intn(400),
 			Height:      rng.Intn(400),
+			BannerLines: rng.Intn(10) - 3,
 			EditorLines: rng.Intn(30) - 3,
 			AboveLines:  rng.Intn(30) - 3,
 			BelowLines:  rng.Intn(30) - 3,
@@ -182,7 +216,7 @@ func checkTiles(t *testing.T, in Inputs) {
 		name string
 		rect Rect
 	}{
-		{"header", r.Header}, {"main", r.Main}, {"above", r.Above},
+		{"banner", r.Banner}, {"header", r.Header}, {"main", r.Main}, {"above", r.Above},
 		{"editor", r.Editor}, {"below", r.Below}, {"footer", r.Footer},
 		{"sidebar", r.Sidebar},
 	}
@@ -201,8 +235,8 @@ func checkTiles(t *testing.T, in Inputs) {
 			}
 		}
 	}
-	stack := []Rect{r.Header, r.Main, r.Above, r.Editor, r.Below, r.Footer}
-	if sum := r.Header.H + r.Main.H + r.Above.H + r.Editor.H + r.Below.H + r.Footer.H; sum != h {
+	stack := []Rect{r.Banner, r.Header, r.Main, r.Above, r.Editor, r.Below, r.Footer}
+	if sum := r.Banner.H + r.Header.H + r.Main.H + r.Above.H + r.Editor.H + r.Below.H + r.Footer.H; sum != h {
 		t.Fatalf("%v: vertical regions sum to %d, want %d", in, sum, h)
 	}
 	y := 0

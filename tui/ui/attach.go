@@ -99,6 +99,9 @@ func (m *Model) attachPaths(text string) string {
 	changed := false
 	for i, f := range fields {
 		path := strings.Trim(f, `"'`)
+		// Path completion inserts an @ before the path; the @ is a mention
+		// marker, not part of the file name.
+		path = strings.TrimPrefix(path, "@")
 		if path == "" || strings.HasPrefix(path, "-") {
 			continue
 		}

@@ -157,8 +157,11 @@ func TestUI_SPL14_ResizeRerenders(t *testing.T) {
 	}
 	update(m, tea.WindowSizeMsg{Width: 30, Height: 18})
 	small := m.render()
-	if !strings.Contains(small, "press any key") {
-		t.Fatal("small splash has no plain prompt")
+	if strings.Contains(small, "press any key") {
+		t.Fatal("the small splash still draws a dismissal prompt")
+	}
+	if !strings.Contains(small, "nova") {
+		t.Fatal("small splash has no plain label")
 	}
 }
 

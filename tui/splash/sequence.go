@@ -214,7 +214,8 @@ func drawSpikes(c *canvas, g geom, offX, offY int, f float64) {
 	}
 }
 
-// drawTagline writes the caption under the word, fading in mid-sequence.
+// drawTagline writes the caption under the word, fading in mid-sequence. There
+// is no dismissal prompt: a key no longer dismisses the splash.
 func drawTagline(c *canvas, g geom, offX, offY int, t, u float64, version string) {
 	fade := smoothstep(0.42, 0.56, u)
 	if fade <= 0 {
@@ -226,7 +227,6 @@ func drawTagline(c *canvas, g geom, offX, offY int, t, u float64, version string
 	if v := sanitize(version); v != "" {
 		drawText(c, x+len([]rune("terminal coding agent"))+2, row, v, "ink", 0.35*fade)
 	}
-	drawText(c, x, row+1, "press any key", "spark", (0.4+0.2*math.Sin(t*2.4))*fade)
 }
 
 // drawText writes a run of glyphs in one role.
@@ -236,14 +236,13 @@ func drawText(c *canvas, x, y int, s, name string, opacity float64) {
 	}
 }
 
-// drawThin draws the thin word, its shadow, stars, and a centred prompt.
+// drawThin draws the thin word, its shadow, and stars.
 func drawThin(c *canvas, width, height int, at time.Duration) {
 	t := at.Seconds()
 	drawStars(c, t)
 	offX, offY := (width-thinW)/2, (height-thinH)/2
 	g := geom{word: thinWord, wordX: (thinW - thinWord.w) / 2, wordY: 2}
 	drawWord(c, g, offX, offY, t, 1, 12, 4, false)
-	drawText(c, offX+(thinW-13)/2, offY+8, "press any key", "spark", 0.45)
 }
 
 // drawLockup draws one centred line: three shimmering slashes and the name.

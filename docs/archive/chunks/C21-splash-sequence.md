@@ -106,8 +106,7 @@ func Animated(t Tier) bool
    by 5. There is no extra margin; the footer and header are outside the area. Below 40 columns or 5 rows, and
    at 20 columns by 3 rows or more, the Plain tier is used. Under 20 columns or 3 rows `ok` is false.
 2. The Plain tier is also used at any size when the colour profile is below `ANSI256` or the theme is `mono`.
-   It prints `nova` and, on the next line, `press any key`, centred, with no escape codes and no motion. When a
-   version is set, `nova <version>`.
+   It prints `nova` (or `nova <version>` when a version is set), centred, with no escape codes and no motion.
 3. A tier's scene is centred in the area (integer division, extra space on the right and bottom). The star
    field fills the whole area, not just the scene.
 
@@ -166,7 +165,7 @@ func Animated(t Tier) bool
 19. At and after `Sequence` the scene is held, not faded: the word is complete and keeps shimmering (behaviour
     10 continues with `t` growing); the star field keeps twinkling; the companion keeps orbiting; the star holds
     at `F = 0.3` (a `◆`, spikes at 30 percent of peak length); the shell holds at radius `Rmax` at opacity
-    0.3; the tagline and `press any key` are shown. Nothing is removed. The held scene is the same for any
+    0.3; the tagline (and the version, if set) is shown. Nothing is removed. The held scene is the same for any
     `at >= Sequence`, apart from the time-driven terms.
 
 **Stars, tagline, and the thinner tiers**
@@ -176,9 +175,9 @@ func Animated(t Tier) bool
     with a per-star `speed` in 0.6 to 2.2 and `phase` in 0 to 2π, both from the hash. Stars are drawn first.
     Because they key on absolute cells, growing the area adds stars and never moves existing ones.
 21. **Tagline.** `terminal coding agent` in `ink` at opacity 0.55 on the tier's tagline row, left aligned with
-    the word, with the version appended after two spaces in `ink` at 0.35 when it is set. `press any key` on the
-    next row in `spark` at opacity `0.4 + 0.2*sin(2.4 t)`. Both fade in between `0.42` and `0.56` of `Sequence`.
-22. **Thin** draws the thin word, the shadow, and the stars, with `press any key` centred under the word. The
+    the word, with the version appended after two spaces in `ink` at 0.35 when it is set. Both fade in between
+    `0.42` and `0.56` of `Sequence`. There is no dismissal prompt: a key no longer dismisses the splash.
+22. **Thin** draws the thin word, the shadow, and the stars. The
     shimmer uses speed 12 and a deviation of 4. The word is fully drawn and shimmering from the first frame
     (no assembly), because there is no outburst to overlap.
 23. **Lockup** draws `///` (three `╱`, shimmered) and `nova` on one row, centred, with a few stars.
@@ -264,13 +263,13 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 | SQN12 | shell expands | Full, `at` 0.25 to 0.62 of `Sequence` in steps | the farthest shell glyph from the star never moves closer |
 | SQN13 | shell cools | Full, `at` 0.28 and 0.60 of `Sequence` | the outer-band colour is bluer at the first time and warmer (red above blue) at the second |
 | SQN14 | star glyph by flare | Full, `at` 0.22 and 0.90 of `Sequence` | `✦` at the first, `◆` at the second |
-| SQN15 | held state keeps everything | Full, `at` = `Sequence`, 20 s, 10 min | wordmark complete, shadow, tagline, `press any key`, star, spikes, companion, shell glyphs all present |
+| SQN15 | held state keeps everything | Full, `at` = `Sequence`, 20 s, 10 min | wordmark complete, shadow, tagline, star, spikes, companion, shell glyphs all present |
 | SQN16 | held shell stays faint | Full, `at` 20 s | shell glyphs present at radius `Rmax`; their opacity is the 0.3 floor, not zero |
 | SQN17 | the name keeps shimmering | Full, held, `at` 20 s and 20.4 s | wordmark glyphs and positions identical; at least one wordmark cell's colour differs |
 | SQN18 | stars twinkle in place | Full, held, 0.5 s apart | star glyph positions identical; at least one star colour differs |
 | SQN19 | companion orbits | Full, held, 0.5 s apart | the `●` moves and stays within 4 columns and 2 rows of the star |
 | SQN20 | slash glyph and shadow | Full, held | every face cell is `╱`; shadow cells are `╱` in the `warm` role, only where no face cell sits at (+1, +1) |
-| SQN21 | tagline and version | Full, held, version `v1.2.3` | `terminal coding agent  v1.2.3` and `press any key` under the word, left aligned with it |
+| SQN21 | tagline and version | Full, held, version `v1.2.3` | `terminal coding agent  v1.2.3` under the word, left aligned with it |
 | SQN22 | tagline fades in | Full, `at` 0.30 and 0.60 of `Sequence` | absent at the first, present at the second |
 | SQN23 | colours come from the theme | Full with a theme whose `spark` differs | output differs; a scan finds no literal colour in `tui/splash` source |
 | SQN24 | profile degradation | Full, profile `ANSI256` | every colour escape is a 256-colour code |
@@ -299,11 +298,12 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 | SQN47 | generator is deterministic | run it twice in memory | identical bytes |
 | SQN48 | committed GIF is current | regenerate the frames in memory, quantise them onto the committed palette, and compare to the decoded committed file | every frame matches within 16 per channel and 0.01% of pixels |
 | SQN49 | README uses the GIF | read `README.md` | the first block is an `<img>` of `assets/splash/nova-splash.gif` with `width="672"` and non-empty alt text; the file exists; the old `<picture>` of the mark is gone from the top |
-| SQN53 | the banner collapses at `Sequence` | cross `Sequence` on a tick | the banner region is 0, the header returns, and no tick is armed |
-| SQN54 | the banner is a top region | type into the editor at startup | the banner sits above the header and the transcript; the main and editor keep a usable height; the editor keeps the text |
 | SQN50 | every glyph can be drawn | collect every rune `Cells` can emit across all tiers and times | each has a shape or an entry in the embedded font |
 | SQN51 | slashes join | a vertical run of two `╱` cells | the line's end pixel in the lower cell touches the start pixel in the cell above |
 | SQN52 | the command works | call the generator's `run` with `-o` set to a temp file | exit 0 and a decodable GIF; a bad path exits non-zero with a message |
+| SQN53 | the banner collapses at `Sequence` | cross `Sequence` on a tick | the banner region is 0, the header returns, and no tick is armed |
+| SQN54 | the banner is a top region | type into the editor at startup | the banner sits above the header and the transcript; the main and editor keep a usable height; the editor keeps the text |
+| SQN55 | no tier draws a dismissal prompt | every tier at `Sequence`, plus Plain | no `press any key` anywhere |
 
 ## Fuzz and property tests
 

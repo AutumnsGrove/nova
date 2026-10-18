@@ -88,19 +88,14 @@ func build(width, height int, st styles.Styles, p colorprofile.Profile, version 
 	}
 }
 
-// plainCanvas is the static, colourless fallback: the name and a prompt,
-// centred, with no escape codes and no motion.
+// plainCanvas is the static, colourless fallback: the name, centred, with no
+// escape codes and no motion.
 func plainCanvas(width, height int, version string) *canvas {
 	c := newCanvas(width, height, styles.Styles{}, colorprofile.ASCII)
 	label := "nova"
 	if v := sanitize(version); v != "" {
 		label += " " + v
 	}
-	top := (height - 2) / 2
-	if top < 0 {
-		top = 0
-	}
-	c.writePlain((width-len([]rune(label)))/2, top, label)
-	c.writePlain((width-len("press any key"))/2, top+1, "press any key")
+	c.writePlain((width-len([]rune(label)))/2, height/2, label)
 	return c
 }

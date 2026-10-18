@@ -89,6 +89,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- The first-run screen offers every provider Nova can sign in to, not only OpenRouter. It is built from the
+  same `providerauth` registry `/login` uses, so a new user can pick OpenCode Go (device code) and sees the
+  verification URL and user code while the flow runs, or paste either provider's key (#3).
 - Assistant markdown no longer carries glamour's document padding: paragraphs are flush left instead of
   indented two cells, and blocks are separated by a single blank line instead of two. The streaming tail and
   the finished block agree, so text does not shift when a paragraph closes (#15).

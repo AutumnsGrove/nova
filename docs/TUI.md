@@ -236,7 +236,7 @@ is [`mockups/splash/`](mockups/splash/README.md).
 
 The tier is the largest of Full (96 by 21), Compact (64 by 13), Thin (46 by 10), and Lockup (40 by 5) that fits
 the five-row banner at the top of the screen. A terminal below 256 colours, the `mono` theme, and a banner
-narrower than 40 columns fall back to the static Plain tier: `nova` and `press any key`, centred. The banner
+narrower than 40 columns fall back to the static Plain tier: `nova` (and the version, when set), centred. The banner
 plays for the full 8 second sequence regardless of typing or transcript events, then collapses to the one-line
 `✦ nova` header; `/display splash off` removes it immediately. The header, transcript, and editor stay visible
 and usable beneath it the whole time, and on a short screen the banner is dropped before the header, transcript,

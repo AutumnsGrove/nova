@@ -196,7 +196,7 @@ type Display struct {
 30. Colour comes from the cell's role (`spark`, `ink`, `core`, `warm`) blended toward the background by its opacity. With a
     profile below 256 colours, or `NoColor`, the plain ASCII star is used, with no colour.
 31. Below the `Plain` size (width under 24 or height under 14), `ok` is false and nothing is drawn.
-32. Under the mark: `nova`, the version, and `press any key`. The splash is a top banner: it plays for its full
+32. Under the mark: `nova` and the version. The splash is a top banner: it plays for its full
     `Sequence` at the top of the screen while the transcript and editor stay usable beneath it, then collapses to
     the one-line header. A key press or an event does not dismiss it; `/display splash off` does. It is
     re-rendered on resize.

@@ -93,6 +93,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- The splash scene no longer writes `press any key`: a key does not dismiss the banner, so the prompt was wrong.
+  The README GIF is regenerated from the same scene, so the two still agree (#25).
 - The first-run screen offers every provider Nova can sign in to, not only OpenRouter. It is built from the
   same `providerauth` registry `/login` uses, so a new user can pick OpenCode Go (device code) and sees the
   verification URL and user code while the flow runs, or paste either provider's key (#3).

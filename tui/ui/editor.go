@@ -178,7 +178,7 @@ func (m *Model) splashAnimated() bool {
 	if !m.showSplash() {
 		return false
 	}
-	_, tier, ok := splash.Render(m.layout.Main.W, m.layout.Main.H, m.st, m.profile, m.version, 0)
+	_, tier, ok := splash.Render(m.layout.Banner.W, m.layout.Banner.H, m.st, m.profile, m.version, 0)
 	return ok && splash.Animated(tier)
 }
 

@@ -203,13 +203,16 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 **In the UI**
 
 24. The model records the time the splash is first shown (`splashStart`) and the elapsed time at every tick
-    (`splashAt`). `mainView` passes `splashAt` to `Render`.
-25. While `showSplash()` is true and the tier is `Animated`, the model keeps one timer chain running at
-    `splashTick` (66 ms, about 15 frames a second). It shares the existing `tickMsg` and `ticking` guard, so a
-    thinking block's 250 ms tick and the splash tick are never both pending.
-26. The first key press, or the first event that fills the transcript, dismisses the splash as today
-    (SPL12 to SPL14 are unchanged). After dismissal no splash tick is scheduled.
-27. `/display splash off`, a non-empty transcript, and a non-`Animated` tier schedule no splash tick.
+    (`splashAt`). `bannerView` passes `splashAt` to `Render`.
+25. The splash is a top banner, not the transcript: the layout gives it `BannerLines` rows at the top and the
+    header, transcript, and editor sit below it. While `showSplash()` is true (the splash is on and `splashAt`
+    is before `Sequence`) and the tier is `Animated`, the model keeps one timer chain running at `splashTick`
+    (66 ms, about 15 frames a second). It shares the existing `tickMsg` and `ticking` guard, so a thinking
+    block's 250 ms tick and the splash tick are never both pending.
+26. A key press or a transcript event does **not** dismiss the banner; it plays for its full `Sequence`
+    regardless (SPL12 to SPL15 describe the new contract). At `Sequence` it collapses to the one-line header
+    once and no further splash tick is armed.
+27. `/display splash off` and a non-`Animated` tier schedule no splash tick.
 28. A resize re-chooses the tier from the new size and keeps `splashAt`, so the scene does not restart.
 29. `mark_gen.go` and the `go:generate` line are removed, and `tui/splash` no longer has any generated file.
 
@@ -281,11 +284,11 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 | SQN32 | goldens | Full at 0, 0.20, 0.50 of `Sequence` and held; Compact held; Thin; Lockup; Plain | match files in `testdata` |
 | SQN33 | splash ticks while visible | UI model, empty transcript, Full tier, fake clock | a tick is scheduled at 66 ms; after each `tickMsg` another is scheduled |
 | SQN34 | elapsed time follows the clock | advance the fake clock 2 s through ticks | the view equals `Render(..., at: 2s)` |
-| SQN35 | dismissal stops the ticks | press a key, then deliver a `tickMsg` | the splash is gone and no further tick is scheduled |
-| SQN36 | first event stops the ticks | deliver a transcript-filling event | same as SQN35 |
-| SQN37 | no tick when off or not animated | `/display splash off`; a Plain tier; a non-empty transcript | no splash tick scheduled |
+| SQN35 | a key does not stop the ticks | press a key, then deliver a `tickMsg` | the banner still shows and a follow-up tick is armed |
+| SQN36 | the first event does not stop the ticks | deliver a transcript-filling event | the banner is still animating |
+| SQN37 | no tick when off, plain, or past the sequence | `/display splash off`; a Plain tier; `splashAt` at `Sequence` | no splash tick scheduled |
 | SQN38 | one timer chain | start a thinking block while the splash is gone, and the reverse | at most one tick pending at any time |
-| SQN39 | resize keeps the time | resize from Full to Compact at `at` 3 s | the tier changes; `splashAt` is unchanged |
+| SQN39 | resize keeps the time | resize 120x60 to 30x60 at `at` 3 s | the tier degrades to Plain; `splashAt` is unchanged |
 | SQN40 | generated file gone | read the package directory | no `mark_gen.go`; no `go:generate` line in `splash.go` |
 | SQN41 | `Cells` and `Render` agree | any tier and time | `Render` with its escape codes stripped equals the `Cells` runes joined by row |
 | SQN42 | GIF is valid | decode `assets/splash/nova-splash.gif` | 672 by 294; 150 frames; loop count forever |
@@ -296,6 +299,8 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 | SQN47 | generator is deterministic | run it twice in memory | identical bytes |
 | SQN48 | committed GIF is current | regenerate the frames in memory, quantise them onto the committed palette, and compare to the decoded committed file | every frame matches within 16 per channel and 0.01% of pixels |
 | SQN49 | README uses the GIF | read `README.md` | the first block is an `<img>` of `assets/splash/nova-splash.gif` with `width="672"` and non-empty alt text; the file exists; the old `<picture>` of the mark is gone from the top |
+| SQN53 | the banner collapses at `Sequence` | cross `Sequence` on a tick | the banner region is 0, the header returns, and no tick is armed |
+| SQN54 | the banner is a top region | type into the editor at startup | the banner sits above the header and the transcript; the main and editor keep a usable height; the editor keeps the text |
 | SQN50 | every glyph can be drawn | collect every rune `Cells` can emit across all tiers and times | each has a shape or an entry in the embedded font |
 | SQN51 | slashes join | a vertical run of two `╱` cells | the line's end pixel in the lower cell touches the start pixel in the cell above |
 | SQN52 | the command works | call the generator's `run` with `-o` set to a temp file | exit 0 and a decodable GIF; a bad path exits non-zero with a message |
@@ -309,12 +314,10 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 
 ## Retired rows
 
-This chunk replaces the cell-grid splash, so C16 rows **SPL01 to SPL11** no longer describe the product and are
-retired: SQN01 to SQN06, SQN30 to SQN32 and SQN40 cover their intent (levels, bounds, plain fallback,
-determinism, goldens, generated file). C16 rows **SPL12 to SPL14** (dismissal, hidden when the transcript is not
-empty, resize) stay and must still pass. The implementing agent edits `docs/chunks/C16-tui-rendering.md` to mark
-SPL01 to SPL11 `retired by C21` and removes their tests, and lowers or removes C16's `./tui/splash` budget line
-so `make ci` stays green. The human approves this by assigning C21; say so in `NEXTSTEPS.md`.
+This chunk replaced the cell-grid splash, so C16 rows **SPL01 to SPL11** are retired: SQN01 to SQN06, SQN30 to
+SQN32 and SQN40 cover their intent (levels, bounds, plain fallback, determinism, goldens, generated file). C16
+rows **SPL12 to SPL15** describe the banner contract (input does not dismiss it, it plays over content, resize,
+and the top region) and were edited when the splash became a top banner (#16).
 
 ## Out of scope
 

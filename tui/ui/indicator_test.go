@@ -61,7 +61,8 @@ func TestUI_IND03_WaitingOnlyRun(t *testing.T) {
 // IND04: run_end stops the tick chain, so no timer is left running.
 func TestUI_IND04_TicksStopOnEnd(t *testing.T) {
 	m, clk := splashModel(t, 120, 60)
-	m.splashOff = true
+	m.display.Splash = false
+	m.recompute()
 	clk.durs = nil
 	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventRunStart}})
 	if len(clk.durs) != 1 {

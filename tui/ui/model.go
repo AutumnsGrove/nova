@@ -31,6 +31,7 @@ import (
 	"github.com/AutumnsGrove/nova/tui/layout"
 	"github.com/AutumnsGrove/nova/tui/list"
 	"github.com/AutumnsGrove/nova/tui/render"
+	"github.com/AutumnsGrove/nova/tui/splash"
 	"github.com/AutumnsGrove/nova/tui/styles"
 	"github.com/AutumnsGrove/nova/tui/widget"
 )
@@ -131,7 +132,6 @@ type Model struct {
 	pending     pendingSend
 	themes      []styles.Theme
 	display     chat.Display
-	splashOff   bool
 	splashStart time.Time
 	splashAt    time.Duration
 	ticking     bool
@@ -299,9 +299,21 @@ func (m *Model) themeList() string {
 	return strings.Join(names, ", ")
 }
 
-// showSplash reports whether the splash should replace the transcript.
+// showSplash reports whether the splash banner is playing. The banner is a
+// top region: typing and transcript events do not dismiss it, it plays for its
+// full Sequence, and it then collapses to the one-line header. Only
+// /display splash off ends it early.
 func (m *Model) showSplash() bool {
-	return m.display.Splash && !m.splashOff && len(m.transcript.Items()) == 0
+	return m.display.Splash && m.splashAt < splash.Sequence
+}
+
+// bannerLines is the banner height to ask the layout for, zero when the
+// splash is off.
+func (m *Model) bannerLines() int {
+	if !m.showSplash() {
+		return 0
+	}
+	return layout.MaxBannerLines
 }
 
 // Init issues the first commands: the initial state, commands, messages, and
@@ -338,6 +350,7 @@ func (m *Model) recompute() {
 	m.layout = layout.Compute(layout.Inputs{
 		Width:       m.width,
 		Height:      m.height,
+		BannerLines: m.bannerLines(),
 		EditorLines: full,
 		AboveLines:  aboveH,
 		BelowLines:  belowH,

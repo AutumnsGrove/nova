@@ -17,6 +17,8 @@ import (
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/client"
+	"github.com/AutumnsGrove/nova/tui/layout"
+	"github.com/AutumnsGrove/nova/tui/splash"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -121,28 +123,28 @@ func TestUI_DSP05_CtrlOTogglesBoth(t *testing.T) {
 	}
 }
 
-func TestUI_SPL12_Dismissed(t *testing.T) {
+func TestUI_SPL12_NotDismissedByInput(t *testing.T) {
 	m, _, _ := newModel(t)
 	if !m.showSplash() {
-		t.Fatal("splash not shown on an empty transcript")
+		t.Fatal("splash not shown at the start")
 	}
 	update(m, runeKey('a'))
-	if m.showSplash() {
-		t.Fatal("splash not dismissed by a key")
+	if !m.showSplash() {
+		t.Fatal("a key dismissed the splash banner")
 	}
 	m2, _, _ := newModel(t)
 	update(m2, client.EventMsg{Event: proto.Event{Type: proto.EventRunStart}})
-	if m2.showSplash() {
-		t.Fatal("splash not dismissed by an event")
+	if !m2.showSplash() {
+		t.Fatal("an event dismissed the splash banner")
 	}
 }
 
-func TestUI_SPL13_NotShownWhenNotEmpty(t *testing.T) {
+func TestUI_SPL13_PlaysWithContent(t *testing.T) {
 	m, _, _ := newModel(t)
 	m.transcript.AddUser("hi", nil)
 	m.syncList()
-	if m.showSplash() {
-		t.Fatal("splash shown with a non-empty transcript")
+	if !m.showSplash() {
+		t.Fatal("the splash should keep playing with a non-empty transcript")
 	}
 }
 
@@ -157,6 +159,21 @@ func TestUI_SPL14_ResizeRerenders(t *testing.T) {
 	small := m.render()
 	if !strings.Contains(small, "press any key") {
 		t.Fatal("small splash has no plain prompt")
+	}
+}
+
+func TestUI_SPL15_BannerRegion(t *testing.T) {
+	m := colorModel(t, 120, 60)
+	m.splashAt = 4 * time.Second
+	if m.layout.Banner.H != layout.MaxBannerLines {
+		t.Fatalf("banner height = %d, want %d", m.layout.Banner.H, layout.MaxBannerLines)
+	}
+	if m.layout.Banner.Y != 0 || m.layout.Main.Y <= m.layout.Banner.H {
+		t.Fatalf("the banner is not a top region: %+v", m.layout)
+	}
+	lines := strings.Split(m.render(), "\n")
+	if strings.Contains(lines[0], "✦") {
+		t.Fatal("the header was drawn in the banner's first row")
 	}
 }
 
@@ -241,6 +258,8 @@ func TestUI_GLR04_Themes(t *testing.T) {
 		m.home = "/home/nova"
 		m.transcript.AddUser("hello", nil)
 		m.syncList()
+		m.splashAt = splash.Sequence
+		m.recompute()
 		fmt.Fprintf(&b, "--- %s ---\n%s\n", th.Name, m.render())
 	}
 	golden.RequireEqual(t, b.String())

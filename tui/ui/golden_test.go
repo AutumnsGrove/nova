@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/x/exp/golden"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/splash"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -33,11 +34,27 @@ func goldModel(t *testing.T, width, height int) *Model {
 }
 
 // goldAt renders a model at three widths and joins the views for one golden.
+// The splash has finished, so transcript goldens show the settled screen.
 func goldAt(t *testing.T, build func(m *Model)) string {
+	t.Helper()
+	return goldAtSplash(t, false, build)
+}
+
+// goldAtBanner renders with the splash banner still playing.
+func goldAtBanner(t *testing.T, build func(m *Model)) string {
+	t.Helper()
+	return goldAtSplash(t, true, build)
+}
+
+func goldAtSplash(t *testing.T, banner bool, build func(m *Model)) string {
 	t.Helper()
 	var b strings.Builder
 	for _, w := range []int{40, 80, 120} {
 		m := goldModel(t, w, 24)
+		if !banner {
+			m.splashAt = splash.Sequence
+			m.recompute()
+		}
 		if build != nil {
 			build(m)
 		}
@@ -47,7 +64,7 @@ func goldAt(t *testing.T, build func(m *Model)) string {
 }
 
 func TestUI_GLD01_EmptySession(t *testing.T) {
-	golden.RequireEqual(t, goldAt(t, nil))
+	golden.RequireEqual(t, goldAtBanner(t, nil))
 }
 
 func TestUI_GLD02_TextTurn(t *testing.T) {
@@ -122,6 +139,12 @@ func TestUI_GLD09_TallEditor(t *testing.T) {
 			lines = append(lines, fmt.Sprintf("line %d", i))
 		}
 		m.setEditorText(strings.Join(lines, "\n"))
+	}))
+}
+
+func TestUI_GLD10_BannerWithTypedCharacter(t *testing.T) {
+	golden.RequireEqual(t, goldAtBanner(t, func(m *Model) {
+		m.setEditorText("h")
 	}))
 }
 

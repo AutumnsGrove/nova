@@ -196,8 +196,10 @@ type Display struct {
 30. Colour comes from the cell's role (`spark`, `ink`, `core`, `warm`) blended toward the background by its opacity. With a
     profile below 256 colours, or `NoColor`, the plain ASCII star is used, with no colour.
 31. Below the `Plain` size (width under 24 or height under 14), `ok` is false and nothing is drawn.
-32. Under the mark: `nova`, the version, and `press any key`. The splash is shown only when the transcript is empty, and
-    disappears on the first key, the first event, or when `Display.Splash` is false. It is re-rendered on resize.
+32. Under the mark: `nova`, the version, and `press any key`. The splash is a top banner: it plays for its full
+    `Sequence` at the top of the screen while the transcript and editor stay usable beneath it, then collapses to
+    the one-line header. A key press or an event does not dismiss it; `/display splash off` does. It is
+    re-rendered on resize.
 33. `Render` is deterministic and never wider than `width` or taller than `height`.
 
 ## Matrix
@@ -316,9 +318,10 @@ type Display struct {
 | DSP03 | `/display lines 0` | | notice; unchanged |
 | DSP04 | `/display splash off` | | splash hidden |
 | DSP05 | `ctrl+o` flips both flags | | both |
-| SPL12 | dismissed by a key and by the first event | | gone; not shown again |
-| SPL13 | not shown when the transcript is not empty | | hidden |
-| SPL14 | re-renders on resize | | new level |
+| SPL12 | a key and the first event do not dismiss the banner | a keypress, then a `run_start` event | the banner is still animating and its tick is still armed |
+| SPL13 | the banner plays over content | a transcript with a user turn | the banner still shows |
+| SPL14 | re-renders and re-chooses the tier on resize | 120x60, then 30x60 | the Lockup tier degrades to Plain |
+| SPL15 | the banner is the top region | truecolor 120x60 with a typed character | the banner is rows 0..4, the header follows, and a transcript click leaves the editor alone |
 | GLR01 | a full turn with thinking, tools, and an edit diff at 40, 80, 120 | golden | matches |
 | GLR02 | thinking streaming, finished, expanded | golden | matches |
 | GLR03 | every built-in card collapsed and expanded | golden | matches |
@@ -330,7 +333,7 @@ type Display struct {
 
 C21 replaced the cell-grid splash with a sequence drawn on the character grid. Rows **SPL01 to SPL11**
 below are retired by C21 (SQN01 to SQN06, SQN30 to SQN32, and SQN40 cover their intent), and their tests
-and the `./tui/splash` budget were removed here. SPL12 to SPL14 stay and must still pass.
+and the `./tui/splash` budget were removed here. SPL12 to SPL15 are the banner contract and must still pass.
 
 | ID | Case | Retired by |
 |---|---|---|

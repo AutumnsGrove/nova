@@ -73,8 +73,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.ticking = false
-		if m.showSplash() {
+		was := m.showSplash()
+		if was {
 			m.splashAt = m.clock.Now().Sub(m.splashStart)
+		}
+		if was != m.showSplash() {
+			// The splash collapsed at Sequence: recompute so the banner region
+			// goes away and the transcript gets its rows back.
+			m.recompute()
 		}
 		for _, id := range m.transcript.SetNow(m.clock.Now()) {
 			m.list.Touch(id)
@@ -216,9 +222,9 @@ func (m *Model) finishAbort(resp proto.Response) {
 }
 
 // handleEvent folds an event into the transcript and UI state. It returns an
-// extra command for events that need a follow-up request.
+// extra command for events that need a follow-up request. Events do not
+// dismiss the splash banner; it plays for its full Sequence regardless.
 func (m *Model) handleEvent(e proto.Event) tea.Cmd {
-	m.splashOff = true
 	var cmd tea.Cmd
 	switch e.Type {
 	case proto.EventRunStart:

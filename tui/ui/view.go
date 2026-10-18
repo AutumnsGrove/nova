@@ -48,9 +48,13 @@ func (m *Model) render() string {
 	return m.overlay.Compose(strings.Join(lines, "\n"), m.width, m.height, m.st)
 }
 
-// baseLines stacks the header, transcript, widgets, editor, and footer.
+// baseLines stacks the splash banner, header, transcript, widgets, editor,
+// and footer.
 func (m *Model) baseLines() []string {
 	var lines []string
+	if m.layout.Banner.H > 0 {
+		lines = append(lines, fitLines(strings.Split(m.bannerView(), "\n"), m.layout.Banner.H)...)
+	}
 	if m.layout.Header.H > 0 {
 		lines = append(lines, m.header())
 	}
@@ -91,14 +95,22 @@ func (m *Model) header() string {
 	return truncateJoin(parts, m.width, "  ")
 }
 
-// mainView is the transcript, the splash, or the completion popup drawn over
-// the transcript's bottom.
-func (m *Model) mainView() string {
-	if m.showSplash() {
-		if out, _, ok := splash.Render(m.layout.Main.W, m.layout.Main.H, m.st, m.profile, m.version, m.splashAt); ok {
-			return out
-		}
+// bannerView renders the splash into the top banner region, or "" when the
+// splash is off.
+func (m *Model) bannerView() string {
+	b := m.layout.Banner
+	if b.H <= 0 {
+		return ""
 	}
+	out, _, ok := splash.Render(b.W, b.H, m.st, m.profile, m.version, m.splashAt)
+	if !ok {
+		return ""
+	}
+	return out
+}
+
+// mainView is the transcript with the completion popup drawn over its bottom.
+func (m *Model) mainView() string {
 	view := m.list.View()
 	if !m.completion.active {
 		return view

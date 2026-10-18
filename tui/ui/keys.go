@@ -82,7 +82,6 @@ func (m *Model) toggleExpanded() {
 // else goes to the editor.
 func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	key := msg.Keystroke()
-	m.splashOff = true
 	m.quitArmed = m.quitArmed && key == "ctrl+c"
 	if m.overlay.Len() > 0 {
 		r, d := m.overlay.HandleKey(msg)

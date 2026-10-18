@@ -11,6 +11,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/client"
+	"github.com/AutumnsGrove/nova/tui/layout"
 	"github.com/AutumnsGrove/nova/tui/splash"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
@@ -27,7 +28,7 @@ func (c *recordClock) After(d time.Duration) tea.Cmd {
 	return func() tea.Msg { return tickMsg{} }
 }
 
-// splashModel builds a truecolor model large enough for the Full tier.
+// splashModel builds a truecolor model whose banner can animate.
 func splashModel(t *testing.T, w, h int) (*Model, *recordClock) {
 	t.Helper()
 	clk := &recordClock{now: time.Unix(1_700_000_000, 0)}
@@ -62,66 +63,65 @@ func TestUI_SQN34_ElapsedFollowsClock(t *testing.T) {
 	if m.splashAt != 2*time.Second {
 		t.Fatalf("splashAt = %v, want 2s", m.splashAt)
 	}
-	want, _, ok := splash.Render(m.layout.Main.W, m.layout.Main.H, m.st, m.profile, m.version, 2*time.Second)
+	want, _, ok := splash.Render(m.layout.Banner.W, m.layout.Banner.H, m.st, m.profile, m.version, 2*time.Second)
 	if !ok {
 		t.Fatal("reference render not ok")
 	}
-	if got := m.mainView(); got != want {
-		t.Fatalf("mainView does not match Render at 2s")
+	if got := m.bannerView(); got != want {
+		t.Fatalf("bannerView does not match Render at 2s")
 	}
 }
 
-func TestUI_SQN35_DismissalStopsTicks(t *testing.T) {
+func TestUI_SQN35_KeyKeepsTheBannerAnimating(t *testing.T) {
 	m, clk := splashModel(t, 120, 60)
 	m.scheduleTick()
 	update(m, runeKey('a'))
-	if m.showSplash() {
-		t.Fatal("splash not dismissed by a key")
+	if !m.showSplash() {
+		t.Fatal("a key dismissed the banner")
 	}
+	if !m.splashAnimated() {
+		t.Fatal("the banner stopped animating after a key")
+	}
+	// The pending tick still fires and arms its successor.
 	update(m, tickMsg{})
-	if m.ticking {
-		t.Fatal("a tick is still pending after dismissal")
-	}
-	if len(clk.durs) != 1 {
-		t.Fatalf("unexpected extra ticks: %v", clk.durs)
+	if len(clk.durs) != 2 {
+		t.Fatalf("ticks = %v, want the original and a follow-up", clk.durs)
 	}
 }
 
-func TestUI_SQN36_FirstEventStopsTicks(t *testing.T) {
-	m, clk := splashModel(t, 120, 60)
+func TestUI_SQN36_EventKeepsTheBannerAnimating(t *testing.T) {
+	m, _ := splashModel(t, 120, 60)
 	m.scheduleTick()
 	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventRunStart}})
-	if m.showSplash() {
-		t.Fatal("splash not dismissed by an event")
+	if !m.showSplash() {
+		t.Fatal("an event dismissed the banner")
 	}
-	before := m.splashAt
-	clk.now = clk.now.Add(time.Second)
-	update(m, tickMsg{})
-	if m.splashAt != before {
-		t.Fatalf("splashAt advanced after dismissal: %v", m.splashAt)
+	if !m.splashAnimated() {
+		t.Fatal("the banner stopped animating after an event")
 	}
 }
 
-func TestUI_SQN37_NoTickWhenOffOrNotAnimated(t *testing.T) {
+func TestUI_SQN37_NoTickWhenOffOrDone(t *testing.T) {
 	m, _ := splashModel(t, 120, 60)
 	m.display.Splash = false
+	m.recompute()
 	m.ticking = false
 	if m.scheduleTick() != nil {
 		t.Fatal("tick scheduled with the splash off")
+	}
+
+	done, _ := splashModel(t, 120, 60)
+	done.splashAt = splash.Sequence
+	done.recompute()
+	done.ticking = false
+	if done.scheduleTick() != nil {
+		t.Fatal("tick scheduled after the sequence collapsed the banner")
 	}
 
 	plain, _, _ := newModel(t)
 	plain.ticking = false
 	if plain.scheduleTick() != nil {
 		t.Fatal("tick scheduled for a plain tier")
-	}
-
-	nonEmpty, _ := splashModel(t, 120, 60)
-	nonEmpty.transcript.AddUser("hi", nil)
-	nonEmpty.syncList()
-	nonEmpty.ticking = false
-	if nonEmpty.scheduleTick() != nil {
-		t.Fatal("tick scheduled with a non-empty transcript")
 	}
 }
 
@@ -135,7 +135,8 @@ func TestUI_SQN38_OneTimerChain(t *testing.T) {
 		t.Fatal("a second splash tick was scheduled")
 	}
 
-	m.splashOff = true
+	m.splashAt = splash.Sequence
+	m.recompute()
 	m.ticking = false
 	m.transcript.Apply(proto.Event{Type: proto.EventThinkingStart, Run: "r", Turn: intp(1)})
 	if m.scheduleTick() == nil {
@@ -154,12 +155,62 @@ func TestUI_SQN39_ResizeKeepsTime(t *testing.T) {
 	if m.splashAt != 3*time.Second {
 		t.Fatalf("splashAt = %v, want 3s", m.splashAt)
 	}
-	update(m, tea.WindowSizeMsg{Width: 70, Height: 30})
+	// A narrow screen no longer fits the Lockup banner, so the tier degrades.
+	update(m, tea.WindowSizeMsg{Width: 30, Height: 60})
 	if m.splashAt != 3*time.Second {
 		t.Fatalf("resize changed splashAt to %v", m.splashAt)
 	}
-	_, tier, ok := splash.Render(m.layout.Main.W, m.layout.Main.H, m.st, m.profile, m.version, m.splashAt)
-	if !ok || tier != splash.Compact {
-		t.Fatalf("tier after resize = %v ok=%v, want Compact", tier, ok)
+	_, tier, ok := splash.Render(m.layout.Banner.W, m.layout.Banner.H, m.st, m.profile, m.version, m.splashAt)
+	if !ok || tier != splash.Plain {
+		t.Fatalf("tier after resize = %v ok=%v, want Plain", tier, ok)
+	}
+}
+
+// SQN53: past Sequence the banner collapses to the header, once, and no further
+// tick is armed.
+func TestUI_SQN53_CollapsesAfterSequence(t *testing.T) {
+	m, clk := splashModel(t, 120, 60)
+	m.scheduleTick()
+	if m.layout.Banner.H == 0 {
+		t.Fatal("no banner before the sequence ended")
+	}
+	clk.now = clk.now.Add(splash.Sequence + time.Second)
+	update(m, tickMsg{})
+	if m.showSplash() {
+		t.Fatal("the banner is still shown past Sequence")
+	}
+	if m.layout.Banner.H != 0 {
+		t.Fatalf("banner region = %d, want 0 after collapse", m.layout.Banner.H)
+	}
+	if m.layout.Header.H != 1 {
+		t.Fatal("the header did not return after the collapse")
+	}
+	clk.durs = nil
+	if m.scheduleTick() != nil {
+		t.Fatal("a tick was armed after the collapse")
+	}
+}
+
+// SQN54: the banner is the top region; the header, transcript, and editor sit
+// below it and the editor keeps what the user typed.
+func TestUI_SQN54_BannerIsATopRegion(t *testing.T) {
+	m, _ := splashModel(t, 120, 60)
+	m.setEditorText("hello")
+	if m.layout.Banner.H != layout.MaxBannerLines {
+		t.Fatalf("banner height = %d, want %d", m.layout.Banner.H, layout.MaxBannerLines)
+	}
+	if m.layout.Banner.Y != 0 || m.layout.Header.Y != m.layout.Banner.H {
+		t.Fatalf("banner is not the top region: %+v", m.layout)
+	}
+	if m.layout.Main.H < 3 || m.layout.Editor.H < 1 {
+		t.Fatalf("the banner squeezed the screen: %+v", m.layout)
+	}
+	if m.editor.Value() != "hello" {
+		t.Fatalf("editor value = %q, want hello", m.editor.Value())
+	}
+	// A click in the transcript reaches the list and leaves the editor alone.
+	update(m, tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: m.layout.Main.Y})
+	if m.editor.Value() != "hello" {
+		t.Fatalf("a transcript click changed the editor: %q", m.editor.Value())
 	}
 }

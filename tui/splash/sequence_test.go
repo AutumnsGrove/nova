@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/colorprofile"
+
+	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
 // sameColour compares two colours by their 8-bit components.
@@ -223,10 +225,8 @@ func TestSplash_SQN15_HeldStateKeepsEverything(t *testing.T) {
 			}
 		}
 		text := flat(cells)
-		for _, want := range []string{"terminal coding agent", "press any key"} {
-			if !strings.Contains(text, want) {
-				t.Fatalf("at %v missing %q", d, want)
-			}
+		if !strings.Contains(text, "terminal coding agent") {
+			t.Fatalf("at %v missing the tagline", d)
 		}
 		if !containsRune(cells, '◆') {
 			t.Fatalf("at %v star missing", d)
@@ -371,8 +371,20 @@ func TestSplash_SQN21_TaglineAndVersion(t *testing.T) {
 	if at := strings.Index(tag, "terminal coding agent"); at != fullGeom.wordX {
 		t.Fatalf("tagline starts at %d, want %d", at, fullGeom.wordX)
 	}
-	if prompt := lines[fullGeom.tagRow+1]; !strings.Contains(prompt, "press any key") {
-		t.Fatalf("prompt row = %q", prompt)
+}
+
+func TestSplash_SQN55_NoDismissalPrompt(t *testing.T) {
+	// A key no longer dismisses the splash, so no tier may advertise one.
+	for _, size := range []struct{ w, h int }{{96, 21}, {64, 13}, {46, 10}, {40, 5}, {20, 5}} {
+		cells := grid(t, size.w, size.h, tc(), colorprofile.TrueColor, "v1", at(1))
+		if strings.Contains(flat(cells), "press any key") {
+			t.Fatalf("%dx%d still draws a dismissal prompt:\n%s", size.w, size.h, flat(cells))
+		}
+	}
+	mono := styles.Build(styles.Mono(), colorprofile.TrueColor)
+	plain := grid(t, 96, 21, mono, colorprofile.TrueColor, "v1", at(1))
+	if strings.Contains(flat(plain), "press any key") {
+		t.Fatalf("the plain tier still draws a dismissal prompt:\n%s", flat(plain))
 	}
 }
 

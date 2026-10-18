@@ -307,14 +307,27 @@ func (m *Model) showSplash() bool {
 	return m.display.Splash && m.splashAt < splash.Sequence
 }
 
-// bannerLines is the banner height to ask the layout for, zero when the
-// splash is off.
+// bannerLines is the banner height to ask the layout for, zero when the splash
+// is off or the screen cannot hold one. The banner plays as a hero for the
+// first half of the sequence (the tallest tier that fits), settles to the
+// one-line lockup for the rest, and collapses to the header at Sequence.
 func (m *Model) bannerLines() int {
 	if !m.showSplash() {
 		return 0
 	}
-	return layout.MaxBannerLines
+	budget := layout.BannerBudget(m.height)
+	if budget < splash.LockupHeight {
+		return 0
+	}
+	if m.splashAt < splashHeroUntil {
+		return splash.BannerHeight(m.width, budget)
+	}
+	return splash.LockupHeight
 }
+
+// splashHeroUntil is how long the splash keeps its tall hero banner before
+// settling to the lockup.
+const splashHeroUntil = splash.Sequence / 2
 
 // Init issues the first commands: the initial state, commands, messages, and
 // the first event wait.

@@ -274,7 +274,7 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | LYT08 | tiny terminal | height 5, width 10 | no negative sizes; no panic |
 | LYT09 | order of dropping | shrink from 24 lines | widgets, then header, then sidebar |
 | LYT10 | deterministic | same inputs | same result |
-| LYT11 | banner is the top region and drops first | `BannerLines` 5 from 24 down | banner above the header, clamped to 5; dropped before the editor loses its row |
+| LYT11 | banner is the top region and drops first | `BannerLines` from 5 and from 99, shrinking the screen | banner above the header, clamped to 21 and to `BannerBudget`; dropped before the editor loses its row |
 | VLS01 | follows new content | append while at the bottom | view shows the newest lines |
 | VLS02 | scrolling up stops following | `ScrollBy(-3)`, append | view unchanged; `Following` false |
 | VLS03 | scrolling to the bottom resumes | | `Following` true |

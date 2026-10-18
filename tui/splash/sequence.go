@@ -46,6 +46,28 @@ const (
 	lockupW, lockupH = 40, 5
 )
 
+// LockupHeight is the settled banner height: the one-line lockup and its stars.
+const LockupHeight = lockupH
+
+// BannerHeight returns the height of the largest scene tier that fits a banner
+// of the given width and height budget, or 0 when not even the lockup fits. A
+// width too narrow for the lockup still gets the lockup height, because the
+// Plain tier renders at any width.
+func BannerHeight(width, budget int) int {
+	if budget < lockupH {
+		return 0
+	}
+	for _, t := range []struct{ w, h int }{
+		{fullGeom.w, fullGeom.h}, {compactGeom.w, compactGeom.h},
+		{thinW, thinH}, {lockupW, lockupH},
+	} {
+		if width >= t.w && budget >= t.h {
+			return t.h
+		}
+	}
+	return lockupH
+}
+
 // drawScene draws one animated frame for a Full or Compact tier.
 func drawScene(c *canvas, g geom, offX, offY int, version string, at time.Duration) {
 	t := at.Seconds()

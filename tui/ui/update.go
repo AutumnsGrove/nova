@@ -73,13 +73,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.ticking = false
-		was := m.showSplash()
-		if was {
+		before := m.bannerLines()
+		if m.showSplash() {
 			m.splashAt = m.clock.Now().Sub(m.splashStart)
 		}
-		if was != m.showSplash() {
-			// The splash collapsed at Sequence: recompute so the banner region
-			// goes away and the transcript gets its rows back.
+		if m.bannerLines() != before {
+			// The banner stepped down (hero to lockup) or collapsed at
+			// Sequence: recompute so the transcript gets the rows back.
 			m.recompute()
 		}
 		for _, id := range m.transcript.SetNow(m.clock.Now()) {

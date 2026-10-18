@@ -214,3 +214,34 @@ func TestUI_SQN54_BannerIsATopRegion(t *testing.T) {
 		t.Fatalf("a transcript click changed the editor: %q", m.editor.Value())
 	}
 }
+
+// SQN56: the banner plays a tall hero, steps down to the lockup, then
+// collapses to the header.
+func TestUI_SQN56_HeroThenLockupThenHeader(t *testing.T) {
+	m, clk := splashModel(t, 120, 60)
+	hero := m.layout.Banner
+	if hero.H != layout.MaxBannerLines {
+		t.Fatalf("hero banner height = %d, want the Full tier %d", hero.H, layout.MaxBannerLines)
+	}
+	if _, tier, ok := splash.Render(hero.W, hero.H, m.st, m.profile, m.version, m.splashAt); !ok || tier != splash.Full {
+		t.Fatalf("hero tier = %v ok=%v, want Full", tier, ok)
+	}
+
+	// At half the sequence the banner steps down to the one-line lockup.
+	m.scheduleTick()
+	clk.now = clk.now.Add(splashHeroUntil)
+	update(m, tickMsg{})
+	if m.layout.Banner.H != splash.LockupHeight {
+		t.Fatalf("settled banner height = %d, want %d", m.layout.Banner.H, splash.LockupHeight)
+	}
+
+	// At Sequence it collapses and the header returns.
+	clk.now = clk.now.Add(splash.Sequence)
+	update(m, tickMsg{})
+	if m.layout.Banner.H != 0 {
+		t.Fatalf("banner height after Sequence = %d, want 0", m.layout.Banner.H)
+	}
+	if m.layout.Header.H != 1 {
+		t.Fatalf("header height after Sequence = %d, want 1", m.layout.Header.H)
+	}
+}

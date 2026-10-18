@@ -48,13 +48,14 @@ func Compute(in Inputs) Regions {
 	}
 
 	// The banner is the top region while the splash plays. It is dropped before
-	// the header when it would leave the editor no room at all.
+	// the header when the screen cannot hold it above the main floor and one
+	// editor row.
 	bannerH := 0
 	if !short && in.BannerLines > 0 {
 		bannerH = clamp(in.BannerLines, 1, MaxBannerLines)
-	}
-	if body := height - headerH - footerH; bannerH > 0 && body < mainFloor+bannerH+1 {
-		bannerH = 0
+		if bannerH > BannerBudget(height) {
+			bannerH = 0
+		}
 	}
 
 	// remaining is the space left for main, widgets, and the editor after the
@@ -125,9 +126,9 @@ const (
 	// MaxEditorLines is the tallest the editor may grow. Above it the editor
 	// keeps this height and scrolls with the cursor.
 	MaxEditorLines = 10
-	// MaxBannerLines is the tallest the splash banner may be; the splash's
-	// Lockup tier is five rows.
-	MaxBannerLines = 5
+	// MaxBannerLines is the tallest the splash banner may be: the splash's Full
+	// tier is 21 rows. A screen too short for a request still drops the banner.
+	MaxBannerLines = 21
 
 	mainFloor    = 3  // the main area never drops below this where the screen allows
 	shortScreen  = 8  // under this, widgets, banner, header, and sidebar are dropped
@@ -145,4 +146,18 @@ func clamp(v, lo, hi int) int {
 		return hi
 	}
 	return v
+}
+
+// BannerBudget is the tallest banner a screen of this height can hold without
+// pushing the main area below its three-line floor or the editor below one row.
+// It is 0 when there is no room for a banner at all.
+func BannerBudget(height int) int {
+	if height < shortScreen {
+		return 0
+	}
+	headerH := 0
+	if height >= headerMin {
+		headerH = 1
+	}
+	return max(height-headerH-1-mainFloor-1, 0)
 }

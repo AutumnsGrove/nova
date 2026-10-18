@@ -125,6 +125,8 @@ func TestUI_DSP05_CtrlOTogglesBoth(t *testing.T) {
 
 func TestUI_SPL12_NotDismissedByInput(t *testing.T) {
 	m, _, _ := newModel(t)
+	m.splashAt = 0
+	m.recompute()
 	if !m.showSplash() {
 		t.Fatal("splash not shown at the start")
 	}
@@ -133,6 +135,8 @@ func TestUI_SPL12_NotDismissedByInput(t *testing.T) {
 		t.Fatal("a key dismissed the splash banner")
 	}
 	m2, _, _ := newModel(t)
+	m2.splashAt = 0
+	m2.recompute()
 	update(m2, client.EventMsg{Event: proto.Event{Type: proto.EventRunStart}})
 	if !m2.showSplash() {
 		t.Fatal("an event dismissed the splash banner")
@@ -141,8 +145,10 @@ func TestUI_SPL12_NotDismissedByInput(t *testing.T) {
 
 func TestUI_SPL13_PlaysWithContent(t *testing.T) {
 	m, _, _ := newModel(t)
+	m.splashAt = 0
 	m.transcript.AddUser("hi", nil)
 	m.syncList()
+	m.recompute()
 	if !m.showSplash() {
 		t.Fatal("the splash should keep playing with a non-empty transcript")
 	}
@@ -167,7 +173,7 @@ func TestUI_SPL14_ResizeRerenders(t *testing.T) {
 
 func TestUI_SPL15_BannerRegion(t *testing.T) {
 	m := colorModel(t, 120, 60)
-	m.splashAt = 4 * time.Second
+	m.splashAt = 2 * time.Second // the hero phase, so the Full tier draws
 	if m.layout.Banner.H != layout.MaxBannerLines {
 		t.Fatalf("banner height = %d, want %d", m.layout.Banner.H, layout.MaxBannerLines)
 	}

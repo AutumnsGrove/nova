@@ -457,3 +457,19 @@ func TestSplash_SQN29_Lockup(t *testing.T) {
 		t.Fatalf("lockup row = %q, want %q at %d", got, want, x0)
 	}
 }
+
+func TestSplash_SQN57_BannerHeightPicksTheTier(t *testing.T) {
+	cases := []struct{ w, budget, want int }{
+		{120, 54, 21}, // Full
+		{80, 18, 13},  // Compact: Full is too wide
+		{50, 12, 10},  // Thin
+		{45, 6, 5},    // Lockup: too narrow for Thin
+		{30, 20, 5},   // narrow: the Plain tier in a lockup-height banner
+		{120, 4, 0},   // no room even for the lockup
+	}
+	for _, c := range cases {
+		if got := BannerHeight(c.w, c.budget); got != c.want {
+			t.Fatalf("BannerHeight(%d, %d) = %d, want %d", c.w, c.budget, got, c.want)
+		}
+	}
+}

@@ -204,10 +204,13 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 24. The model records the time the splash is first shown (`splashStart`) and the elapsed time at every tick
     (`splashAt`). `bannerView` passes `splashAt` to `Render`.
 25. The splash is a top banner, not the transcript: the layout gives it `BannerLines` rows at the top and the
-    header, transcript, and editor sit below it. While `showSplash()` is true (the splash is on and `splashAt`
-    is before `Sequence`) and the tier is `Animated`, the model keeps one timer chain running at `splashTick`
-    (66 ms, about 15 frames a second). It shares the existing `tickMsg` and `ticking` guard, so a thinking
-    block's 250 ms tick and the splash tick are never both pending.
+    header, transcript, and editor sit below it. The height is staged: for the first half of `Sequence` it is the
+    tallest tier that fits the width and the banner budget (`splash.BannerHeight`), then it settles to the
+    one-line lockup. The layout's `BannerBudget` keeps the main three-line floor and one editor row, and drops
+    the banner entirely when even the lockup does not fit. While `showSplash()` is true (the splash is on and
+    `splashAt` is before `Sequence`) and the tier is `Animated`, the model keeps one timer chain running at
+    `splashTick` (66 ms, about 15 frames a second). It shares the existing `tickMsg` and `ticking` guard, so a
+    thinking block's 250 ms tick and the splash tick are never both pending.
 26. A key press or a transcript event does **not** dismiss the banner; it plays for its full `Sequence`
     regardless (SPL12 to SPL15 describe the new contract). At `Sequence` it collapses to the one-line header
     once and no further splash tick is armed.
@@ -304,6 +307,8 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 | SQN53 | the banner collapses at `Sequence` | cross `Sequence` on a tick | the banner region is 0, the header returns, and no tick is armed |
 | SQN54 | the banner is a top region | type into the editor at startup | the banner sits above the header and the transcript; the main and editor keep a usable height; the editor keeps the text |
 | SQN55 | no tier draws a dismissal prompt | every tier at `Sequence`, plus Plain | no `press any key` anywhere |
+| SQN56 | the banner is staged | a 120x60 model across the sequence | a Full hero, then the 5-row lockup at half the sequence, then the header at `Sequence` |
+| SQN57 | the hero picks a tier by width and height | `BannerHeight` over several widths/budgets | the largest tier that fits, lockup height on a narrow screen, 0 with no room |
 
 ## Fuzz and property tests
 

@@ -25,6 +25,7 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/chat"
 	"github.com/AutumnsGrove/nova/tui/client"
+	"github.com/AutumnsGrove/nova/tui/splash"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -78,6 +79,10 @@ func newModel(t *testing.T) (*Model, *fakeClient, *fakeClock) {
 		Client: f, Theme: styles.Mono(), Clock: clk, CWD: t.TempDir(),
 		Profile: colorprofile.ASCII, Renderer: echoRenderer{}, Width: 80, Height: 24,
 	})
+	// Most UI tests are not about the splash, so let it finish first; the
+	// splash tests use splashModel or reset splashAt themselves.
+	m.splashAt = splash.Sequence
+	m.recompute()
 	return m, f, clk
 }
 

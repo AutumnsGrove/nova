@@ -54,7 +54,7 @@ type loginChoice struct {
 // label is the row as the screen shows it.
 func (c loginChoice) label() string {
 	if c.method == providerauth.APIKey {
-		return "Paste a " + c.provider.Name + " key"
+		return "Paste your " + c.provider.Name + " key"
 	}
 	return "Sign in with " + c.provider.Name
 }

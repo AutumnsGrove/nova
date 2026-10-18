@@ -166,7 +166,7 @@ func TestFirstRun_FRS01_StartsAtLogin(t *testing.T) {
 		t.Fatalf("step = %v, want Login", m.Step())
 	}
 	text := view(m)
-	for _, want := range []string{"Welcome", "Sign in with One", "Paste a One key", "Sign in with Two", "Paste a Two key"} {
+	for _, want := range []string{"Welcome", "Sign in with One", "Paste your One key", "Sign in with Two", "Paste your Two key"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("welcome/login view missing %q:\n%s", want, text)
 		}

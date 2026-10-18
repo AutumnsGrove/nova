@@ -9,6 +9,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- The splash banner now plays a **hero phase**: for the first half of the sequence it shows the tallest scene that
+  fits — Full on a large terminal, Compact on a normal one — then settles to the five-row lockup for the rest and
+  collapses to the header. The transcript and editor stay usable beneath it, so the full animation is back without
+  taking over the session (#26).
 - The opening splash is a top banner instead of a full-screen takeover. It plays for its full 8 second sequence
   while the header, transcript, and editor stay usable beneath it; typing and transcript events no longer dismiss
   it, and it collapses to the one-line `✦ nova` header when the sequence ends. `/display splash off` still removes

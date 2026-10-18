@@ -121,38 +121,6 @@ func (m *Model) afterLogin(rows []providerRow) tea.Cmd {
 	return m.requestModelPicker()
 }
 
-// methodLabels names a provider's methods for the picker.
-func methodLabels(p providerauth.Provider) []string {
-	out := make([]string, len(p.Methods))
-	for i, method := range p.Methods {
-		out[i] = method.Label()
-	}
-	return out
-}
-
-// methodByLabel finds a method by the label the picker returned.
-func methodByLabel(p providerauth.Provider, label string) (providerauth.Method, bool) {
-	for _, method := range p.Methods {
-		if method.Label() == label {
-			return method, true
-		}
-	}
-	return "", false
-}
-
-// parseMethod accepts a method's wire name or its label.
-func parseMethod(s string) (providerauth.Method, bool) {
-	switch strings.ToLower(strings.ReplaceAll(s, "-", "_")) {
-	case "oauth", "subscription":
-		return providerauth.OAuth, true
-	case "device", "device_code":
-		return providerauth.Device, true
-	case "api_key", "key":
-		return providerauth.APIKey, true
-	}
-	return "", false
-}
-
 // openLoginPicker asks for the provider list for /login.
 func (m *Model) openLoginPicker() tea.Cmd { return m.requestProviders(intentProvidersLogin) }
 
@@ -173,7 +141,7 @@ func (m *Model) loginCommand(args string) tea.Cmd {
 			m.notice = "unknown provider: " + fields[0]
 			return nil
 		}
-		method, ok := parseMethod(fields[1])
+		method, ok := providerauth.ParseMethod(fields[1])
 		if !ok {
 			m.notice = "unknown method: " + fields[1]
 			return nil
@@ -194,7 +162,7 @@ func (m *Model) beginLogin(id string) tea.Cmd {
 		return m.beginMethod(p, p.Methods[0])
 	}
 	m.loginProvider = p.ID
-	m.pushDialog(dialog.NewMethodPicker(p.Name, methodLabels(p)), intentLoginMethod)
+	m.pushDialog(dialog.NewMethodPicker(p.Name, providerauth.Methods(p)), intentLoginMethod)
 	return nil
 }
 

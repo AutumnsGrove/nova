@@ -219,7 +219,7 @@ func (m *Model) applyLocalIntent(intent string, r dialog.Result) tea.Cmd {
 	case intentLoginMethod:
 		if label, ok := r.Value.(string); ok && !r.Cancelled {
 			if p, found := providerauth.Get(m.loginProvider); found {
-				if method, ok := methodByLabel(p, label); ok {
+				if method, ok := providerauth.MethodByLabel(p, label); ok {
 					return m.beginMethod(p, method)
 				}
 			}

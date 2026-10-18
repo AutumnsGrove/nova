@@ -72,6 +72,7 @@ nova/
                   subagent, webfetch                            ≤ 2500 total
   tui/            the terminal UI                               ≤ 9200
     image/        inline image capability and Kitty encoding   ≤ 260
+    firstrun/     the first-run sign-in and model picker       ≤ 400
     cli/          fang-styled help and errors (full build only) ≤ 150
   cmd/nova/       main, cobra commands, doctor, version         ≤ 1260
   doctor/         environment checks                            ≤ 440

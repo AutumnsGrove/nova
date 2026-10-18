@@ -2,7 +2,7 @@
 chunk: C19
 title: "Polish, first run, doctor, examples, release"
 packages: [./cmd/nova, ./doctor, ./config, ./tui/firstrun, ./tui/cli, ./docs]
-budgets: { ./cmd/nova: 1260, ./doctor: 440, ./config: 1450, ./tui/firstrun: 300, ./tui/cli: 150, ./docs: 220, ./diag: 250 }
+budgets: { ./cmd/nova: 1260, ./doctor: 440, ./config: 1450, ./tui/firstrun: 400, ./tui/cli: 150, ./docs: 220, ./diag: 250 }
 depends: [C16, C17, C18]
 ---
 
@@ -180,9 +180,9 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | VER02 | `--json` | | same fields as JSON |
 | VER03 | plain `go build` | | `dev` and the VCS revision when available |
 | VER04 | flavour | both tags | `full` and `min` |
-| FRS01 | no key starts the flow | terminal | welcome, login step |
-| FRS02 | OpenRouter login success | fake OAuth server | key saved; model step |
-| FRS03 | paste a key | | masked input; saved with mode 0600 |
+| FRS01 | no key starts the flow | terminal | welcome, login step listing every registered provider's methods |
+| FRS02 | an interactive sign-in succeeds | fake provider flow | credential saved for that provider; model step |
+| FRS03 | paste a key | each provider | masked input; saved to that provider's store with mode 0600 |
 | FRS04 | paste an empty or whitespace key | | rejected |
 | FRS05 | login failure | | error shown; retry or skip |
 | FRS06 | skip a step with `esc` | | app starts; first prompt reports the missing key |
@@ -192,6 +192,9 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | FRS10 | not run without a terminal | | skipped |
 | FRS11 | the key never appears in logs, config, or the screen | | verified |
 | FRS12 | the flow runs again only when the key is missing | | yes |
+| FRS13 | every registered provider is offered | OpenRouter and OpenCode Go | both appear, with sign-in and paste-key rows |
+| FRS14 | a device flow shows its page and code | a fake device session | the verification URL, the user code, and the status line |
+| FRS15 | the chosen provider and method reach the login backend | select OpenCode Go device | `Begin` is called once with the device method |
 | CFW01 | set a new key in a new file | | created with mode 0600; directory 0700 |
 | CFW02 | change an existing key | | only that key changes |
 | CFW03 | comments and order preserved | | byte-identical elsewhere |

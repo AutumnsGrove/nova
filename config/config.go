@@ -46,10 +46,26 @@ type Config struct {
 // clamped to 1..50 when loaded and when edited in /settings, and the image
 // width to 20..200 cells.
 type DisplayConfig struct {
-	ThinkingLines   int  `yaml:"thinking_lines"`    // reasoning lines in a collapsed thinking block
-	ToolLines       int  `yaml:"tool_lines"`        // result lines in a collapsed tool card
-	ShowImages      bool `yaml:"show_images"`       // draw received images inline
-	ImageWidthCells int  `yaml:"image_width_cells"` // preferred inline image width in terminal cells
+	ThinkingLines   int          `yaml:"thinking_lines"`    // reasoning lines in a collapsed thinking block
+	ToolLines       int          `yaml:"tool_lines"`        // result lines in a collapsed tool card
+	ShowImages      bool         `yaml:"show_images"`       // draw received images inline
+	ImageWidthCells int          `yaml:"image_width_cells"` // preferred inline image width in terminal cells
+	Status          StatusConfig `yaml:"status"`            // the multi-line status region
+}
+
+// StatusConfig describes the status region below the editor. Lines is empty
+// when the user has never changed it, in which case the TUI uses its own
+// defaults; each side is a list of segment ids such as cwd, branch, ctx, model.
+type StatusConfig struct {
+	Lines     []StatusLine `yaml:"lines"`
+	Separator string       `yaml:"separator"`
+	ExtLines  int          `yaml:"ext_lines"` // rows reserved for extension statuses
+}
+
+// StatusLine is one status row: segments on the left and on the right.
+type StatusLine struct {
+	Left  []string `yaml:"left,omitempty"`
+	Right []string `yaml:"right,omitempty"`
 }
 
 // WebfetchConfig bounds the bundled web_fetch tool.

@@ -84,3 +84,27 @@ func TestConfig_SET06_SetUserDisplay(t *testing.T) {
 		t.Fatalf("display = %+v, want {4 9}", cfg.Display)
 	}
 }
+
+// SET07: the status region config round-trips as a nested mapping.
+func TestConfig_SET07_SetUserStatus(t *testing.T) {
+	home := t.TempDir()
+	want := StatusConfig{
+		Separator: " | ",
+		ExtLines:  3,
+		Lines:     []StatusLine{{Left: []string{"cwd", "branch"}, Right: []string{"model"}}},
+	}
+	if err := SetUser(home, "display.status", want); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(LoadOptions{CWD: t.TempDir(), Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.Display.Status
+	if got.Separator != " | " || got.ExtLines != 3 || len(got.Lines) != 1 {
+		t.Fatalf("status = %+v", got)
+	}
+	if len(got.Lines[0].Left) != 2 || got.Lines[0].Left[0] != "cwd" || got.Lines[0].Right[0] != "model" {
+		t.Fatalf("lines = %+v", got.Lines)
+	}
+}

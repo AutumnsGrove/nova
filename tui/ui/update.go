@@ -11,6 +11,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/client"
+	"github.com/AutumnsGrove/nova/tui/splash"
 )
 
 // Update handles one message. It performs no I/O: every side effect is a
@@ -74,12 +75,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.ticking = false
 		before := m.bannerLines()
-		if m.showSplash() {
-			m.splashAt = m.clock.Now().Sub(m.splashStart)
+		if m.splashAnimated() {
+			at := m.clock.Now().Sub(m.splashStart)
+			m.splashAt = min(at, splash.Sequence)
 		}
 		if m.bannerLines() != before {
-			// The banner stepped down (hero to lockup) or collapsed at
-			// Sequence: recompute so the transcript gets the rows back.
+			// The banner stepped down (hero to lockup): recompute so the rows
+			// settle. The banner itself stays until the first prompt.
 			m.recompute()
 		}
 		for _, id := range m.transcript.SetNow(m.clock.Now()) {

@@ -134,6 +134,7 @@ type Model struct {
 	display     chat.Display
 	splashStart time.Time
 	splashAt    time.Duration
+	splashDone  bool
 	ticking     bool
 
 	// The in-app sign-in flow.
@@ -299,18 +300,27 @@ func (m *Model) themeList() string {
 	return strings.Join(names, ", ")
 }
 
-// showSplash reports whether the splash banner is playing. The banner is a
-// top region: typing and transcript events do not dismiss it, it plays for its
-// full Sequence, and it then collapses to the one-line header. Only
-// /display splash off ends it early.
+// showSplash reports whether the splash banner is on screen. The banner is a
+// top region: typing and transcript events do not dismiss it, and after its
+// Sequence it holds the final frame until the first prompt is sent. Only then
+// (or /display splash off) does it collapse to the one-line header.
 func (m *Model) showSplash() bool {
-	return m.display.Splash && m.splashAt < splash.Sequence
+	return m.display.Splash && !m.splashDone
+}
+
+// dismissSplash collapses the banner for good, once the first prompt is sent.
+func (m *Model) dismissSplash() {
+	if m.splashDone {
+		return
+	}
+	m.splashDone = true
+	m.recompute()
 }
 
 // bannerLines is the banner height to ask the layout for, zero when the splash
 // is off or the screen cannot hold one. The banner plays as a hero for the
 // first half of the sequence (the tallest tier that fits), settles to the
-// one-line lockup for the rest, and collapses to the header at Sequence.
+// one-line lockup, and holds it until the first prompt.
 func (m *Model) bannerLines() int {
 	if !m.showSplash() {
 		return 0
@@ -319,7 +329,7 @@ func (m *Model) bannerLines() int {
 	if budget < splash.LockupHeight {
 		return 0
 	}
-	if m.splashAt < splashHeroUntil {
+	if m.splashAt < splashHeroUntil && m.profile >= colorprofile.ANSI256 && m.theme.Name != "mono" {
 		return splash.BannerHeight(m.width, budget)
 	}
 	return splash.LockupHeight

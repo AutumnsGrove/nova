@@ -82,6 +82,7 @@ func (m *Model) submit(action string) tea.Cmd {
 	case strings.HasPrefix(raw, "!"):
 		m.setEditorText("")
 		m.history.add(raw)
+		m.dismissSplash()
 		return m.client.Send(proto.Command{Type: proto.CmdBash, Command: text})
 	}
 	kind := "prompt"
@@ -98,6 +99,7 @@ func (m *Model) submit(action string) tea.Cmd {
 	m.history.add(raw)
 	m.pendingAtts = nil
 	m.pending = pendingSend{kind: kind, text: text, atts: names}
+	m.dismissSplash()
 	return m.client.Send(proto.Command{Type: cmdFor(kind), Text: text, Attachments: atts})
 }
 
@@ -175,7 +177,7 @@ func (m *Model) tickPeriod() time.Duration {
 // splashAnimated reports whether an animated splash is showing. It draws a
 // throwaway frame, so it is pure: nothing here mutates the model.
 func (m *Model) splashAnimated() bool {
-	if !m.showSplash() {
+	if !m.showSplash() || m.splashAt >= splash.Sequence {
 		return false
 	}
 	_, tier, ok := splash.Render(m.layout.Banner.W, m.layout.Banner.H, m.st, m.profile, m.version, 0)
@@ -269,6 +271,8 @@ func (m *Model) displayCommand(args string) tea.Cmd {
 			m.notice = "display splash: expected on or off"
 			return nil
 		}
+		// The banner is a layout region, so turning it off must reclaim its rows.
+		m.recompute()
 	default:
 		m.notice = "unknown display setting: " + key
 		return nil

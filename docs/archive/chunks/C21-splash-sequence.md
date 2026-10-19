@@ -212,8 +212,9 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
     `splashTick` (66 ms, about 15 frames a second). It shares the existing `tickMsg` and `ticking` guard, so a
     thinking block's 250 ms tick and the splash tick are never both pending.
 26. A key press or a transcript event does **not** dismiss the banner; it plays for its full `Sequence`
-    regardless (SPL12 to SPL15 describe the new contract). At `Sequence` it collapses to the one-line header
-    once and no further splash tick is armed.
+    regardless (SPL12 to SPL15 describe the new contract). At `Sequence` the animation stops on the held
+    final frame, which stays at the top until the first prompt (or `!command`) is sent. Sending it collapses
+    the banner to the one-line header once, and no further splash tick is armed.
 27. `/display splash off` and a non-`Animated` tier schedule no splash tick.
 28. A resize re-chooses the tier from the new size and keeps `splashAt`, so the scene does not restart.
 29. `mark_gen.go` and the `go:generate` line are removed, and `tui/splash` no longer has any generated file.
@@ -304,11 +305,12 @@ a  .####. ....## .##### ##..## ##..## .#####     a  .###. ....# .#### #...# .###
 | SQN50 | every glyph can be drawn | collect every rune `Cells` can emit across all tiers and times | each has a shape or an entry in the embedded font |
 | SQN51 | slashes join | a vertical run of two `╱` cells | the line's end pixel in the lower cell touches the start pixel in the cell above |
 | SQN52 | the command works | call the generator's `run` with `-o` set to a temp file | exit 0 and a decodable GIF; a bad path exits non-zero with a message |
-| SQN53 | the banner collapses at `Sequence` | cross `Sequence` on a tick | the banner region is 0, the header returns, and no tick is armed |
+| SQN53 | the banner holds its final frame | cross `Sequence` on a tick | `splashAt` clamps to `Sequence`, the banner keeps the lockup height, and no tick is armed |
 | SQN54 | the banner is a top region | type into the editor at startup | the banner sits above the header and the transcript; the main and editor keep a usable height; the editor keeps the text |
 | SQN55 | no tier draws a dismissal prompt | every tier at `Sequence`, plus Plain | no `press any key` anywhere |
-| SQN56 | the banner is staged | a 120x60 model across the sequence | a Full hero, then the 5-row lockup at half the sequence, then the header at `Sequence` |
+| SQN56 | the banner is staged | a 120x60 model across the sequence | a Full hero, then the 5-row lockup at half the sequence, then the held lockup at `Sequence` |
 | SQN57 | the hero picks a tier by width and height | `BannerHeight` over several widths/budgets | the largest tier that fits, lockup height on a narrow screen, 0 with no room |
+| SQN58 | the first prompt dismisses the banner | type, then send a prompt | typing keeps it; sending the prompt collapses it and the header returns |
 
 ## Fuzz and property tests
 

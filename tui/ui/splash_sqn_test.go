@@ -166,28 +166,42 @@ func TestUI_SQN39_ResizeKeepsTime(t *testing.T) {
 	}
 }
 
-// SQN53: past Sequence the banner collapses to the header, once, and no further
-// tick is armed.
-func TestUI_SQN53_CollapsesAfterSequence(t *testing.T) {
+// SQN53: past Sequence the animation freezes on the final lockup frame, which
+// stays at the top; no further tick is armed.
+func TestUI_SQN53_HoldsFinalFrame(t *testing.T) {
 	m, clk := splashModel(t, 120, 60)
 	m.scheduleTick()
-	if m.layout.Banner.H == 0 {
-		t.Fatal("no banner before the sequence ended")
-	}
 	clk.now = clk.now.Add(splash.Sequence + time.Second)
 	update(m, tickMsg{})
-	if m.showSplash() {
-		t.Fatal("the banner is still shown past Sequence")
+	if m.splashAt != splash.Sequence {
+		t.Fatalf("splashAt = %v, want it clamped to Sequence", m.splashAt)
 	}
-	if m.layout.Banner.H != 0 {
-		t.Fatalf("banner region = %d, want 0 after collapse", m.layout.Banner.H)
+	if m.layout.Banner.H != splash.LockupHeight {
+		t.Fatalf("banner region = %d, want the held lockup %d", m.layout.Banner.H, splash.LockupHeight)
 	}
 	if m.layout.Header.H != 1 {
-		t.Fatal("the header did not return after the collapse")
+		t.Fatal("the header is not shown below the banner")
 	}
 	clk.durs = nil
 	if m.scheduleTick() != nil {
-		t.Fatal("a tick was armed after the collapse")
+		t.Fatal("a tick was armed after the hold")
+	}
+}
+
+// SQN58: typing does not dismiss the banner, but sending the first prompt does.
+func TestUI_SQN58_FirstPromptDismissesTheBanner(t *testing.T) {
+	m, _ := splashModel(t, 120, 60)
+	update(m, runeKey('x'))
+	if m.layout.Banner.H == 0 {
+		t.Fatal("typing dismissed the banner")
+	}
+	m.setEditorText("hello")
+	update(m, enterKey)
+	if m.layout.Banner.H != 0 {
+		t.Fatalf("banner region = %d, want 0 after the first prompt", m.layout.Banner.H)
+	}
+	if m.layout.Header.H != 1 {
+		t.Fatal("the header did not return after the first prompt")
 	}
 }
 
@@ -235,11 +249,11 @@ func TestUI_SQN56_HeroThenLockupThenHeader(t *testing.T) {
 		t.Fatalf("settled banner height = %d, want %d", m.layout.Banner.H, splash.LockupHeight)
 	}
 
-	// At Sequence it collapses and the header returns.
+	// At Sequence the animation stops on the held lockup frame.
 	clk.now = clk.now.Add(splash.Sequence)
 	update(m, tickMsg{})
-	if m.layout.Banner.H != 0 {
-		t.Fatalf("banner height after Sequence = %d, want 0", m.layout.Banner.H)
+	if m.layout.Banner.H != splash.LockupHeight {
+		t.Fatalf("banner height after Sequence = %d, want the held lockup %d", m.layout.Banner.H, splash.LockupHeight)
 	}
 	if m.layout.Header.H != 1 {
 		t.Fatalf("header height after Sequence = %d, want 1", m.layout.Header.H)

@@ -15,7 +15,6 @@ import (
 	"github.com/charmbracelet/x/exp/golden"
 
 	"github.com/AutumnsGrove/nova/proto"
-	"github.com/AutumnsGrove/nova/tui/splash"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -52,7 +51,7 @@ func goldAtSplash(t *testing.T, banner bool, build func(m *Model)) string {
 	for _, w := range []int{40, 80, 120} {
 		m := goldModel(t, w, 24)
 		if !banner {
-			m.splashAt = splash.Sequence
+			m.splashDone = true
 			m.recompute()
 		}
 		if build != nil {

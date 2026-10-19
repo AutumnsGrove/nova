@@ -18,7 +18,6 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/client"
 	"github.com/AutumnsGrove/nova/tui/layout"
-	"github.com/AutumnsGrove/nova/tui/splash"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -125,7 +124,7 @@ func TestUI_DSP05_CtrlOTogglesBoth(t *testing.T) {
 
 func TestUI_SPL12_NotDismissedByInput(t *testing.T) {
 	m, _, _ := newModel(t)
-	m.splashAt = 0
+	m.splashDone = false
 	m.recompute()
 	if !m.showSplash() {
 		t.Fatal("splash not shown at the start")
@@ -135,7 +134,7 @@ func TestUI_SPL12_NotDismissedByInput(t *testing.T) {
 		t.Fatal("a key dismissed the splash banner")
 	}
 	m2, _, _ := newModel(t)
-	m2.splashAt = 0
+	m2.splashDone = false
 	m2.recompute()
 	update(m2, client.EventMsg{Event: proto.Event{Type: proto.EventRunStart}})
 	if !m2.showSplash() {
@@ -145,7 +144,7 @@ func TestUI_SPL12_NotDismissedByInput(t *testing.T) {
 
 func TestUI_SPL13_PlaysWithContent(t *testing.T) {
 	m, _, _ := newModel(t)
-	m.splashAt = 0
+	m.splashDone = false
 	m.transcript.AddUser("hi", nil)
 	m.syncList()
 	m.recompute()
@@ -267,7 +266,7 @@ func TestUI_GLR04_Themes(t *testing.T) {
 		m.home = "/home/nova"
 		m.transcript.AddUser("hello", nil)
 		m.syncList()
-		m.splashAt = splash.Sequence
+		m.splashDone = true
 		m.recompute()
 		fmt.Fprintf(&b, "--- %s ---\n%s\n", th.Name, m.render())
 	}

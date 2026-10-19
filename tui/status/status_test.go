@@ -32,7 +32,7 @@ func TestStatus_SLN01_DefaultLayout(t *testing.T) {
 	if len(out) != 3 {
 		t.Fatalf("lines = %d, want 3:\n%s", len(out), strings.Join(out, "\n"))
 	}
-	joined := strings.Join(out, "\n")
+	joined := ansi.Strip(strings.Join(out, "\n"))
 	for _, want := range []string{"~/Projects/nova", "main", "(+1,-2)", "↑12k", "↓4k", "R9k", "CH75.0%", "$0.020", "34%/100", "(auto)", "session 14m", "block 5m", "1 queued", "ctrl+o expand", "sonnet", "thinking off"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q:\n%s", want, joined)

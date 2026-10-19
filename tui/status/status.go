@@ -213,7 +213,18 @@ func resolve(id string, d Data, st styles.Styles) Segment {
 			return Segment{Text: fmt.Sprintf("%d queued", d.Queued), Style: "warn"}
 		}
 	case "hint":
-		return Segment{Text: d.Hint, Style: "muted"}
+		if d.Hint == "" {
+			return Segment{}
+		}
+		key, rest := d.Hint, ""
+		if i := strings.IndexByte(d.Hint, ' '); i > 0 {
+			key, rest = d.Hint[:i], strings.TrimSpace(d.Hint[i+1:])
+		}
+		text := styleFor("text", st).Render(key)
+		if rest != "" {
+			text += " " + styleFor("muted", st).Render(rest)
+		}
+		return Segment{Text: text, Style: "raw"}
 	case "run":
 		return Segment{Text: d.Run, Style: "spark"}
 	}
@@ -243,6 +254,8 @@ func styleFor(token string, st styles.Styles) lipgloss.Style {
 		return st.Bold
 	case "spark":
 		return st.Spark
+	case "raw":
+		return lipgloss.NewStyle()
 	default:
 		return st.Muted
 	}

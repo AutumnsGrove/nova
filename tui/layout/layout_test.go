@@ -254,3 +254,38 @@ func overlaps(a, b Rect) bool {
 	}
 	return a.X < b.X+b.W && b.X < a.X+a.W && a.Y < b.Y+b.H && b.Y < a.Y+a.H
 }
+
+func TestLayout_LYT12_StatusLines(t *testing.T) {
+	in := Inputs{Width: 80, Height: 24, StatusLines: 5, EditorLines: 1}
+	r := Compute(in)
+	if r.Footer.H != 5 {
+		t.Fatalf("status height = %d, want 5", r.Footer.H)
+	}
+	if r.Main.H < mainFloor || r.Editor.H < 1 {
+		t.Fatalf("status squeezed the screen: %+v", r)
+	}
+	checkTiles(t, in)
+
+	// The region is capped.
+	if big := Compute(Inputs{Width: 80, Height: 40, StatusLines: 99}); big.Footer.H != MaxStatusLines {
+		t.Fatalf("status height = %d, want the %d cap", big.Footer.H, MaxStatusLines)
+	}
+
+	// A short screen keeps at most two rows, a tiny one keeps one, and a
+	// three-row screen drops it so the transcript survives.
+	if short := Compute(Inputs{Width: 80, Height: 11, StatusLines: 5}); short.Footer.H != 2 {
+		t.Fatalf("height 11 status = %d, want 2", short.Footer.H)
+	}
+	if tiny := Compute(Inputs{Width: 80, Height: 7, StatusLines: 5}); tiny.Footer.H != 1 {
+		t.Fatalf("height 7 status = %d, want 1", tiny.Footer.H)
+	}
+	if none := Compute(Inputs{Width: 80, Height: 3, StatusLines: 5}); none.Footer.H != 0 {
+		t.Fatalf("height 3 status = %d, want 0", none.Footer.H)
+	}
+
+	// A tall status wins the row over a splash banner.
+	withBanner := Compute(Inputs{Width: 120, Height: 20, BannerLines: 21, StatusLines: 5})
+	if withBanner.Banner.H != 0 || withBanner.Footer.H != 5 {
+		t.Fatalf("banner = %d status = %d, want the banner dropped first", withBanner.Banner.H, withBanner.Footer.H)
+	}
+}

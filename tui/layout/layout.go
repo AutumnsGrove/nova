@@ -12,6 +12,7 @@ type Rect struct{ X, Y, W, H int }
 type Inputs struct {
 	Width, Height int
 	BannerLines   int // desired height of the splash banner, 0 to MaxBannerLines
+	StatusLines   int // desired height of the status region, 0 means the one-line default
 	EditorLines   int // desired height of the editor, 1 to MaxEditorLines
 	AboveLines    int // widgets above the editor
 	BelowLines    int
@@ -42,10 +43,7 @@ func Compute(in Inputs) Regions {
 	if short {
 		headerH = 0
 	}
-	footerH := 1
-	if height == 0 {
-		footerH = 0
-	}
+	statusH := StatusHeight(height, in.StatusLines)
 
 	// The banner is the top region while the splash plays. It is dropped before
 	// the header when the screen cannot hold it above the main floor and one
@@ -53,14 +51,14 @@ func Compute(in Inputs) Regions {
 	bannerH := 0
 	if !short && in.BannerLines > 0 {
 		bannerH = clamp(in.BannerLines, 1, MaxBannerLines)
-		if bannerH > BannerBudget(height) {
+		if bannerH > BannerBudget(height, statusH) {
 			bannerH = 0
 		}
 	}
 
 	// remaining is the space left for main, widgets, and the editor after the
-	// banner, header, and footer are placed.
-	remaining := height - bannerH - headerH - footerH
+	// banner, header, and status region are placed.
+	remaining := height - bannerH - headerH - statusH
 	if remaining < 0 {
 		remaining = 0
 	}
@@ -113,7 +111,7 @@ func Compute(in Inputs) Regions {
 		Above:   Rect{X: 0, Y: bannerH + headerH + mainH, W: width, H: aboveH},
 		Editor:  Rect{X: 0, Y: bannerH + headerH + mainH + aboveH, W: width, H: editorH},
 		Below:   Rect{X: 0, Y: bannerH + headerH + mainH + aboveH + editorH, W: width, H: belowH},
-		Footer:  Rect{X: 0, Y: height - footerH, W: width, H: footerH},
+		Footer:  Rect{X: 0, Y: height - statusH, W: width, H: statusH},
 		Sidebar: sidebar,
 	}
 }
@@ -129,6 +127,9 @@ const (
 	// MaxBannerLines is the tallest the splash banner may be: the splash's Full
 	// tier is 21 rows. A screen too short for a request still drops the banner.
 	MaxBannerLines = 21
+	// MaxStatusLines is the tallest the status region may be. A short screen
+	// keeps one or two rows rather than squeezing the transcript.
+	MaxStatusLines = 8
 
 	mainFloor    = 3  // the main area never drops below this where the screen allows
 	shortScreen  = 8  // under this, widgets, banner, header, and sidebar are dropped
@@ -148,10 +149,10 @@ func clamp(v, lo, hi int) int {
 	return v
 }
 
-// BannerBudget is the tallest banner a screen of this height can hold without
-// pushing the main area below its three-line floor or the editor below one row.
-// It is 0 when there is no room for a banner at all.
-func BannerBudget(height int) int {
+// BannerBudget is the tallest banner a screen of this height can hold with the
+// status region already reserved, without pushing the main area below its
+// three-line floor or the editor below one row. It is 0 when there is no room.
+func BannerBudget(height, statusH int) int {
 	if height < shortScreen {
 		return 0
 	}
@@ -159,5 +160,38 @@ func BannerBudget(height int) int {
 	if height >= headerMin {
 		headerH = 1
 	}
-	return max(height-headerH-1-mainFloor-1, 0)
+	return max(height-headerH-statusH-mainFloor-1, 0)
+}
+
+// StatusHeight is the status region height for a screen, given the configured
+// want. Zero means the one-line default; a short screen keeps at most two rows,
+// a tiny one keeps one, and the region never squeezes the main floor or the
+// editor.
+func StatusHeight(height, want int) int {
+	if height == 0 {
+		return 0
+	}
+	h := 1
+	if want > 0 {
+		h = clamp(want, 1, MaxStatusLines)
+	}
+	if height < shortScreen {
+		h = 1
+	} else if height < headerMin {
+		h = min(h, 2)
+	}
+	return min(h, StatusBudget(height))
+}
+
+// StatusBudget is the tallest status region a screen can hold above the main
+// floor and one editor row.
+func StatusBudget(height int) int {
+	if height == 0 {
+		return 0
+	}
+	headerH := 0
+	if height >= headerMin {
+		headerH = 1
+	}
+	return max(height-headerH-mainFloor-1, 0)
 }

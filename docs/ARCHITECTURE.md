@@ -70,7 +70,10 @@ nova/
   testkit/        fake provider and server, clock, golden       ≤ 1200
   bundled/        in-tree extensions: tasks, ask, plan,
                   subagent, webfetch                            ≤ 2500 total
-  tui/            the terminal UI                               ≤ 9200
+  tui/            the terminal UI                               ≤ 9700
+    ui/           the Bubble Tea model and its views           ≤ 2900
+    status/       the multi-line status region                 ≤ 320
+    git/          branch and working-tree counts for status    ≤ 120
     image/        inline image capability and Kitty encoding   ≤ 260
     firstrun/     the first-run sign-in and model picker       ≤ 400
     cli/          fang-styled help and errors (full build only) ≤ 150

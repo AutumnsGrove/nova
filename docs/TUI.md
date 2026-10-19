@@ -68,14 +68,17 @@ Taken from Crush's `internal/ui/AGENTS.md`, because they work.
 ├──────────────────────────────────────────────────────────────┤
 │ > _                                                          │  editor
 ├──────────────────────────────────────────────────────────────┤
-│ ctx ▮▮▮▮▯▯▯▯ 42% · $0.031 · plan:off · 2 queued    ///  ext… │  footer
+│ ~/Projects/nova (main) (+3,-1)                               │  status: cwd + git
+│ ↑12k ↓4k R9k CH75% $0.020 34%/1.0M (auto)                    │  status: usage
+│ session 14m · ctrl+o expand     (openrouter) sonnet • off    │  status: model
+│ go 5h 0.3% /// parallel 92/4,000 /// semsearch: unavailable  │  status: extensions
 └──────────────────────────────────────────────────────────────┘
 ```
 
 Regions are rectangles computed from the terminal size by one `layout()` function.
 Widgets appear above the editor, below it, or in a sidebar that shows only on wide
-terminals. A narrow terminal drops the sidebar, then the header detail, then the
-footer detail, in that order.
+terminals. A narrow terminal drops the sidebar, then the header, then status rows,
+in that order; the status region never squeezes the transcript below its floor.
 
 ## Transcript items
 
@@ -191,13 +194,25 @@ keeps updating underneath.
 ## Widgets and status
 
 Extensions (bundled or third-party) publish to named slots through `widget` and
-`status`. The TUI owns layout; an extension only chooses a placement and content. The
-footer shows status segments left to right with a muted `///` between them. While a
-run is active the footer leads with the run indicator: a spinner and the elapsed run
-time (`⠋ working 3s`). It sits first so it survives truncation on a narrow terminal,
-animates on the 250 ms tick chain, and clears the instant `run_end` arrives. It is the
-global counterpart to the per-block spinners in the transcript, visible whatever the
-transcript is scrolled to.
+`status`. The TUI owns layout; an extension only chooses a placement and content.
+Widgets sit above or below the editor, or in the sidebar; the `belowEditor` placement
+is the multi-line area just above the status region.
+
+The **status region** is multi-line and lives at the bottom. Its shipped lines come
+from `display.status.lines` (or the defaults): cwd and git branch/changes, then tokens
+(↑ in, ↓ out, R cache reads, CH cache-hit), cost, context ratio and window with
+`(auto)`, then the session/block timers and hints, with the provider, model, and
+thinking level right-aligned on the last line. Extension `status` segments are
+appended as further rows: they wrap at segment boundaries with a muted `///` between
+them and are capped by `display.status.ext_lines` (0-6), so they are no longer limited
+to one line. `/settings` has a status section for the extension rows, git, the timers,
+and the model; the YAML `display.status` block can also set an arbitrary line/segment
+layout.
+
+While a run is active the `run` segment leads the last shipped line: a spinner and the
+elapsed run time (`⠋ working 3s`), animated on the 250 ms tick chain and cleared the
+instant `run_end` arrives. The session clock ticks once a second. Both are the global
+counterpart to the per-block spinners in the transcript.
 
 ## Themes
 

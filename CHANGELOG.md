@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- The one-line footer is now a multi-line **status region**: cwd and git branch/changes, token counts
+  (`↑in ↓out Rcache CH%`), cost, context ratio/window with `(auto)`, session and block timers, and the hint, with
+  the provider/model/thinking right-aligned on the last line. Extension status segments wrap onto extra rows
+  instead of being truncated at one line. The header is now just `✦ nova`, and `/settings` has a status section
+  (extension rows, git, timers, model) persisted under `display.status` (#17).
 - The splash banner now plays a **hero phase**: for the first half of the sequence it shows the tallest scene that
   fits — Full on a large terminal, Compact on a normal one — then settles to the five-row lockup. When the
   sequence ends it **holds the final frame** at the top until the first prompt is sent, then collapses to the

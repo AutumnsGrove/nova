@@ -254,7 +254,7 @@ config (`extensions.disable: [plan]`).
 | `webfetch` | A keyless `web_fetch` tool: HTTP GET, HTML to markdown, size caps, redirect and host limits. | `parallel`'s `web_fetch`, without the key |
 
 Native features that were extensions in Pi are in the core, not here: the thinking
-block, the context limit, the cost and usage footer, OpenRouter provider routing,
+block, the context limit, the cost and usage status region, OpenRouter provider routing,
 and the permission policy.
 
 OpenCode Go is no longer a suggested extension. D56 makes it a core launch provider

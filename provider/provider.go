@@ -43,6 +43,10 @@ type Request struct {
 	ReasoningEffort string         // "", "low", "medium", or "high"
 	ProviderOptions map[string]any // merged into the wire body by the provider
 	ExtraHeaders    map[string]string
+	// PromptCache overrides whether the request carries an explicit prompt
+	// cache marker. Nil means decide from the catalog; see
+	// RequestCacheControl. A pointer, so true and false are both meaningful.
+	PromptCache *bool
 }
 
 // Usage reports token and cost accounting for one provider call.

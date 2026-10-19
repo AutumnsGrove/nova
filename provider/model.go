@@ -28,6 +28,11 @@ type Model struct {
 	// and "image". Empty means text only, the safe default for a model Nova
 	// does not know. It mirrors OpenRouter's input_modalities.
 	InputModalities []string
+	// ImplicitCaching reports that the provider caches a repeated request
+	// prefix on its own, so Nova must not send an explicit cache marker.
+	// False is the safe default: an anthropic-style model needs the marker to
+	// cache at all, and a model the catalog does not know is never marked.
+	ImplicitCaching bool
 }
 
 // AcceptsImages reports whether the model declares image input. A model with

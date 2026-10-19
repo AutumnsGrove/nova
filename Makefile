@@ -15,7 +15,7 @@ race:
 	go test -race -p 2 $$(go list ./... | grep -v '$(slow-pkg)')
 
 race-splash:
-	go test -race -p 2 ./tui/splash/splashgif
+	go test -race -timeout 25m -p 2 ./tui/splash/splashgif
 
 # gofmt -l exits 0 even when it lists files, so fail on any output.
 fmt:

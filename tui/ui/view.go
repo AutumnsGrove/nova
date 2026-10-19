@@ -3,14 +3,11 @@
 package ui
 
 import (
-	"fmt"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/AutumnsGrove/nova/tui/render"
 	"github.com/AutumnsGrove/nova/tui/splash"
 )
 
@@ -69,7 +66,7 @@ func (m *Model) baseLines() []string {
 		lines = append(lines, fitLines(below, m.layout.Below.H)...)
 	}
 	if m.layout.Footer.H > 0 {
-		lines = append(lines, m.footer())
+		lines = append(lines, fitLines(m.statusView(), m.layout.Footer.H)...)
 	}
 	return lines
 }
@@ -85,14 +82,10 @@ func (m *Model) drawToasts(lines []string) {
 	}
 }
 
-// header is the one-line session banner.
+// header is the one-line session mark. The model, cwd, and branch live in the
+// status region, so the header is just the brand.
 func (m *Model) header() string {
-	parts := []string{m.st.Spark.Render("✦"), m.st.Header.Render("nova")}
-	if m.state.Model != "" {
-		parts = append(parts, m.st.Text.Render(m.state.Model))
-	}
-	parts = append(parts, m.st.Muted.Render(m.shortCWD()))
-	return truncateJoin(parts, m.width, "  ")
+	return m.st.Spark.Render("✦") + "  " + m.st.Header.Render("nova")
 }
 
 // bannerView renders the splash into the top banner region, or "" when the
@@ -150,70 +143,6 @@ func (m *Model) editorView() string {
 	return strings.Join(out, "\n")
 }
 
-// footer is the one-line status bar with built-in and extension segments.
-func (m *Model) footer() string {
-	segs := m.builtinSegments()
-	if ext := m.widgets.Footer(m.width, m.st); ext != "" {
-		// Extension segments sit between the context and cost segments.
-		withExt := insertAt(segs, 1, ext)
-		if ansi.StringWidth(strings.Join(withExt, " · ")) <= m.width {
-			segs = withExt
-		}
-	}
-	// The run indicator leads, so it survives truncation at narrow widths.
-	if ind := m.runIndicator(); ind != "" {
-		segs = append([]string{ind}, segs...)
-	}
-	return m.st.Footer.Render(truncateJoin(segs, m.width, " · "))
-}
-
-// runIndicator is the always-visible "working" segment: a spinner and the run's
-// elapsed time, or empty when no run is active. It is distinct from the
-// per-block spinners because it lives in the footer and is visible wherever the
-// transcript is scrolled.
-func (m *Model) runIndicator() string {
-	if !m.runActive {
-		return ""
-	}
-	elapsed := time.Duration(0)
-	if !m.runStartedAt.IsZero() {
-		if d := m.clock.Now().Sub(m.runStartedAt); d > 0 {
-			elapsed = d
-		}
-	}
-	return m.st.Spark.Render(render.Spinner(elapsed)) + " " +
-		m.st.Muted.Render("working "+render.FormatDuration(elapsed))
-}
-
-// insertAt returns segs with v inserted after index at.
-func insertAt(segs []string, at int, v string) []string {
-	out := make([]string, 0, len(segs)+1)
-	for i, s := range segs {
-		out = append(out, s)
-		if i == at {
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-// builtinSegments are the footer's own segments, in order.
-func (m *Model) builtinSegments() []string {
-	var segs []string
-	if m.state.EffectiveLimit > 0 {
-		pct := float64(m.state.ContextTokens) / float64(m.state.EffectiveLimit) * 100
-		segs = append(segs, contextBar(pct)+fmt.Sprintf(" %.0f%%", pct))
-	} else {
-		segs = append(segs, "ctx n/a")
-	}
-	segs = append(segs, fmt.Sprintf("$%.3f", m.state.Usage.CostUSD))
-	if q := m.queued(); q > 0 {
-		segs = append(segs, fmt.Sprintf("%d queued", q))
-	}
-	segs = append(segs, m.hint())
-	return segs
-}
-
 // hint is the most relevant key for the current state.
 func (m *Model) hint() string {
 	switch {
@@ -225,19 +154,6 @@ func (m *Model) hint() string {
 		return "ctrl+o collapse"
 	}
 	return "ctrl+o expand"
-}
-
-// contextBar renders a context-usage bar of the given width.
-func contextBar(pct float64) string {
-	const width = 8
-	filled := int(pct / 100 * width)
-	if filled > width {
-		filled = width
-	}
-	if filled < 0 {
-		filled = 0
-	}
-	return strings.Repeat("▮", filled) + strings.Repeat("▯", width-filled)
 }
 
 // truncateJoin joins parts with sep and truncates the result to width cells.

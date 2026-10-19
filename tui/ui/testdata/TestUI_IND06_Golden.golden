@@ -1,7 +1,5 @@
 --- width 40 ---
-✦  [1mnova[m  ~/proj                         
-                                        
-                                        
+✦  [1mnova[m                                 
                                         
                                         
                                         
@@ -22,11 +20,11 @@
                                         
                                         
 > [7m [m                                     
-⠋ working 3s · ctx n/a · $0.000…        
+~/proj                                  
+$0.000 · ctx n/a                        
+⠋ working 3s · session 3s · block 3s · …
 --- width 80 ---
-✦  [1mnova[m  ~/proj                                                                 
-                                                                                
-                                                                                
+✦  [1mnova[m                                                                         
                                                                                 
                                                                                 
                                                                                 
@@ -47,11 +45,11 @@
                                                                                 
                                                                                 
 > [7m [m                                                                             
-⠋ working 3s · ctx n/a · $0.000 · esc abort                                     
+~/proj                                                                          
+$0.000 · ctx n/a                                                                
+⠋ working 3s · session 3s · block 3s · esc abort                                
 --- width 120 ---
-✦  [1mnova[m  ~/proj                                                                                                         
-                                                                                                                        
-                                                                                                                        
+✦  [1mnova[m                                                                                                                 
                                                                                                                         
                                                                                                                         
                                                                                                                         
@@ -72,4 +70,6 @@
                                                                                                                         
                                                                                                                         
 > [7m [m                                                                                                                     
-⠋ working 3s · ctx n/a · $0.000 · esc abort                                                                             
+~/proj                                                                                                                  
+$0.000 · ctx n/a                                                                                                        
+⠋ working 3s · session 3s · block 3s · esc abort                                                                        

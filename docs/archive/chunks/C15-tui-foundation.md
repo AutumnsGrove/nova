@@ -2,7 +2,7 @@
 chunk: C15
 title: "TUI foundation"
 packages: [./tui/layout, ./tui/list, ./tui/styles, ./tui/client, ./tui/chat, ./tui/ui]
-budgets: { ./tui/layout: 150, ./tui/list: 350, ./tui/styles: 450, ./tui/client: 200, ./tui/chat: 1300, ./tui/ui: 2740 }
+budgets: { ./tui/layout: 150, ./tui/list: 350, ./tui/styles: 450, ./tui/client: 200, ./tui/chat: 1300, ./tui/ui: 2900 }
 depends: [C12]
 ---
 
@@ -395,21 +395,24 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | UIM04 | event chain | event received | `Next` issued again |
 | UIM05 | `ClosedMsg` | | UI quits with a notice |
 | UIM06 | footer values | state, `usage`, `queue_update` | context bar, cost, queued counts shown |
-| UIM07 | footer truncation | width 40 | segments dropped from the right; one line |
-| UIM08 | header | | glyph, model, cwd with `~` |
+| UIM07 | status lines fit the width | width 40 | every line is at most 40 cells; at least two lines |
+| UIM08 | header is only the brand | | glyph and name; model and cwd live in the status region |
 | UIM09 | run state | `run_start`/`run_end` | editor hints change; steer mode on |
 | IND01 | run indicator shows and clears | `run_start`, `run_end` | footer shows `working` for the run, gone after `run_end` |
 | IND02 | indicator animates and times | clock advances | glyph changes; elapsed shown (`400ms`) |
 | IND03 | waiting-only run | `run_start` with no transcript activity | indicator shown; a tick is scheduled |
-| IND04 | run_end stops the ticks | | no timer rescheduled; not ticking |
+| IND04 | run_end stops the run tick | a status clock is separately live | no run tick rescheduled at 250 ms |
 | IND05 | `state_changed running` starts it | | indicator shown |
-| IND06 | indicator golden | three widths, Mono | one line; survives narrow widths |
+| IND06 | indicator golden | three widths, Mono | the run segment appears in the status region |
 | SETU01 | `/settings` and `/config` | both names | open the settings dialog |
 | SETU02 | applying settings is live | a tool card | the display changes and the card re-renders shorter |
 | SETU03 | `/display lines` persists | 3 | saved to `display.thinking_lines` |
 | SETU04 | local commands listed | | `settings` and `config` are in the command list |
 | SETU05 | model seeded from options | `Display` set | `m.display` starts from it |
 | SETU06 | `/display lines` refuses or clamps | 0, -1, `abc`, 999 | notice and no write, then 50 |
+| SETU07 | settings has a status section | `/settings` | extension rows, git, timers, and model rows |
+| SETU08 | status toggles apply live | ext 0, git/timers/model off | the config loses those segments |
+| SETU09 | status settings persist | ext 4, git off | a `display.status` mapping is written |
 | SETC01 | thinking height re-renders | finished block, 8 then 2 | the block shrinks |
 | UIM10 | prompt response error | `busy`, `provider_error` | error shown; text restored to the editor |
 | UIM11 | `session_changed` | | transcript reloaded via `get_messages` |
@@ -429,7 +432,8 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | GLD03 | a tool turn at three widths | golden | matches |
 | GLD04 | streaming mid-message | golden | matches |
 | GLD05 | completion popup | golden | matches |
-| GLD06 | footer at three widths | golden | matches |
+| GLD06 | status at three widths | golden | matches |
+| GLD11 | populated status | golden | tokens, cache, cost, context, git, model |
 | GLD07 | `NO_COLOR` view | golden | no colour escapes |
 | GLD08 | recorded replay | the `testdata/events` fixtures | golden |
 | GLD09 | tall editor | a 12-line prompt at three widths | golden |

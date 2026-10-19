@@ -61,7 +61,11 @@ func (m *Model) handleUIRequest(req proto.UIRequest) tea.Cmd {
 	case "notify":
 		m.widgets.Notify(req.Text, req.Level, m.clock.Now())
 	case "status":
+		hadExt := len(m.widgets.StatusSegments()) > 0
 		m.widgets.SetStatus(req.Key, segments(req.Segments))
+		if hadExt != (len(m.widgets.StatusSegments()) > 0) {
+			m.recompute()
+		}
 	case "widget":
 		m.applyWidget(req)
 	case "title":

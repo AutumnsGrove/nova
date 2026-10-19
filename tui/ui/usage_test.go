@@ -40,8 +40,8 @@ func TestUsage_USG24_FooterWidget(t *testing.T) {
 	f.responses[proto.CmdGetUsage] = usageResponse(`{"rows":["x"],"footer":"go 5h 62.5% (1h 12m) · wk 31% · mo 44%"}`)
 	cmd, _ := m.localCommand("usage", "")
 	update(m, do(cmd))
-	if !strings.Contains(m.footer(), "go 5h 62.5%") {
-		t.Fatalf("footer = %q", m.footer())
+	if !strings.Contains(footerText(m), "go 5h 62.5%") {
+		t.Fatalf("footer = %q", footerText(m))
 	}
 }
 
@@ -66,8 +66,8 @@ func TestUsage_USG26_NoKeyNoStatus(t *testing.T) {
 	f.responses[proto.CmdGetUsage] = usageResponse(`{"error":"Not signed in. Run ` + "`nova login opencode-go`" + `."}`)
 	cmd, _ := m.localCommand("usage", "")
 	update(m, do(cmd))
-	if strings.Contains(m.footer(), "go 5h") {
-		t.Fatalf("footer shows usage without a key: %q", m.footer())
+	if strings.Contains(footerText(m), "go 5h") {
+		t.Fatalf("footer shows usage without a key: %q", footerText(m))
 	}
 	if m.overlay.Len() != 1 {
 		t.Fatalf("overlay = %d, want the sign-in message", m.overlay.Len())

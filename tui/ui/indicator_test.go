@@ -11,21 +11,22 @@ import (
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/client"
+	"github.com/AutumnsGrove/nova/tui/status"
 )
 
 // IND01: the footer shows a run indicator for the whole of a run and clears it
 // the moment run_end arrives.
 func TestUI_IND01_ShowsWhileRunning(t *testing.T) {
 	m, _, _ := newModel(t)
-	if strings.Contains(m.footer(), "working") {
-		t.Fatalf("indicator shown before a run: %q", m.footer())
+	if strings.Contains(footerText(m), "working") {
+		t.Fatalf("indicator shown before a run: %q", footerText(m))
 	}
 	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventRunStart}})
-	if got := m.footer(); !strings.Contains(got, "working") {
+	if got := footerText(m); !strings.Contains(got, "working") {
 		t.Fatalf("no run indicator in the footer: %q", got)
 	}
 	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventRunEnd}})
-	if got := m.footer(); strings.Contains(got, "working") {
+	if got := footerText(m); strings.Contains(got, "working") {
 		t.Fatalf("indicator survived run_end: %q", got)
 	}
 }
@@ -34,9 +35,9 @@ func TestUI_IND01_ShowsWhileRunning(t *testing.T) {
 func TestUI_IND02_AnimatesAndTimes(t *testing.T) {
 	m, _, clk := newModel(t)
 	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventRunStart}})
-	first := m.footer()
+	first := footerText(m)
 	clk.now = clk.now.Add(400 * time.Millisecond)
-	second := m.footer()
+	second := footerText(m)
 	if first == second {
 		t.Fatalf("indicator did not change with the clock: %q", first)
 	}
@@ -50,8 +51,8 @@ func TestUI_IND02_AnimatesAndTimes(t *testing.T) {
 func TestUI_IND03_WaitingOnlyRun(t *testing.T) {
 	m, _, _ := newModel(t)
 	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventRunStart}})
-	if !strings.Contains(m.footer(), "working") {
-		t.Fatalf("no indicator while waiting on the provider: %q", m.footer())
+	if !strings.Contains(footerText(m), "working") {
+		t.Fatalf("no indicator while waiting on the provider: %q", footerText(m))
 	}
 	if !m.needsTick() {
 		t.Fatal("needsTick() is false for a bare run")
@@ -62,6 +63,7 @@ func TestUI_IND03_WaitingOnlyRun(t *testing.T) {
 func TestUI_IND04_TicksStopOnEnd(t *testing.T) {
 	m, clk := splashModel(t, 120, 60)
 	m.display.Splash = false
+	m.status = status.Compact()
 	m.recompute()
 	clk.durs = nil
 	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventRunStart}})
@@ -93,7 +95,7 @@ func TestUI_IND06_Golden(t *testing.T) {
 func TestUI_IND05_StateChangedStarts(t *testing.T) {
 	m, _, _ := newModel(t)
 	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventStateChanged, State: []byte(`{"running":true}`)}})
-	if !strings.Contains(m.footer(), "working") {
-		t.Fatalf("state_changed running=true did not show the indicator: %q", m.footer())
+	if !strings.Contains(footerText(m), "working") {
+		t.Fatalf("state_changed running=true did not show the indicator: %q", footerText(m))
 	}
 }

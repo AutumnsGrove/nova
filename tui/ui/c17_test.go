@@ -169,7 +169,7 @@ func TestUI_UXB05_FireAndForget(t *testing.T) {
 	if m.widgets.Height("above_editor", 40, 8) != 1 {
 		t.Fatal("widget was not set")
 	}
-	if m.widgets.Footer(80, m.st) == "" {
+	if len(m.widgets.StatusSegments()) == 0 {
 		t.Fatal("status segment was not set")
 	}
 	if m.editor.Value() != "set" {
@@ -326,23 +326,23 @@ func TestUI_WDG09_SidebarUnderEditor(t *testing.T) {
 	}
 }
 
-func TestUI_STS04_NarrowDropsExtensionFirst(t *testing.T) {
+func TestUI_STS04_NarrowWrapsExtensionStatus(t *testing.T) {
 	m, _, _ := newModel(t)
 	pushUI(m, proto.UIRequest{Method: "status", Key: "ext",
 		Segments: []proto.UISegment{{Text: "EXTENSION-STATUS"}}})
 	m.width = 120
 	m.recompute()
-	if wide := m.footer(); !strings.Contains(wide, "EXTENSION-STATUS") || !strings.Contains(wide, "$0.000") {
+	if wide := footerText(m); !strings.Contains(wide, "EXTENSION-STATUS") || !strings.Contains(wide, "$0.000") {
 		t.Fatalf("wide footer = %q", wide)
 	}
 	m.width = 30
 	m.recompute()
-	narrow := m.footer()
-	if strings.Contains(narrow, "EXTENSION-STATUS") {
-		t.Fatalf("narrow footer kept the extension segment: %q", narrow)
+	narrow := footerText(m)
+	if !strings.Contains(narrow, "EXTENSION-STATUS") {
+		t.Fatalf("narrow status dropped the extension instead of wrapping it: %q", narrow)
 	}
 	if !strings.Contains(narrow, "$0.000") {
-		t.Fatalf("narrow footer dropped a built-in segment: %q", narrow)
+		t.Fatalf("narrow status dropped a built-in segment: %q", narrow)
 	}
 }
 

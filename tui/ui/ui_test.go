@@ -18,6 +18,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AutumnsGrove/nova/clipboard"
 	"github.com/AutumnsGrove/nova/diag"
@@ -108,6 +109,9 @@ func execAll(cmd tea.Cmd) {
 		}
 	}
 }
+
+// footerText joins the status region for assertions.
+func footerText(m *Model) string { return strings.Join(m.statusView(), "\n") }
 
 func runeKey(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Text: string(r)} }
 func ctrlKey(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl} }
@@ -204,7 +208,7 @@ func TestUI_UIM06_FooterValues(t *testing.T) {
 	m.state.ContextTokens = 420
 	m.state.Usage.CostUSD = 0.031
 	m.state.Steering = 2
-	got := m.footer()
+	got := footerText(m)
 	for _, want := range []string{"42%", "$0.031", "2 queued"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("footer %q missing %q", got, want)
@@ -212,18 +216,20 @@ func TestUI_UIM06_FooterValues(t *testing.T) {
 	}
 }
 
-func TestUI_UIM07_FooterTruncation(t *testing.T) {
+func TestUI_UIM07_StatusLinesFitWidth(t *testing.T) {
 	m, _, _ := newModel(t)
 	m.width = 40
 	m.state.EffectiveLimit = 1000
 	m.state.ContextTokens = 420
 	m.state.Usage.CostUSD = 0.031
-	got := m.footer()
-	if strings.Contains(got, "\n") {
-		t.Fatalf("footer wrapped: %q", got)
+	lines := m.statusView()
+	if len(lines) < 2 {
+		t.Fatalf("want the multi-line status, got %q", lines)
 	}
-	if w := len([]rune(got)); w > 40 {
-		t.Fatalf("footer is %d cells wide: %q", w, got)
+	for _, line := range lines {
+		if w := ansi.StringWidth(line); w > 40 {
+			t.Fatalf("status line is %d cells wide: %q", w, ansi.Strip(line))
+		}
 	}
 }
 
@@ -233,9 +239,18 @@ func TestUI_UIM08_Header(t *testing.T) {
 	m.cwd = "/home/nova/code/proj"
 	m.state.Model = "deepseek/x"
 	got := m.header()
-	for _, want := range []string{"✦", "nova", "deepseek/x", "~/code/proj"} {
+	for _, want := range []string{"✦", "nova"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("header %q missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "deepseek/x") || strings.Contains(got, "~/code/proj") {
+		t.Fatalf("the header duplicates the status region: %q", got)
+	}
+	status := footerText(m)
+	for _, want := range []string{"deepseek/x", "~/code/proj"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("status %q missing %q", status, want)
 		}
 	}
 }
@@ -788,8 +803,8 @@ func TestUI_KEY14_QuitArmedHint(t *testing.T) {
 	if !m.quitArmed {
 		t.Fatal("quit not armed")
 	}
-	if !strings.Contains(m.footer(), "ctrl+c again to quit") {
-		t.Fatalf("footer %q missing the quit hint", m.footer())
+	if !strings.Contains(footerText(m), "ctrl+c again to quit") {
+		t.Fatalf("footer %q missing the quit hint", footerText(m))
 	}
 }
 

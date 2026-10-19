@@ -1,7 +1,5 @@
 --- width 40 ---
-✦  [1mnova[m  ~/proj                         
-                                        
-                                        
+✦  [1mnova[m                                 
                                         
                                         
                                         
@@ -22,11 +20,11 @@
                                         
                                         
 > [7m [m                                     
-▮▮▮▯▯▯▯▯ 42% · $0.031 · 2 queued…       
+~/proj                                  
+$0.031 · 42%/1k · (auto)                
+session 0ms · 2 queued · ctrl+o expand  
 --- width 80 ---
-✦  [1mnova[m  ~/proj                                                                 
-                                                                                
-                                                                                
+✦  [1mnova[m                                                                         
                                                                                 
                                                                                 
                                                                                 
@@ -47,11 +45,11 @@
                                                                                 
                                                                                 
 > [7m [m                                                                             
-▮▮▮▯▯▯▯▯ 42% · $0.031 · 2 queued · ctrl+o expand                                
+~/proj                                                                          
+$0.031 · 42%/1k · (auto)                                                        
+session 0ms · 2 queued · ctrl+o expand                                          
 --- width 120 ---
-✦  [1mnova[m  ~/proj                                                                                                         
-                                                                                                                        
-                                                                                                                        
+✦  [1mnova[m                                                                                                                 
                                                                                                                         
                                                                                                                         
                                                                                                                         
@@ -72,4 +70,6 @@
                                                                                                                         
                                                                                                                         
 > [7m [m                                                                                                                     
-▮▮▮▯▯▯▯▯ 42% · $0.031 · 2 queued · ctrl+o expand                                                                        
+~/proj                                                                                                                  
+$0.031 · 42%/1k · (auto)                                                                                                
+session 0ms · 2 queued · ctrl+o expand                                                                                  

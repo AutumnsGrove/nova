@@ -1,8 +1,8 @@
 ---
 chunk: C16
 title: "TUI rendering: thinking block, tool cards, diffs, themes, splash"
-packages: [./tui/render, ./tui/diff, ./tui/chat, ./tui/styles, ./tui/ui]
-budgets: { ./tui/render: 745, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 2740 }
+packages: [./tui/render, ./tui/diff, ./tui/chat, ./tui/styles, ./tui/ui, ./tui/status, ./tui/git]
+budgets: { ./tui/render: 745, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 2900, ./tui/status: 320, ./tui/git: 120 }
 depends: [C15]
 ---
 
@@ -328,6 +328,27 @@ type Display struct {
 | GLR04 | each theme | golden | matches |
 | PRR01 | transcript with 2,000 tool cards scrolls | benchmark | under 5 ms per frame |
 | PRR02 | streaming thinking of 100 KiB | benchmark | under 1 ms per delta |
+
+| SLN01 | default status layout | populated data | cwd/git, tokens/cost/context, timers, and the model |
+| SLN02 | the model is right-aligned | width 100 | the last line is full width and the model sits on the right |
+| SLN03 | a narrow line truncates the left | width 30 | the right is kept when it fits; dropped only when it cannot |
+| SLN04 | context pressure | 40, 71, 91 percent | text, warn, error |
+| SLN05 | extension statuses wrap | three segments at width 30 | two extra rows, no line over the width |
+| SLN06 | status height | default, compact, zero config | five with extensions, one, and the three defaults |
+| SLN07 | empty values are omitted | zero data | no tokens, git, or model; a deliberate `ctx n/a` |
+| SLN08 | mono has no colour | mono theme, ASCII profile | no escape codes |
+| SLN09 | never exceeds the width | widths 10 to 200 | every line fits |
+| SLN10 | empty separator | separator empty | the default ` · ` is used |
+| STS03 | style mapping | warn, error, unknown, empty | distinct tokens; unknown and empty fall back to muted |
+| STS05 | status renders usage | a populated state | tokens, cache, cost, context, model, thinking |
+| STS06 | extension status grows the region | default plus two rows | height goes from three to five |
+| STS07 | status height follows the config | compact | one row |
+| GIT01 | branch and changes | numstat with a binary file | branch and summed counts, binary skipped |
+| GIT02 | detached HEAD | symbolic-ref fails | ok with no branch, changes still counted |
+| GIT03 | not a repo | both commands fail | a zero Info |
+| GIT04 | no commits | diff HEAD fails | falls back to the working-tree diff |
+| GIT05 | no cwd | empty cwd | not ok; git is not run |
+| GIT06 | fake reader | configured info | reports it and counts the call |
 
 ## Retired rows
 

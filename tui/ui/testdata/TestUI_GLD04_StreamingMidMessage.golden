@@ -1,5 +1,5 @@
 --- width 40 ---
-✦  [1mnova[m  ~/proj                         
+✦  [1mnova[m                                 
 partial answer                          
                                         
                                         
@@ -19,12 +19,12 @@ partial answer
                                         
                                         
                                         
-                                        
-                                        
 > [7m [m                                     
-ctx n/a · $0.000 · ctrl+o expand        
+~/proj                                  
+$0.000 · ctx n/a                        
+session 0ms · ctrl+o expand             
 --- width 80 ---
-✦  [1mnova[m  ~/proj                                                                 
+✦  [1mnova[m                                                                         
 partial answer                                                                  
                                                                                 
                                                                                 
@@ -44,12 +44,12 @@ partial answer
                                                                                 
                                                                                 
                                                                                 
-                                                                                
-                                                                                
 > [7m [m                                                                             
-ctx n/a · $0.000 · ctrl+o expand                                                
+~/proj                                                                          
+$0.000 · ctx n/a                                                                
+session 0ms · ctrl+o expand                                                     
 --- width 120 ---
-✦  [1mnova[m  ~/proj                                                                                                         
+✦  [1mnova[m                                                                                                                 
 partial answer                                                                                                          
                                                                                                                         
                                                                                                                         
@@ -69,7 +69,7 @@ partial answer
                                                                                                                         
                                                                                                                         
                                                                                                                         
-                                                                                                                        
-                                                                                                                        
 > [7m [m                                                                                                                     
-ctx n/a · $0.000 · ctrl+o expand                                                                                        
+~/proj                                                                                                                  
+$0.000 · ctx n/a                                                                                                        
+session 0ms · ctrl+o expand                                                                                             

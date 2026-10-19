@@ -15,6 +15,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/status"
 )
 
 // fakeStore is an in-memory credential store for the UI tests.
@@ -694,6 +695,8 @@ func TestUI_SGN61_FlowDialogFollowsTheSessionStatus(t *testing.T) {
 func TestUI_SGN62_StatusFlowKeepsTheTickChainOnlyWhileOpen(t *testing.T) {
 	sess := &statusSession{fakeSession: newFakeSession(), status: "Waiting..."}
 	m, _, _ := beginStatusOAuth(t, "fake-status3-c22", sess)
+	m.status = status.Compact()
+	m.recompute()
 	if !m.needsTick() {
 		t.Fatal("needsTick() is false while a status-reporting sign-in is open")
 	}

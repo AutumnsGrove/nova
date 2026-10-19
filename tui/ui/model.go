@@ -27,11 +27,13 @@ import (
 	"github.com/AutumnsGrove/nova/tui/chat"
 	"github.com/AutumnsGrove/nova/tui/client"
 	"github.com/AutumnsGrove/nova/tui/dialog"
+	"github.com/AutumnsGrove/nova/tui/git"
 	"github.com/AutumnsGrove/nova/tui/image"
 	"github.com/AutumnsGrove/nova/tui/layout"
 	"github.com/AutumnsGrove/nova/tui/list"
 	"github.com/AutumnsGrove/nova/tui/render"
 	"github.com/AutumnsGrove/nova/tui/splash"
+	"github.com/AutumnsGrove/nova/tui/status"
 	"github.com/AutumnsGrove/nova/tui/styles"
 	"github.com/AutumnsGrove/nova/tui/widget"
 )
@@ -63,6 +65,8 @@ type Options struct {
 	Renderer      chat.Renderer
 	Display       chat.Display     // saved display preferences; zero uses the defaults
 	Clipboard     clipboard.Reader // nil uses the OS clipboard
+	Status        config.StatusConfig
+	Git           git.Reader // nil reads the real repository
 }
 
 // commandInfo is one slash command from get_commands.
@@ -86,8 +90,11 @@ type stateData struct {
 	Steering       int    `json:"steering"`
 	FollowUp       int    `json:"follow_up"`
 	Usage          struct {
-		TotalTokens int     `json:"total_tokens"`
-		CostUSD     float64 `json:"cost_usd"`
+		PromptTokens     int     `json:"prompt_tokens"`
+		CompletionTokens int     `json:"completion_tokens"`
+		CachedTokens     int     `json:"cached_tokens"`
+		TotalTokens      int     `json:"total_tokens"`
+		CostUSD          float64 `json:"cost_usd"`
 	} `json:"usage"`
 }
 
@@ -132,10 +139,16 @@ type Model struct {
 	pending     pendingSend
 	themes      []styles.Theme
 	display     chat.Display
+	status      config.StatusConfig
 	splashStart time.Time
 	splashAt    time.Duration
 	splashDone  bool
+	startedAt   time.Time
 	ticking     bool
+
+	gitReader git.Reader
+	git       git.Info
+	gitArmed  bool
 
 	// The in-app sign-in flow.
 	loggedOutID   string
@@ -226,6 +239,15 @@ func New(opt Options) *Model {
 		answered:    map[string]bool{},
 		caps:        capabilitySet(capabilities),
 		splashStart: opt.Clock.Now(),
+		startedAt:   opt.Clock.Now(),
+		status:      opt.Status,
+		gitReader:   opt.Git,
+	}
+	if len(m.status.Lines) == 0 {
+		m.status = status.Default()
+	}
+	if m.gitReader == nil {
+		m.gitReader = git.Detect()
 	}
 	m.width, m.height = opt.Width, opt.Height
 	if m.clipboard == nil {
@@ -325,7 +347,7 @@ func (m *Model) bannerLines() int {
 	if !m.showSplash() {
 		return 0
 	}
-	budget := layout.BannerBudget(m.height)
+	budget := layout.BannerBudget(m.height, m.statusHeight())
 	if budget < splash.LockupHeight {
 		return 0
 	}
@@ -348,6 +370,7 @@ func (m *Model) Init() tea.Cmd {
 		m.client.Send(proto.Command{Type: proto.CmdGetMessages}),
 		m.client.Send(proto.Command{Type: proto.CmdGetUsage}),
 		m.scheduleUsage(),
+		m.scheduleGit(),
 		m.scheduleTick(),
 		m.client.Next(),
 	)
@@ -374,6 +397,7 @@ func (m *Model) recompute() {
 		Width:       m.width,
 		Height:      m.height,
 		BannerLines: m.bannerLines(),
+		StatusLines: m.statusHeight(),
 		EditorLines: full,
 		AboveLines:  aboveH,
 		BelowLines:  belowH,

@@ -78,6 +78,7 @@ func runWith(ctx context.Context, srv *mode.Server, opt RunOptions, in io.Reader
 		Version:  opt.Version,
 		Renderer: chat.NewGlamourRenderer(st),
 		Display:  display,
+		Status:   srv.StatusConfig(),
 	})
 	diag.SetMode("tui")
 	diag.SetOp("tui running")

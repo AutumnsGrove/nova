@@ -138,3 +138,62 @@ func TestUI_SETU04_CommandsListed(t *testing.T) {
 		t.Fatalf("settings/config missing from commands: %v", names)
 	}
 }
+
+// SETU07: the settings dialog has a status section.
+func TestUI_SETU07_StatusSection(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.setEditorText("/settings")
+	execAll(update(m, enterKey))
+	v := m.overlay.Top().View(60, 24, m.st)
+	for _, want := range []string{"Status: extension rows", "Status: git branch + changes", "Status: session + block timers", "Status: model on the right"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("settings dialog missing %q:\n%s", want, v)
+		}
+	}
+}
+
+// SETU08: status toggles apply live.
+func TestUI_SETU08_StatusApply(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.home = t.TempDir()
+	cmd := m.applySettings([]dialog.Setting{
+		{Key: "display.status.ext_lines", Value: 0, Min: 0, Max: 6},
+		{Key: "display.status.git", Value: 0, Min: 0, Max: 1},
+		{Key: "display.status.timers", Value: 0, Min: 0, Max: 1},
+		{Key: "display.status.model", Value: 0, Min: 0, Max: 1},
+	})
+	execAll(cmd)
+	if m.status.ExtLines != 0 {
+		t.Fatalf("ext lines = %d, want 0", m.status.ExtLines)
+	}
+	for _, id := range []string{"branch", "changes", "session", "block", "model"} {
+		if m.statusUses(id) {
+			t.Fatalf("%q is still configured: %+v", id, m.status)
+		}
+	}
+}
+
+// SETU09: the status section persists as one display.status mapping.
+func TestUI_SETU09_StatusPersists(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.home = t.TempDir()
+	execAll(m.applySettings([]dialog.Setting{
+		{Key: "display.status.ext_lines", Value: 4, Min: 0, Max: 6},
+		{Key: "display.status.git", Value: 0, Min: 0, Max: 1},
+	}))
+	data, err := os.ReadFile(config.UserConfigPath(m.home) + ".yaml")
+	if err != nil {
+		t.Fatalf("config not written: %v", err)
+	}
+	var doc struct {
+		Display struct {
+			Status config.StatusConfig `yaml:"status"`
+		} `yaml:"display"`
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("config not parseable: %v\n%s", err, data)
+	}
+	if doc.Display.Status.ExtLines != 4 || len(doc.Display.Status.Lines) == 0 {
+		t.Fatalf("saved status = %+v\n%s", doc.Display.Status, data)
+	}
+}

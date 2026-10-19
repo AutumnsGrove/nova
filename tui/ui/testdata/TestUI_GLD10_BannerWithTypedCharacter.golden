@@ -4,9 +4,7 @@
                   nova                  
                                         
                                         
-✦  [1mnova[m  ~/proj                         
-                                        
-                                        
+✦  [1mnova[m                                 
                                         
                                         
                                         
@@ -22,16 +20,16 @@
                                         
                                         
 > h[7m [m                                    
-ctx n/a · $0.000 · ctrl+o expand        
+~/proj                                  
+$0.000 · ctx n/a                        
+session 0ms · ctrl+o expand             
 --- width 80 ---
                                                                                 
                                                                                 
                                       nova                                      
                                                                                 
                                                                                 
-✦  [1mnova[m  ~/proj                                                                 
-                                                                                
-                                                                                
+✦  [1mnova[m                                                                         
                                                                                 
                                                                                 
                                                                                 
@@ -47,16 +45,16 @@ ctx n/a · $0.000 · ctrl+o expand
                                                                                 
                                                                                 
 > h[7m [m                                                                            
-ctx n/a · $0.000 · ctrl+o expand                                                
+~/proj                                                                          
+$0.000 · ctx n/a                                                                
+session 0ms · ctrl+o expand                                                     
 --- width 120 ---
                                                                                                                         
                                                                                                                         
                                                           nova                                                          
                                                                                                                         
                                                                                                                         
-✦  [1mnova[m  ~/proj                                                                                                         
-                                                                                                                        
-                                                                                                                        
+✦  [1mnova[m                                                                                                                 
                                                                                                                         
                                                                                                                         
                                                                                                                         
@@ -72,4 +70,6 @@ ctx n/a · $0.000 · ctrl+o expand
                                                                                                                         
                                                                                                                         
 > h[7m [m                                                                                                                    
-ctx n/a · $0.000 · ctrl+o expand                                                                                        
+~/proj                                                                                                                  
+$0.000 · ctx n/a                                                                                                        
+session 0ms · ctrl+o expand                                                                                             

@@ -90,6 +90,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitArmed = m.quitArmed && m.clock.Now().Before(m.quitAt)
 		return m, m.scheduleTick()
 
+	case gitTickMsg:
+		m.gitArmed = false
+		return m, tea.Batch(m.readGit(), m.scheduleGit())
+
+	case gitInfoMsg:
+		m.git = msg.info
+		return m, nil
+
 	case usageTickMsg:
 		m.usageArmed = false
 		return m, tea.Batch(

@@ -188,13 +188,13 @@ func TestWidget_WDG12_UnknownKind(t *testing.T) {
 	}
 }
 
-func TestWidget_STS01_StatusOrderAndSeparator(t *testing.T) {
+func TestWidget_STS01_StatusOrder(t *testing.T) {
 	s := NewStore()
 	s.SetStatus("zeta", []Segment{{Text: "z"}})
 	s.SetStatus("alpha", []Segment{{Text: "a"}})
-	got := s.Footer(80, ascii())
-	if !strings.HasPrefix(got, "z /// a") {
-		t.Fatalf("footer = %q, want first-appearance order z then a", got)
+	got := s.StatusSegments()
+	if len(got) != 2 || got[0].Text != "z" || got[1].Text != "a" {
+		t.Fatalf("segments = %+v, want first-appearance order z then a", got)
 	}
 }
 
@@ -202,21 +202,8 @@ func TestWidget_STS02_ClearStatus(t *testing.T) {
 	s := NewStore()
 	s.SetStatus("k", []Segment{{Text: "x"}})
 	s.SetStatus("k", nil)
-	if got := s.Footer(80, ascii()); got != "" {
-		t.Fatalf("footer = %q, want empty", got)
-	}
-}
-
-func TestWidget_STS03_StyleMapping(t *testing.T) {
-	st := color()
-	if segmentStyle("warn", st).Render("x") == segmentStyle("error", st).Render("x") {
-		t.Fatal("warn and error should map to different theme tokens")
-	}
-	if segmentStyle("nope", st).Render("x") != segmentStyle("muted", st).Render("x") {
-		t.Fatal("an unknown style should fall back to muted")
-	}
-	if segmentStyle("", st).Render("x") != st.Text.Render("x") {
-		t.Fatal("an empty style should map to the default text style")
+	if got := s.StatusSegments(); len(got) != 0 {
+		t.Fatalf("segments = %+v, want none", got)
 	}
 }
 

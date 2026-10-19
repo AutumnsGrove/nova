@@ -277,39 +277,17 @@ func progressLines(label string, value float64, width int, st styles.Styles) []s
 	return []string{st.Text.Render(ansi.Truncate(line, width, "…"))}
 }
 
-// Footer renders the status segments in first-appearance order, separated by a
-// muted ///.
-func (s *Store) Footer(width int, st styles.Styles) string {
+// StatusSegments returns every extension status segment in first-appearance
+// order. The status renderer wraps and styles them, so the store only owns the
+// order and the text.
+func (s *Store) StatusSegments() []Segment {
 	s.mu.Lock()
-	var parts []string
+	defer s.mu.Unlock()
+	var out []Segment
 	for _, e := range s.status {
-		for _, seg := range e.segs {
-			parts = append(parts, segmentStyle(seg.Style, st).Render(ansi.Strip(seg.Text)))
-		}
+		out = append(out, e.segs...)
 	}
-	s.mu.Unlock()
-	if len(parts) == 0 {
-		return ""
-	}
-	return ansi.Truncate(strings.Join(parts, st.Muted.Render(" /// ")), max(width, 0), "…")
-}
-
-// segmentStyle maps a style token to a theme style. An unknown token is muted.
-func segmentStyle(name string, st styles.Styles) lipgloss.Style {
-	switch name {
-	case "":
-		return st.Text
-	case "accent":
-		return st.Core
-	case "warn":
-		return st.Warm
-	case "error":
-		return st.Error
-	case "success":
-		return st.Success
-	default:
-		return st.Muted
-	}
+	return out
 }
 
 // Toasts returns the live toasts, newest last, at most three, expired dropped.

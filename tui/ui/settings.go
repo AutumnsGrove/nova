@@ -7,6 +7,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/tui/dialog"
+	"github.com/AutumnsGrove/nova/tui/status"
 )
 
 // localCommands are handled inside the TUI, so the server never lists them in
@@ -43,6 +44,10 @@ func (m *Model) openSettings() tea.Cmd {
 		{Key: "display.tool_lines", Label: "Tool result lines", Value: m.display.ToolPreviewLines, Min: 1, Max: 50},
 		{Key: "display.show_images", Label: "Show images inline (0/1)", Value: boolValue(m.display.ShowImages), Min: 0, Max: 1},
 		{Key: "display.image_width_cells", Label: "Image width (cells)", Value: m.display.ImageWidthCells, Min: 20, Max: 200},
+		{Key: "display.status.ext_lines", Label: "Status: extension rows", Value: m.status.ExtLines, Min: 0, Max: 6},
+		{Key: "display.status.git", Label: "Status: git branch + changes (0/1)", Value: boolValue(m.statusUses("branch")), Min: 0, Max: 1},
+		{Key: "display.status.timers", Label: "Status: session + block timers (0/1)", Value: boolValue(m.statusUses("session")), Min: 0, Max: 1},
+		{Key: "display.status.model", Label: "Status: model on the right (0/1)", Value: boolValue(m.statusUses("model")), Min: 0, Max: 1},
 	}
 	m.pushDialog(dialog.NewSettings("Settings", rows), intentSettings)
 	return nil
@@ -52,7 +57,24 @@ func (m *Model) openSettings() tea.Cmd {
 // config off the update path.
 func (m *Model) applySettings(rows []dialog.Setting) tea.Cmd {
 	var cmds []tea.Cmd
+	ext := m.status.ExtLines
+	gitOn, timersOn, modelOn := m.statusUses("branch"), m.statusUses("session"), m.statusUses("model")
+	statusChanged := false
 	for _, s := range rows {
+		switch s.Key {
+		case "display.status.ext_lines":
+			ext, statusChanged = s.Value, true
+			continue
+		case "display.status.git":
+			gitOn, statusChanged = s.Value != 0, true
+			continue
+		case "display.status.timers":
+			timersOn, statusChanged = s.Value != 0, true
+			continue
+		case "display.status.model":
+			modelOn, statusChanged = s.Value != 0, true
+			continue
+		}
 		var persist any = s.Value
 		switch s.Key {
 		case "display.thinking_lines":
@@ -69,10 +91,32 @@ func (m *Model) applySettings(rows []dialog.Setting) tea.Cmd {
 		}
 		cmds = append(cmds, m.persistSetting(s.Key, persist))
 	}
+	if statusChanged {
+		m.status = statusLayout(ext, gitOn, timersOn, modelOn)
+		cmds = append(cmds, m.persistSetting("display.status", m.status))
+		m.recompute()
+	}
 	m.transcript.SetDisplay(m.display)
 	m.expanded = m.display.ExpandTools
 	m.syncList()
 	return tea.Batch(cmds...)
+}
+
+// statusLayout rebuilds the default lines with the chosen groups. The YAML
+// lines remain the source of truth for a hand-written layout.
+func statusLayout(ext int, git, timers, model bool) config.StatusConfig {
+	cfg := status.Default()
+	cfg.ExtLines = ext
+	if !git {
+		cfg.Lines[0].Left = []string{"cwd"}
+	}
+	if !timers {
+		cfg.Lines[2].Left = []string{"queued", "hint"}
+	}
+	if !model {
+		cfg.Lines[2].Right = nil
+	}
+	return cfg
 }
 
 // persistSetting writes one dotted key to the user config. It returns a command

@@ -13,6 +13,7 @@ import (
 	"github.com/AutumnsGrove/nova/tui/client"
 	"github.com/AutumnsGrove/nova/tui/layout"
 	"github.com/AutumnsGrove/nova/tui/splash"
+	"github.com/AutumnsGrove/nova/tui/status"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -104,6 +105,7 @@ func TestUI_SQN36_EventKeepsTheBannerAnimating(t *testing.T) {
 func TestUI_SQN37_NoTickWhenOffOrDone(t *testing.T) {
 	m, _ := splashModel(t, 120, 60)
 	m.display.Splash = false
+	m.status = status.Compact()
 	m.recompute()
 	m.ticking = false
 	if m.scheduleTick() != nil {
@@ -112,6 +114,7 @@ func TestUI_SQN37_NoTickWhenOffOrDone(t *testing.T) {
 
 	done, _ := splashModel(t, 120, 60)
 	done.splashAt = splash.Sequence
+	done.status = status.Compact()
 	done.recompute()
 	done.ticking = false
 	if done.scheduleTick() != nil {
@@ -119,6 +122,8 @@ func TestUI_SQN37_NoTickWhenOffOrDone(t *testing.T) {
 	}
 
 	plain, _, _ := newModel(t)
+	plain.status = status.Compact()
+	plain.recompute()
 	plain.ticking = false
 	if plain.scheduleTick() != nil {
 		t.Fatal("tick scheduled for a plain tier")

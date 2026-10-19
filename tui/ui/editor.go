@@ -163,7 +163,7 @@ func (m *Model) scheduleTick() tea.Cmd {
 
 // needsTick reports whether anything on screen is animating.
 func (m *Model) needsTick() bool {
-	return m.runActive || m.transcript.NeedsTick() || m.splashAnimated() || m.loginStatusLive()
+	return m.runActive || m.transcript.NeedsTick() || m.splashAnimated() || m.loginStatusLive() || m.statusClockLive()
 }
 
 // tickPeriod is the shorter of the thinking and splash periods.
@@ -171,7 +171,10 @@ func (m *Model) tickPeriod() time.Duration {
 	if m.splashAnimated() {
 		return splashTick
 	}
-	return tickInterval
+	if m.runActive || m.transcript.NeedsTick() || m.loginStatusLive() {
+		return tickInterval
+	}
+	return time.Second // only the status clock is live
 }
 
 // splashAnimated reports whether an animated splash is showing. It draws a

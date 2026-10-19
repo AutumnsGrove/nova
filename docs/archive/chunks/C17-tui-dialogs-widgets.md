@@ -1,8 +1,8 @@
 ---
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
-packages: [./tui/dialog, ./tui/widget, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
-budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/trust: 150,  ./mode: 2320, ./mode/attach: 160, ./tui/ui: 2740, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
+packages: [./tui/dialog, ./tui/widget, ./tui/status, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
+budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 150,  ./mode: 2320, ./mode/attach: 160, ./tui/ui: 2900, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -321,7 +321,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | STS01 | segments in key order with `///` | | as stated |
 | STS02 | clear a key | | removed |
 | STS03 | style mapping | | theme tokens |
-| STS04 | narrow footer drops extension segments first | | built-ins kept |
+| STS04 | a narrow status wraps extension segments | width 30 | the extension is still shown and the built-in cost is kept |
 | TST01 | info and warn lifetimes | fake clock | 4 s; 8 s |
 | TST02 | at most 3 | 5 toasts | newest 3 |
 | TST03 | duplicate text | | one toast |

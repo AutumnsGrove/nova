@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/x/exp/golden"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/git"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -200,3 +201,17 @@ func BenchmarkUI_PRF02_Deltas(b *testing.B) {
 
 // TestPTY_PTY01_StartsAndQuits and TestPTY_PTY02_PromptRoundTrip live in
 // pty_test.go with the real pseudo-terminal harness.
+
+func TestUI_GLD11_Status(t *testing.T) {
+	golden.RequireEqual(t, goldAt(t, func(m *Model) {
+		m.state.Model = "anthropic/claude-opus-5.5"
+		m.state.Thinking = "off"
+		m.state.Usage.PromptTokens = 12000
+		m.state.Usage.CompletionTokens = 4000
+		m.state.Usage.CachedTokens = 9000
+		m.state.Usage.CostUSD = 0.404
+		m.state.ContextTokens = 325000
+		m.state.EffectiveLimit = 1000000
+		m.git = git.Info{Branch: "main", Added: 3, Removed: 1, OK: true}
+	}))
+}

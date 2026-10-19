@@ -458,6 +458,9 @@ func (s *Server) Display() (thinkingLines, toolLines int, showImages bool, image
 	return s.cfg.Display.ThinkingLines, s.cfg.Display.ToolLines, s.cfg.Display.ShowImages, s.cfg.Display.ImageWidthCells
 }
 
+// StatusConfig returns the saved status-region layout.
+func (s *Server) StatusConfig() config.StatusConfig { return s.cfg.Display.Status }
+
 // Close releases the session. It is idempotent.
 func (s *Server) Close() error {
 	s.mu.Lock()

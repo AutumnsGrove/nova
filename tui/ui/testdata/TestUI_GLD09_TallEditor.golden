@@ -1,7 +1,5 @@
 --- width 40 ---
-✦  [1mnova[m  ~/proj                         
-                                        
-                                        
+✦  [1mnova[m                                 
                                         
                                         
                                         
@@ -22,11 +20,11 @@
 > line 10                               
 > line 11                               
 > line 12[7m [m                              
-ctx n/a · $0.000 · ctrl+o expand        
+~/proj                                  
+$0.000 · ctx n/a                        
+session 0ms · ctrl+o expand             
 --- width 80 ---
-✦  [1mnova[m  ~/proj                                                                 
-                                                                                
-                                                                                
+✦  [1mnova[m                                                                         
                                                                                 
                                                                                 
                                                                                 
@@ -47,11 +45,11 @@ ctx n/a · $0.000 · ctrl+o expand
 > line 10                                                                       
 > line 11                                                                       
 > line 12[7m [m                                                                      
-ctx n/a · $0.000 · ctrl+o expand                                                
+~/proj                                                                          
+$0.000 · ctx n/a                                                                
+session 0ms · ctrl+o expand                                                     
 --- width 120 ---
-✦  [1mnova[m  ~/proj                                                                                                         
-                                                                                                                        
-                                                                                                                        
+✦  [1mnova[m                                                                                                                 
                                                                                                                         
                                                                                                                         
                                                                                                                         
@@ -72,4 +70,6 @@ ctx n/a · $0.000 · ctrl+o expand
 > line 10                                                                                                               
 > line 11                                                                                                               
 > line 12[7m [m                                                                                                              
-ctx n/a · $0.000 · ctrl+o expand                                                                                        
+~/proj                                                                                                                  
+$0.000 · ctx n/a                                                                                                        
+session 0ms · ctrl+o expand                                                                                             

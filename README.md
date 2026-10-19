@@ -41,11 +41,12 @@ One module, `github.com/AutumnsGrove/nova`. The core never imports the UI; a che
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full tree and line budgets.
 
 ```
-message/ provider/ auth/ tool/ tools/ permission/ proto/ agent/ session/
-compaction/ usage/ config/ mode/ ext/ update/ doctor/ testkit/   the backend (no UI dependencies)
+message/ media/ clipboard/ diag/ provider/ auth/ tool/ tools/
+permission/ proto/ agent/ session/ compaction/ usage/ config/ mode/ ext/
+update/ doctor/ testkit/                                        the backend (no UI dependencies)
 bundled/                                                        in-tree extensions (use charm.land)
 tui/                                                            the terminal UI (charm.land)
-cmd/nova/  scripts/  assets/  docs/
+cmd/nova/  scripts/  assets/  examples/  docs/
 ```
 
 ## Working on Nova
@@ -101,6 +102,7 @@ wheel.
 | [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | The one JSONL protocol every front door speaks. |
 | [`docs/EXTENSIONS.md`](docs/EXTENSIONS.md) | Extension tiers, manifest, install over git, bundled and suggested extensions. |
 | [`docs/TUI.md`](docs/TUI.md) | The terminal UI: stack, layout, components, themes, splash. |
+| [`docs/IMAGE.md`](docs/IMAGE.md) | Images: the content part, where it is legal on the wire, normalization and bounds, every front door, inline TUI rendering. |
 | [`docs/TESTING.md`](docs/TESTING.md) | Test layers, the failure-mode catalog, the matrix rule, definition of done. |
 | [`AGENTS.md`](AGENTS.md) | The guide for working on Nova: workflow, test-driven rules, repo map, hard rules, definition of done. |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | The short version for contributors. |

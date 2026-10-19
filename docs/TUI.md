@@ -238,8 +238,9 @@ The banner is staged. For the first half of the sequence it is the tallest tier 
 (96 by 21), Compact (64 by 13), Thin (46 by 10), or Lockup (40 by 5) — then it settles to the five-row Lockup
 for the rest. A terminal below 256 colours, the `mono` theme, and a banner narrower than 40 columns fall back to
 the static Plain tier: `nova` (and the version, when set), centred. The banner plays for the full 8 second
-sequence regardless of typing or transcript events, then collapses to the one-line `✦ nova` header;
-`/display splash off` removes it immediately. The header, transcript, and editor stay visible and usable beneath
+sequence regardless of typing or transcript events, then holds its final frame at the top until the first
+prompt is sent, when it collapses to the one-line `✦ nova` header; `/display splash off` removes it immediately.
+The header, transcript, and editor stay visible and usable beneath
 it the whole time, and on a short screen the banner is dropped before the header, transcript, or editor. The UI
 drives it with a 66 ms tick that shares the thinking block's tick chain, so only one timer is ever pending. The
 header uses the **minimal mark** as a one-line glyph, `✦`.

@@ -10,13 +10,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 
 - The splash banner now plays a **hero phase**: for the first half of the sequence it shows the tallest scene that
-  fits — Full on a large terminal, Compact on a normal one — then settles to the five-row lockup for the rest and
-  collapses to the header. The transcript and editor stay usable beneath it, so the full animation is back without
-  taking over the session (#26).
+  fits — Full on a large terminal, Compact on a normal one — then settles to the five-row lockup. When the
+  sequence ends it **holds the final frame** at the top until the first prompt is sent, then collapses to the
+  header. The transcript and editor stay usable beneath it, so the full animation is back without taking over the
+  session (#26).
 - The opening splash is a top banner instead of a full-screen takeover. It plays for its full 8 second sequence
   while the header, transcript, and editor stay usable beneath it; typing and transcript events no longer dismiss
-  it, and it collapses to the one-line `✦ nova` header when the sequence ends. `/display splash off` still removes
-  it immediately, and a short screen drops the banner before the header, transcript, or editor (#16).
+  it, and it collapses to the one-line `✦ nova` header once the first prompt is sent. `/display splash off` still
+  removes it immediately, and a short screen drops the banner before the header, transcript, or editor (#16).
 - The editor grows with the prompt to 10 visual rows, counting soft wraps as well as newlines, and follows the
   cursor past that; a paste, a history recall, or a resize grows it too. The old cap was 8, and a paste did not
   grow it at all (#18).

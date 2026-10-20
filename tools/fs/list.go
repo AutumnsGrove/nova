@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/AutumnsGrove/nova/tool"
@@ -23,11 +24,11 @@ func List() tool.Tool {
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path":    stringProp("Directory path (default \".\")"),
-				"pattern": stringProp("Optional glob pattern matched against entry names"),
+				"path":    tool.StringProp("Directory path (default \".\")"),
+				"pattern": tool.StringProp("Optional glob pattern matched against entry names"),
 			},
 		},
-	}, func(ctx context.Context, args json.RawMessage, tctx *tool.Context) (tool.Result, error) {
+	}, func(_ context.Context, args json.RawMessage, tctx *tool.Context) (tool.Result, error) {
 		var in struct {
 			Path    string `json:"path"`
 			Pattern string `json:"pattern"`
@@ -38,7 +39,7 @@ func List() tool.Tool {
 		if in.Path == "" {
 			in.Path = "."
 		}
-		abs, err := resolve(tctx, in.Path)
+		abs, err := tool.ResolvePath(tctx, in.Path)
 		if err != nil {
 			return tool.Errorf("%v", err), nil
 		}
@@ -79,12 +80,10 @@ func List() tool.Tool {
 		if listed == 0 {
 			return tool.Text("(no entries)"), nil
 		}
-		content := b.String()
 		if omitted > 0 {
 			fmt.Fprintf(&b, "... (%d more entries omitted)\n", omitted)
-			content = b.String()
 		}
-		return tool.Result{Content: content, Truncated: omitted > 0}, nil
+		return tool.Result{Content: b.String(), Truncated: omitted > 0}, nil
 	})
 }
 
@@ -93,25 +92,37 @@ func List() tool.Tool {
 // shown with `?` rather than dropped.
 func listRow(dir string, entry os.DirEntry) string {
 	name := entry.Name()
-	info, err := entry.Info()
+	full := filepath.Join(dir, name)
 	if entry.Type()&os.ModeSymlink != 0 {
-		target, linkErr := os.Readlink(filepath.Join(dir, name))
-		if linkErr != nil {
+		target, err := os.Readlink(full)
+		if err != nil {
 			target = "?"
 		}
-		full := name + " -> " + target
-		if resolved, statErr := os.Stat(filepath.Join(dir, name)); statErr == nil {
-			return fmt.Sprintf("%-4s %10s  %s  %s\n", "link", fmt.Sprintf("%d", resolved.Size()), resolved.ModTime().Format("2006-01-02 15:04"), full)
+		size, mtime := "?", "?"
+		if info, err := os.Stat(full); err == nil {
+			size, mtime = strconv.FormatInt(info.Size(), 10), info.ModTime().Format(listTimeLayout)
 		}
-		return fmt.Sprintf("%-4s %10s  %s  %s\n", "link", "?", "?", full)
-	}
-	if err != nil {
-		return fmt.Sprintf("%-4s %10s  %s  %s\n", "file", "?", "?", name)
+		return listLine("link", size, mtime, name+" -> "+target)
 	}
 	kind := "file"
-	size := fmt.Sprintf("%d", info.Size())
-	if info.IsDir() {
-		kind, size, name = "dir", "-", name+"/"
+	if entry.IsDir() {
+		kind, name = "dir", name+"/"
 	}
-	return fmt.Sprintf("%-4s %10s  %s  %s\n", kind, size, info.ModTime().Format("2006-01-02 15:04"), name)
+	info, err := entry.Info()
+	if err != nil {
+		return listLine(kind, "?", "?", name)
+	}
+	size := strconv.FormatInt(info.Size(), 10)
+	if entry.IsDir() {
+		size = "-"
+	}
+	return listLine(kind, size, info.ModTime().Format(listTimeLayout), name)
+}
+
+// listTimeLayout is how list shows a modification time.
+const listTimeLayout = "2006-01-02 15:04"
+
+// listLine formats one row with the columns aligned.
+func listLine(kind, size, mtime, name string) string {
+	return fmt.Sprintf("%-4s %10s  %s  %s\n", kind, size, mtime, name)
 }

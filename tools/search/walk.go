@@ -9,10 +9,11 @@ import (
 
 // walkEntry is one visited path.
 type walkEntry struct {
-	Path  string
-	Rel   string // path relative to the walk root, with slash separators
-	IsDir bool
-	Size  int64
+	Path    string
+	Rel     string // path relative to the walk root, with slash separators
+	IsDir   bool
+	Regular bool // a regular file; false for a pipe, socket, or device
+	Size    int64
 }
 
 // walkOptions controls a walk.
@@ -29,6 +30,15 @@ type walkStats struct {
 	unreadable int // directories that could not be read
 }
 
+// walker holds the state shared by every directory of one walk.
+type walker struct {
+	ctx     context.Context
+	root    string
+	opt     walkOptions
+	visited map[string]bool // real paths of directories already entered
+	fn      func(walkEntry) error
+}
+
 // walk visits root depth-first with entries sorted bytewise by name, so output
 // is deterministic. It never follows symlinks unless asked, always skips .git,
 // applies .gitignore at every level unless NoIgnore, and checks ctx between
@@ -41,89 +51,94 @@ func walk(ctx context.Context, root string, opt walkOptions, fn func(walkEntry) 
 		return err
 	}
 	if !info.IsDir() {
-		return fn(walkEntry{Path: root, Rel: filepath.Base(root), Size: info.Size()})
+		return fn(walkEntry{Path: root, Rel: filepath.Base(root), Regular: info.Mode().IsRegular(), Size: info.Size()})
 	}
-	var stack []*ignoreSet
-	if !opt.NoIgnore {
-		if set := loadIgnore(root); set != nil {
-			stack = append(stack, set)
-		}
+	w := &walker{ctx: ctx, root: root, opt: opt, visited: map[string]bool{}, fn: fn}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		w.visited[resolved] = true
 	}
-	visited := map[string]bool{}
-	if real, err := filepath.EvalSymlinks(root); err == nil {
-		visited[real] = true
-	}
-	return walkDir(ctx, root, root, 0, opt, stack, visited, fn)
+	return w.dir(root, 0, w.withIgnore(nil, root))
 }
 
-// walkDir lists one directory and recurses. depth is the depth of dir below
-// root (root itself is 0).
-func walkDir(ctx context.Context, root, dir string, depth int, opt walkOptions, stack []*ignoreSet, visited map[string]bool, fn func(walkEntry) error) error {
-	if opt.MaxDepth > 0 && depth >= opt.MaxDepth {
-		return nil
+// withIgnore returns stack extended by dir's .gitignore, or stack itself when
+// ignore files are off or dir has none. It copies before appending so sibling
+// directories never share a backing array.
+func (w *walker) withIgnore(stack []*ignoreSet, dir string) []*ignoreSet {
+	if w.opt.NoIgnore {
+		return stack
 	}
-	if err := ctx.Err(); err != nil {
-		return err
+	set := loadIgnore(dir)
+	if set == nil {
+		return stack
+	}
+	return append(stack[:len(stack):len(stack)], set)
+}
+
+// dir lists one directory and recurses. depth is the depth of dir below root
+// (root itself is 0). An unreadable directory is counted, not fatal.
+func (w *walker) dir(dir string, depth int, stack []*ignoreSet) error {
+	if w.opt.MaxDepth > 0 && depth >= w.opt.MaxDepth {
+		return nil
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		if opt.stats != nil {
-			opt.stats.unreadable++
+		if w.opt.stats != nil {
+			w.opt.stats.unreadable++
 		}
 		return nil
 	}
 	for _, entry := range entries {
-		if err := ctx.Err(); err != nil {
+		if err := w.ctx.Err(); err != nil {
 			return err
 		}
 		name := entry.Name()
-		if name == ".git" {
-			continue
-		}
-		if !opt.Hidden && strings.HasPrefix(name, ".") {
+		if name == ".git" || (!w.opt.Hidden && strings.HasPrefix(name, ".")) {
 			continue
 		}
 		full := filepath.Join(dir, name)
-		isSymlink := entry.Type()&os.ModeSymlink != 0
-		if isSymlink && !opt.FollowSymlinks {
+		info, ok := w.stat(full, entry)
+		if !ok || matchStack(stack, full, info.IsDir()) {
 			continue
 		}
-		info, err := entry.Info()
-		if isSymlink {
-			if info, err = os.Stat(full); err != nil {
-				continue // dangling link
-			}
-			isSymlink = false
-		} else if err != nil {
-			continue
-		}
-		isDir := info.IsDir()
-		if matchStack(stack, full, isDir) {
-			continue
-		}
-		rel, _ := relUnder(root, full)
-		if err := fn(walkEntry{Path: full, Rel: rel, IsDir: isDir, Size: info.Size()}); err != nil {
+		rel, _ := relUnder(w.root, full)
+		visit := walkEntry{Path: full, Rel: rel, IsDir: info.IsDir(), Regular: info.Mode().IsRegular(), Size: info.Size()}
+		if err := w.fn(visit); err != nil {
 			return err
 		}
-		if !isDir {
-			continue
-		}
-		real, err := filepath.EvalSymlinks(full)
-		if err != nil || visited[real] {
-			continue // a symlink loop or a directory already seen
-		}
-		visited[real] = true
-		childStack := stack
-		if !opt.NoIgnore {
-			if set := loadIgnore(full); set != nil {
-				childStack = append(append([]*ignoreSet(nil), stack...), set)
+		if visit.IsDir {
+			if err := w.descend(full, depth, stack); err != nil {
+				return err
 			}
-		}
-		if err := walkDir(ctx, root, full, depth+1, opt, childStack, visited, fn); err != nil {
-			return err
 		}
 	}
 	return nil
+}
+
+// stat returns an entry's file info, resolving a symlink when the walk follows
+// them. ok is false for an entry to skip: any symlink when not following, a
+// dangling one, or an entry that vanished.
+func (w *walker) stat(full string, entry os.DirEntry) (info os.FileInfo, ok bool) {
+	var err error
+	if entry.Type()&os.ModeSymlink != 0 {
+		if !w.opt.FollowSymlinks {
+			return nil, false
+		}
+		info, err = os.Stat(full)
+	} else {
+		info, err = entry.Info()
+	}
+	return info, err == nil
+}
+
+// descend walks into a directory unless its real path was already entered,
+// which breaks symlink loops and double visits through two links.
+func (w *walker) descend(full string, depth int, stack []*ignoreSet) error {
+	resolved, err := filepath.EvalSymlinks(full)
+	if err != nil || w.visited[resolved] {
+		return nil
+	}
+	w.visited[resolved] = true
+	return w.dir(full, depth+1, w.withIgnore(stack, full))
 }
 
 // loadIgnore reads dir/.gitignore, or returns nil when there is none or it

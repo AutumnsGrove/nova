@@ -11,7 +11,7 @@ import (
 // directory is written, synced, and renamed over the target. A failure leaves
 // the original file unchanged and removes the temporary file. perm sets the new
 // file's mode (the caller preserves an existing file's mode).
-func writeAtomic(path string, data []byte, perm os.FileMode) error {
+func writeAtomic(path string, data []byte, perm os.FileMode) (err error) {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".nova-*.tmp")
 	if err != nil {
@@ -19,31 +19,29 @@ func writeAtomic(path string, data []byte, perm os.FileMode) error {
 	}
 	tmpName := tmp.Name()
 	defer func() {
-		// The rename consumes the temporary name; before that, any failure
-		// must not leave it behind.
-		if tmpName != "" {
-			os.Remove(tmpName)
+		// Any failure, including a rename that did not happen, must not leave
+		// the temporary file behind. Closing twice is harmless here: the second
+		// error is the only one dropped.
+		if err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmpName)
 		}
 	}()
-	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
+	if err = tmp.Chmod(perm); err != nil {
 		return err
 	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+	if _, err = tmp.Write(data); err != nil {
 		return err
 	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+	if err = tmp.Sync(); err != nil {
 		return err
 	}
-	if err := tmp.Close(); err != nil {
+	if err = tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err = os.Rename(tmpName, path); err != nil {
 		return err
 	}
-	tmpName = "" // consumed
 	syncDir(dir)
 	return nil
 }

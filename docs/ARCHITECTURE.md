@@ -47,7 +47,7 @@ nova/
     opencodego/   preset: catalog, endpoint routing             ≤ 320
     openrouter/   preset: routing options, headers, usage       ≤ 300
   auth/           OAuth PKCE login, key store                   ≤ 500
-  tool/           Tool contract, registry, schema validation    ≤ 550
+  tool/           Tool contract, registry, schema validation    ≤ 600
   tools/          fs (read write edit list)                     ≤ 1060
                   search (glob grep)                            ≤ 700
                   bash                                          ≤ 400

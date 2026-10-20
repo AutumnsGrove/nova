@@ -1,16 +1,21 @@
 package fs
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/AutumnsGrove/nova/message"
@@ -268,8 +273,8 @@ func TestRead_RDF19_Binary(t *testing.T) {
 // TestRead_RDF20_NulAfterWindow checks a NUL past the sniff window is text.
 func TestRead_RDF20_NulAfterWindow(t *testing.T) {
 	dir := t.TempDir()
-	data := []byte(strings.Repeat("a", binarySniff+1000))
-	data[binarySniff+10] = 0
+	data := []byte(strings.Repeat("a", tool.BinarySniffBytes+1000))
+	data[tool.BinarySniffBytes+10] = 0
 	writeFile(t, filepath.Join(dir, "a.txt"), string(data))
 	res := run(t, Read(), &tool.Context{WorkDir: dir}, map[string]any{"path": "a.txt"})
 	if res.IsError {
@@ -372,7 +377,7 @@ func TestRead_RDF28_HugeStreaming(t *testing.T) {
 	// A text prefix longer than the sniff window, then a sparse hole so the
 	// file is large without writing it.
 	var prefix strings.Builder
-	for i := 0; i < binarySniff; i++ {
+	for i := 0; i < tool.BinarySniffBytes; i++ {
 		prefix.WriteString("x\n")
 	}
 	writeFile(t, path, prefix.String())
@@ -434,6 +439,77 @@ func TestRead_RDF31_Annotations(t *testing.T) {
 	info := Read().Info()
 	if !info.ReadOnly || !info.Parallel {
 		t.Fatalf("annotations = %+v, want read-only and parallel", info)
+	}
+}
+
+// TestRead_RDF34_ReadErrorSurfaces checks a failing stream is reported as an
+// error by the line reader, not mistaken for the end of the file.
+func TestRead_RDF34_ReadErrorSurfaces(t *testing.T) {
+	boom := errors.New("disk fell over")
+	lr := &lineReader{r: bufio.NewReader(io.MultiReader(strings.NewReader("abc"), iotest.ErrReader(boom))), maxRunes: 100}
+	if _, _, err := lr.next(); !errors.Is(err, boom) {
+		t.Fatalf("next error = %v, want the stream error", err)
+	}
+}
+
+// FuzzLineReader checks the line reader reproduces a file's lines exactly for any
+// bytes, with a tiny buffer so lines span many chunks and the \r\n and rune
+// boundaries fall on chunk edges.
+func FuzzLineReader(f *testing.F) {
+	for _, seed := range []string{"", "a", "a\n", "a\r\nb", "\r\n\r\n", "é\r", "x\xc3\n\xa9", strings.Repeat("ab\r\n", 20)} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, content string) {
+		want := strings.SplitAfter(content, "\n")
+		if want[len(want)-1] == "" {
+			want = want[:len(want)-1]
+		}
+		lr := &lineReader{r: bufio.NewReaderSize(strings.NewReader(content), 16), maxRunes: 1 << 30}
+		for i, raw := range want {
+			wantLine, wantEnding := raw, ""
+			if strings.HasSuffix(raw, "\n") {
+				wantLine, wantEnding = strings.TrimSuffix(raw, "\n"), "lf"
+				if strings.HasSuffix(wantLine, "\r") {
+					wantLine, wantEnding = strings.TrimSuffix(wantLine, "\r"), "crlf"
+				}
+			}
+			line, ending, err := lr.next()
+			if err != nil || line != wantLine || ending != wantEnding {
+				t.Fatalf("line %d = %q %q %v, want %q %q", i+1, line, ending, err, wantLine, wantEnding)
+			}
+		}
+		if _, _, err := lr.next(); !errors.Is(err, io.EOF) {
+			t.Fatalf("after the last line, error = %v, want io.EOF", err)
+		}
+	})
+}
+
+// TestRead_RDF35_InvalidUTF8OutsidePage checks the invalid-bytes note describes
+// the lines shown, not lines the caller paged past.
+func TestRead_RDF35_InvalidUTF8OutsidePage(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.txt"), "bad \xff\nfine\nalso fine\n")
+	res := run(t, Read(), &tool.Context{WorkDir: dir}, map[string]any{"path": "a.txt", "offset": 2})
+	if res.IsError || !strings.Contains(res.Content, "2\tfine") {
+		t.Fatalf("result = %+v, want lines 2 and 3", res)
+	}
+	if strings.Contains(res.Content, "not valid UTF-8") {
+		t.Fatalf("content = %q, want no note about a line that was not shown", res.Content)
+	}
+}
+
+// TestRead_RDF36_Cancelled checks a cancelled context stops the scan.
+func TestRead_RDF36_Cancelled(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.txt"), "a\nb\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	res, err := Read().Run(ctx, json.RawMessage(`{"path":"a.txt"}`), &tool.Context{WorkDir: dir})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.IsError || !strings.Contains(res.Content, "canceled") {
+		t.Fatalf("result = %+v, want a cancellation error", res)
 	}
 }
 

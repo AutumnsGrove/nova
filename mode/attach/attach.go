@@ -7,6 +7,7 @@ package attach
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/AutumnsGrove/nova/media"
@@ -15,10 +16,12 @@ import (
 )
 
 const (
-	// MaxImages and MaxBytes bound one prompt's media, so a client cannot send
-	// a request no session line or provider allows.
+	// MaxImages is how many images one prompt may carry.
 	MaxImages = 4
-	MaxBytes  = 8 << 20
+	// MaxBytes is the most decoded image data one prompt may carry, and the
+	// most one stored upload may hold. Together with MaxImages it keeps a client
+	// from sending a request no session line or provider allows.
+	MaxBytes = 8 << 20
 )
 
 // Message builds a user message from text and attachments, normalizing every
@@ -96,11 +99,4 @@ func attachmentBytes(a proto.Attachment) ([]byte, error) {
 }
 
 // Accepts reports whether a model's input modalities include images.
-func Accepts(mods []string) bool {
-	for _, kind := range mods {
-		if kind == "image" {
-			return true
-		}
-	}
-	return false
-}
+func Accepts(mods []string) bool { return slices.Contains(mods, "image") }

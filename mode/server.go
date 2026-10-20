@@ -124,6 +124,8 @@ type Server struct {
 	// attachments holds uploads from POST /v1/attachments, by id, until the
 	// server closes.
 	attachments map[string]proto.Attachment
+	// attachmentBytes is the decoded size of everything in attachments.
+	attachmentBytes int
 
 	uiMu      sync.Mutex
 	uiHandler func(context.Context, proto.UIRequest) (proto.UIResponse, error)

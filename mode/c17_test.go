@@ -426,3 +426,31 @@ func TestHandlers_SVA16_StoredAttachmentResolves(t *testing.T) {
 		t.Fatal("an unknown attachment id did not error")
 	}
 }
+
+// The upload endpoint is open to anyone with the token, and the store lives as
+// long as the server, so it needs a ceiling or a loop of uploads fills memory.
+func TestHandlers_SVA17_UploadStoreHasACeiling(t *testing.T) {
+	s, _ := testServer(t)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 4, 4))); err != nil {
+		t.Fatal(err)
+	}
+	size := buf.Len()
+	old := maxStoredAttachmentBytes
+	maxStoredAttachmentBytes = size*2 + size/2 // room for two
+	t.Cleanup(func() { maxStoredAttachmentBytes = old })
+
+	first, _, err := s.StoreAttachment("a.png", buf.Bytes())
+	if err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	if _, _, err := s.StoreAttachment("b.png", buf.Bytes()); err != nil {
+		t.Fatalf("second upload: %v", err)
+	}
+	if _, _, err := s.StoreAttachment("c.png", buf.Bytes()); err == nil {
+		t.Fatal("a third upload past the ceiling was stored")
+	}
+	if _, err := s.resolveAttachments([]proto.Attachment{{ID: first}}); err != nil {
+		t.Fatalf("a refused upload must not evict a stored one: %v", err)
+	}
+}

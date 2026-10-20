@@ -264,7 +264,7 @@ Error codes are stable strings: `bad_request`, `busy`, `not_found`,
   display name; the `Content-Type` is ignored, because the server decides the type
   from the bytes) and returns `{id, name, mime_type, size_bytes}` with the type it
   found. A later command references the id in
-  `attachments`. The store lives until the server closes.
+  `attachments`. The store lives until the server closes and holds at most 64 MiB; an upload past that is refused with `bad_request`.
 
 Authentication is a bearer token set with `--token` or `NOVA_SERVE_TOKEN`. The
 server refuses to listen on a non-loopback address without one. Multi-user session

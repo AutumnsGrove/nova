@@ -364,6 +364,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | SVA14 | a text-only model rejects a prompt image | a PNG attachment, no modalities | `bad_request` naming the capability |
 | SVA15 | a steer attachment is queued when the model takes images | steer with a PNG while a run is active, vision model | `ok`; one steering message queued |
 | SVA16 | a stored attachment resolves by id | `StoreAttachment`, then a prompt referencing the id | the message carries the image; an unknown id errors |
+| SVA17 | the upload store has a ceiling | uploads past a lowered byte cap | the upload past it is refused and the stored ones still resolve |
 | CLB01 | osascript pasteboard data is decoded | `«data PNGf<hex>»`; junk | the PNG bytes; `ErrNoImage` |
 | CLB02 | command reader errors | a missing binary; a command with no output | `ErrUnavailable`; `ErrNoImage` |
 | CLB03 | the test fake | a configured image; a configured error | returns them and counts calls |

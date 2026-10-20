@@ -11,6 +11,10 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 )
 
+// maxStoredAttachmentBytes bounds everything the upload store holds. It is a
+// variable so a test can lower it.
+var maxStoredAttachmentBytes = 64 << 20
+
 // StoreAttachment keeps an uploaded image for later turns and returns its id
 // and the mime type the bytes really are. It checks and bounds the bytes here;
 // attach.Message normalizes them again on the way into a prompt. The store
@@ -29,11 +33,15 @@ func (s *Server) StoreAttachment(name string, data []byte) (id, mimeType string,
 	}
 	id = randomHex(16)
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.attachmentBytes+len(data) > maxStoredAttachmentBytes {
+		return "", "", fmt.Errorf("the upload store is full (%d MiB); restart the server to clear it", maxStoredAttachmentBytes>>20)
+	}
+	s.attachmentBytes += len(data)
 	if s.attachments == nil {
 		s.attachments = map[string]proto.Attachment{}
 	}
 	s.attachments[id] = proto.Attachment{Kind: "image", Name: name, MimeType: sniffed, Data: base64.StdEncoding.EncodeToString(data)}
-	s.mu.Unlock()
 	return id, sniffed, nil
 }
 

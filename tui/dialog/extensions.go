@@ -121,7 +121,6 @@ type helpDialog struct {
 	keys   []KeyHelp
 	cmds   []string
 	scroll int
-	done   bool
 }
 
 // NewHelp builds the help dialog.

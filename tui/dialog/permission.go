@@ -4,7 +4,6 @@ package dialog
 
 import (
 	"encoding/json"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -164,6 +163,3 @@ func (p *permission) View(w, h int, st styles.Styles) string {
 
 // smallScreen is the one-line form shown when the terminal is too small.
 func (p *permission) smallScreen() string { return "allow? y/n" }
-
-// optionSummary renders the options for tests.
-func (p *permission) optionSummary() string { return strings.Join(p.options(), " | ") }

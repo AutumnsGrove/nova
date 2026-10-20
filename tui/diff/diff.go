@@ -88,7 +88,7 @@ func Render(unified, path string, width int, st styles.Styles, opt Options) stri
 	}
 	contentW := width - gutterW
 	if contentW < 1 {
-		contentW, gutterW, showNum = width, 0, false
+		contentW, showNum = width, false
 	}
 
 	var out []string

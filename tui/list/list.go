@@ -252,7 +252,6 @@ func (l *List) moveUp(idx, off, mag int) (int, int) {
 				return idx, off - mag
 			}
 			mag -= off
-			off = 0
 		}
 		if idx == 0 {
 			return 0, 0

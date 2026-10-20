@@ -288,7 +288,7 @@ func (f *form) View(w, h int, st styles.Styles) string {
 	inner := w - 2
 	body := []string{f.tabsLine(st), ""}
 	if f.current() == nil {
-		body = append(body, f.review(inner, st)...)
+		body = append(body, f.review(st)...)
 	} else {
 		q := f.current()
 		body = append(body, wrap(st.Bold.Render(sanitize.Text(q.q.Prompt)), inner)...)
@@ -406,7 +406,7 @@ func sideBySide(left, right []string, inner int, st styles.Styles) []string {
 }
 
 // review renders every answer.
-func (f *form) review(inner int, st styles.Styles) []string {
+func (f *form) review(st styles.Styles) []string {
 	var out []string
 	for i, a := range f.answers(false) {
 		out = append(out, st.Bold.Render("Q"+strconv.Itoa(i+1)+": "+sanitize.Text(f.states[i].q.Prompt)))

@@ -28,13 +28,12 @@ type Setting struct {
 // settingsDialog edits a list of integer settings. Value is []Setting with the
 // clamped, edited values.
 type settingsDialog struct {
-	title     string
-	rows      []Setting
-	cursor    int
-	buf       string // digits typed for the current row; "" means use Value
-	done      bool
-	cancelled bool
-	value     []Setting
+	title  string
+	rows   []Setting
+	cursor int
+	buf    string // digits typed for the current row; "" means use Value
+	done   bool
+	value  []Setting
 }
 
 // NewSettings builds the settings dialog.

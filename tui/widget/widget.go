@@ -310,9 +310,10 @@ func (s *Store) Toasts(now time.Time, width int, st styles.Styles) []string {
 	out := make([]string, 0, len(kept))
 	for _, t := range kept {
 		style := st.Muted
-		if t.level == "warn" {
+		switch t.level {
+		case "warn":
 			style = st.Warm
-		} else if t.level == "error" {
+		case "error":
 			style = st.Error
 		}
 		out = append(out, style.Render(ansi.Truncate(sanitize.Text(t.text), max(width, 0), "…")))

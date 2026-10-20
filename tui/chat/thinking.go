@@ -195,14 +195,5 @@ func (th *thinkingItem) setNow(now time.Time) bool {
 	return false
 }
 
-// rightHint pads a label with a right-aligned hint when it fits.
-func rightHint(left, right string, width int) string {
-	lw, rw := ansi.StringWidth(left), ansi.StringWidth(right)
-	if lw+rw+2 > width {
-		return left
-	}
-	return left + strings.Repeat(" ", width-lw-rw) + right
-}
-
 // restyle swaps the theme and refreshes the item.
 func (th *thinkingItem) restyle(st styles.Styles) { th.st = st; th.touch() }

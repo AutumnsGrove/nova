@@ -181,17 +181,18 @@ func previewCap(c Call) int {
 	return PreviewLines
 }
 
-// bodyLimit reports whether a body is shown and the line cap for it.
-func bodyLimit(c Call, expanded bool) (bool, int) {
+// bodyLimit is the line cap for a body: none when expanded, fewer while running
+// and more for an error.
+func bodyLimit(c Call, expanded bool) int {
 	switch {
 	case expanded:
-		return true, 0
+		return 0
 	case c.Running:
-		return true, 5
+		return 5
 	case c.IsError:
-		return true, 12
+		return 12
 	default:
-		return true, previewCap(c)
+		return previewCap(c)
 	}
 }
 

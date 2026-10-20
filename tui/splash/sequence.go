@@ -78,7 +78,7 @@ func drawScene(c *canvas, g geom, offX, offY int, version string, at time.Durati
 	if rev > 0.02 {
 		drawWord(c, g, offX, offY, t, rev, g.wordSpeed, g.wordDev, true)
 	}
-	drawTagline(c, g, offX, offY, t, u, version)
+	drawTagline(c, g, offX, offY, u, version)
 }
 
 // drawStars fills the whole area with twinkling stars. The field keys on the
@@ -238,7 +238,7 @@ func drawSpikes(c *canvas, g geom, offX, offY int, f float64) {
 
 // drawTagline writes the caption under the word, fading in mid-sequence. There
 // is no dismissal prompt: a key no longer dismisses the splash.
-func drawTagline(c *canvas, g geom, offX, offY int, t, u float64, version string) {
+func drawTagline(c *canvas, g geom, offX, offY int, u float64, version string) {
 	fade := smoothstep(0.42, 0.56, u)
 	if fade <= 0 {
 		return

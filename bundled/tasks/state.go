@@ -82,7 +82,7 @@ func Apply(s State, args json.RawMessage) (State, string, bool, error) {
 		Action string `json:"action"`
 	}
 	if err := json.Unmarshal(args, &head); err != nil {
-		return s, "", false, fmt.Errorf("invalid arguments: %v", err)
+		return s, "", false, fmt.Errorf("invalid arguments: %w", err)
 	}
 	next := State{V: stateVersion, Next: s.Next, Tasks: slices.Clone(s.Tasks)}
 	var (

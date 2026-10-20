@@ -9,6 +9,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `/reload` (and the `reload` command) now **re-reads the config**, not only skills, prompts and extensions. It waits
+  for an active run, applies the tools, retry policy, limits and system prompt the file now holds, and keeps what was
+  chosen at runtime (model, thinking level, `set_tools`) on top. A config that does not load is left as it was and
+  reported as `config_error` (D137).
+- `nova --resume` opens the session picker. `nova logout [provider]` removes the key of the provider you name
+  (`openrouter` by default, `opencode-go`); an unknown name is an error that names it.
+- `tools.bash.scrub_env` names extra environment variables to hide from commands the model runs, and
+  `tools.bash.inherit_credentials: true` turns the default off. Nova's own provider keys, OAuth tokens and
+  `NOVA_SERVE_TOKEN` are hidden from `bash`, command hooks, declarative extension tools and extension build steps by
+  default, so a model-run `env` can no longer print them (D135).
+- `run_end` carries `dropped_queue` (steering and follow-up text the run ended without consuming), and an aborted run
+  or a failed turn puts those messages back in the input box instead of losing them. The restored messages leave the
+  transcript so they are not shown twice.
+- `nova ext install` reports an extension that is already current as "up to date" rather than an error, and
+  `nova ext list` warns about a damaged lockfile on stderr.
+- The crash and debug logs are capped: a log past 4 MiB moves aside to `<name>.1` and a new one starts.
+- `diag` records a stack trace for a recovered panic, and `Agent.Reconfigure` lets a library caller change an idle
+  agent's settings (it returns `ErrBusy` during a run).
 - **Prompt caching** for models that do not cache on their own. A request to those
   models now carries an ephemeral cache marker, so an agent turn reuses the previous
   turn's prefix instead of re-billing the whole history: about 10x cheaper on
@@ -24,8 +42,56 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   cost estimates stopped under-billing a warm or cold cache, and the status region's `↑in`
   shows the real prompt size (#34).
 
+**Security**
+
+- **Terminal escape injection.** Text from files, tool arguments, tool output, extension widgets, window titles, the
+  working directory, git branch names and the trust prompt is now cleaned of escape sequences, control characters,
+  newlines where a single line is expected and bidirectional overrides before it is drawn (`tui/sanitize`). The
+  approval prompt can no longer be made to show a command other than the one that will run, and syntax-highlighted
+  and diff output no longer lets a file's escape sequences through.
+- **Opening a folder cannot run code.** The status line's `git` reads switch off `core.fsmonitor`, which a hostile
+  repository's own config could point at a program.
+- **Prompt-injection fence.** The GitHub review action wraps pull-request text in a per-run random fence the text
+  cannot close, caps comment and summary sizes, and gives its GitHub client timeouts and bounded retries.
+- **Fetch hardening.** `web_fetch` refuses reserved, tunnelled and link-local address ranges, closes its connections
+  and cuts text on character boundaries. `nova update` and `install.sh` bound every download, validate the version
+  they are told to fetch, refuse non-regular archive members and resolve the target through symlinks.
+- Deny rules can no longer be dodged by a newline: glob wildcards match newlines. `grep`, `read` and `edit` refuse
+  a named pipe instead of blocking on it (D136), `edit` rejects overlapping matches, and manifests, config, skills
+  and prompt templates are read as bounded regular files. A directory that contains the home directory cannot be
+  trusted. Provider error messages are bounded and scrubbed.
+
+**Correctness**
+
+- `checksums.txt` listed `./nova_….tar.gz`, a name every install looked up without the `./`, so verification could
+  not succeed. It now lists bare names, and `install.sh` and `nova update` read every common form.
+- The release workflow runs with least privilege and `action.yml` passes inputs through `env`, not into shell text.
+- `GET /v1/events` could hang a client: the stream is subscribed before the headers go out, so nothing is lost
+  between them. Request bodies are bounded in time, expired UI requests are forgotten, and a failed read is a 400
+  while an oversize body is a 413. An upload reports the type the server sniffed, not the one the client claimed.
+- A steering message sent as a run ends is no longer lost, `set_tools` keeps extension tools
+  registered, `reload` reports an extension that fails to rebuild, and `rpc` keeps delivering events while a slow
+  command runs. The run is deregistered before `run_end`, so `Running()` is false by the time a client sees it.
+- `RetryPolicy.Jitter` of zero now means the default and a negative value means none. A mid-stream provider error
+  fails the turn, and a tool call with truncated arguments still encodes.
+- A JPEG tool image is converted to PNG for Kitty, which draws only PNG, instead of showing nothing.
+- A pasted API key works on the first-run screen (the paste was ignored), and server text there is cleaned.
+- Compaction counts replies and images, keeps tool names and cuts only on real turns.
+- The `tasks` tool changes nothing when an update is rejected and no longer reports an unsaved change as done. The
+  `ask` tool shows the model the "Other" text of a multi-choice answer. Sub-agent events and usage stay separate.
+- An `$EDITOR` that carries arguments now runs (and its temp file is cleaned up), a stale file completion is dropped, equal-length pastes merged into one, and a quit timer that
+  forked the tick chain are fixed. `!cmd` runs without the bang and shows what it printed.
+- `docs` search excerpts no longer split a multi-byte character.
+
 ### Changed
 
+- The unused `mode.Options` fields `Out`, `In` and `Interactive` are gone. Library callers that set them should
+  drop them.
+- The `tool` package owns the head-and-tail output buffer and environment filtering that `tools/bash` and `ext`
+  each carried a copy of, and a new leaf package `proc` owns process-group start, signal and exit status.
+- Request-time pruning of old tool output is removed (`compaction.PruneToolOutput`): it rewrote the middle of the
+  history, so every turn after it missed the prompt cache. Compaction is the only thing that shrinks the context
+  (D134).
 - The one-line footer is now a multi-line **status region**: cwd and git branch/changes, token counts
   (`↑in ↓out Rcache CH%`), cost, context ratio/window with `(auto)`, session and block timers, and the hint, with
   the provider/model/thinking right-aligned on the last line. Extension status segments wrap onto extra rows

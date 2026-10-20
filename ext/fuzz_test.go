@@ -36,7 +36,7 @@ func FuzzHostFrames(f *testing.F) {
 				t.Fatalf("handleFrame(%q, %q) panicked: %v", typ, data, rec)
 			}
 		}()
-		h.handleFrame(inst, typ, data, reply{Type: typ})
+		h.handleFrame(inst, nil, typ, data, reply{Type: typ})
 	})
 }
 

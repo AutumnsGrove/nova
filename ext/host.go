@@ -249,7 +249,7 @@ func (h *Host) registerTool(inst *instance, info tool.Info, t tool.Tool) error {
 }
 
 // handleFrame dispatches one unsolicited frame from an instance.
-func (h *Host) handleFrame(inst *instance, typ string, line []byte, r reply) {
+func (h *Host) handleFrame(inst *instance, c *conn, typ string, line []byte, r reply) {
 	switch typ {
 	case "register":
 		h.handleRegister(inst, line)
@@ -590,8 +590,8 @@ func (h *Host) disable(inst *instance, reason string) {
 	h.clearRegistrations(inst)
 	inst.setState(stateDisabled, reason)
 	if inst.conn != nil {
-		_ = inst.conn.notify(&outFrame{Type: "shutdown"})
-		inst.conn.closeWith(errExited)
+		inst.conn.tryNotify(&outFrame{Type: "shutdown"})
+		inst.conn.close()
 	}
 	if h.opt.Emit != nil {
 		h.opt.Emit(proto.Event{

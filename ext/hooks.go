@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -455,7 +456,7 @@ func (h *Host) runCommandHook(ctx context.Context, inst *instance, spec HookSpec
 		return toolCallResult{}, false
 	}
 	if code != 0 {
-		h.logf("warn", inst.manifest.Name+": command hook exited with code "+itoa(int64(code)))
+		h.logf("warn", inst.manifest.Name+": command hook exited with code "+strconv.Itoa(code))
 		return toolCallResult{}, false
 	}
 	if len(strings.TrimSpace(stdout)) == 0 {

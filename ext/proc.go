@@ -185,7 +185,7 @@ func (inst *instance) waitExit(cmd *exec.Cmd, done chan struct{}) {
 		inst.host.logf("warn", inst.manifest.Name+" exited: "+err.Error())
 	}
 	if inst.conn != nil {
-		inst.conn.closeWith(err)
+		inst.conn.close()
 	}
 	close(done)
 	select {
@@ -195,8 +195,8 @@ func (inst *instance) waitExit(cmd *exec.Cmd, done chan struct{}) {
 }
 
 // handle receives every frame the extension sends.
-func (inst *instance) handle(typ string, line []byte, r reply) {
-	inst.host.handleFrame(inst, typ, line, r)
+func (inst *instance) handle(c *conn, typ string, line []byte, r reply) {
+	inst.host.handleFrame(inst, c, typ, line, r)
 }
 
 // markRegistered signals a successful registration.
@@ -238,7 +238,7 @@ func (inst *instance) start(ctx context.Context) error {
 	}
 	if err := inst.awaitRegister(ctx); err != nil {
 		inst.setState(stateFailed, err.Error())
-		inst.closeConn(err)
+		inst.closeConn()
 		return err
 	}
 	inst.mu.Lock()
@@ -268,9 +268,9 @@ func (inst *instance) awaitRegister(ctx context.Context) error {
 }
 
 // closeConn closes the current connection, ignoring a nil one.
-func (inst *instance) closeConn(err error) {
+func (inst *instance) closeConn() {
 	if inst.conn != nil {
-		inst.conn.closeWith(err)
+		inst.conn.close()
 	}
 }
 
@@ -321,7 +321,7 @@ func (inst *instance) restart() error {
 		return err
 	}
 	if err := inst.awaitRegister(context.Background()); err != nil {
-		inst.closeConn(err)
+		inst.closeConn()
 		return err
 	}
 	inst.mu.Lock()
@@ -346,7 +346,7 @@ func (inst *instance) stop(ctx context.Context) {
 	inst.mu.Unlock()
 
 	if c != nil {
-		_ = c.notify(&outFrame{Type: "shutdown"})
+		c.tryNotify(&outFrame{Type: "shutdown"})
 	}
 	if cmd != nil && cmd.Process != nil && done != nil {
 		pid := cmd.Process.Pid
@@ -359,7 +359,7 @@ func (inst *instance) stop(ctx context.Context) {
 		// Always kill the group, so a forked child cannot outlive the call.
 		forceKillGroup(pid)
 	}
-	inst.closeConn(errExited)
+	inst.closeConn()
 	inst.mu.Lock()
 	supervised := inst.supervised
 	inst.mu.Unlock()

@@ -1393,3 +1393,38 @@ func TestStream_OAI65_TextOnlyContentStaysString(t *testing.T) {
 		t.Errorf("content = %T %v, want the string \"hi\"", got, got)
 	}
 }
+
+// OpenRouter reports an upstream failure after the first token as an error
+// object on a later chunk, with finish_reason "error". Treating that chunk as a
+// chunk with no choices would end the turn as a success with a cut-off answer.
+func TestStream_OAI66_MidStreamErrorObjectFailsTheTurn(t *testing.T) {
+	p, _ := served(t, Config{}, testkit.ServerTurn{Raw: []string{
+		deltaLine(map[string]any{"content": "partial"}),
+		sseLine(map[string]any{
+			"error":   map[string]any{"code": "server_error", "message": "upstream disconnected"},
+			"choices": []any{map[string]any{"delta": map[string]any{"content": ""}, "finish_reason": "error"}},
+		}),
+		doneLine,
+	}})
+	resp, err := p.Stream(context.Background(), textRequest("m"), nil)
+	pe := assertErr(t, err, -1, false)
+	if pe.Code != "server_error" || !strings.Contains(pe.Message, "upstream disconnected") {
+		t.Errorf("error = %v, want the upstream code and message", pe)
+	}
+	if resp == nil || resp.Message.Content != "partial" {
+		t.Errorf("partial response = %+v, want the text delivered so far", resp)
+	}
+}
+
+func TestStream_OAI67_FinishReasonErrorWithoutObjectFailsTheTurn(t *testing.T) {
+	p, _ := served(t, Config{}, testkit.ServerTurn{Raw: []string{
+		deltaLine(map[string]any{"content": "partial"}),
+		sseLine(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{}, "finish_reason": "error"}}}),
+		doneLine,
+	}})
+	resp, err := p.Stream(context.Background(), textRequest("m"), nil)
+	assertErr(t, err, -1, false)
+	if resp == nil || resp.Message.Content != "partial" {
+		t.Errorf("partial response = %+v, want the text delivered so far", resp)
+	}
+}

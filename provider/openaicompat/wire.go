@@ -143,9 +143,8 @@ type errorObject struct {
 	Code    any    `json:"code"`
 }
 
-// chatChunk is one streamed chunk. Error is only meaningful on the first
-// chunk; later chunks with an error field are treated as chunks with no
-// choices.
+// chatChunk is one streamed chunk. Error is set when the provider reports a
+// failure in-band, which it can do at any point in the stream.
 type chatChunk struct {
 	Error   *errorObject  `json:"error"`
 	Choices []chunkChoice `json:"choices"`

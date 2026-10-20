@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -98,7 +99,7 @@ func (p *Provider) consume(ctx context.Context, stream *ssestream.Stream, req pr
 
 	var text, reasoning strings.Builder
 	asm := &assembler{calls: map[int]*callAcc{}}
-	var sawChunk, sawFinish, firstChunk = false, false, true
+	var sawChunk, sawFinish bool
 
 	// partial snapshots the delivered text, so an error still carries what the
 	// caller already saw.
@@ -144,11 +145,10 @@ func (p *Provider) consume(ctx context.Context, stream *ssestream.Stream, req pr
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			return fail(fmt.Sprintf("invalid JSON on line %d: %v", ev.Line, err), false, nil)
 		}
-		if firstChunk {
-			firstChunk = false
-			if chunk.Error != nil {
-				return partial(), streamErrorObject(chunk.Error)
-			}
+		// An error object can arrive on the first chunk (a rejected request) or
+		// after output has started (an upstream failure), and either ends the turn.
+		if chunk.Error != nil {
+			return partial(), streamErrorObject(chunk.Error)
 		}
 		sawChunk = true
 		if chunk.Model != "" {
@@ -169,6 +169,9 @@ func (p *Provider) consume(ctx context.Context, stream *ssestream.Stream, req pr
 		if choice.FinishReason != "" {
 			result.FinishReason = provider.NormalizeFinish(choice.FinishReason)
 			sawFinish = true
+			if result.FinishReason == "error" {
+				return partial(), &provider.Error{Status: http.StatusOK, Message: "provider ended the response with an error"}
+			}
 		}
 		appendDelta(&text, &reasoning, asm, choice.Delta, onEvent)
 	}

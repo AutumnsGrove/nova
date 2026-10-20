@@ -5,15 +5,25 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 )
 
 // maxFrameLine is the documented 16 MiB protocol line cap.
 const maxFrameLine = 16 << 20
+
+// writeQueueSize is how many frames may wait for the writer before a sender
+// has to wait for the peer to read.
+const writeQueueSize = 64
+
+// maxPeerRequests is how many slow requests (a user prompt, a model call) one
+// extension may have in flight at once.
+const maxPeerRequests = 8
 
 // Errors a request can fail with.
 var (
@@ -47,7 +57,6 @@ type outFrame struct {
 	DeadlineMS   int               `json:"deadline_ms,omitempty"`
 	Name         string            `json:"name,omitempty"`
 	Arguments    json.RawMessage   `json:"arguments,omitempty"`
-	CallID       string            `json:"call_id,omitempty"`
 	Args         string            `json:"args,omitempty"`
 	Kind         string            `json:"kind,omitempty"`
 	Data         json.RawMessage   `json:"data,omitempty"`
@@ -70,9 +79,10 @@ type reply struct {
 	Error   *proto.Error          `json:"error,omitempty"`
 }
 
-// handler receives one unsolicited frame from an extension. typ "__log" is the
-// connection's own diagnostics channel, not a protocol frame.
-type handler func(typ string, line []byte, r reply)
+// handler receives one unsolicited frame from an extension, with the
+// connection it arrived on so a reply never reaches a later process. typ
+// "__log" is the connection's own diagnostics channel, not a protocol frame.
+type handler func(c *conn, typ string, line []byte, r reply)
 
 // conn is one framed connection to an extension process. It correlates
 // requests by id, reads on its own goroutine, and writes through a queue so a
@@ -85,11 +95,13 @@ type conn struct {
 	handler handler
 	clock   Clock
 
-	writeCh  chan any
-	closeCh  chan struct{}
-	once     sync.Once
-	closeMu  sync.Mutex
-	closeErr error
+	writeCh chan any
+	// ctx ends when the connection does, so work started on its behalf (a UI
+	// prompt, a nested model call) stops with it.
+	ctx    context.Context
+	cancel context.CancelFunc
+	once   sync.Once
+	slots  chan struct{}
 
 	mu      sync.Mutex
 	next    int64
@@ -98,6 +110,7 @@ type conn struct {
 
 // newConn builds a connection and starts its reader and writer goroutines.
 func newConn(name string, r io.Reader, w io.Writer, closer io.Closer, clock Clock, h handler) *conn {
+	ctx, cancel := context.WithCancel(context.Background())
 	c := &conn{
 		name:    name,
 		r:       proto.NewReader(r, maxFrameLine),
@@ -105,8 +118,10 @@ func newConn(name string, r io.Reader, w io.Writer, closer io.Closer, clock Cloc
 		closer:  closer,
 		handler: h,
 		clock:   clock,
-		writeCh: make(chan any, 64),
-		closeCh: make(chan struct{}),
+		writeCh: make(chan any, writeQueueSize),
+		ctx:     ctx,
+		cancel:  cancel,
+		slots:   make(chan struct{}, maxPeerRequests),
 		pending: map[string]chan reply{},
 	}
 	go c.writeLoop()
@@ -118,11 +133,11 @@ func newConn(name string, r io.Reader, w io.Writer, closer io.Closer, clock Cloc
 func (c *conn) writeLoop() {
 	for {
 		select {
-		case <-c.closeCh:
+		case <-c.ctx.Done():
 			return
 		case v := <-c.writeCh:
 			if err := c.w.Write(v); err != nil {
-				c.closeWith(err)
+				c.close()
 				return
 			}
 		}
@@ -135,7 +150,10 @@ func (c *conn) readLoop() {
 	for {
 		line, err := c.r.Next()
 		if err != nil {
-			c.closeWith(err)
+			if errors.Is(err, proto.ErrLineTooLong) {
+				c.warn("extension sent a frame over the size limit; closing the connection")
+			}
+			c.close()
 			return
 		}
 		var probe struct {
@@ -152,9 +170,34 @@ func (c *conn) readLoop() {
 		if c.handler != nil {
 			var r reply
 			_ = json.Unmarshal(line, &r)
-			c.handler(probe.Type, line, r)
+			c.dispatch(probe.Type, line, r)
 		}
 	}
+}
+
+// dispatch hands one frame to the handler. A panic in the host's own callbacks
+// (the UI bridge, the session) must not take the process down because of what
+// an extension sent.
+func (c *conn) dispatch(typ string, line []byte, r reply) {
+	defer diag.Catch("extension frame")
+	c.handler(c, typ, line, r)
+}
+
+// async runs fn on its own goroutine, with a context that ends with the
+// connection. It reports false, without running fn, when the peer already has
+// maxPeerRequests in flight.
+func (c *conn) async(fn func(ctx context.Context)) bool {
+	select {
+	case c.slots <- struct{}{}:
+	default:
+		return false
+	}
+	go func() {
+		defer func() { <-c.slots }()
+		defer diag.Catch("extension request")
+		fn(c.ctx)
+	}()
+	return true
 }
 
 // deliver routes a reply to the request waiting for it. It reports whether a
@@ -178,7 +221,8 @@ func (c *conn) deliver(id string, line []byte) bool {
 }
 
 // request sends a frame and waits for its answer, a deadline, cancellation, or
-// the connection ending.
+// the connection ending. The deadline also bounds queueing the frame, so a peer
+// that has stopped reading cannot hold the caller past it.
 func (c *conn) request(ctx context.Context, frame *outFrame, timeout time.Duration) (reply, error) {
 	id := c.newID()
 	frame.ID = id
@@ -192,31 +236,52 @@ func (c *conn) request(ctx context.Context, frame *outFrame, timeout time.Durati
 		c.mu.Unlock()
 	}()
 
-	if err := c.send(frame); err != nil {
+	deadline := c.clock.After(timeout)
+	select {
+	case c.writeCh <- frame:
+	case <-deadline:
+		return reply{}, errDeadline
+	case <-ctx.Done():
+		return reply{}, errCancelled
+	case <-c.ctx.Done():
 		return reply{}, errExited
 	}
 	select {
 	case r := <-ch:
 		return r, nil
-	case <-c.clock.After(timeout):
+	case <-deadline:
 		return reply{}, errDeadline
 	case <-ctx.Done():
 		return reply{}, errCancelled
-	case <-c.closeCh:
-		return reply{}, errExited
+	case <-c.ctx.Done():
+		// An extension that answers and then exits closes the connection right
+		// behind its answer, so prefer the answer if it already arrived.
+		select {
+		case r := <-ch:
+			return r, nil
+		default:
+			return reply{}, errExited
+		}
 	}
 }
 
-// notify sends a fire-and-forget frame.
-func (c *conn) notify(v any) error { return c.send(v) }
-
-// send queues one frame for the writer goroutine.
-func (c *conn) send(v any) error {
+// notify queues a fire-and-forget frame, waiting for room if the peer is slow.
+// It gives up only when the connection ends.
+func (c *conn) notify(v any) error {
 	select {
 	case c.writeCh <- v:
 		return nil
-	case <-c.closeCh:
+	case <-c.ctx.Done():
 		return errExited
+	}
+}
+
+// tryNotify queues a frame only if there is room, for a frame (such as
+// shutdown) that must never wait on a peer that has stopped reading.
+func (c *conn) tryNotify(v any) {
+	select {
+	case c.writeCh <- v:
+	default:
 	}
 }
 
@@ -225,50 +290,22 @@ func (c *conn) newID() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.next++
-	return c.name + "_" + itoa(c.next)
+	return c.name + "_" + strconv.FormatInt(c.next, 10)
 }
 
-// closeWith records the first close reason and unblocks every waiter.
-func (c *conn) closeWith(err error) {
+// close ends the connection once: it closes the pipes and wakes every waiter.
+func (c *conn) close() {
 	c.once.Do(func() {
-		c.closeMu.Lock()
-		c.closeErr = err
-		c.closeMu.Unlock()
 		if c.closer != nil {
 			_ = c.closer.Close()
 		}
-		close(c.closeCh)
+		c.cancel()
 	})
 }
-
-// err returns the recorded close reason.
-func (c *conn) err() error {
-	c.closeMu.Lock()
-	defer c.closeMu.Unlock()
-	return c.closeErr
-}
-
-// done returns a channel closed when the connection ends.
-func (c *conn) done() <-chan struct{} { return c.closeCh }
 
 // warn reports a per-connection diagnostic through the host's log.
 func (c *conn) warn(msg string) {
 	if c.handler != nil {
-		c.handler("__log", []byte(msg), reply{Type: "warn", Content: msg})
+		c.handler(c, "__log", []byte(msg), reply{Type: "warn", Content: msg})
 	}
-}
-
-// itoa renders a positive int without importing strconv.
-func itoa(n int64) string {
-	if n <= 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
 }

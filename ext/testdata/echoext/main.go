@@ -90,10 +90,14 @@ func main() {
 			continue
 		}
 		typ, _ := f["type"].(string)
-		if typ == "replay" {
+		switch typ {
+		case "replay":
 			kind, _ := f["kind"].(string)
 			record("replay:" + kind)
-		} else {
+		case "error":
+			id, _ := f["id"].(string)
+			record("error:" + id)
+		default:
 			record(typ)
 		}
 		switch typ {
@@ -205,7 +209,14 @@ func main() {
 			send(map[string]any{"type": "hook_result", "id": id, "result": result})
 		case "command":
 			id, _ := f["id"].(string)
-			send(map[string]any{"type": "command_result", "id": id, "content": "command ok"})
+			reply := map[string]any{"type": "command_result", "id": id, "content": "command ok"}
+			if text := envString("ECHO_COMMAND_TEXT"); text != "" {
+				reply["content"] = text
+			}
+			if env("ECHO_COMMAND_FAIL") {
+				reply["content"], reply["is_error"] = "boom", true
+			}
+			send(reply)
 		case "complete_result":
 			record("complete_result")
 		case "ui_response":

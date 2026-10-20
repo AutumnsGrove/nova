@@ -6,13 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tool"
 )
+
+// defaultBuildTimeout bounds one build step when the caller sets no timeout.
+const defaultBuildTimeout = 5 * time.Minute
+
+// maxBuildOutputBytes bounds the build output kept for an error message.
+const maxBuildOutputBytes = 64 << 10
 
 // CommandRunner runs a build step.
 type CommandRunner interface {
@@ -22,18 +28,33 @@ type CommandRunner interface {
 // ExecRunner runs a build step directly, with the parent's environment.
 type ExecRunner struct{}
 
+// Run runs argv in dir. A failure carries the end of the command's output.
 func (ExecRunner) Run(ctx context.Context, dir string, argv []string) error {
 	if len(argv) == 0 {
 		return nil
 	}
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := groupCommand(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("ext: build failed: %v: %s", err, strings.TrimSpace(string(out)))
+	out := newCapBuffer(maxBuildOutputBytes)
+	cmd.Stdout, cmd.Stderr = out, out
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ext: build failed: %w: %s", err, strings.TrimSpace(string(out.bytes())))
 	}
 	return nil
+}
+
+// runBuild runs one build step under a timeout, with run or, when it is nil,
+// the direct runner.
+func runBuild(ctx context.Context, run CommandRunner, dir string, argv []string, timeout time.Duration) error {
+	if run == nil {
+		run = ExecRunner{}
+	}
+	if timeout <= 0 {
+		timeout = defaultBuildTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return run.Run(ctx, dir, argv)
 }
 
 // CheckOptions configures Check.
@@ -46,65 +67,58 @@ type CheckOptions struct {
 // Check validates and briefly starts one extension directory, returning every
 // problem it finds. It never installs anything.
 func Check(ctx context.Context, dir string, opt CheckOptions) []error {
-	var problems []error
 	m, err := LoadManifest(dir)
 	if err != nil {
 		return []error{err}
 	}
+	var (
+		mu       sync.Mutex
+		problems []error
+	)
+	add := func(err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		problems = append(problems, err)
+	}
 	if len(m.Build) > 0 {
-		run := opt.Run
-		if run == nil {
-			run = ExecRunner{}
+		if err := runBuild(ctx, opt.Run, dir, m.Build, opt.Timeout); err != nil {
+			add(err)
 		}
-		if opt.Timeout <= 0 {
-			opt.Timeout = 5 * time.Minute
-		}
-		bctx, cancel := context.WithTimeout(ctx, opt.Timeout)
-		if err := run.Run(bctx, dir, m.Build); err != nil {
-			problems = append(problems, err)
-		}
-		cancel()
 	}
 	if len(m.Run) == 0 {
 		return problems
 	}
+	// The host refuses a malformed tool or a name already taken, and logs the
+	// reason as a warning, so every warning is a problem. The built-in names are
+	// registered as stand-ins so a clash with one is found.
 	reg := tool.NewRegistry()
 	for name := range builtinTools {
 		_ = reg.Register(tool.New(tool.Info{Name: name}, func(context.Context, json.RawMessage, *tool.Context) (tool.Result, error) {
 			return tool.Result{}, nil
 		}))
 	}
-	clock := opt.Clock
-	if clock == nil {
-		clock = realClock{}
-	}
 	h := NewHost(HostOptions{
 		Dirs:     []string{dir},
 		Registry: reg,
-		Clock:    clock,
+		Clock:    opt.Clock,
 		Env:      os.Environ,
 		CWD:      dir,
 		Log: func(level, msg string) {
 			if level == "warn" {
-				problems = append(problems, errors.New(msg))
+				add(errors.New(msg))
 			}
 		},
 		Emit: func(ev proto.Event) {
 			if ev.Type == proto.EventExtensionError && ev.Error != nil {
-				problems = append(problems, errors.New(ev.Error.Message))
+				add(errors.New(ev.Error.Message))
 			}
 		},
 	})
-	problems = append(problems, h.Start(ctx)...)
-	for _, name := range reg.Names() {
-		if builtinTools[name] {
-			continue
-		}
-		info, ok := reg.Info(name)
-		if ok && info.Parameters != nil && info.Parameters["type"] != "object" {
-			problems = append(problems, fmt.Errorf("ext: tool %q has an invalid schema", name))
-		}
+	for _, err := range h.Start(ctx) {
+		add(err)
 	}
 	_ = h.Shutdown(ctx)
+	mu.Lock()
+	defer mu.Unlock()
 	return problems
 }

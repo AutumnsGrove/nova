@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -139,11 +140,60 @@ func TestHost_HST09_CapabilityDeclared(t *testing.T) {
 	ui := &fakeUI{}
 	dir := rawEchoDir(t, "echo", "capabilities: [ui:confirm]\n")
 	startHost(t, []string{dir}, HostOptions{UI: ui, Env: envWith("ECHO_UI=confirm")})
-	ui.mu.Lock()
-	defer ui.mu.Unlock()
-	if len(ui.requests) != 1 {
-		t.Fatalf("requests = %+v", ui.requests)
+	// A prompt is forwarded on its own goroutine, so it may land after Start.
+	waitFor(t, func() bool {
+		ui.mu.Lock()
+		defer ui.mu.Unlock()
+		return len(ui.requests) == 1
+	}, "the confirm request reached the UI")
+}
+
+func TestHost_HST08b_DeniedUIRequestNamesTheRequest(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	dir := rawEchoDir(t, "echo", "capabilities: [tools]\n")
+	startHost(t, []string{dir}, HostOptions{UI: &fakeUI{}, Env: envWith("ECHO_UI=confirm", "ECHO_TRACE="+trace)})
+	waitContains(t, trace, "error:u1", 3*time.Second)
+}
+
+// blockingUI never answers a prompt; it records when the prompt's context ends.
+type blockingUI struct {
+	fakeUI
+	asked     chan struct{}
+	cancelled chan struct{}
+}
+
+func (u *blockingUI) Request(ctx context.Context, _ proto.UIRequest) (proto.UIResponse, error) {
+	close(u.asked)
+	<-ctx.Done()
+	close(u.cancelled)
+	return proto.UIResponse{}, ctx.Err()
+}
+
+// A user sitting at a prompt must not stop the host reading the extension's
+// other frames, and closing the connection must end the prompt.
+func TestHost_HST10b_PromptDoesNotBlockOtherFrames(t *testing.T) {
+	ui := &blockingUI{asked: make(chan struct{}), cancelled: make(chan struct{})}
+	reg := tool.NewRegistry()
+	dir := rawEchoDir(t, "echo", "capabilities: [tools, ui:confirm]\n")
+	h := startHost(t, []string{dir}, HostOptions{Registry: reg, UI: ui, Env: envWith("ECHO_UI=confirm")})
+	<-ui.asked
+	res := reg.Execute(context.Background(), "echo", json.RawMessage(`{}`), &tool.Context{})
+	if res.IsError {
+		t.Fatalf("tool call during a pending prompt: %+v", res)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stop := make(chan struct{})
+	go func() {
+		defer close(stop)
+		_ = h.Shutdown(ctx)
+	}()
+	select {
+	case <-ui.cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the pending prompt outlived its connection")
+	}
+	<-stop
 }
 
 func TestHost_HST10_UIAnswerReachesExtension(t *testing.T) {
@@ -203,19 +253,22 @@ func TestHost_HST17_Complete(t *testing.T) {
 }
 
 func TestHost_HST18_CompleteCap(t *testing.T) {
-	calls := 0
+	var calls atomic.Int32
+	trace := t.TempDir() + "/trace"
 	dir := rawEchoDir(t, "echo", "capabilities: [model:complete]\n")
 	startHost(t, []string{dir}, HostOptions{
 		CompleteMax: 1,
-		Env:         envWith("ECHO_COMPLETE_COUNT=2"),
+		Env:         envWith("ECHO_COMPLETE_COUNT=2", "ECHO_TRACE="+trace),
 		Complete: func(context.Context, provider.Request) (*provider.Response, error) {
-			calls++
+			calls.Add(1)
 			return &provider.Response{}, nil
 		},
 	})
-	time.Sleep(300 * time.Millisecond)
-	if calls != 1 {
-		t.Fatalf("Complete called %d times, want 1", calls)
+	// The refusal names the request it refuses (id m1), so the extension's
+	// waiting call fails instead of waiting for an answer that never comes.
+	waitContains(t, trace, "error:m1", 3*time.Second)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("Complete called %d times, want 1", n)
 	}
 }
 
@@ -235,6 +288,25 @@ func TestHost_HST19_Commands(t *testing.T) {
 	out, err := h.RunCommand(context.Background(), "hello", "")
 	if err != nil || out != "command ok" {
 		t.Fatalf("RunCommand = %q, %v", out, err)
+	}
+}
+
+func TestHost_HST19b_CommandFailureIsAnError(t *testing.T) {
+	dir := echoDir(t, "echo", "")
+	h := startHost(t, []string{dir}, HostOptions{Env: envWith("ECHO_COMMAND_FAIL=1")})
+	out, err := h.RunCommand(context.Background(), "hello", "")
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("RunCommand = %q, %v; want an error carrying the extension's message", out, err)
+	}
+}
+
+func TestHost_HST19c_DuplicateCommandFirstExtensionWins(t *testing.T) {
+	one := echoDir(t, "one", "")
+	two := echoDir(t, "two", "")
+	h := startHost(t, []string{one, two}, HostOptions{Env: envWith("ECHO_COMMAND_TEXT_one=from one", "ECHO_COMMAND_TEXT_two=from two")})
+	out, err := h.RunCommand(context.Background(), "hello", "")
+	if err != nil || out != "from one" {
+		t.Fatalf("RunCommand = %q, %v; want the first extension in load order", out, err)
 	}
 }
 

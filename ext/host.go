@@ -3,9 +3,9 @@ package ext
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"sort"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +21,11 @@ const defaultCompleteMax = 20
 
 // defaultToolCallTimeout bounds one protocol tool call.
 const defaultToolCallTimeout = 120 * time.Second
+
+// maxRegistrations caps the tools and the commands one extension may register.
+// Every tool definition is sent to the model on each request, so an unbounded
+// list would let an extension inflate every later request.
+const maxRegistrations = 128
 
 // SessionAPI is the piece of the session the host needs.
 type SessionAPI interface {
@@ -118,7 +123,11 @@ type Host struct {
 	logf  func(level, msg string)
 	reg   *tool.Registry
 
+	// life serialises Start and Reload, which both rebuild the instance list.
+	life sync.Mutex
+
 	mu             sync.Mutex
+	closed         bool // set by Shutdown; nothing may start afterwards
 	insts          []*instance
 	byName         map[string]*instance
 	complete       map[string]int
@@ -163,9 +172,18 @@ func (h *Host) Registry() *tool.Registry { return h.reg }
 // Bundled extensions start first, so their tool names are reserved before a
 // third-party extension can claim them.
 func (h *Host) Start(ctx context.Context) []error {
+	h.life.Lock()
+	defer h.life.Unlock()
+	errs := h.start(ctx)
+	h.recordManifestHashes()
+	return errs
+}
+
+// start is Start without the lifecycle lock, for Reload, which already holds it.
+func (h *Host) start(ctx context.Context) []error {
 	var errs []error
 	h.mu.Lock()
-	bundled := append([]Bundled(nil), h.bundled...)
+	bundled := slices.Clone(h.bundled)
 	h.mu.Unlock()
 	for _, b := range bundled {
 		if err := h.startBundled(b); err != nil {
@@ -182,16 +200,19 @@ func (h *Host) Start(ctx context.Context) []error {
 			continue
 		}
 		inst := newInstance(h, m)
-		h.addInstance(inst)
+		if !h.addInstance(inst) {
+			break
+		}
 		if err := h.registerDeclarative(inst); err != nil {
 			errs = append(errs, err)
 			continue
 		}
 		h.mu.Lock()
-		kinds := append([]string(nil), h.opt.EntryKinds[m.Name]...)
-		kinds = append(kinds, h.entryKinds[m.Name]...)
-		inst.entryKinds = kinds
+		kinds := append(slices.Clone(h.opt.EntryKinds[m.Name]), h.entryKinds[m.Name]...)
 		h.mu.Unlock()
+		inst.mu.Lock()
+		inst.entryKinds = kinds
+		inst.mu.Unlock()
 		if len(m.Run) == 0 {
 			inst.setState(stateRunning, "")
 			continue
@@ -203,62 +224,72 @@ func (h *Host) Start(ctx context.Context) []error {
 	h.mu.Lock()
 	h.started = true
 	h.mu.Unlock()
-	h.recordManifestHashes()
 	return errs
 }
 
-// addInstance records an instance in load order.
-func (h *Host) addInstance(inst *instance) {
+// addInstance records an instance in load order. It refuses once Shutdown has
+// begun, so nothing can start behind Shutdown's back.
+func (h *Host) addInstance(inst *instance) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.closed {
+		return false
+	}
 	h.insts = append(h.insts, inst)
 	h.byName[inst.manifest.Name] = inst
+	return true
 }
 
 // isDisabled reports whether a name is in the disabled list.
 func (h *Host) isDisabled(name string) bool {
-	for _, d := range h.opt.Disabled {
-		if d == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(h.opt.Disabled, name)
 }
 
-// registerDeclarative registers a manifest's declarative tools.
+// registerDeclarative registers a manifest's exec tools. A tool without exec
+// is only a description of one the process registers itself.
 func (h *Host) registerDeclarative(inst *instance) error {
 	for _, spec := range inst.manifest.Tools {
-		t := &execTool{dir: inst.manifest.Dir, spec: spec}
-		if err := h.registerTool(inst, t.Info(), t); err != nil {
+		if len(spec.Exec) == 0 {
+			continue
+		}
+		if err := h.registerTool(inst, &execTool{dir: inst.manifest.Dir, spec: spec}, true); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// registerTool adds one tool, refusing a name already taken.
-func (h *Host) registerTool(inst *instance, info tool.Info, t tool.Tool) error {
-	if _, exists := h.reg.Get(info.Name); exists {
-		return fmt.Errorf("ext: tool %q is already registered", info.Name)
+// registerTool adds one tool, refusing a name already taken, and records it as
+// the instance's own: a declarative tool (decl) or a process tool.
+func (h *Host) registerTool(inst *instance, t tool.Tool, decl bool) error {
+	name := t.Info().Name
+	if _, exists := h.reg.Get(name); exists {
+		return fmt.Errorf("ext: tool %q is already registered", name)
 	}
 	if err := h.reg.Register(t); err != nil {
 		return err
 	}
-	inst.reg.tools = append(inst.reg.tools, info.Name)
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	if decl {
+		inst.reg.decl = append(inst.reg.decl, name)
+	} else {
+		inst.reg.tools = append(inst.reg.tools, name)
+	}
 	return nil
 }
 
-// handleFrame dispatches one unsolicited frame from an instance.
-func (h *Host) handleFrame(inst *instance, typ string, line []byte, r reply) {
+// handleFrame dispatches one unsolicited frame that arrived on c.
+func (h *Host) handleFrame(inst *instance, c *conn, typ string, line []byte, r reply) {
 	switch typ {
 	case "register":
-		h.handleRegister(inst, line)
+		h.handleRegister(inst, c, line)
 	case "ui_request":
-		h.handleUI(inst, line)
+		h.handleUI(inst, c, line)
 	case "append_entry":
-		h.handleAppend(inst, line)
+		h.handleAppend(inst, c, line)
 	case "complete":
-		h.handleComplete(inst, line)
+		h.handleComplete(inst, c, line)
 	case "log":
 		var f struct {
 			Level string `json:"level"`
@@ -277,146 +308,190 @@ func (h *Host) handleFrame(inst *instance, typ string, line []byte, r reply) {
 }
 
 // handleRegister replaces the instance's registrations with the frame's.
-func (h *Host) handleRegister(inst *instance, line []byte) {
+func (h *Host) handleRegister(inst *instance, c *conn, line []byte) {
 	var f registerFrame
 	if err := json.Unmarshal(line, &f); err != nil {
-		h.deny(inst, proto.CodeBadRequest, "malformed register frame")
+		h.deny(inst, c, "", proto.CodeBadRequest, "malformed register frame")
 		return
 	}
-	oldTools := append([]string(nil), inst.reg.tools...)
 	inst.mu.Lock()
-	inst.entryKinds = append([]string(nil), f.Entries...)
+	inst.entryKinds = slices.Clone(f.Entries)
+	inst.reg.flags = slices.Clone(f.Flags)
 	inst.mu.Unlock()
 	h.mu.Lock()
-	h.entryKinds[inst.manifest.Name] = append([]string(nil), f.Entries...)
+	h.entryKinds[inst.manifest.Name] = slices.Clone(f.Entries)
 	h.mu.Unlock()
-	inst.reg.flags = append([]FlagSpec(nil), f.Flags...)
-	newNames := map[string]bool{}
-	var newOrder []string
-	for _, rt := range f.Tools {
-		if !inst.manifest.hasCapability("tools") {
-			h.deny(inst, proto.CodePermissionDenied, "tools capability not declared")
-			continue
-		}
-		t := &protocolTool{host: h, inst: inst, def: rt}
-		if err := h.registerOrReplace(inst, t.Info(), t); err != nil {
-			h.logf("warn", inst.manifest.Name+": "+err.Error())
-			h.deny(inst, proto.CodeBadRequest, err.Error())
-			continue
-		}
-		newNames[rt.Name] = true
-		newOrder = append(newOrder, rt.Name)
-	}
-	// Drop only the tools the new frame left out, after their replacements are
-	// already registered.
-	for _, name := range oldTools {
-		if !newNames[name] {
-			h.reg.Unregister(name)
-		}
-	}
-	inst.mu.Lock()
-	inst.reg.tools = newOrder
-	inst.mu.Unlock()
-	if len(f.Commands) > 0 && !inst.manifest.hasCapability("commands") {
-		h.deny(inst, proto.CodePermissionDenied, "commands capability not declared")
-	} else {
-		inst.reg.command = append([]RegisterCommand(nil), f.Commands...)
-	}
-	inst.reg.hooks = nil
-	for _, hook := range f.Hooks {
-		if !hookNames[hook] {
-			h.deny(inst, proto.CodeBadRequest, "unknown hook "+hook)
-			continue
-		}
-		if !inst.manifest.hasCapability("hooks:" + hook) {
-			h.deny(inst, proto.CodePermissionDenied, "hook "+hook+" capability not declared")
-			continue
-		}
-		inst.reg.hooks = append(inst.reg.hooks, hook)
-	}
+	h.registerProcessTools(inst, c, f.Tools)
+	h.registerCommandsAndHooks(inst, c, f)
 	if len(f.Providers) > 0 && !inst.manifest.hasCapability("providers") {
-		h.deny(inst, proto.CodePermissionDenied, "providers capability not declared")
+		h.deny(inst, c, "", proto.CodePermissionDenied, "providers capability not declared")
 	}
 	inst.markRegistered()
 }
 
-// registerOrReplace registers a tool, replacing one this instance already owns.
-// It never removes a tool before its replacement is in place, so a re-register
-// never leaves an empty window for a reader of the registry.
-func (h *Host) registerOrReplace(inst *instance, info tool.Info, t tool.Tool) error {
-	if _, exists := h.reg.Get(info.Name); exists {
-		owned := false
-		inst.mu.Lock()
-		for _, name := range inst.reg.tools {
-			if name == info.Name {
-				owned = true
-				break
-			}
-		}
-		inst.mu.Unlock()
-		if !owned {
-			return fmt.Errorf("ext: tool %q is already registered", info.Name)
-		}
-		return h.reg.Replace(t)
+// registerProcessTools makes the register frame's tools the instance's process
+// tools. A tool the frame leaves out is dropped only after its replacements
+// are in place, so a re-register never opens an empty window for readers of the
+// registry.
+func (h *Host) registerProcessTools(inst *instance, c *conn, defs []RegisterTool) {
+	if len(defs) > maxRegistrations {
+		h.deny(inst, c, "", proto.CodeBadRequest, fmt.Sprintf("an extension may register at most %d tools", maxRegistrations))
+		defs = defs[:maxRegistrations]
 	}
-	if err := h.reg.Register(t); err != nil {
-		return err
+	if len(defs) > 0 && !inst.manifest.hasCapability("tools") {
+		h.deny(inst, c, "", proto.CodePermissionDenied, "tools capability not declared")
+		defs = nil
 	}
 	inst.mu.Lock()
-	inst.reg.tools = append(inst.reg.tools, info.Name)
+	old := slices.Clone(inst.reg.tools)
 	inst.mu.Unlock()
+	kept := map[string]bool{}
+	for _, def := range defs {
+		if err := validateRegisterTool(def); err != nil {
+			h.deny(inst, c, "", proto.CodeBadRequest, err.Error())
+			continue
+		}
+		if err := h.registerOrReplace(inst, &protocolTool{host: h, inst: inst, def: def}); err != nil {
+			h.deny(inst, c, "", proto.CodeBadRequest, err.Error())
+			continue
+		}
+		kept[def.Name] = true
+	}
+	for _, name := range old {
+		if !kept[name] {
+			h.reg.Unregister(name)
+			inst.forgetTool(name)
+		}
+	}
+}
+
+// validateRegisterTool applies to a process tool the rules the manifest applies
+// to a declarative one, because a malformed name or schema would fail every
+// later model request, not just calls to the tool.
+func validateRegisterTool(def RegisterTool) error {
+	if !toolNameRe.MatchString(def.Name) {
+		return fmt.Errorf("ext: invalid tool name %q", def.Name)
+	}
+	if def.Parameters != nil && def.Parameters["type"] != "object" {
+		return fmt.Errorf("ext: tool %q: parameters must be an object schema", def.Name)
+	}
 	return nil
 }
 
-// clearRegistrations removes an instance's tools and command/hook lists.
-func (h *Host) clearRegistrations(inst *instance) {
-	if inst == nil {
-		return
+// forgetTool drops a name from the instance's process tools.
+func (inst *instance) forgetTool(name string) {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	inst.reg.tools = slices.DeleteFunc(inst.reg.tools, func(n string) bool { return n == name })
+}
+
+// registerOrReplace registers a tool, replacing one this instance already owns.
+func (h *Host) registerOrReplace(inst *instance, t tool.Tool) error {
+	name := t.Info().Name
+	inst.mu.Lock()
+	owned := slices.Contains(inst.reg.tools, name)
+	inst.mu.Unlock()
+	if owned {
+		return h.reg.Replace(t)
 	}
-	for _, name := range inst.reg.tools {
-		h.reg.Unregister(name)
+	return h.registerTool(inst, t, false)
+}
+
+// registerCommandsAndHooks records the frame's commands and hooks, refusing
+// those the manifest did not declare a capability for.
+func (h *Host) registerCommandsAndHooks(inst *instance, c *conn, f registerFrame) {
+	var commands []RegisterCommand
+	switch {
+	case len(f.Commands) == 0:
+	case !inst.manifest.hasCapability("commands"):
+		h.deny(inst, c, "", proto.CodePermissionDenied, "commands capability not declared")
+	default:
+		commands = slices.Clone(f.Commands[:min(len(f.Commands), maxRegistrations)])
 	}
+	var hooks []string
+	for _, hook := range f.Hooks {
+		switch {
+		case !hookNames[hook]:
+			h.deny(inst, c, "", proto.CodeBadRequest, "unknown hook "+hook)
+		case !inst.manifest.hasCapability("hooks:" + hook):
+			h.deny(inst, c, "", proto.CodePermissionDenied, "hook "+hook+" capability not declared")
+		default:
+			hooks = append(hooks, hook)
+		}
+	}
+	inst.mu.Lock()
+	inst.reg.command = commands
+	inst.reg.hooks = hooks
+	inst.mu.Unlock()
+}
+
+// clearProcessRegistrations removes what an instance's process contributed:
+// its tools, commands, and hooks. Declarative tools stay, since they do not
+// depend on the process.
+func (h *Host) clearProcessRegistrations(inst *instance) {
+	inst.mu.Lock()
+	tools := inst.reg.tools
 	inst.reg.tools = nil
 	inst.reg.command = nil
 	inst.reg.hooks = nil
-}
-
-// deny sends an error frame to an extension.
-func (h *Host) deny(inst *instance, code, msg string) {
-	if inst.conn == nil {
-		return
+	inst.mu.Unlock()
+	for _, name := range tools {
+		h.reg.Unregister(name)
 	}
-	_ = inst.conn.notify(&outFrame{Type: "error", Error: &proto.Error{Code: code, Message: msg}})
 }
 
-// handleUI forwards a UI request, checking the method capability.
-func (h *Host) handleUI(inst *instance, line []byte) {
+// clearRegistrations removes everything an instance registered.
+func (h *Host) clearRegistrations(inst *instance) {
+	h.clearProcessRegistrations(inst)
+	inst.mu.Lock()
+	decl := inst.reg.decl
+	inst.reg.decl = nil
+	inst.mu.Unlock()
+	for _, name := range decl {
+		h.reg.Unregister(name)
+	}
+}
+
+// deny tells an extension a frame was refused and logs why, so `nova ext check`
+// can report it. id is the refused request's id, when it had one, so the
+// extension's waiting call fails instead of hanging.
+func (h *Host) deny(inst *instance, c *conn, id, code, msg string) {
+	h.logf("warn", inst.manifest.Name+": "+msg)
+	_ = c.notify(&outFrame{Type: "error", ID: id, Error: &proto.Error{Code: code, Message: msg}})
+}
+
+// handleUI forwards a UI request, checking the method capability. A request
+// that needs an answer waits on its own goroutine, so a user at a prompt does
+// not stop the extension's other frames from being read.
+func (h *Host) handleUI(inst *instance, c *conn, line []byte) {
 	var req proto.UIRequest
 	if err := json.Unmarshal(line, &req); err != nil {
-		h.deny(inst, proto.CodeBadRequest, "malformed ui_request")
+		h.deny(inst, c, "", proto.CodeBadRequest, "malformed ui_request")
 		return
 	}
 	if !uiMethods[req.Method] || !inst.manifest.hasCapability("ui:"+req.Method) {
-		h.deny(inst, proto.CodePermissionDenied, "ui method "+req.Method+" is not declared")
+		h.deny(inst, c, req.ID, proto.CodePermissionDenied, "ui method "+req.Method+" is not declared")
 		return
 	}
 	if h.opt.UI == nil {
-		h.deny(inst, proto.CodeUnsupported, "no UI client is attached")
+		h.deny(inst, c, req.ID, proto.CodeUnsupported, "no UI client is attached")
 		return
 	}
 	if fireAndForget(req.Method) {
 		h.opt.UI.Notify(req)
 		return
 	}
-	resp, err := h.opt.UI.Request(context.Background(), req)
-	if err != nil {
-		h.deny(inst, proto.CodeUnsupported, err.Error())
-		return
-	}
-	resp.Type = proto.FrameUIResponse
-	resp.ID = req.ID
-	if inst.conn != nil {
-		_ = inst.conn.notify(resp)
+	if !c.async(func(ctx context.Context) {
+		resp, err := h.opt.UI.Request(ctx, req)
+		if err != nil {
+			h.deny(inst, c, req.ID, proto.CodeUnsupported, err.Error())
+			return
+		}
+		resp.Type = proto.FrameUIResponse
+		resp.ID = req.ID
+		_ = c.notify(resp)
+	}) {
+		h.deny(inst, c, req.ID, proto.CodeBusy, "too many requests in flight")
 	}
 }
 
@@ -430,13 +505,13 @@ func fireAndForget(method string) bool {
 }
 
 // handleAppend stores one custom session entry.
-func (h *Host) handleAppend(inst *instance, line []byte) {
+func (h *Host) handleAppend(inst *instance, c *conn, line []byte) {
 	if !inst.manifest.hasCapability("session:append_entry") {
-		h.deny(inst, proto.CodePermissionDenied, "session:append_entry capability not declared")
+		h.deny(inst, c, "", proto.CodePermissionDenied, "session:append_entry capability not declared")
 		return
 	}
 	if h.opt.Session == nil {
-		h.deny(inst, proto.CodeInternal, "no session is attached")
+		h.deny(inst, c, "", proto.CodeInternal, "no session is attached")
 		return
 	}
 	var f struct {
@@ -445,18 +520,20 @@ func (h *Host) handleAppend(inst *instance, line []byte) {
 		Keep bool            `json:"keep"`
 	}
 	if err := json.Unmarshal(line, &f); err != nil || f.Kind == "" {
-		h.deny(inst, proto.CodeBadRequest, "append_entry needs kind and data")
+		h.deny(inst, c, "", proto.CodeBadRequest, "append_entry needs kind and data")
 		return
 	}
 	if err := h.opt.Session.AppendEntry(f.Kind, f.Data, f.Keep); err != nil {
-		h.deny(inst, proto.CodeInternal, err.Error())
+		h.deny(inst, c, "", proto.CodeInternal, err.Error())
 	}
 }
 
-// handleComplete performs a nested model call under the per-run cap.
-func (h *Host) handleComplete(inst *instance, line []byte) {
+// handleComplete performs a nested model call under the per-run cap, on its own
+// goroutine so a slow model does not stop the extension's other frames from
+// being read.
+func (h *Host) handleComplete(inst *instance, c *conn, line []byte) {
 	if !inst.manifest.hasCapability("model:complete") {
-		h.deny(inst, proto.CodePermissionDenied, "model:complete capability not declared")
+		h.deny(inst, c, "", proto.CodePermissionDenied, "model:complete capability not declared")
 		return
 	}
 	var f struct {
@@ -464,49 +541,49 @@ func (h *Host) handleComplete(inst *instance, line []byte) {
 		Request provider.Request `json:"request"`
 	}
 	if err := json.Unmarshal(line, &f); err != nil {
-		h.deny(inst, proto.CodeBadRequest, "malformed complete frame")
+		h.deny(inst, c, "", proto.CodeBadRequest, "malformed complete frame")
 		return
 	}
 	if h.opt.Complete == nil {
-		h.deny(inst, proto.CodeUnsupported, "no completion function is attached")
+		h.deny(inst, c, f.ID, proto.CodeUnsupported, "no completion function is attached")
 		return
+	}
+	limit := h.opt.CompleteMax
+	if limit <= 0 {
+		limit = defaultCompleteMax
 	}
 	h.mu.Lock()
-	max := h.opt.CompleteMax
-	if max <= 0 {
-		max = defaultCompleteMax
-	}
 	h.complete[inst.manifest.Name]++
-	over := h.complete[inst.manifest.Name] > max
+	over := h.complete[inst.manifest.Name] > limit
 	h.mu.Unlock()
 	if over {
-		h.deny(inst, proto.CodeBadRequest, fmt.Sprintf("complete cap of %d reached for this run", max))
+		h.deny(inst, c, f.ID, proto.CodeBadRequest, fmt.Sprintf("complete cap of %d reached for this run", limit))
 		return
 	}
-	resp, err := h.opt.Complete(context.Background(), f.Request)
-	if err != nil {
-		h.deny(inst, proto.CodeProviderError, err.Error())
-		return
-	}
-	frame := &outFrame{Type: "complete_result", ID: f.ID}
-	if resp != nil {
-		frame.Message = resp.Message
-		frame.Usage = resp.Usage
-	}
-	if inst.conn != nil {
-		_ = inst.conn.notify(frame)
+	if !c.async(func(ctx context.Context) {
+		resp, err := h.opt.Complete(ctx, f.Request)
+		if err != nil {
+			h.deny(inst, c, f.ID, proto.CodeProviderError, err.Error())
+			return
+		}
+		frame := &outFrame{Type: "complete_result", ID: f.ID}
+		if resp != nil {
+			frame.Message = resp.Message
+			frame.Usage = resp.Usage
+		}
+		_ = c.notify(frame)
+	}) {
+		h.deny(inst, c, f.ID, proto.CodeBusy, "too many requests in flight")
 	}
 }
 
 // Commands returns every running extension's slash commands in load order.
 func (h *Host) Commands() []Command {
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	var out []Command
-	for _, inst := range h.insts {
+	for _, inst := range h.snapshot() {
 		inst.mu.Lock()
 		state := inst.state
-		cmds := append([]RegisterCommand(nil), inst.reg.command...)
+		cmds := slices.Clone(inst.reg.command)
 		inst.mu.Unlock()
 		if state != stateRunning {
 			continue
@@ -518,24 +595,31 @@ func (h *Host) Commands() []Command {
 	return out
 }
 
-// RunCommand runs one extension command and returns its output.
-func (h *Host) RunCommand(ctx context.Context, name, args string) (string, error) {
+// snapshot returns the instances in load order.
+func (h *Host) snapshot() []*instance {
 	h.mu.Lock()
-	var target *instance
-	for _, inst := range h.insts {
+	defer h.mu.Unlock()
+	return slices.Clone(h.insts)
+}
+
+// commandOwner returns the first running extension, in load order, that
+// registered a slash command called name.
+func (h *Host) commandOwner(name string) *instance {
+	for _, inst := range h.snapshot() {
 		inst.mu.Lock()
-		state := inst.state
+		running := inst.state == stateRunning
+		owns := slices.ContainsFunc(inst.reg.command, func(c RegisterCommand) bool { return c.Name == name })
 		inst.mu.Unlock()
-		if state != stateRunning {
-			continue
-		}
-		for _, c := range inst.reg.command {
-			if c.Name == name {
-				target = inst
-			}
+		if running && owns {
+			return inst
 		}
 	}
-	h.mu.Unlock()
+	return nil
+}
+
+// RunCommand runs one extension command and returns its output.
+func (h *Host) RunCommand(ctx context.Context, name, args string) (string, error) {
+	target := h.commandOwner(name)
 	if target == nil {
 		return "", fmt.Errorf("ext: no extension command named %q", name)
 	}
@@ -547,41 +631,51 @@ func (h *Host) RunCommand(ctx context.Context, name, args string) (string, error
 		if !hasCmd {
 			return "", fmt.Errorf("ext: no extension command named %q", name)
 		}
-		return h.runBundledCommand(target, cmd, ctx, args)
+		return h.runBundledCommand(ctx, target, cmd, args)
 	}
-	reply, err := target.conn.request(ctx, &outFrame{Type: "command", Name: name, Args: args}, defaultToolCallTimeout)
+	reply, err := target.request(ctx, &outFrame{Type: "command", Name: name, Args: args}, defaultToolCallTimeout)
 	if err != nil {
 		return "", fmt.Errorf("ext: %s: %w", target.manifest.Name, err)
 	}
 	if reply.Error != nil {
 		return "", fmt.Errorf("ext: %s: %s", target.manifest.Name, reply.Error.Message)
 	}
+	if reply.IsError {
+		return "", fmt.Errorf("ext: %s: %s", target.manifest.Name, reply.Content)
+	}
 	return reply.Content, nil
 }
 
-// Status returns the supervision state of every instance in load order.
+// Status returns the supervision state of every instance, sorted by name.
 func (h *Host) Status() []Status {
-	h.mu.Lock()
-	insts := append([]*instance(nil), h.insts...)
-	h.mu.Unlock()
+	insts := h.snapshot()
 	out := make([]Status, 0, len(insts))
 	for _, inst := range insts {
 		out = append(out, inst.status())
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	slices.SortStableFunc(out, func(a, b Status) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
-// Shutdown stops every extension. No process survives it.
+// Shutdown stops every extension in parallel, so one that ignores the request
+// does not delay the others by its grace period. No process survives it, and
+// nothing can start once it has begun. It reports ctx's error if ctx ended
+// before the supervisors finished.
 func (h *Host) Shutdown(ctx context.Context) error {
 	h.mu.Lock()
-	insts := append([]*instance(nil), h.insts...)
+	h.closed = true
+	insts := slices.Clone(h.insts)
 	h.mu.Unlock()
-	var errs []error
+	var wg sync.WaitGroup
 	for _, inst := range insts {
-		inst.stop(ctx)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			inst.stop(ctx)
+		}()
 	}
-	return errors.Join(errs...)
+	wg.Wait()
+	return ctx.Err()
 }
 
 // disable marks an instance disabled, removes its registrations, and emits one
@@ -589,9 +683,9 @@ func (h *Host) Shutdown(ctx context.Context) error {
 func (h *Host) disable(inst *instance, reason string) {
 	h.clearRegistrations(inst)
 	inst.setState(stateDisabled, reason)
-	if inst.conn != nil {
-		_ = inst.conn.notify(&outFrame{Type: "shutdown"})
-		inst.conn.closeWith(errExited)
+	if c := inst.getConn(); c != nil {
+		c.tryNotify(&outFrame{Type: "shutdown"})
+		c.close()
 	}
 	if h.opt.Emit != nil {
 		h.opt.Emit(proto.Event{

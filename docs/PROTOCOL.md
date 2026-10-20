@@ -208,7 +208,7 @@ host → ext   {"type":"init","version":1,"extension":"tasks","session":"…","c
 ext  → host  {"type":"register","tools":[…],"commands":[…],"hooks":["tool_call","turn_end"],"flags":[…],"providers":[…]}
 host → ext   {"type":"hook","id":"h1","hook":"tool_call","event":{…},"deadline_ms":2000}
 ext  → host  {"type":"hook_result","id":"h1","result":{"block":true,"reason":"…"}}
-host → ext   {"type":"tool_call","id":"t1","name":"todo","arguments":{…},"call_id":"…"}
+host → ext   {"type":"tool_call","id":"t1","name":"todo","arguments":{…},"deadline_ms":120000}
 ext  → host  {"type":"tool_result","id":"t1","content":"…","is_error":false,"details":{…},"parts":[{"type":"image","mime_type":"image/png","data":"…"}]}
 host → ext   {"type":"command","id":"c1","name":"todos","args":"…"}
 ext  → host  {"type":"ui_request",…}   // same UI methods as above
@@ -225,6 +225,19 @@ Rules:
   error result for that call and an `extension_error` event, never a hang.
 - An extension may only use capabilities it declared in its manifest and the user
   approved at install. Anything else is rejected with `permission_denied`.
+- A refused request is answered with an `error` frame that carries the request's
+  `id` (`{"type":"error","id":"m1","error":{"code":"permission_denied",…}}`), so the
+  call waiting for it fails at once. Frames that are not requests get an `error`
+  frame without an id.
+- A `command` is answered with `{"type":"command_result","id":"c1","content":"…","is_error":false}`;
+  `is_error: true` makes the command fail with `content` as the message.
+- `register` is checked: a tool name matches `[A-Za-z0-9_-]{1,64}`, `parameters`
+  must be an object schema, and an extension may register at most 128 tools and
+  128 commands. A tool that fails a check is refused with `bad_request` and the
+  extension's other registrations proceed.
+- A `ui_request` that needs an answer and a `complete` are served on their own, so
+  a slow answer does not delay the extension's other frames. At most eight such
+  requests per extension may be in flight; more are refused with `busy`.
 - `append_entry` data is stored in the session and replayed to the extension on
   `init` after a reload, in order, so it can rebuild its state.
 - If the extension process exits, the host unregisters its tools, emits

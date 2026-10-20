@@ -192,7 +192,7 @@ func Open(ctx context.Context, cfg Config, url string, headers http.Header, body
 	timedOut := !timer.Stop()
 	if err != nil || timedOut {
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		cancel()
 		if ctx.Err() != nil {
@@ -207,7 +207,7 @@ func Open(ctx context.Context, cfg Config, url string, headers http.Header, body
 		// A read error leaves a short body, and a short body still gives the
 		// status-based error its best message.
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		cancel()
 		return nil, httpError(resp.StatusCode, resp.Header, data, credentials(headers))
 	}
@@ -373,7 +373,7 @@ func (s *Stream) SawDone() bool { return s.sawDone }
 func (s *Stream) Close() {
 	s.idleTimer.Stop()
 	s.cancel()
-	s.body.Close()
+	_ = s.body.Close()
 }
 
 // withDefaults fills the zero config fields.

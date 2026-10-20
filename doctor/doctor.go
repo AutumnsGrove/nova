@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -131,9 +130,7 @@ func Run(ctx context.Context, opt Options) []Check {
 		terminalCheck(opt),
 		logCheck(opt),
 	}
-	cfg, cfgCheck := configCheck(opt)
-	checks = append(checks, cfgCheck, dirsCheck(opt), trustCheck(opt), extensionsCheck(opt))
-	checks = append(checks, projectCheck(opt, cfg))
+	checks = append(checks, configCheck(opt), dirsCheck(opt), trustCheck(opt), extensionsCheck(opt), projectCheck(opt))
 	return checks
 }
 
@@ -313,26 +310,26 @@ func firstNonEmpty(values ...string) string {
 
 // configCheck loads the config and reports warnings. Only an unreadable file is
 // a failure; every other problem is a warning.
-func configCheck(opt Options) (*config.Config, Check) {
-	cfg, warnings, err := config.Load(config.LoadOptions{
+func configCheck(opt Options) Check {
+	_, warnings, err := config.Load(config.LoadOptions{
 		CWD:      opt.CWD,
 		Home:     opt.Home,
 		Env:      opt.Env,
 		ReadFile: opt.ReadFile,
 	})
 	if err != nil {
-		return cfg, Check{Name: "config", Status: Fail, Detail: err.Error(), Fix: "fix the config path"}
+		return Check{Name: "config", Status: Fail, Detail: err.Error(), Fix: "fix the config path"}
 	}
 	if len(warnings) == 0 {
-		return cfg, Check{Name: "config", Status: OK, Detail: "loaded"}
+		return Check{Name: "config", Status: OK, Detail: "loaded"}
 	}
 	detail := warningText(warnings)
 	for _, w := range warnings {
 		if strings.Contains(w.Message, "cannot read config") {
-			return cfg, Check{Name: "config", Status: Fail, Detail: detail, Fix: "make the config file readable"}
+			return Check{Name: "config", Status: Fail, Detail: detail, Fix: "make the config file readable"}
 		}
 	}
-	return cfg, Check{Name: "config", Status: Warn, Detail: detail, Fix: "fix the warnings above"}
+	return Check{Name: "config", Status: Warn, Detail: detail, Fix: "fix the warnings above"}
 }
 
 func warningText(warnings []config.Warning) string {
@@ -421,7 +418,7 @@ func extensionsCheck(opt Options) Check {
 	return Check{Name: "extensions", Status: status, Detail: strings.Join(parts, "; "), Fix: fix}
 }
 
-func projectCheck(opt Options, cfg *config.Config) Check {
+func projectCheck(opt Options) Check {
 	store := config.NewTrustStore(filepath.Join(config.UserConfigDir(opt.Home), "trust.json"))
 	files, warnings := config.LoadContext(opt.CWD, opt.Home, config.ContextOptions{Trusted: store.IsTrusted})
 	skills, skillWarnings := config.LoadSkills([]string{
@@ -480,7 +477,3 @@ func WriteJSON(out io.Writer, checks []Check) error {
 	enc.SetIndent("", "  ")
 	return enc.Encode(checks)
 }
-
-// GOOS is the runtime OS, exported so `cmd/nova` can show it without importing
-// runtime itself in the doctor command.
-func GOOS() string { return runtime.GOOS }

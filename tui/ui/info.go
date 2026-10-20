@@ -64,7 +64,7 @@ func (m *Model) openHelp() {
 func (m *Model) showCrashLog() tea.Cmd {
 	rec := diag.Default()
 	if rec == nil || rec.CrashPath() == "" {
-		m.notice = "no crash reports"
+		m.setNotice("no crash reports")
 		return nil
 	}
 	path := rec.CrashPath()
@@ -111,7 +111,7 @@ func readTail(path string, n int64) ([]byte, error) {
 func (m *Model) showBashOutput(resp proto.Response) {
 	if !resp.OK {
 		if resp.Error != nil {
-			m.notice = resp.Error.Message
+			m.setNotice(resp.Error.Message)
 		}
 		return
 	}

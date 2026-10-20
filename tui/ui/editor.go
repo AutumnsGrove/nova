@@ -82,7 +82,7 @@ func (m *Model) submit(action string) tea.Cmd {
 			return cmd
 		}
 		if !m.knownCommand(name) && len(m.commands) > 0 {
-			m.notice = "unknown command: /" + name
+			m.setNotice("unknown command: /" + name)
 			return nil // leave the text in the editor
 		}
 		m.setEditorText("")
@@ -255,14 +255,14 @@ func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 		return m.showCrashLog(), true
 	case "theme":
 		if strings.TrimSpace(args) == "" {
-			m.notice = "themes: " + m.themeList()
+			m.setNotice("themes: " + m.themeList())
 			return nil, true
 		}
 		if m.setTheme(strings.TrimSpace(args)) {
-			m.notice = "theme: " + strings.TrimSpace(args)
+			m.setNotice("theme: " + strings.TrimSpace(args))
 			return nil, true
 		}
-		m.notice = "unknown theme: " + strings.TrimSpace(args)
+		m.setNotice("unknown theme: " + strings.TrimSpace(args))
 		return nil, true
 	case "display":
 		return m.displayCommand(args), true
@@ -286,7 +286,7 @@ func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 func (m *Model) displayCommand(args string) tea.Cmd {
 	fields := strings.Fields(args)
 	if len(fields) < 2 {
-		m.notice = "usage: /display thinking|tools|lines|splash <value>"
+		m.setNotice("usage: /display thinking|tools|lines|splash <value>")
 		return nil
 	}
 	key, val := fields[0], fields[1]
@@ -303,7 +303,7 @@ func (m *Model) displayCommand(args string) tea.Cmd {
 	case "lines":
 		n, err := strconv.Atoi(val)
 		if err != nil || n < 1 {
-			m.notice = "display lines: expected a positive number"
+			m.setNotice("display lines: expected a positive number")
 			return nil
 		}
 		if n > 50 {
@@ -318,13 +318,13 @@ func (m *Model) displayCommand(args string) tea.Cmd {
 		case "off":
 			m.display.Splash = false
 		default:
-			m.notice = "display splash: expected on or off"
+			m.setNotice("display splash: expected on or off")
 			return nil
 		}
 		// The banner is a layout region, so turning it off must reclaim its rows.
 		m.recompute()
 	default:
-		m.notice = "unknown display setting: " + key
+		m.setNotice("unknown display setting: " + key)
 		return nil
 	}
 	m.transcript.SetDisplay(m.display)
@@ -342,7 +342,7 @@ func (m *Model) setToggle(flag *bool, val string) bool {
 	case "collapse":
 		*flag = false
 	default:
-		m.notice = "expected expand or collapse, got " + val
+		m.setNotice("expected expand or collapse, got " + val)
 		return false
 	}
 	return true
@@ -407,7 +407,7 @@ func writeTempFile(text string) (string, error) {
 // startEditor returns the ExecProcess command for a prepared editor.
 func (m *Model) startEditor(msg editorStartMsg) tea.Cmd {
 	if msg.err != nil {
-		m.notice = msg.err.Error()
+		m.setNotice(msg.err.Error())
 		return nil
 	}
 	return tea.ExecProcess(msg.cmd, func(err error) tea.Msg {
@@ -421,7 +421,7 @@ func (m *Model) startEditor(msg editorStartMsg) tea.Cmd {
 func (m *Model) readEditor(msg editorFinishedMsg) tea.Cmd {
 	path := msg.path
 	if msg.err != nil {
-		m.notice = msg.err.Error()
+		m.setNotice(msg.err.Error())
 		return func() tea.Msg {
 			_ = os.Remove(path)
 			return nil
@@ -437,7 +437,7 @@ func (m *Model) readEditor(msg editorFinishedMsg) tea.Cmd {
 // applyEditor installs the text returned from the external editor.
 func (m *Model) applyEditor(msg editorTextMsg) tea.Cmd {
 	if msg.err != nil {
-		m.notice = msg.err.Error()
+		m.setNotice(msg.err.Error())
 		return nil
 	}
 	m.setEditorText(strings.TrimRight(msg.text, "\n"))

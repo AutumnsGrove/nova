@@ -48,7 +48,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, m.client.Next())
 
 	case client.ClosedMsg:
-		m.notice = "connection closed"
+		m.setNotice("connection closed")
 		return m, tea.Batch(m.cancelAllDialogs(), tea.Quit)
 
 	case commandsLoadedMsg:
@@ -60,7 +60,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case noticeMsg:
-		m.notice = msg.text
+		m.setNotice(msg.text)
 		return m, nil
 
 	case infoMsg:
@@ -182,10 +182,10 @@ func (m *Model) handleResponse(resp proto.Response) tea.Cmd {
 				Text string `json:"text"`
 			}
 			if json.Unmarshal(resp.Data, &out) == nil && out.Text != "" {
-				m.notice = out.Text
+				m.setNotice(out.Text)
 			}
 		} else if resp.Error != nil {
-			m.notice = resp.Error.Message
+			m.setNotice(resp.Error.Message)
 		}
 	}
 	return nil
@@ -208,7 +208,7 @@ func (m *Model) decodeCommands(resp proto.Response) {
 func (m *Model) finishSend(p pendingSend, resp proto.Response) {
 	if !resp.OK {
 		if resp.Error != nil {
-			m.notice = resp.Error.Message
+			m.setNotice(resp.Error.Message)
 		}
 		m.setEditorText(p.text)
 		return

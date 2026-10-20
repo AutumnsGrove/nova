@@ -155,7 +155,7 @@ func (m *Model) answerUI(id string, r dialog.Result) tea.Cmd {
 
 // answerUnsupported answers a declared but unknown method at once.
 func (m *Model) answerUnsupported(req proto.UIRequest) tea.Cmd {
-	m.notice = "unsupported UI method: " + req.Method
+	m.setNotice("unsupported UI method: " + req.Method)
 	if req.ID == "" || m.answered[req.ID] {
 		return nil
 	}
@@ -291,7 +291,7 @@ func (m *Model) expireDialog(id string) {
 	} else {
 		return
 	}
-	m.notice = "the request timed out"
+	m.setNotice("the request timed out")
 }
 
 // applyWidget sets or clears a named widget.
@@ -302,7 +302,7 @@ func (m *Model) applyWidget(req proto.UIRequest) {
 	}
 	var c widget.Content
 	if err := json.Unmarshal(req.Content, &c); err != nil {
-		m.notice = "bad widget content: " + err.Error()
+		m.setNotice("bad widget content: " + err.Error())
 		return
 	}
 	m.widgets.SetWidget(req.Key, req.Placement, &c)
@@ -311,7 +311,7 @@ func (m *Model) applyWidget(req proto.UIRequest) {
 // applyEditorText replaces the editor text unless the user just typed.
 func (m *Model) applyEditorText(text string) {
 	if strings.TrimSpace(m.editor.Value()) != "" && m.clock.Now().Sub(m.lastInput) < editorGrace {
-		m.notice = "an extension wants to replace the editor text; clear it to apply"
+		m.setNotice("an extension wants to replace the editor text; clear it to apply")
 		return
 	}
 	m.setEditorText(text)
@@ -493,7 +493,7 @@ func (m *Model) openExtensions(resp proto.Response) {
 // requestSessionList asks the server for the session list.
 func (m *Model) requestSessionList() tea.Cmd {
 	if m.runActive {
-		m.notice = "cannot switch sessions while a run is active"
+		m.setNotice("cannot switch sessions while a run is active")
 		return nil
 	}
 	m.await = intentSessions
@@ -503,7 +503,7 @@ func (m *Model) requestSessionList() tea.Cmd {
 // requestTree asks the server for the session tree.
 func (m *Model) requestTree() tea.Cmd {
 	if m.runActive {
-		m.notice = "cannot switch branches while a run is active"
+		m.setNotice("cannot switch branches while a run is active")
 		return nil
 	}
 	m.await = intentTree
@@ -531,6 +531,6 @@ func (m *Model) cycleThinking() tea.Cmd {
 		}
 	}
 	m.state.Thinking = next
-	m.notice = "thinking: " + next
+	m.setNotice("thinking: " + next)
 	return m.client.Send(proto.Command{Type: proto.CmdSetThinking, Level: next})
 }

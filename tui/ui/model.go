@@ -310,6 +310,14 @@ func (m *Model) setTheme(name string) bool {
 	return false
 }
 
+// setNotice records a user-facing message and raises it as a toast, the one
+// transient surface the screen has. m.notice keeps the latest text for callers
+// that build on it (a login notice grows a follow-up).
+func (m *Model) setNotice(text string) {
+	m.notice = text
+	m.widgets.Notify(text, "info", m.clock.Now())
+}
+
 // themeList returns the theme names for a notice.
 func (m *Model) themeList() string {
 	names := make([]string, 0, len(m.themes))

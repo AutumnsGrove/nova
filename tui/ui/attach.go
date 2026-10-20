@@ -53,11 +53,11 @@ func (m *Model) applyClipboard(msg clipboardMsg) {
 	if msg.err != nil {
 		switch {
 		case errors.Is(msg.err, clipboard.ErrNoImage):
-			m.notice = "no image on the clipboard"
+			m.setNotice("no image on the clipboard")
 		case errors.Is(msg.err, clipboard.ErrUnavailable):
-			m.notice = "no clipboard available on this host"
+			m.setNotice("no clipboard available on this host")
 		default:
-			m.notice = msg.err.Error()
+			m.setNotice(msg.err.Error())
 		}
 		return
 	}

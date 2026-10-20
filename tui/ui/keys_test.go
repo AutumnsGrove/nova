@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +22,16 @@ func TestUI_KEY16_HintFollowsTheSavedDisplay(t *testing.T) {
 	})
 	if got := m.hint(); got != "ctrl+o collapse" {
 		t.Fatalf("hint = %q; blocks start expanded, so ctrl+o collapses them", got)
+	}
+}
+
+func TestUI_UXB09_NoticesAreShown(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.setEditorText("/nosuchcommand")
+	m.commands = []commandInfo{{Name: "model"}}
+	update(m, enterKey)
+	if v := m.render(); !strings.Contains(v, "unknown command: /nosuchcommand") {
+		t.Fatalf("the notice never reached the screen:\n%s", v)
 	}
 }
 

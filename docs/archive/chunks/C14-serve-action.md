@@ -239,6 +239,7 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | ATH19 | preflight | | correct headers |
 | ATH20 | `POST /v1/attachments` stores an image | a PNG body; a non-image body | `{id, mime_type, size_bytes}`; `bad_request` |
 | ATH21 | upload read failure is not "too large" | an upload whose body fails to read; one over `MaxBody` | 400 for the failure, 413 for the oversize body |
+| ATH22 | the reply reports the sniffed type | a PNG body sent as `application/octet-stream` | `mime_type` is `image/png` |
 | HTP01 | command round trip | `get_state` | JSON response frame |
 | HTP02 | protocol error is HTTP 200 | unknown command | `{ok:false}` with 200 |
 | HTP03 | wrong content type | `text/plain` | 415 |

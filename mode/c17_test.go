@@ -411,7 +411,7 @@ func TestHandlers_SVA16_StoredAttachmentResolves(t *testing.T) {
 	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.StoreAttachment("shot.png", "image/png", buf.Bytes())
+	id, _, err := s.StoreAttachment("shot.png", buf.Bytes())
 	if err != nil {
 		t.Fatalf("StoreAttachment: %v", err)
 	}

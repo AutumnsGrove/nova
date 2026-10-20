@@ -271,8 +271,7 @@ func (s *server) handleAttachments(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = r.Header.Get("X-Attachment-Name")
 	}
-	mime := r.Header.Get("Content-Type")
-	id, err := s.mode.StoreAttachment(name, mime, data)
+	id, mime, err := s.mode.StoreAttachment(name, data)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, fail(proto.CodeBadRequest, err.Error()))
 		return

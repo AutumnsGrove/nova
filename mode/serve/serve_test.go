@@ -584,6 +584,30 @@ func TestServe_HTP16_NoWriteDeadlineOnEvents(t *testing.T) {
 	}
 }
 
+// The reply tells the client what the server decided the bytes are, not what
+// the client claimed, so a wrong Content-Type cannot put a false type on a
+// stored upload.
+func TestServe_ATH22_UploadReportsTheSniffedType(t *testing.T) {
+	s, _ := newModeServer(t, baseConfig())
+	ts, _ := newTestHTTP(t, s, Options{})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Post(ts.URL+"/v1/attachments", "application/octet-stream", bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	var out struct {
+		ID       string `json:"id"`
+		MimeType string `json:"mime_type"`
+	}
+	decodeJSON(t, resp, &out)
+	if resp.StatusCode != http.StatusOK || out.ID == "" || out.MimeType != "image/png" {
+		t.Fatalf("upload = %d %+v, want the sniffed image/png", resp.StatusCode, out)
+	}
+}
+
 func TestServe_ATH20_AttachmentUpload(t *testing.T) {
 	s, _ := newModeServer(t, baseConfig())
 	ts, _ := newTestHTTP(t, s, Options{})

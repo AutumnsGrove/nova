@@ -1,3 +1,7 @@
+// Package webfetch is the bundled web_fetch extension: a keyless HTTP GET that
+// converts HTML to markdown. The destination is chosen by the model and every
+// byte of the response is untrusted, so the dialer refuses non-public
+// addresses and every size and time is capped.
 package webfetch
 
 import (
@@ -13,6 +17,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/tool"
@@ -20,25 +25,24 @@ import (
 
 // Limits and fixed request settings.
 const (
-	defaultChars  = 50000
-	maxCharsCap   = 200000
-	maxBody       = 5 << 20
-	maxRedirects  = 5
-	connectTimout = 5 * time.Second
-	totalTimeout  = 20 * time.Second
-	userAgent     = "nova-webfetch"
-	headerBodyCap = 2000
+	defaultChars   = 50000
+	maxCharsCap    = 200000
+	maxBody        = 5 << 20
+	maxRedirects   = 5
+	connectTimeout = 5 * time.Second
+	totalTimeout   = 20 * time.Second
+	userAgent      = "nova-webfetch"
+	// errorBodyChars bounds how much of a non-2xx body is shown.
+	errorBodyChars = 2000
 )
 
 // Extension is the webfetch bundled extension.
 type Extension struct {
-	env          *ext.Env
 	allowPrivate bool
 	allowHosts   []string
 
-	lookup    func(ctx context.Context, host string) ([]net.IPAddr, error)
-	transport http.RoundTripper
-	client    *http.Client
+	// lookup resolves a host; tests replace it to avoid real DNS.
+	lookup func(ctx context.Context, host string) ([]net.IPAddr, error)
 }
 
 // New returns a fresh webfetch extension.
@@ -55,7 +59,6 @@ func (e *Extension) Name() string { return "webfetch" }
 
 // Init reads the config and registers the web_fetch tool.
 func (e *Extension) Init(env *ext.Env) error {
-	e.env = env
 	if env.Config != nil {
 		e.allowPrivate = env.Config.Webfetch.AllowPrivate
 		e.allowHosts = env.Config.Webfetch.AllowHosts
@@ -78,95 +81,119 @@ func (e *Extension) Init(env *ext.Env) error {
 	}, e.run))
 }
 
-func (e *Extension) run(ctx context.Context, args json.RawMessage, _ *tool.Context) (tool.Result, error) {
+// request is a validated web_fetch call.
+type request struct {
+	url      *url.URL
+	maxChars int
+	raw      bool
+}
+
+// parseRequest decodes the arguments and applies the URL and size rules. Its
+// errors are written for the model.
+func parseRequest(args json.RawMessage) (request, error) {
 	var in struct {
 		URL      string `json:"url"`
 		MaxChars int    `json:"max_chars"`
 		Raw      bool   `json:"raw"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
-		return tool.Errorf("invalid arguments: %v", err), nil
+		return request{}, fmt.Errorf("invalid arguments: %w", err)
 	}
 	if strings.TrimSpace(in.URL) == "" {
-		return tool.Errorf("url is required"), nil
+		return request{}, errors.New("url is required")
 	}
 	u, err := url.Parse(in.URL)
 	if err != nil {
-		return tool.Errorf("invalid url %q", in.URL), nil
+		return request{}, fmt.Errorf("invalid url %q", in.URL)
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return tool.Errorf("unsupported scheme %q; only http and https are allowed", u.Scheme), nil
-	}
-	if u.Host == "" {
-		return tool.Errorf("invalid url %q", in.URL), nil
-	}
-	if u.User != nil {
-		return tool.Errorf("a URL with embedded credentials is not allowed"), nil
+	if err := checkURL(u); err != nil {
+		return request{}, err
 	}
 	maxChars := in.MaxChars
 	if maxChars <= 0 {
 		maxChars = defaultChars
 	}
-	if maxChars > maxCharsCap {
-		maxChars = maxCharsCap
-	}
+	return request{url: u, maxChars: min(maxChars, maxCharsCap), raw: in.Raw}, nil
+}
 
+// checkURL applies the rules for a request URL, whether the model gave it or a
+// redirect did. The error never echoes the URL, which may hold credentials.
+func checkURL(u *url.URL) error {
+	switch {
+	case u.Scheme != "http" && u.Scheme != "https":
+		return fmt.Errorf("unsupported scheme %q; only http and https are allowed", u.Scheme)
+	case u.Hostname() == "":
+		return errors.New("the url has no host")
+	case u.User != nil:
+		return errors.New("a URL with embedded credentials is not allowed")
+	}
+	return nil
+}
+
+// run fetches the URL and shapes the body into a result.
+func (e *Extension) run(ctx context.Context, args json.RawMessage, _ *tool.Context) (tool.Result, error) {
+	req, err := parseRequest(args)
+	if err != nil {
+		return tool.Errorf("%v", err), nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, totalTimeout)
 	defer cancel()
-	resp, finalURL, err := e.get(ctx, e.httpClient(), u)
+	resp, finalURL, err := e.get(ctx, e.httpClient(), req.url)
 	if err != nil {
-		if errors.Is(err, errBlocked) {
-			return tool.Errorf("%v", err), nil
-		}
-		if ctx.Err() != nil {
-			return tool.Errorf("the request timed out"), nil
-		}
-		return tool.Errorf("fetch failed: %v", err), nil
+		return failure(ctx, "fetch failed", err), nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
-	raw, truncatedBody, err := readCapped(resp.Body, maxBody)
+	body, capped, err := readCapped(resp.Body, maxBody)
 	if err != nil {
-		return tool.Errorf("read failed: %v", err), nil
+		return failure(ctx, "read failed", err), nil
 	}
-	if truncatedBody && in.Raw {
+	if capped && req.raw {
 		return tool.Errorf("response too large"), nil
 	}
-	body := raw
 	capNote := ""
-	if truncatedBody {
+	if capped {
 		capNote = fmt.Sprintf("\n... (truncated at %d bytes)", maxBody)
 	}
-
 	contentType := mediaType(resp.Header.Get("Content-Type"))
-	text, err := e.render(in.Raw, contentType, resp.Header.Get("Content-Type"), body, finalURL)
+	text, err := render(req.raw, contentType, resp.Header.Get("Content-Type"), body, finalURL)
 	if err != nil {
 		return tool.Errorf("%v", err), nil
 	}
 	header := fmt.Sprintf("%s (%d, %s, %d bytes)", finalURL, resp.StatusCode, contentType, len(body))
+	details := cardDetails(finalURL, resp.StatusCode, contentType, len(body))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		out := header + "\n\n" + truncate(text+capNote, headerBodyCap)
-		if resp.StatusCode >= 400 {
-			return tool.Result{Content: out, IsError: true, Details: e.details(finalURL, resp, len(body))}, nil
-		}
-		return tool.Result{Content: out, Details: e.details(finalURL, resp, len(body))}, nil
+		out := header + "\n\n" + cutRunes(text+capNote, errorBodyChars)
+		return tool.Result{Content: out, IsError: resp.StatusCode >= 400, Details: details}, nil
 	}
-	if len(text) > maxChars {
-		cut, omitted := cutLines(text, maxChars)
+	if cut, omitted := cutLines(text, req.maxChars); omitted > 0 {
 		text = cut + fmt.Sprintf("\n... (truncated; %d characters omitted)", omitted)
 	}
-	text += capNote
-	return tool.Result{Content: header + "\n\n" + text, Details: e.details(finalURL, resp, len(body))}, nil
+	return tool.Result{Content: header + "\n\n" + text + capNote, Details: details}, nil
 }
 
-// details builds the TUI card data.
-func (e *Extension) details(u *url.URL, resp *http.Response, n int) json.RawMessage {
-	data, _ := json.Marshal(map[string]any{"url": u.String(), "status": resp.StatusCode, "content_type": mediaType(resp.Header.Get("Content-Type")), "bytes": n})
+// failure turns a transport error into a result. A refused address keeps its
+// own message, and a context that ended says why instead of a transport error.
+func failure(ctx context.Context, what string, err error) tool.Result {
+	switch {
+	case errors.Is(err, errBlocked):
+		return tool.Errorf("%v", err)
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return tool.Errorf("the request timed out")
+	case ctx.Err() != nil:
+		return tool.Errorf("cancelled")
+	}
+	return tool.Errorf("%s: %v", what, err)
+}
+
+// cardDetails builds the data the TUI card shows.
+func cardDetails(u *url.URL, status int, contentType string, n int) json.RawMessage {
+	data, _ := json.Marshal(map[string]any{"url": u.String(), "status": status, "content_type": contentType, "bytes": n})
 	return data
 }
 
 // render turns a body into text per its content type.
-func (e *Extension) render(raw bool, contentType, header string, body []byte, base *url.URL) (string, error) {
+func render(raw bool, contentType, header string, body []byte, base *url.URL) (string, error) {
 	switch {
 	case contentType == "text/html" || contentType == "application/xhtml+xml":
 		text := decodeCharset(body, charsetOf(body, header))
@@ -187,52 +214,61 @@ func (e *Extension) render(raw bool, contentType, header string, body []byte, ba
 	}
 }
 
-// httpClient builds a client with an SSRF-checked dialer and no proxy.
+// httpClient builds a client whose dialer refuses non-public addresses and
+// whose environment proxy is ignored.
 func (e *Extension) httpClient() *http.Client {
-	if e.transport != nil {
-		return &http.Client{Transport: e.transport, CheckRedirect: noRedirect, Timeout: totalTimeout}
-	}
-	dialer := &net.Dialer{Timeout: connectTimout}
 	tr := &http.Transport{
-		Proxy: nil,
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			if hostAllowed(host, e.allowHosts) {
-				return dialer.DialContext(ctx, network, addr)
-			}
-			addrs, err := e.lookup(ctx, host)
-			if err != nil {
-				return nil, err
-			}
-			var lastErr error
-			for _, a := range addrs {
-				if err := checkAddr(a.IP, e.allowPrivate); err != nil {
-					return nil, err
-				}
-				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(a.IP.String(), port))
-				if err == nil {
-					return conn, nil
-				}
-				lastErr = err
-			}
-			if lastErr == nil {
-				lastErr = fmt.Errorf("no addresses for %s", host)
-			}
-			return nil, lastErr
-		},
+		Proxy:               nil,
+		DialContext:         e.dialChecked(&net.Dialer{Timeout: connectTimeout}),
+		TLSHandshakeTimeout: connectTimeout,
+		// Each fetch builds its own transport, so a kept-alive connection would
+		// never be reused or closed, and would hold two goroutines forever.
+		DisableKeepAlives: true,
 	}
+	// Redirects are followed in get, so that every hop is checked.
+	noRedirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &http.Client{Transport: tr, CheckRedirect: noRedirect, Timeout: totalTimeout}
 }
 
-// noRedirect keeps redirect handling in this package, so every hop is checked.
-func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+// dialChecked returns a DialContext that resolves the host itself, refuses a
+// non-public address, and connects to the address it checked. Connecting to the
+// checked IP, not to the name, is what stops DNS rebinding between the check
+// and the connect.
+func (e *Extension) dialChecked(dialer *net.Dialer) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		if hostAllowed(host, e.allowHosts) {
+			return dialer.DialContext(ctx, network, addr)
+		}
+		addrs, err := e.lookup(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if len(addrs) == 0 {
+			return nil, fmt.Errorf("no addresses for %s", host)
+		}
+		var lastErr error
+		for _, a := range addrs {
+			if err := checkAddr(a.IP, e.allowPrivate); err != nil {
+				return nil, err
+			}
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(a.IP.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		return nil, lastErr
+	}
+}
 
-// get performs the GET, following up to maxRedirects, revalidating each hop.
+// get performs the GET, following up to maxRedirects and revalidating each hop.
+// It returns the response and the URL it came from.
 func (e *Extension) get(ctx context.Context, client *http.Client, u *url.URL) (*http.Response, *url.URL, error) {
-	for i := 0; i <= maxRedirects; i++ {
+	for hops := 0; ; hops++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 		if err != nil {
 			return nil, nil, err
@@ -242,27 +278,23 @@ func (e *Extension) get(ctx context.Context, client *http.Client, u *url.URL) (*
 		if err != nil {
 			return nil, nil, err
 		}
-		if resp.StatusCode < 300 || resp.StatusCode >= 400 {
-			return resp, resp.Request.URL, nil
-		}
 		loc := resp.Header.Get("Location")
-		_ = resp.Body.Close()
-		if loc == "" {
-			return resp, resp.Request.URL, nil
+		if resp.StatusCode < 300 || resp.StatusCode >= 400 || loc == "" {
+			return resp, u, nil
 		}
-		if i == maxRedirects {
-			return nil, nil, fmt.Errorf("too many redirects")
+		_ = resp.Body.Close()
+		if hops == maxRedirects {
+			return nil, nil, errors.New("too many redirects")
 		}
 		next, err := u.Parse(loc)
 		if err != nil {
 			return nil, nil, err
 		}
-		if next.Scheme != "http" && next.Scheme != "https" {
-			return nil, nil, fmt.Errorf("refusing redirect to scheme %q", next.Scheme)
+		if err := checkURL(next); err != nil {
+			return nil, nil, fmt.Errorf("refusing redirect: %w", err)
 		}
 		u = next
 	}
-	return nil, nil, fmt.Errorf("too many redirects")
 }
 
 // readCapped reads at most limit bytes and reports whether more remained.
@@ -281,15 +313,13 @@ func readCapped(r io.Reader, limit int64) ([]byte, bool, error) {
 func mediaType(header string) string {
 	mt, _, err := mime.ParseMediaType(header)
 	if err != nil {
-		if idx := strings.IndexByte(header, ';'); idx >= 0 {
-			header = header[:idx]
-		}
+		header, _, _ = strings.Cut(header, ";")
 		return strings.ToLower(strings.TrimSpace(header))
 	}
 	return strings.ToLower(mt)
 }
 
-// prettyJSON indents a JSON document, returning the original on failure.
+// prettyJSON indents a JSON document, returning an error if it is not one.
 func prettyJSON(s string) (string, error) {
 	var buf bytes.Buffer
 	if err := json.Indent(&buf, []byte(s), "", "  "); err != nil {
@@ -298,23 +328,26 @@ func prettyJSON(s string) (string, error) {
 	return buf.String(), nil
 }
 
-// truncate cuts s to n bytes.
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
+// cutRunes cuts s to at most n characters, never inside one.
+func cutRunes(s string, n int) string {
+	for i := range s {
+		if n == 0 {
+			return s[:i]
+		}
+		n--
 	}
-	return s[:n]
+	return s
 }
 
-// cutLines cuts s to at most n bytes at a line boundary and returns the number
-// of bytes omitted.
+// cutLines cuts s to at most n characters, at a line boundary where it can, and
+// returns the number of characters omitted.
 func cutLines(s string, n int) (string, int) {
-	if len(s) <= n {
+	cut := cutRunes(s, n)
+	if len(cut) == len(s) {
 		return s, 0
 	}
-	cut := s[:n]
 	if idx := strings.LastIndexByte(cut, '\n'); idx > 0 {
 		cut = cut[:idx]
 	}
-	return cut, len(s) - len(cut)
+	return cut, utf8.RuneCountInString(s[len(cut):])
 }

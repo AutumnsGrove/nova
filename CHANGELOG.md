@@ -17,6 +17,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   counted (`Usage.CacheWriteTokens`, shown as `cache_write_tokens` on the wire) and
   priced at 1.25x input by the cost fallback (#28).
 
+### Fixed
+
+- The Messages dialect now reports the **whole** prompt in `prompt_tokens`. Anthropic's
+  `input_tokens` is only the uncached remainder, so cache reads and writes are added back:
+  cost estimates stopped under-billing a warm or cold cache, and the status region's `↑in`
+  shows the real prompt size (#34).
+
 ### Changed
 
 - The one-line footer is now a multi-line **status region**: cwd and git branch/changes, token counts

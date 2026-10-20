@@ -118,6 +118,7 @@ login_end        { id, error? }                     // an interactive sign-in fi
 
 `usage` is `{prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, cache_write_tokens, cost_usd}`;
 `cached_tokens` are cache reads and `cache_write_tokens` are tokens written into the cache on a cold prefix.
+`prompt_tokens` is the whole prompt on every dialect, cached tokens included.
 `cost_usd` is the provider's number when it reports one, otherwise computed from the
 model catalog; `cost_source` says which.
 

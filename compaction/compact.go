@@ -102,7 +102,7 @@ func Run(ctx context.Context, st *session.Store, c *Compactor, instructions stri
 	if st == nil {
 		return nil, errors.New("compaction: nil session")
 	}
-	msgs, ids, err := contextWithIDs(st)
+	msgs, ids, err := st.ContextWithIDs("")
 	if err != nil {
 		return nil, err
 	}
@@ -131,73 +131,4 @@ func Run(ctx context.Context, st *session.Store, c *Compactor, instructions stri
 		TokensAfter:  res.TokensAfter,
 		Replaced:     res.FirstKept,
 	}, nil
-}
-
-// contextWithIDs rebuilds the branch context and the session entry id behind
-// each message, mirroring session.Messages so Compact's index maps back.
-func contextWithIDs(st *session.Store) ([]message.Message, []string, error) {
-	branch, err := st.Branch("")
-	if err != nil {
-		return nil, nil, err
-	}
-	comp := -1
-	for i := len(branch) - 1; i >= 0; i-- {
-		if branch[i].Type == session.TypeCompaction {
-			comp = i
-			break
-		}
-	}
-	var msgs []message.Message
-	var ids []string
-	add := func(m message.Message, id string) {
-		msgs = append(msgs, m)
-		ids = append(ids, id)
-	}
-	if comp < 0 {
-		for i := range branch {
-			if m, ok := entryMessage(branch[i]); ok {
-				add(m, branch[i].ID)
-			}
-		}
-		return msgs, ids, nil
-	}
-	c := branch[comp]
-	add(message.User("<summary>\n"+c.Summary+"\n</summary>"), c.ID)
-	start := comp + 1
-	if c.FirstKept != "" {
-		for i := range branch {
-			if branch[i].ID == c.FirstKept {
-				start = i
-				break
-			}
-		}
-	}
-	for i := start; i < len(branch); i++ {
-		if branch[i].Type == session.TypeCompaction {
-			continue
-		}
-		if m, ok := entryMessage(branch[i]); ok {
-			add(m, branch[i].ID)
-		}
-	}
-	return msgs, ids, nil
-}
-
-// entryMessage maps a context-bearing entry to a message, matching
-// session.Messages.
-func entryMessage(e session.Entry) (message.Message, bool) {
-	switch e.Type {
-	case session.TypeMessage:
-		if e.Message == nil {
-			return message.Message{}, false
-		}
-		return *e.Message, true
-	case session.TypeCustomMessage:
-		if e.InContext {
-			return message.User(e.Content), true
-		}
-	case session.TypeBranchSummary:
-		return message.User("<branch_summary>\n" + e.Summary + "\n</branch_summary>"), true
-	}
-	return message.Message{}, false
 }

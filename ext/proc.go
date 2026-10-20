@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
+	"github.com/AutumnsGrove/nova/proc"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -137,7 +138,7 @@ func (inst *instance) launch() (*conn, error) {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = m.Dir
 	cmd.Env = inst.host.childEnv(m)
-	setProcessGroup(cmd)
+	proc.SetGroup(cmd)
 
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
@@ -342,7 +343,7 @@ func (inst *instance) abort() {
 		// Already reaped: its pid may belong to someone else by now.
 	default:
 		if cmd != nil && cmd.Process != nil {
-			forceKillGroup(cmd.Process.Pid)
+			proc.Kill(cmd.Process.Pid)
 			_ = cmd.Process.Kill()
 		}
 	}
@@ -437,13 +438,13 @@ func (inst *instance) stop(ctx context.Context) {
 	if cmd != nil && cmd.Process != nil && done != nil {
 		pid := cmd.Process.Pid
 		if !inst.waitDone(done, shutdownGrace) {
-			terminateGroup(pid)
+			proc.Terminate(pid)
 			if !inst.waitDone(done, shutdownGrace) {
-				forceKillGroup(pid)
+				proc.Kill(pid)
 			}
 		}
 		// Always kill the group, so a forked child cannot outlive the call.
-		forceKillGroup(pid)
+		proc.Kill(pid)
 	}
 	if c != nil {
 		c.close()
@@ -467,15 +468,25 @@ func (inst *instance) waitDone(done <-chan struct{}, d time.Duration) bool {
 	}
 }
 
+// exitCode is a command's exit code: 128 plus the signal number when it died
+// from a signal, the way a shell reports it, and -1 when it never ran.
+func exitCode(err error) int {
+	code, sig := proc.ExitStatus(err)
+	if sig != 0 {
+		return 128 + sig
+	}
+	return code
+}
+
 // groupCommand builds a command that runs in its own process group and is
 // killed as a whole group when ctx ends. Killing only the leader would leave a
 // script's children holding its output pipe open, so Wait would block until
 // they finished on their own.
 func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
-	setProcessGroup(cmd)
+	proc.SetGroup(cmd)
 	cmd.Cancel = func() error {
-		forceKillGroup(cmd.Process.Pid)
+		proc.Kill(cmd.Process.Pid)
 		return cmd.Process.Kill()
 	}
 	cmd.WaitDelay = groupWaitDelay

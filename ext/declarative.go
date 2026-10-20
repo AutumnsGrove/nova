@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AutumnsGrove/nova/proc"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -213,9 +214,9 @@ func runExec(ctx context.Context, work string, argv []string, timeout time.Durat
 	cmd := exec.CommandContext(callCtx, argv[0], argv[1:]...)
 	cmd.Dir = work
 	cmd.Env = env
-	setProcessGroup(cmd)
+	proc.SetGroup(cmd)
 	cmd.Cancel = func() error {
-		terminateGroup(cmd.Process.Pid)
+		proc.Terminate(cmd.Process.Pid)
 		return nil
 	}
 	cmd.WaitDelay = groupWaitDelay
@@ -226,7 +227,7 @@ func runExec(ctx context.Context, work string, argv []string, timeout time.Durat
 	if cmd.Process != nil {
 		// Whatever the command left running goes with it; after a timeout this
 		// is also the kill the grace period was waiting for.
-		forceKillGroup(cmd.Process.Pid)
+		proc.Kill(cmd.Process.Pid)
 	}
 	out := execOutcome{}
 	switch {

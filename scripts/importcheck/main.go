@@ -58,9 +58,10 @@ func run(args []string, stdout, stderr io.Writer, env []string) int {
 var layerAllowed = map[string][]string{
 	"message":    {},
 	"media":      {"message"},
+	"proc":       {},
 	"provider":   {"message"},
 	"tool":       {"message", "provider"},
-	"tools":      {"message", "provider", "tool", "permission", "media"},
+	"tools":      {"message", "provider", "tool", "permission", "media", "proc"},
 	"proto":      {"message", "provider"},
 	"permission": {"message", "provider", "tool"},
 	"usage":      {"message", "provider", "session"},
@@ -69,7 +70,7 @@ var layerAllowed = map[string][]string{
 	"agent":      {"message", "provider", "tool", "permission", "proto", "diag"},
 	"auth":       {"message", "provider", "tool", "proto", "permission", "config", "session", "usage"},
 	"config":     {"message", "provider", "tool", "permission", "proto"},
-	"ext":        {"message", "provider", "tool", "proto", "permission", "agent", "config", "session", "usage", "compaction", "diag"},
+	"ext":        {"message", "provider", "tool", "proc", "proto", "permission", "agent", "config", "session", "usage", "compaction", "diag"},
 	"bundled":    {"message", "provider", "tool", "proto", "permission", "agent", "ext", "config", "session", "usage", "compaction"},
 	"testkit":    {"message", "provider", "tool", "proto"},
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AutumnsGrove/nova/proc"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
@@ -252,7 +253,7 @@ func TestSupervise_SUP12b_ShutdownDuringBackoffDoesNotRespawn(t *testing.T) {
 	pid := inst.cmd.Process.Pid
 	inst.mu.Unlock()
 	if syscall.Kill(pid, 0) == nil {
-		forceKillGroup(pid)
+		proc.Kill(pid)
 		t.Fatalf("process %d is still running after Shutdown", pid)
 	}
 }

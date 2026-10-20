@@ -1,8 +1,8 @@
 ---
 chunk: C07
 title: "The bash tool"
-packages: [./tools/bash]
-budgets: { ./tools/bash: 400 }
+packages: [./tools/bash, ./proc]
+budgets: { ./tools/bash: 400, ./proc: 80 }
 depends: [C04]
 ---
 
@@ -156,6 +156,11 @@ the max timeout).
 | BSH50 | exit code above 255 | `exit 256` | `(exit code 0)` as the OS reports; no panic |
 | BSH51 | timeout so large that seconds times `time.Second` overflows | `timeout: 9300000000`, with and without a maximum | capped, not wrapped negative; the command runs |
 | BSH52 | scrubbed environment | `WithScrubEnv` names a variable the process has; `WithEnv` also sets one of the scrubbed names | the scrubbed variable is empty in the command, others are kept, and the explicit `WithEnv` value wins |
+| PRC01 | no error ends cleanly | `proc.ExitStatus(nil)` | code 0, no signal |
+| PRC02 | non-zero exit | `exit 7` | code 7, no signal |
+| PRC03 | killed by a signal | the command signals itself with TERM | code -1 and the signal number |
+| PRC04 | an error that is not an exit | a start failure | code -1, no signal |
+| PRC05 | group termination reaches children | a shell with a backgrounded child, `proc.Terminate` | the leader dies of TERM and the group is gone |
 
 A process started by the command is killed with its group when the call ends, even if it
 redirected its output. A long-running server is not a use of this tool (see Out of scope).

@@ -52,6 +52,7 @@ nova/
                   search (glob grep)                            ≤ 700
                   bash                                          ≤ 400
   permission/     allow/ask/deny policy                         ≤ 340
+  proc/           process-group start, signal, exit status       ≤ 80
   proto/          wire types and JSONL framing                  ≤ 600
   agent/          the loop, hooks, queues, retry                ≤ 1160
   session/        JSONL tree store, branches, custom entries    ≤ 900
@@ -103,6 +104,8 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
 - `message` imports nothing.
 - `media` imports `message`. It is the one place image bytes are decoded,
   oriented, resized, and bounded.
+- `proc` imports nothing. It is the one place a command is put in its own process
+  group and signalled, shared by `tools/bash` and `ext`.
 - `provider` imports `message`. `tool` imports `message` and `provider`.
 - `proto` imports `message` and `provider` and nothing above them.
 - `permission` imports `tool`. `usage` imports `provider` and `session`.

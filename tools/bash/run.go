@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AutumnsGrove/nova/proc"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -70,7 +71,7 @@ func (o *options) execute(ctx context.Context, tctx *tool.Context, command strin
 	cmd := exec.Command(o.shell, flag, command)
 	cmd.Dir = work
 	cmd.Env = o.buildEnv()
-	setProcessGroup(cmd)
+	proc.SetGroup(cmd)
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		return tool.Errorf("pipe: %v", err)
@@ -133,25 +134,25 @@ func (o *options) supervise(ctx context.Context, cmd *exec.Cmd, readDone <-chan 
 	defer cancel()
 	select {
 	case err := <-waitDone:
-		out.exitCode, out.signal = exitStatus(err)
+		out.exitCode, out.signal = proc.ExitStatus(err)
 		if !waitClosed(readDone, o.pipeGrace) {
 			out.background = true
-			terminateGroup(pid)
+			proc.Terminate(pid)
 			waitClosed(readDone, termGraceDefault)
 		}
 	case <-callCtx.Done():
 		out.cancelled = ctx.Err() != nil
 		out.timedOut = !out.cancelled
-		terminateGroup(pid)
+		proc.Terminate(pid)
 		select {
 		case <-waitDone:
 		case <-time.After(termGraceDefault):
-			forceKillGroup(pid)
+			proc.Kill(pid)
 			<-waitDone
 		}
 		waitClosed(readDone, termGraceDefault)
 	}
-	forceKillGroup(pid)
+	proc.Kill(pid)
 	waitClosed(readDone, termGraceDefault)
 	return out
 }

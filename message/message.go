@@ -10,6 +10,7 @@ package message
 // Role is the speaker of a message.
 type Role string
 
+// The four speakers a transcript knows. The values are the wire strings.
 const (
 	RoleSystem    Role = "system"
 	RoleUser      Role = "user"

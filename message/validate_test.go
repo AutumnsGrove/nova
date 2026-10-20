@@ -47,15 +47,31 @@ func TestValidate_MSG09_ToolWithoutCall(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate = nil, want error")
 	}
-	if !strings.Contains(err.Error(), "0") {
-		t.Errorf("error %q should name index 0", err)
+	if !strings.Contains(err.Error(), "index 0") || !strings.Contains(err.Error(), `"c1"`) {
+		t.Errorf("error %q should name index 0 and call c1", err)
 	}
 }
 
 func TestValidate_MSG10_EmptyToolCallID(t *testing.T) {
 	err := Validate([]Message{ToolResult("", "orphan")})
-	if err == nil {
-		t.Fatal("Validate = nil, want error")
+	if err == nil || !strings.Contains(err.Error(), "no tool_call_id") {
+		t.Fatalf("Validate = %v, want an error naming the missing tool_call_id", err)
+	}
+}
+
+// With several calls unanswered, the error names the smallest id every time,
+// so a log line or a test does not depend on map iteration order.
+func TestValidate_MSG21_FirstPendingIsDeterministic(t *testing.T) {
+	msgs := []Message{{Role: RoleAssistant, ToolCalls: []ToolCall{
+		{ID: "c", Function: FunctionCall{Name: "x"}},
+		{ID: "a", Function: FunctionCall{Name: "x"}},
+		{ID: "b", Function: FunctionCall{Name: "x"}},
+	}}}
+	for range 20 {
+		err := Validate(msgs)
+		if err == nil || !strings.Contains(err.Error(), "tool call a ") {
+			t.Fatalf("Validate = %v, want the error to name call a", err)
+		}
 	}
 }
 

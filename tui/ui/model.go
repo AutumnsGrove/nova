@@ -518,10 +518,18 @@ func (m *Model) scheduleUsage() tea.Cmd {
 		return nil
 	}
 	m.usageArmed = true
-	after := m.clock.After(usageRefreshInterval)
+	return m.timer(usageRefreshInterval, usageTickMsg{})
+}
+
+// timer returns a command that waits d on the model's clock and then yields
+// msg. The message has its own type on purpose: the clock's raw tick belongs to
+// the single animation chain, and a second timer delivering it would fork that
+// chain.
+func (m *Model) timer(d time.Duration, msg tea.Msg) tea.Cmd {
+	after := m.clock.After(d)
 	return func() tea.Msg {
 		after()
-		return usageTickMsg{}
+		return msg
 	}
 }
 

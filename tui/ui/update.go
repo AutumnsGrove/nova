@@ -94,8 +94,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, id := range m.transcript.SetNow(m.clock.Now()) {
 			m.list.Touch(id)
 		}
-		m.quitArmed = m.quitArmed && m.clock.Now().Before(m.quitAt)
+		m.expireQuit()
 		return m, m.scheduleTick()
+
+	case quitExpiredMsg:
+		m.expireQuit()
+		return m, nil
 
 	case gitTickMsg:
 		m.gitArmed = false

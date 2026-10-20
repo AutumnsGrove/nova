@@ -12,6 +12,15 @@ import (
 // quitWindow is how long a second ctrl+c still quits.
 const quitWindow = 2 * time.Second
 
+// quitExpiredMsg fires when the quit window may have closed, so the footer hint
+// is withdrawn even when nothing else redraws.
+type quitExpiredMsg struct{}
+
+// expireQuit disarms ctrl+c once its window has passed.
+func (m *Model) expireQuit() {
+	m.quitArmed = m.quitArmed && m.clock.Now().Before(m.quitAt)
+}
+
 // wheelScroll is how many lines one wheel notch moves the transcript.
 const wheelScroll = 3
 
@@ -125,7 +134,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			return m.quit()
 		}
 		m.quitArmed, m.quitAt = true, m.clock.Now().Add(quitWindow)
-		return m.clock.After(quitWindow)
+		return m.timer(quitWindow, quitExpiredMsg{})
 	case "enter":
 		return m.submit("enter")
 	case "alt+enter":

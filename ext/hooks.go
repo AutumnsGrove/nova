@@ -404,7 +404,7 @@ func (h *Host) runCommandHook(ctx context.Context, inst *instance, spec HookSpec
 	if err != nil {
 		return toolCallResult{}, false
 	}
-	stdout, code, err := runHookScript(ctx, inst.manifest.Dir, spec.Run, payload, commandHookTimeout)
+	stdout, code, err := runHookScript(ctx, inst.manifest.Dir, spec.Run, payload, commandHookTimeout, h.commandEnv())
 	if err != nil {
 		h.logf("warn", inst.manifest.Name+": command hook failed: "+err.Error())
 		return toolCallResult{}, false
@@ -426,7 +426,7 @@ func (h *Host) runCommandHook(ctx context.Context, inst *instance, spec HookSpec
 
 // runHookScript runs a command hook with the event on stdin and returns its
 // stdout and exit code. It runs directly, never through a shell.
-func runHookScript(ctx context.Context, dir string, argv []string, stdin []byte, timeout time.Duration) (string, int, error) {
+func runHookScript(ctx context.Context, dir string, argv []string, stdin []byte, timeout time.Duration, env []string) (string, int, error) {
 	if len(argv) == 0 {
 		return "", 0, errors.New("empty command")
 	}
@@ -434,6 +434,7 @@ func runHookScript(ctx context.Context, dir string, argv []string, stdin []byte,
 	defer cancel()
 	cmd := groupCommand(call, resolveExec(dir, argv[0]), argv[1:]...)
 	cmd.Dir = dir
+	cmd.Env = env
 	cmd.Stdin = bytes.NewReader(stdin)
 	out := newCapBuffer(maxHookOutputBytes)
 	cmd.Stdout = out

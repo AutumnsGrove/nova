@@ -252,7 +252,7 @@ func (h *Host) registerDeclarative(inst *instance) error {
 		if len(spec.Exec) == 0 {
 			continue
 		}
-		if err := h.registerTool(inst, &execTool{dir: inst.manifest.Dir, spec: spec}, true); err != nil {
+		if err := h.registerTool(inst, &execTool{dir: inst.manifest.Dir, spec: spec, env: h.commandEnv}, true); err != nil {
 			return err
 		}
 	}

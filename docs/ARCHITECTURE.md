@@ -47,7 +47,7 @@ nova/
     opencodego/   preset: catalog, endpoint routing             ≤ 560
     openrouter/   preset: routing options, headers, usage       ≤ 300
   auth/           OAuth PKCE login, key store                   ≤ 500
-  tool/           Tool contract, registry, schema validation    ≤ 600
+  tool/           Tool contract, registry, schema validation    ≤ 620
   tools/          fs (read write edit list)                     ≤ 1060
                   search (glob grep)                            ≤ 700
                   bash                                          ≤ 400
@@ -57,7 +57,7 @@ nova/
   session/        JSONL tree store, branches, custom entries    ≤ 900
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
-  config/         YAML config, trust, context files, skills     ≤ 1250
+  config/         YAML config, trust, context files, skills     ≤ 1460
   mode/           server core, print, json, rpc                 ≤ 2320
     attach/       protocol attachments to content parts         ≤ 160
     serve/        the protocol over HTTP and SSE                ≤ 430

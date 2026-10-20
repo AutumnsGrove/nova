@@ -46,3 +46,7 @@ func ResolveNamed(cfgKey, envName string, env func(string) string, store Store) 
 	}
 	return "", "", ErrNoKey
 }
+
+// EnvServeToken is the environment variable that can carry the bearer token of
+// `nova serve`.
+const EnvServeToken = "NOVA_SERVE_TOKEN"

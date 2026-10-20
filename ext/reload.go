@@ -38,7 +38,7 @@ func (h *Host) rebuildChanged(ctx context.Context) []error {
 		if prev, ok := old[key]; !ok || prev != hash {
 			// A manifest that no longer loads is left for start to report.
 			if m, err := LoadManifest(dir); err == nil && len(m.Build) > 0 {
-				if err := runBuild(ctx, h.opt.Run, dir, m.Build, defaultBuildTimeout); err != nil {
+				if err := runBuild(ctx, h.buildRunner(), dir, m.Build, defaultBuildTimeout); err != nil {
 					errs = append(errs, fmt.Errorf("ext: rebuild %s: %w", m.Name, err))
 					continue
 				}

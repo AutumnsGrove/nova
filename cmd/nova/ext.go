@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/ext/install"
@@ -49,6 +50,7 @@ func newInstaller(stdin io.Reader, stdout io.Writer, yes bool) (*install.Install
 		Root:     filepath.Join(dir, "extensions"),
 		LockPath: filepath.Join(dir, "extensions.lock"),
 		Confirm:  confirm,
+		ScrubEnv: providerauth.CredentialEnv(),
 	}), nil
 }
 
@@ -153,7 +155,7 @@ func extCheck(stdout io.Writer) *cobra.Command {
 		Short: "Validate an extension directory without installing it",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			problems := ext.Check(cmd.Context(), args[0], ext.CheckOptions{})
+			problems := ext.Check(cmd.Context(), args[0], ext.CheckOptions{Run: ext.NewExecRunner(providerauth.CredentialEnv())})
 			for _, p := range problems {
 				fmt.Fprintln(stdout, p)
 			}

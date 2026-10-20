@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/mode"
 	"github.com/AutumnsGrove/nova/proto"
@@ -52,7 +53,7 @@ type Options struct {
 // real clock; a test that wants it sooner sets a small Heartbeat.
 func (o *Options) apply() error {
 	o.Listen = def(o.Listen, defaultListen)
-	o.Token = def(o.Token, os.Getenv("NOVA_SERVE_TOKEN"))
+	o.Token = def(o.Token, os.Getenv(auth.EnvServeToken))
 	o.RingSize = def(o.RingSize, defaultRingSize)
 	o.Heartbeat = def(o.Heartbeat, defaultHeartbeat)
 	o.MaxBody = def(o.MaxBody, defaultMaxBody)

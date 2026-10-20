@@ -155,6 +155,7 @@ the max timeout).
 | BSH49 | concurrent calls | 20 goroutines | independent results; `-race` clean |
 | BSH50 | exit code above 255 | `exit 256` | `(exit code 0)` as the OS reports; no panic |
 | BSH51 | timeout so large that seconds times `time.Second` overflows | `timeout: 9300000000`, with and without a maximum | capped, not wrapped negative; the command runs |
+| BSH52 | scrubbed environment | `WithScrubEnv` names a variable the process has; `WithEnv` also sets one of the scrubbed names | the scrubbed variable is empty in the command, others are kept, and the explicit `WithEnv` value wins |
 
 A process started by the command is killed with its group when the call ends, even if it
 redirected its output. A long-running server is not a use of this tool (see Out of scope).

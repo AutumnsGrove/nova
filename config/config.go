@@ -110,6 +110,12 @@ type ToolsConfig struct {
 type BashConfig struct {
 	TimeoutSeconds int `yaml:"timeout_seconds"`
 	MaxOutputBytes int `yaml:"max_output_bytes"`
+	// ScrubEnv names variables to hide from commands, in addition to Nova's own
+	// credentials, which are always hidden unless InheritCredentials is set.
+	ScrubEnv []string `yaml:"scrub_env"`
+	// InheritCredentials lets commands see Nova's own provider keys and serve
+	// token. Off by default, so a model-run command cannot read them.
+	InheritCredentials bool `yaml:"inherit_credentials"`
 }
 
 // ExtensionsConfig bounds the extension host.

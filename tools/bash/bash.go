@@ -39,6 +39,7 @@ type options struct {
 	login          bool
 	clock          Clock
 	env            map[string]string
+	scrub          []string
 	pipeGrace      time.Duration
 }
 
@@ -65,6 +66,11 @@ func WithClock(c Clock) Option { return func(o *options) { o.clock = c } }
 
 // WithEnv adds or overrides environment variables for the command.
 func WithEnv(extra map[string]string) Option { return func(o *options) { o.env = extra } }
+
+// WithScrubEnv removes the named variables from the environment the command
+// inherits, so a model-run command cannot read Nova's own credentials. An entry
+// given to WithEnv is not removed: it was asked for.
+func WithScrubEnv(names []string) Option { return func(o *options) { o.scrub = names } }
 
 // WithPipeGrace sets how long to wait for the output pipe to close after the
 // shell exits before treating a holder as a stray background process.
@@ -111,17 +117,17 @@ func Bash(opts ...Option) tool.Tool {
 	})
 }
 
-// buildEnv is the parent environment plus the fixed variables plus the
-// configured extras, in key order so the environment is the same on every call.
-// exec uses the last value for a duplicate key, so a later entry overrides an
-// earlier one (D52).
-func buildEnv(extra map[string]string) []string {
-	env := append(os.Environ(),
+// buildEnv is the parent environment minus the scrubbed variables, plus the
+// fixed variables, plus the configured extras, in key order so the environment
+// is the same on every call. exec uses the last value for a duplicate key, so a
+// later entry overrides an earlier one (D52).
+func (o *options) buildEnv() []string {
+	env := append(tool.ScrubEnv(os.Environ(), o.scrub),
 		"NOVA=1", "TERM=dumb", "NO_COLOR=1",
 		"PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0",
 	)
-	for _, k := range slices.Sorted(maps.Keys(extra)) {
-		env = append(env, k+"="+extra[k])
+	for _, k := range slices.Sorted(maps.Keys(o.env)) {
+		env = append(env, k+"="+o.env[k])
 	}
 	return env
 }

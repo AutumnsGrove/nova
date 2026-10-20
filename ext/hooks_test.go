@@ -207,7 +207,7 @@ func TestHooks_HK13_CommandHookTimeout(t *testing.T) {
 
 func TestHooks_HK13b_CommandHookOutputIsCapped(t *testing.T) {
 	out, code, err := runHookScript(context.Background(), t.TempDir(),
-		[]string{"sh", "-c", "head -c 3000000 /dev/zero | tr '\\000' a"}, nil, commandHookTimeout)
+		[]string{"sh", "-c", "head -c 3000000 /dev/zero | tr '\\000' a"}, nil, commandHookTimeout, nil)
 	if err != nil || code != 0 {
 		t.Fatalf("code=%d err=%v", code, err)
 	}

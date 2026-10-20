@@ -2,7 +2,7 @@
 chunk: C11
 title: "Config, context files, skills, prompt templates, trust"
 packages: [./config]
-budgets: { ./config: 1450 }
+budgets: { ./config: 1460 }
 depends: [C04]
 ---
 

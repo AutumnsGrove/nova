@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/bundled/subagent"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/diag"
@@ -41,7 +42,7 @@ func (s *Server) buildExtensionHost() *ext.Host {
 		CWD:         s.cwd,
 		Mode:        cmp.Or(s.opt.Mode, "rpc"), // "rpc" is the protocol default
 		Env:         os.Environ,
-		ScrubEnv:    s.cfg.Extensions.ScrubEnv,
+		ScrubEnv:    append(providerauth.CredentialEnv(), s.cfg.Extensions.ScrubEnv...),
 		PassEnv:     s.cfg.Extensions.PassEnv,
 		Config:      s.cfg,
 		Ledger:      s.ledger,

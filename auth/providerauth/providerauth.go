@@ -6,9 +6,11 @@ package providerauth
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 
+	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/provider"
 )
@@ -242,3 +244,26 @@ func (s *keySession) Wait(ctx context.Context) (Credential, error) {
 }
 
 func (s *keySession) Close() error { return nil }
+
+// CredentialEnv returns the names of the environment variables that carry
+// Nova's own credentials: every registered provider's key and the serve token.
+// A process Nova starts for the model must not inherit them. The list is sorted
+// and has no duplicates.
+func CredentialEnv() []string {
+	names := []string{auth.EnvServeToken}
+	for _, p := range All() {
+		names = append(names, p.EnvVars...)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
+// CredentialEnvFor lists the variables a model-run command must not inherit:
+// Nova's own credentials unless the config opts out, plus any names the config
+// adds.
+func CredentialEnvFor(c config.BashConfig) []string {
+	if c.InheritCredentials {
+		return c.ScrubEnv
+	}
+	return append(CredentialEnv(), c.ScrubEnv...)
+}

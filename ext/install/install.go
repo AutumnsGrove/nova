@@ -45,6 +45,10 @@ type InstallOptions struct {
 	Timeout  time.Duration
 	// Warn receives non-fatal problems, such as a damaged lockfile. It may be nil.
 	Warn func(msg string)
+	// ScrubEnv names variables the default git and build runners hide from the
+	// commands they start, so an extension's build script cannot read Nova's own
+	// credentials. A runner given in Git or Run is used as it is.
+	ScrubEnv []string
 }
 
 // Installer installs, updates, removes, and lists extensions.
@@ -64,10 +68,10 @@ func NewInstaller(opt InstallOptions) *Installer {
 	}
 	i := &Installer{opt: opt, git: opt.Git, run: opt.Run}
 	if i.git == nil {
-		i.git = execGit{}
+		i.git = execGit{scrub: opt.ScrubEnv}
 	}
 	if i.run == nil {
-		i.run = ext.ExecRunner{}
+		i.run = ext.NewExecRunner(opt.ScrubEnv)
 	}
 	return i
 }

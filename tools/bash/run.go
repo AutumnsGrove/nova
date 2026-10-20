@@ -69,7 +69,7 @@ func (o *options) execute(ctx context.Context, tctx *tool.Context, command strin
 	// wait on input the model cannot give.
 	cmd := exec.Command(o.shell, flag, command)
 	cmd.Dir = work
-	cmd.Env = buildEnv(o.env)
+	cmd.Env = o.buildEnv()
 	setProcessGroup(cmd)
 	pr, pw, err := os.Pipe()
 	if err != nil {

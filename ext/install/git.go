@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/AutumnsGrove/nova/tool"
 )
 
 // gitWaitDelay is how long a cancelled git command may take to let go of its
@@ -36,12 +38,12 @@ func gitEnv() []string {
 }
 
 // execGit is the default GitRunner: it invokes the git binary.
-type execGit struct{}
+type execGit struct{ scrub []string }
 
 func (g execGit) Run(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), gitEnv()...)
+	cmd.Env = append(tool.ScrubEnv(os.Environ(), g.scrub), gitEnv()...)
 	cmd.WaitDelay = gitWaitDelay
 	var out cappedBuffer
 	cmd.Stdout, cmd.Stderr = &out, &out

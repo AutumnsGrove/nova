@@ -2,7 +2,7 @@
 chunk: C04
 title: "Tool contract, registry, permission policy"
 packages: [./tool, ./permission]
-budgets: { ./tool: 600, ./permission: 340 }
+budgets: { ./tool: 620, ./permission: 340 }
 depends: [C01]
 ---
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/auth"
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	bundledskills "github.com/AutumnsGrove/nova/bundled/skills"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
@@ -56,6 +57,7 @@ func buildTools(cfg *config.Config) (*tool.Registry, map[string]tool.Tool, error
 	if cfg.Tools.Bash.MaxOutputBytes > 0 {
 		bashOpts = append(bashOpts, bash.WithMaxOutputBytes(cfg.Tools.Bash.MaxOutputBytes))
 	}
+	bashOpts = append(bashOpts, bash.WithScrubEnv(providerauth.CredentialEnvFor(cfg.Tools.Bash)))
 	all := map[string]tool.Tool{
 		"read":  fs.Read(),
 		"write": fs.Write(),

@@ -25,16 +25,24 @@ type CommandRunner interface {
 	Run(ctx context.Context, dir string, argv []string) error
 }
 
-// ExecRunner runs a build step directly, with the parent's environment.
-type ExecRunner struct{}
+// ExecRunner runs a build step directly. Env is the environment it runs in;
+// nil means the parent's.
+type ExecRunner struct{ Env []string }
+
+// NewExecRunner returns an ExecRunner whose environment is the process's minus
+// the variables called exactly one of scrub.
+func NewExecRunner(scrub []string) ExecRunner {
+	return ExecRunner{Env: tool.ScrubEnv(os.Environ(), scrub)}
+}
 
 // Run runs argv in dir. A failure carries the end of the command's output.
-func (ExecRunner) Run(ctx context.Context, dir string, argv []string) error {
+func (r ExecRunner) Run(ctx context.Context, dir string, argv []string) error {
 	if len(argv) == 0 {
 		return nil
 	}
 	cmd := groupCommand(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
+	cmd.Env = r.Env
 	out := newCapBuffer(maxBuildOutputBytes)
 	cmd.Stdout, cmd.Stderr = out, out
 	if err := cmd.Run(); err != nil {

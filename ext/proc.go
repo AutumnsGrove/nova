@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
+	"github.com/AutumnsGrove/nova/tool"
 )
 
 // Instance states.
@@ -498,22 +499,42 @@ func (p *procCloser) Close() error {
 	return p.err
 }
 
+// baseEnv is the environment the host starts from: the process's own, or the
+// one the embedder gave.
+func (h *Host) baseEnv() []string {
+	if h.opt.Env != nil {
+		return h.opt.Env()
+	}
+	return os.Environ()
+}
+
+// filteredEnv is baseEnv minus the variables matching patterns, except the ones
+// the user passes through by name.
+func (h *Host) filteredEnv(patterns []string) []string {
+	return tool.FilterEnv(h.baseEnv(), func(name string) bool {
+		return isScrubbed(name, patterns) && !slices.Contains(h.opt.PassEnv, name)
+	})
+}
+
+// commandEnv is the environment for the commands the host runs on an
+// extension's behalf (declarative tools, command hooks, build steps): the host
+// base minus the variables the embedder asked to hide, which include Nova's own
+// credentials. An extension process gets the stricter childEnv.
+func (h *Host) commandEnv() []string { return h.filteredEnv(h.opt.ScrubEnv) }
+
+// buildRunner is the runner for build steps: the embedder's, or a direct one
+// that uses commandEnv.
+func (h *Host) buildRunner() CommandRunner {
+	if h.opt.Run != nil {
+		return h.opt.Run
+	}
+	return ExecRunner{Env: h.commandEnv()}
+}
+
 // childEnv builds the environment for an extension process: the host base,
 // minus secrets, plus the NOVA_* variables.
 func (h *Host) childEnv(m *Manifest) []string {
-	base := os.Environ()
-	if h.opt.Env != nil {
-		base = h.opt.Env()
-	}
-	scrub := h.scrubPatterns()
-	out := make([]string, 0, len(base)+5)
-	for _, kv := range base {
-		name, _, _ := strings.Cut(kv, "=")
-		if isScrubbed(name, scrub) && !slices.Contains(h.opt.PassEnv, name) {
-			continue
-		}
-		out = append(out, kv)
-	}
+	out := h.filteredEnv(h.scrubPatterns())
 	out = append(out,
 		"NOVA_EXTENSION="+m.Name,
 		"NOVA_VERSION="+h.opt.NovaVersion,

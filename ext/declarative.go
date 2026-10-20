@@ -123,6 +123,8 @@ func renderString(tmpl string, values map[string]any) string {
 type execTool struct {
 	dir  string
 	spec DeclTool
+	// env is the environment the command runs in; nil inherits the process's.
+	env func() []string
 }
 
 // Info returns the tool's model-facing definition.
@@ -151,7 +153,11 @@ func (t *execTool) Run(ctx context.Context, args json.RawMessage, tctx *tool.Con
 		work = tctx.WorkDir
 	}
 	argv[0] = resolveExec(t.dir, argv[0])
-	out := runExec(ctx, work, argv, time.Duration(t.spec.TimeoutMS)*time.Millisecond)
+	var env []string
+	if t.env != nil {
+		env = t.env()
+	}
+	out := runExec(ctx, work, argv, time.Duration(t.spec.TimeoutMS)*time.Millisecond, env)
 	return t.result(out, values), nil
 }
 
@@ -201,11 +207,12 @@ func (o execOutcome) isError() bool {
 // runExec runs argv in work with the given timeout, capturing merged output
 // with the bash-style cap. On timeout or cancellation it asks the whole process
 // group to stop, then kills it after a short wait.
-func runExec(ctx context.Context, work string, argv []string, timeout time.Duration) execOutcome {
+func runExec(ctx context.Context, work string, argv []string, timeout time.Duration, env []string) execOutcome {
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(callCtx, argv[0], argv[1:]...)
 	cmd.Dir = work
+	cmd.Env = env
 	setProcessGroup(cmd)
 	cmd.Cancel = func() error {
 		terminateGroup(cmd.Process.Pid)

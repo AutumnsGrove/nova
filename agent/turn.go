@@ -48,6 +48,7 @@ func (r *run) turnRequest() (message.Message, provider.Usage, error) {
 		MaxTokens:       r.cfg.MaxTokens,
 		ReasoningEffort: r.cfg.ReasoningEffort,
 		ProviderOptions: r.cfg.ProviderOptions,
+		PromptCache:     r.cfg.PromptCache,
 	}
 	if r.cfg.Tools != nil {
 		req.Tools = r.cfg.Tools.Defs()

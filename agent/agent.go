@@ -143,6 +143,13 @@ type Config struct {
 	HookTimeout         time.Duration // default 5s
 	Clock               Clock         // default real; tests inject a fake
 
+	// PromptCache overrides whether requests carry an explicit prompt-cache
+	// marker. Nil means decide from the model catalog (see
+	// provider.RequestCacheControl), so every caller gets the right answer by
+	// default and a cost-sensitive embedder can still turn it off for a
+	// gateway that rejects the field.
+	PromptCache *bool
+
 	Hooks Hooks
 
 	// Emit receives every event, synchronously, in order. Seq, TS, and Run

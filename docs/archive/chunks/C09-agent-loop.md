@@ -269,6 +269,15 @@ history as given, as before.
     `usage` carries it with the running total; `run_end` carries the total. A provider that reports
     no usage contributes zero. When a later call fails, earlier usage is still in the result.
 
+### Prompt caching
+
+32. `Config.PromptCache` is copied onto every request as `Request.PromptCache`; nil leaves the
+    decision to the provider catalog. The agent does not interpret the marker, so a
+    `before_provider_request` hook sees and keeps it.
+33. The request prefix is append-only as a run proceeds: every turn's messages start with the
+    previous turn's messages unchanged, so a cache breakpoint at the end of the prompt keeps
+    hitting. A hook that rewrites the history may cost a cache miss, and that is its own choice.
+
 ## Matrix
 
 | ID | Case | Input / setup | Expected |
@@ -380,6 +389,8 @@ history as given, as before.
 | LPU04 | `message_end` and `usage` events carry usage and totals | | verified |
 | LPU05 | reasoning tokens summed | | included |
 | LPU06 | `run_end` carries the total | | verified |
+| LPW01 | `PromptCache` reaches the request | nil, true, false; a hook rewrites the request | nil, true, false after the hook too |
+| LPW02 | the request prefix is stable across turns | a tool turn then a text turn | the second request starts with the first request's messages unchanged |
 | LPI01 | text-only model strips images from the request | a prompt with an image, no modalities | no image part on the wire; omission note in the text; transcript keeps the part |
 | LPI02 | vision model keeps images | `InputModalities` text+image | image part still on the wire |
 | LPI03 | `InputModalitiesFunc` is read per request | a text-only first run, then vision | first request stripped, second kept |

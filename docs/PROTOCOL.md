@@ -108,6 +108,8 @@ retry            { run, attempt, max, delay_ms, error }      // discard the in-p
 compaction       { entry, replaced, tokens_before, tokens_after }
 queue_update     { run, steering, follow_up }       // sizes now; sent on queueing and when the loop takes a message off
 run_end          { run, reason, turns, usage }      // reason: done | exhausted | aborted | error; exhausted only when a bound was set
+                 // dropped_queue? {steering?: [text], follow_up?: [text]}: queued messages the run ended
+                 // without consuming (absent when none). Clients should put them back in the input box.
 error            { run?, code, message }
 extension_error  { extension, hook?, message }
 ui_expired       { id }                              // a ui_request timed out; close its dialog

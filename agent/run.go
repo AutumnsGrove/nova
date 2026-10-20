@@ -188,12 +188,14 @@ func (r *run) runTurn() (string, error) {
 		return "done", nil
 	}
 
+	// Checked before the drain: a cancelled run must not move queued messages
+	// into the transcript, because they are handed back to the client instead.
+	if cerr := r.ctx.Err(); cerr != nil {
+		return "aborted", cerr
+	}
 	steered, err := r.drainSteering()
 	if err != nil {
 		return "error", err
-	}
-	if cerr := r.ctx.Err(); cerr != nil {
-		return "aborted", cerr
 	}
 	if len(assistant.ToolCalls) > 0 || steered > 0 || td.Continue || len(td.Inject) > 0 {
 		return "", nil
@@ -313,9 +315,9 @@ func (r *run) result(reason string) *Result {
 // returns the result.
 func (r *run) finish(res *Result, err error) (*Result, error) {
 	// AgentEnd can take seconds; a message queued meanwhile would never run.
-	r.a.mu.Lock()
-	r.a.closing = true
-	r.a.mu.Unlock()
+	// What is still queued is dropped here and reported in run_end, so it
+	// neither leaks into the next run nor vanishes.
+	dropped := r.a.closeAndDrop()
 	if err != nil && res.Reason == "error" {
 		code := proto.CodeInternal
 		var pe *provider.Error
@@ -332,6 +334,6 @@ func (r *run) finish(res *Result, err error) (*Result, error) {
 	}
 	usage := r.usage
 	r.ended = true
-	r.emit(proto.Event{Type: proto.EventRunEnd, Reason: res.Reason, Turn: intp(res.Turns), Usage: &usage})
+	r.emit(proto.Event{Type: proto.EventRunEnd, Reason: res.Reason, Turn: intp(res.Turns), Usage: &usage, DroppedQueue: dropped})
 	return res, err
 }

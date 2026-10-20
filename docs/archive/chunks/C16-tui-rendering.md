@@ -349,6 +349,7 @@ type Display struct {
 | GIT04 | no commits | diff HEAD fails | falls back to the working-tree diff |
 | GIT05 | no cwd | empty cwd | not ok; git is not run |
 | GIT06 | fake reader | configured info | reports it and counts the call |
+| GIT07 | a repository's config cannot run programs | a repo whose `core.fsmonitor` names a script, read through the real git | the counts are right and the script never ran |
 
 ## Retired rows
 

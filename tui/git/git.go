@@ -3,7 +3,8 @@
 // Package git reads the branch and working-tree line counts the status region
 // shows. It shells out to git with a short deadline and treats every failure as
 // "no git here", so a missing git or a non-repo never breaks the UI. It is a
-// seam: tests supply a fake reader and never run git.
+// seam: tests supply a fake reader, and only the test that guards the git
+// arguments runs the real binary.
 package git
 
 import (
@@ -83,9 +84,11 @@ func (e Exec) Read(ctx context.Context, cwd string) Info {
 }
 
 // execGit runs git with no optional locks, so a status refresh never races a
-// concurrent git command in the user's own terminal.
+// concurrent git command in the user's own terminal. The folder may be one the
+// user never trusted, and a repository's config can name programs that git runs
+// while reading it, so the file-system monitor is switched off here.
 func execGit(ctx context.Context, cwd string, args ...string) ([]byte, error) {
-	full := append([]string{"-C", cwd, "--no-optional-locks"}, args...)
+	full := append([]string{"-C", cwd, "--no-optional-locks", "-c", "core.fsmonitor=false"}, args...)
 	return exec.CommandContext(ctx, "git", full...).Output()
 }
 

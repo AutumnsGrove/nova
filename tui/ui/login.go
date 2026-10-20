@@ -114,7 +114,7 @@ func (m *Model) onProviders(resp proto.Response) tea.Cmd {
 func (m *Model) afterLogin(rows []providerRow) tea.Cmd {
 	for _, r := range rows {
 		if r.Current && r.Ready {
-			m.notice += "; /model to choose a model"
+			m.setNotice(m.notice + "; /model to choose a model")
 			return nil
 		}
 	}
@@ -138,16 +138,59 @@ func (m *Model) loginCommand(args string) tea.Cmd {
 	default:
 		p, ok := providerauth.Get(fields[0])
 		if !ok {
-			m.notice = "unknown provider: " + fields[0]
+			m.setNotice("unknown provider: " + fields[0])
 			return nil
 		}
 		method, ok := providerauth.ParseMethod(fields[1])
 		if !ok {
-			m.notice = "unknown method: " + fields[1]
+			m.setNotice("unknown method: " + fields[1])
 			return nil
 		}
 		return m.beginMethod(p, method)
 	}
+}
+
+// applyLoginIntent runs the step behind a closed sign-in dialog.
+func (m *Model) applyLoginIntent(intent string, r dialog.Result) tea.Cmd {
+	switch intent {
+	case intentLogin:
+		if id, ok := r.Value.(string); ok && !r.Cancelled {
+			return m.beginLogin(id)
+		}
+	case intentLoginMethod:
+		if label, ok := r.Value.(string); ok && !r.Cancelled {
+			if p, found := providerauth.Get(m.loginProvider); found {
+				if method, ok := providerauth.MethodByLabel(p, label); ok {
+					return m.beginMethod(p, method)
+				}
+			}
+		}
+	case intentLoginKey:
+		if key, ok := r.Value.(string); ok && !r.Cancelled && key != "" {
+			return m.saveCredential(m.loginProvider, providerauth.APIKey, key)
+		}
+	case intentLoginFlow:
+		switch {
+		case r.Cancelled:
+			m.cancelLogin()
+		case r.Retry:
+			if p, found := providerauth.Get(m.loginProvider); found {
+				return m.beginMethod(p, m.loginMethod)
+			}
+		case m.loginSession != nil:
+			if pasted, ok := r.Value.(string); ok && pasted != "" {
+				if err := m.loginSession.Submit(pasted); err != nil {
+					m.loginErr = err.Error()
+					m.pushFlowDialog()
+				}
+			}
+		}
+	case intentLogout:
+		if id, ok := r.Value.(string); ok && !r.Cancelled {
+			return m.logoutCommand(id)
+		}
+	}
+	return nil
 }
 
 // beginLogin starts a provider's sign-in, or opens the method picker when it
@@ -155,7 +198,7 @@ func (m *Model) loginCommand(args string) tea.Cmd {
 func (m *Model) beginLogin(id string) tea.Cmd {
 	p, ok := providerauth.Get(id)
 	if !ok {
-		m.notice = "unknown provider: " + id
+		m.setNotice("unknown provider: " + id)
 		return nil
 	}
 	if len(p.Methods) == 1 {
@@ -168,7 +211,12 @@ func (m *Model) beginLogin(id string) tea.Cmd {
 
 // beginMethod starts one method. The API key is collected by a dialog; the
 // interactive flows call Begin in a command, because Begin does I/O.
+//
+// Any flow already running is torn down first: a retry or a second /login must
+// not leave the old session holding its callback listener, and bumping the
+// generation makes the old session's late result harmless.
 func (m *Model) beginMethod(p providerauth.Provider, method providerauth.Method) tea.Cmd {
+	m.cancelLogin()
 	m.loginProvider = p.ID
 	m.loginMethod = method
 	m.loginErr = ""
@@ -178,7 +226,7 @@ func (m *Model) beginMethod(p providerauth.Provider, method providerauth.Method)
 	}
 	begin, ok := p.Begin[method]
 	if !ok {
-		m.notice = p.Name + " does not support that sign-in method"
+		m.setNotice(p.Name + " does not support that sign-in method")
 		return nil
 	}
 	gen := m.loginGen
@@ -204,10 +252,15 @@ func openURL(url string) error {
 // onLoginBegun shows the started flow and waits for it in the background.
 func (m *Model) onLoginBegun(msg loginBegunMsg) tea.Cmd {
 	if msg.gen != m.loginGen {
+		// A newer sign-in or a cancel superseded this one while it started; its
+		// session must still be released or its listener stays bound.
+		if msg.session != nil {
+			_ = msg.session.Close()
+		}
 		return nil
 	}
 	if msg.err != nil {
-		m.notice = "sign-in failed: " + msg.err.Error()
+		m.setNotice("sign-in failed: " + msg.err.Error())
 		return nil
 	}
 	m.loginSession = msg.session
@@ -246,7 +299,7 @@ func (m *Model) onLoginDone(msg loginDoneMsg) tea.Cmd {
 	id, method := m.loginProvider, m.loginMethod
 	m.clearLogin()
 	if msg.err != nil {
-		m.notice = "sign-in failed: " + msg.err.Error()
+		m.setNotice("sign-in failed: " + msg.err.Error())
 		return nil
 	}
 	return m.saveCredential(id, method, msg.cred.Key)
@@ -276,7 +329,7 @@ func (m *Model) clearLogin() {
 }
 
 // cancelLogin stops the current flow and ignores any late result.
-func (m *Model) cancelLogin() tea.Cmd {
+func (m *Model) cancelLogin() {
 	if m.loginCancel != nil {
 		m.loginCancel()
 	}
@@ -285,14 +338,13 @@ func (m *Model) cancelLogin() tea.Cmd {
 	}
 	m.loginGen++
 	m.clearLogin()
-	return nil
 }
 
 // saveCredential writes the key in the background.
 func (m *Model) saveCredential(id string, method providerauth.Method, key string) tea.Cmd {
 	p, ok := providerauth.Get(id)
 	if !ok {
-		m.notice = "unknown provider: " + id
+		m.setNotice("unknown provider: " + id)
 		return nil
 	}
 	home := m.home
@@ -305,10 +357,10 @@ func (m *Model) saveCredential(id string, method providerauth.Method, key string
 // onCredSaved reports the save and refreshes the catalog.
 func (m *Model) onCredSaved(msg credSavedMsg) tea.Cmd {
 	if msg.err != nil {
-		m.notice = "could not save the credential: " + msg.err.Error()
+		m.setNotice("could not save the credential: " + msg.err.Error())
 		return nil
 	}
-	m.notice = "logged in to " + msg.name + "; credentials saved to " + msg.path
+	m.setNotice("logged in to " + msg.name + "; credentials saved to " + msg.path)
 	// Whether to offer a model depends on whether the current one now works,
 	// which only the server can say, so ask before deciding.
 	return tea.Batch(
@@ -321,7 +373,7 @@ func (m *Model) onCredSaved(msg credSavedMsg) tea.Cmd {
 func (m *Model) logoutCommand(id string) tea.Cmd {
 	p, ok := providerauth.Get(id)
 	if !ok {
-		m.notice = "unknown provider: " + id
+		m.setNotice("unknown provider: " + id)
 		return nil
 	}
 	home := m.home
@@ -336,14 +388,14 @@ func (m *Model) logoutCommand(id string) tea.Cmd {
 // provider, so the notice can say what to do about it.
 func (m *Model) onLogoutDone(msg logoutDoneMsg) tea.Cmd {
 	if msg.err != nil {
-		m.notice = "could not log out: " + msg.err.Error()
+		m.setNotice("could not log out: " + msg.err.Error())
 		return nil
 	}
 	if msg.remaining.Ready {
-		m.notice = "logged out of " + msg.name + "; still configured from " + msg.remaining.Source
+		m.setNotice("logged out of " + msg.name + "; still configured from " + msg.remaining.Source)
 		return nil
 	}
-	m.notice = "logged out of " + msg.name
+	m.setNotice("logged out of " + msg.name)
 	m.loggedOutID = msg.id
 	return m.requestProviders(intentProvidersAfterLogout)
 }
@@ -360,7 +412,7 @@ func (m *Model) afterLogout(rows []providerRow) tea.Cmd {
 		if rows[i].ID == id && rows[i].Ready {
 			// The server still resolves a key (from its config, which the local
 			// check cannot see), so the provider keeps working.
-			m.notice += "; still configured from " + rows[i].Source
+			m.setNotice(m.notice + "; still configured from " + rows[i].Source)
 			return nil
 		}
 		if rows[i].Current {
@@ -372,10 +424,10 @@ func (m *Model) afterLogout(rows []providerRow) tea.Cmd {
 	}
 	for _, r := range rows {
 		if r.ID != id && r.Ready && r.DefaultModel != "" {
-			m.notice += "; switched to " + r.DefaultModel + " (" + r.Name + ")"
+			m.setNotice(m.notice + "; switched to " + r.DefaultModel + " (" + r.Name + ")")
 			return m.client.Send(proto.Command{Type: proto.CmdSetModel, Model: r.DefaultModel})
 		}
 	}
-	m.notice += "; run /login before the next prompt"
+	m.setNotice(m.notice + "; run /login before the next prompt")
 	return nil
 }

@@ -5,12 +5,15 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/client"
+	"github.com/AutumnsGrove/nova/tui/dialog"
 	"github.com/AutumnsGrove/nova/tui/splash"
 )
 
@@ -30,7 +33,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handlePaste(msg.Content)
 
 	case tea.MouseMsg:
-		return m, m.handleMouse(msg)
+		m.handleMouse(msg)
+		return m, nil
 
 	case client.ResponseMsg:
 		return m, m.handleResponse(msg.Response)
@@ -44,15 +48,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, m.client.Next())
 
 	case client.ClosedMsg:
-		m.notice = "connection closed"
+		m.setNotice("connection closed")
 		return m, tea.Batch(m.cancelAllDialogs(), tea.Quit)
 
 	case commandsLoadedMsg:
 		m.commands = msg.commands
 		return m, nil
 
+	case promptSentMsg:
+		m.finishSend(msg.sent, msg.resp)
+		return m, nil
+
 	case noticeMsg:
-		m.notice = msg.text
+		m.setNotice(msg.text)
+		return m, nil
+
+	case infoMsg:
+		m.pushDialog(dialog.NewInfo(msg.title, msg.lines), msg.intent)
 		return m, nil
 
 	case clipboardMsg:
@@ -87,8 +99,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, id := range m.transcript.SetNow(m.clock.Now()) {
 			m.list.Touch(id)
 		}
-		m.quitArmed = m.quitArmed && m.clock.Now().Before(m.quitAt)
+		m.expireQuit()
 		return m, m.scheduleTick()
+
+	case quitExpiredMsg:
+		m.expireQuit()
+		return m, nil
 
 	case gitTickMsg:
 		m.gitArmed = false
@@ -153,10 +169,10 @@ func (m *Model) handleResponse(resp proto.Response) tea.Cmd {
 		m.openUsage(resp)
 	case proto.CmdListProviders:
 		return m.onProviders(resp)
-	case proto.CmdPrompt, proto.CmdSteer, proto.CmdFollowUp:
-		return m.finishSend(resp)
 	case proto.CmdAbort:
 		m.finishAbort(resp)
+	case proto.CmdBash:
+		m.showBashOutput(resp)
 	case proto.CmdShutdown:
 		// The server has released the session and extensions; leave cleanly.
 		return tea.Batch(m.cancelAllDialogs(), tea.Quit)
@@ -166,10 +182,10 @@ func (m *Model) handleResponse(resp proto.Response) tea.Cmd {
 				Text string `json:"text"`
 			}
 			if json.Unmarshal(resp.Data, &out) == nil && out.Text != "" {
-				m.notice = out.Text
+				m.setNotice(out.Text)
 			}
 		} else if resp.Error != nil {
-			m.notice = resp.Error.Message
+			m.setNotice(resp.Error.Message)
 		}
 	}
 	return nil
@@ -189,15 +205,13 @@ func (m *Model) decodeCommands(resp proto.Response) {
 }
 
 // finishSend handles the response to a prompt, steer, or follow-up.
-func (m *Model) finishSend(resp proto.Response) tea.Cmd {
-	p := m.pending
-	m.pending = pendingSend{}
+func (m *Model) finishSend(p pendingSend, resp proto.Response) {
 	if !resp.OK {
 		if resp.Error != nil {
-			m.notice = resp.Error.Message
+			m.setNotice(resp.Error.Message)
 		}
 		m.setEditorText(p.text)
-		return nil
+		return
 	}
 	switch p.kind {
 	case "steer":
@@ -208,7 +222,6 @@ func (m *Model) finishSend(resp proto.Response) tea.Cmd {
 		m.transcript.AddUser(p.text, p.atts)
 	}
 	m.syncList()
-	return nil
 }
 
 // finishAbort puts the returned queued messages back in the editor.
@@ -223,12 +236,26 @@ func (m *Model) finishAbort(resp proto.Response) {
 	if json.Unmarshal(resp.Data, &out) != nil {
 		return
 	}
-	var lines []string
-	lines = append(lines, out.Steering...)
-	lines = append(lines, out.FollowUp...)
-	if len(lines) > 0 {
-		m.setEditorText(strings.Join(lines, "\n"))
+	m.restoreDropped(&proto.DroppedQueue{Steering: out.Steering, FollowUp: out.FollowUp})
+}
+
+// restoreDropped puts queued messages a run never consumed back in the editor,
+// steering first, one per line, after whatever the user has already typed so a
+// draft is never lost. Abort and run_end both report a queue but never the
+// same one, so a message is restored once.
+func (m *Model) restoreDropped(q *proto.DroppedQueue) {
+	if q == nil {
+		return
 	}
+	lines := slices.Concat(q.Steering, q.FollowUp)
+	if len(lines) == 0 {
+		return
+	}
+	text := strings.Join(lines, "\n")
+	if draft := m.editor.Value(); strings.TrimSpace(draft) != "" {
+		text = draft + "\n" + text
+	}
+	m.setEditorText(text)
 }
 
 // handleEvent folds an event into the transcript and UI state. It returns an
@@ -241,6 +268,7 @@ func (m *Model) handleEvent(e proto.Event) tea.Cmd {
 		m.setRunning(true)
 	case proto.EventRunEnd:
 		m.setRunning(false)
+		m.restoreDropped(e.DroppedQueue)
 	case proto.EventUsage:
 		if e.Total != nil {
 			m.state.Usage.TotalTokens = e.Total.TotalTokens
@@ -285,17 +313,31 @@ func (m *Model) decodeStateEvent(raw json.RawMessage) {
 }
 
 // handlePaste attaches a large paste as a block instead of inserting it raw.
+// A paste counts as typing, so an extension's set_editor_text does not wipe it.
 func (m *Model) handlePaste(content string) tea.Cmd {
-	if len(content) > pasteLimit {
-		marker := fmt.Sprintf("[pasted %d chars]", len([]rune(content)))
+	m.lastInput = m.clock.Now()
+	if n := utf8.RuneCountInString(content); n > pasteLimit {
+		marker := m.pasteMarker(n)
 		m.pasted[marker] = content
-		m.editor.InsertString(marker)
-		return nil
+		content = marker
 	}
 	m.editorScrollFree = false
 	m.editor.InsertString(content)
 	m.recompute()
 	return m.afterEditorChange()
+}
+
+// pasteMarker names a collapsed paste of n characters. Two pastes of the same
+// length must not share a marker, or the later one would replace the earlier
+// one's text when the prompt is sent, so a repeat gets a number.
+func (m *Model) pasteMarker(n int) string {
+	marker := fmt.Sprintf("[pasted %d chars]", n)
+	for i := 2; ; i++ {
+		if _, taken := m.pasted[marker]; !taken {
+			return marker
+		}
+		marker = fmt.Sprintf("[pasted %d chars #%d]", n, i)
+	}
 }
 
 // pendingSend remembers an in-flight prompt so an error can restore it.

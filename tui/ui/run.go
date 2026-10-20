@@ -103,7 +103,7 @@ func reportProgramError(w io.Writer, err error) {
 	if !errors.Is(err, tea.ErrProgramPanic) {
 		return
 	}
-	fmt.Fprintln(w, "\nnova: internal error in the UI (stack above)")
+	_, _ = fmt.Fprintln(w, "\nnova: internal error in the UI (stack above)") // best effort: the terminal may be gone
 	reportCrash(w, err, "tui program")
 }
 
@@ -115,7 +115,7 @@ func reportCrash(w io.Writer, v any, op string) {
 	if err != nil || path == "" {
 		return
 	}
-	fmt.Fprintf(w, "nova: crash report: %s\n", path)
+	_, _ = fmt.Fprintf(w, "nova: crash report: %s\n", path) // best effort, as above
 }
 
 // Interactive reports whether the TUI should start for the given mode flag and

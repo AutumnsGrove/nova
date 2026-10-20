@@ -4,8 +4,10 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -13,11 +15,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/client"
 	"github.com/AutumnsGrove/nova/tui/splash"
 )
 
-// pasteLimit is the character count above which a paste is attached as a
-// block instead of inserted into the editor.
+// pasteLimit is the character (not byte) count above which a paste is attached
+// as a block instead of inserted into the editor.
 const pasteLimit = 8000
 
 // errNoEditor is returned when ctrl+g is pressed without $EDITOR.
@@ -32,11 +35,17 @@ func (m *Model) setEditorText(s string) {
 }
 
 // expandPasted replaces paste markers with their full content before sending.
+// One replacer pass keeps the result independent of map order and never
+// re-expands a marker that appears inside pasted text.
 func (m *Model) expandPasted(text string) string {
-	for marker, full := range m.pasted {
-		text = strings.ReplaceAll(text, marker, full)
+	if len(m.pasted) == 0 {
+		return text
 	}
-	return text
+	pairs := make([]string, 0, 2*len(m.pasted))
+	for marker, full := range m.pasted {
+		pairs = append(pairs, marker, full)
+	}
+	return strings.NewReplacer(pairs...).Replace(text)
 }
 
 // afterEditorChange recomputes completion from the current editor text and
@@ -67,13 +76,13 @@ func (m *Model) submit(action string) tea.Cmd {
 	text := m.expandPasted(raw)
 	switch {
 	case strings.HasPrefix(raw, "/"):
-		name, args := splitCommand(raw)
+		name, args := splitCommand(text)
 		if cmd, handled := m.localCommand(name, args); handled {
 			m.setEditorText("")
 			return cmd
 		}
 		if !m.knownCommand(name) && len(m.commands) > 0 {
-			m.notice = "unknown command: /" + name
+			m.setNotice("unknown command: /" + name)
 			return nil // leave the text in the editor
 		}
 		m.setEditorText("")
@@ -83,7 +92,7 @@ func (m *Model) submit(action string) tea.Cmd {
 		m.setEditorText("")
 		m.history.add(raw)
 		m.dismissSplash()
-		return m.client.Send(proto.Command{Type: proto.CmdBash, Command: text})
+		return m.client.Send(proto.Command{Type: proto.CmdBash, Command: shellCommand(text)})
 	}
 	kind := "prompt"
 	switch {
@@ -92,15 +101,51 @@ func (m *Model) submit(action string) tea.Cmd {
 	case m.runActive:
 		kind = "steer"
 	}
-	text = m.attachPaths(text)
-	atts := m.attachmentRefs()
-	names := m.attachmentNames()
+	clipped := m.pendingAtts
 	m.setEditorText("")
 	m.history.add(raw)
 	m.pendingAtts = nil
-	m.pending = pendingSend{kind: kind, text: text, atts: names}
 	m.dismissSplash()
-	return m.client.Send(proto.Command{Type: cmdFor(kind), Text: text, Attachments: atts})
+	return m.sendPrompt(kind, text, clipped)
+}
+
+// promptSentMsg is the server's answer to a prompt, steer, or follow-up,
+// together with what was sent. The text travels with the answer rather than
+// waiting in the model, so two sends in flight cannot swap their text.
+type promptSentMsg struct {
+	sent pendingSend
+	resp proto.Response
+}
+
+// sendPrompt resolves the image paths the text mentions, which reads files, and
+// then sends it, all in one command so that Update does no I/O. clipped are the
+// images already attached from the clipboard.
+func (m *Model) sendPrompt(kind, text string, clipped []pendingAttachment) tea.Cmd {
+	c, cwd := m.client, m.cwd
+	return func() tea.Msg {
+		text, found := attachPaths(cwd, text)
+		atts := slices.Concat(clipped, found)
+		sent := pendingSend{kind: kind, text: text, atts: attachmentNames(atts)}
+		msg := c.Send(proto.Command{Type: cmdFor(kind), Text: text, Attachments: attachmentRefs(atts)})()
+		if r, ok := msg.(client.ResponseMsg); ok {
+			return promptSentMsg{sent: sent, resp: r.Response}
+		}
+		return msg
+	}
+}
+
+// quietShellPrefix marks a shell command whose output stays out of the model's
+// context; the server recognises it, so it is sent through.
+const quietShellPrefix = "!!"
+
+// shellCommand turns a `!cmd` line into the bash command the server runs. The
+// single ! is only the TUI's marker and must not reach the shell, where it
+// would be run as a command name; the quiet !! prefix is the server's flag.
+func shellCommand(line string) string {
+	if strings.HasPrefix(line, quietShellPrefix) {
+		return line
+	}
+	return strings.TrimSpace(strings.TrimPrefix(line, "!"))
 }
 
 // cmdFor maps a send kind to its protocol command.
@@ -202,26 +247,28 @@ func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 	case "ext":
 		return m.requestExtensions(), true
 	case "help":
-		return m.openHelp(), true
+		m.openHelp()
+		return nil, true
 	case "usage":
 		return m.requestUsage(), true
 	case "log", "crash":
 		return m.showCrashLog(), true
 	case "theme":
 		if strings.TrimSpace(args) == "" {
-			m.notice = "themes: " + m.themeList()
+			m.setNotice("themes: " + m.themeList())
 			return nil, true
 		}
 		if m.setTheme(strings.TrimSpace(args)) {
-			m.notice = "theme: " + strings.TrimSpace(args)
+			m.setNotice("theme: " + strings.TrimSpace(args))
 			return nil, true
 		}
-		m.notice = "unknown theme: " + strings.TrimSpace(args)
+		m.setNotice("unknown theme: " + strings.TrimSpace(args))
 		return nil, true
 	case "display":
 		return m.displayCommand(args), true
 	case "settings", "config":
-		return m.openSettings(), true
+		m.openSettings()
+		return nil, true
 	case "login":
 		return m.loginCommand(args), true
 	case "logout":
@@ -239,7 +286,7 @@ func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 func (m *Model) displayCommand(args string) tea.Cmd {
 	fields := strings.Fields(args)
 	if len(fields) < 2 {
-		m.notice = "usage: /display thinking|tools|lines|splash <value>"
+		m.setNotice("usage: /display thinking|tools|lines|splash <value>")
 		return nil
 	}
 	key, val := fields[0], fields[1]
@@ -256,7 +303,7 @@ func (m *Model) displayCommand(args string) tea.Cmd {
 	case "lines":
 		n, err := strconv.Atoi(val)
 		if err != nil || n < 1 {
-			m.notice = "display lines: expected a positive number"
+			m.setNotice("display lines: expected a positive number")
 			return nil
 		}
 		if n > 50 {
@@ -271,17 +318,16 @@ func (m *Model) displayCommand(args string) tea.Cmd {
 		case "off":
 			m.display.Splash = false
 		default:
-			m.notice = "display splash: expected on or off"
+			m.setNotice("display splash: expected on or off")
 			return nil
 		}
 		// The banner is a layout region, so turning it off must reclaim its rows.
 		m.recompute()
 	default:
-		m.notice = "unknown display setting: " + key
+		m.setNotice("unknown display setting: " + key)
 		return nil
 	}
 	m.transcript.SetDisplay(m.display)
-	m.expanded = m.display.ExpandTools
 	if persist {
 		return m.persistSetting("display.thinking_lines", m.display.ThinkingPreviewLines)
 	}
@@ -296,7 +342,7 @@ func (m *Model) setToggle(flag *bool, val string) bool {
 	case "collapse":
 		*flag = false
 	default:
-		m.notice = "expected expand or collapse, got " + val
+		m.setNotice("expected expand or collapse, got " + val)
 		return false
 	}
 	return true
@@ -325,29 +371,43 @@ type editorTextMsg struct {
 // filesystem in Update.
 func (m *Model) openEditor() tea.Cmd {
 	text := m.editor.Value()
-	return func() tea.Msg {
-		ed := os.Getenv("EDITOR")
-		if ed == "" {
-			return editorStartMsg{err: errNoEditor}
-		}
-		f, err := os.CreateTemp("", "nova-*.md")
-		if err != nil {
-			return editorStartMsg{err: err}
-		}
-		path := f.Name()
-		if _, err := f.WriteString(text); err != nil {
-			f.Close()
-			return editorStartMsg{err: err}
-		}
-		f.Close()
-		return editorStartMsg{cmd: exec.Command(ed, path), path: path}
+	return func() tea.Msg { return prepareEditor(os.Getenv("EDITOR"), text) }
+}
+
+// prepareEditor writes text to a temp file and builds the editor command for
+// it. $EDITOR may carry arguments ("code --wait"), so it is split on white
+// space before the file name is appended; quoting is not supported.
+func prepareEditor(editor, text string) editorStartMsg {
+	argv := strings.Fields(editor)
+	if len(argv) == 0 {
+		return editorStartMsg{err: errNoEditor}
 	}
+	path, err := writeTempFile(text)
+	if err != nil {
+		return editorStartMsg{err: err}
+	}
+	return editorStartMsg{cmd: exec.Command(argv[0], append(argv[1:], path)...), path: path}
+}
+
+// writeTempFile stores text in a new private temp file and returns its path.
+// A file that could not be written completely is removed, not left behind.
+func writeTempFile(text string) (string, error) {
+	f, err := os.CreateTemp("", "nova-*.md")
+	if err != nil {
+		return "", fmt.Errorf("create editor file: %w", err)
+	}
+	_, werr := f.WriteString(text)
+	if err := errors.Join(werr, f.Close()); err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("write editor file: %w", err)
+	}
+	return f.Name(), nil
 }
 
 // startEditor returns the ExecProcess command for a prepared editor.
 func (m *Model) startEditor(msg editorStartMsg) tea.Cmd {
 	if msg.err != nil {
-		m.notice = msg.err.Error()
+		m.setNotice(msg.err.Error())
 		return nil
 	}
 	return tea.ExecProcess(msg.cmd, func(err error) tea.Msg {
@@ -355,16 +415,21 @@ func (m *Model) startEditor(msg editorStartMsg) tea.Cmd {
 	})
 }
 
-// readEditor reads the temp file back and removes it.
+// readEditor reads the temp file back and removes it. The file is removed even
+// when the editor failed, so an abandoned draft does not pile up in the temp
+// directory.
 func (m *Model) readEditor(msg editorFinishedMsg) tea.Cmd {
-	if msg.err != nil {
-		m.notice = msg.err.Error()
-		return nil
-	}
 	path := msg.path
+	if msg.err != nil {
+		m.setNotice(msg.err.Error())
+		return func() tea.Msg {
+			_ = os.Remove(path)
+			return nil
+		}
+	}
 	return func() tea.Msg {
 		data, err := os.ReadFile(path)
-		os.Remove(path)
+		_ = os.Remove(path)
 		return editorTextMsg{text: string(data), err: err}
 	}
 }
@@ -372,7 +437,7 @@ func (m *Model) readEditor(msg editorFinishedMsg) tea.Cmd {
 // applyEditor installs the text returned from the external editor.
 func (m *Model) applyEditor(msg editorTextMsg) tea.Cmd {
 	if msg.err != nil {
-		m.notice = msg.err.Error()
+		m.setNotice(msg.err.Error())
 		return nil
 	}
 	m.setEditorText(strings.TrimRight(msg.text, "\n"))

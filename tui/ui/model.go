@@ -129,14 +129,12 @@ type Model struct {
 	editorProbe textarea.Model
 	history     history
 	pasted      map[string]string
-	pasteSeq    int
 	clipboard   clipboard.Reader
 	pendingAtts []pendingAttachment
 
 	commands    []commandInfo
 	completion  completion
 	state       stateData
-	pending     pendingSend
 	themes      []styles.Theme
 	display     chat.Display
 	status      config.StatusConfig
@@ -161,7 +159,6 @@ type Model struct {
 	usageArmed    bool
 	runActive     bool
 	runStartedAt  time.Time
-	expanded      bool
 	quitArmed     bool
 	quitAt        time.Time
 	notice        string
@@ -311,6 +308,14 @@ func (m *Model) setTheme(name string) bool {
 		}
 	}
 	return false
+}
+
+// setNotice records a user-facing message and raises it as a toast, the one
+// transient surface the screen has. m.notice keeps the latest text for callers
+// that build on it (a login notice grows a follow-up).
+func (m *Model) setNotice(text string) {
+	m.notice = text
+	m.widgets.Notify(text, "info", m.clock.Now())
 }
 
 // themeList returns the theme names for a notice.
@@ -519,10 +524,18 @@ func (m *Model) scheduleUsage() tea.Cmd {
 		return nil
 	}
 	m.usageArmed = true
-	after := m.clock.After(usageRefreshInterval)
+	return m.timer(usageRefreshInterval, usageTickMsg{})
+}
+
+// timer returns a command that waits d on the model's clock and then yields
+// msg. The message has its own type on purpose: the clock's raw tick belongs to
+// the single animation chain, and a second timer delivering it would fork that
+// chain.
+func (m *Model) timer(d time.Duration, msg tea.Msg) tea.Cmd {
+	after := m.clock.After(d)
 	return func() tea.Msg {
 		after()
-		return usageTickMsg{}
+		return msg
 	}
 }
 

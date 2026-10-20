@@ -105,8 +105,9 @@ type event struct {
 	} `json:"delta"`
 	Message struct {
 		Usage struct {
-			InputTokens          int `json:"input_tokens"`
-			CacheReadInputTokens int `json:"cache_read_input_tokens"`
+			InputTokens              int `json:"input_tokens"`
+			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
 	} `json:"message"`
 	Usage struct {

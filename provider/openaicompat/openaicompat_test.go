@@ -1458,3 +1458,19 @@ func TestStream_OAI68_ProviderOptionOverridesCacheMarker(t *testing.T) {
 		t.Fatalf("cache_control = %v, want the explicit option", marker)
 	}
 }
+
+// TestStream_OAI69_CacheWriteTokensMapped checks the write half of the cache
+// accounting: OpenRouter reports it next to the read count.
+func TestStream_OAI69_CacheWriteTokensMapped(t *testing.T) {
+	p, _ := served(t, Config{}, testkit.ServerTurn{Turn: testkit.Turn{
+		Text:  "ok",
+		Usage: &provider.Usage{CachedTokens: 3, CacheWriteTokens: 7},
+	}})
+	resp, err := p.Stream(context.Background(), textRequest("m"), nil)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Usage.CachedTokens != 3 || resp.Usage.CacheWriteTokens != 7 {
+		t.Fatalf("usage = %+v, want 3 read and 7 written", resp.Usage)
+	}
+}

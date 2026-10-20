@@ -267,6 +267,7 @@ func (p *Provider) consume(s *ssestream.Stream, req provider.Request, onEvent fu
 				CompletionTokens: u.OutputTokens,
 				ReasoningTokens:  u.OutputDetails.ReasoningTokens,
 				CachedTokens:     u.InputDetails.CachedTokens,
+				CacheWriteTokens: u.InputDetails.CacheWriteTokens,
 				TotalTokens:      u.TotalTokens,
 			}
 		case "response.incomplete":

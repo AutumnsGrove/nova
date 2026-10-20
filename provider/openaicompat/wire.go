@@ -122,8 +122,9 @@ type chunkChoice struct {
 // tokenDetails is shared by prompt_tokens_details and
 // completion_tokens_details; each parse simply ignores the other's field.
 type tokenDetails struct {
-	CachedTokens    int `json:"cached_tokens"`
-	ReasoningTokens int `json:"reasoning_tokens"`
+	CachedTokens     int `json:"cached_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"`
+	ReasoningTokens  int `json:"reasoning_tokens"`
 }
 
 // rawUsage is the wire usage object. Cost is a pointer so an absent cost can be
@@ -165,6 +166,7 @@ func usageFromRaw(u *rawUsage) provider.Usage {
 	}
 	if u.PromptTokensDetails != nil {
 		out.CachedTokens = u.PromptTokensDetails.CachedTokens
+		out.CacheWriteTokens = u.PromptTokensDetails.CacheWriteTokens
 	}
 	if u.CompletionTokensDetails != nil {
 		out.ReasoningTokens = u.CompletionTokensDetails.ReasoningTokens

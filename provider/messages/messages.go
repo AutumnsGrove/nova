@@ -206,6 +206,7 @@ func (p *Provider) consume(s *ssestream.Stream, req provider.Request, onEvent fu
 		case "message_start":
 			result.Usage.PromptTokens = ev.Message.Usage.InputTokens
 			result.Usage.CachedTokens = ev.Message.Usage.CacheReadInputTokens
+			result.Usage.CacheWriteTokens = ev.Message.Usage.CacheCreationInputTokens
 		case "content_block_start":
 			if ev.ContentBlock.Type == "tool_use" {
 				if _, ok := calls[ev.Index]; !ok {

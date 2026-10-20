@@ -77,6 +77,7 @@ type Request struct {
 
 type Usage struct {
     PromptTokens, CompletionTokens, ReasoningTokens, TotalTokens, CachedTokens int
+    CacheWriteTokens int // tokens this call wrote into a prompt cache
     CostUSD    float64
     CostSource string // "provider", "catalog", or ""
 }

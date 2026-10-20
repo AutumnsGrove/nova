@@ -298,7 +298,8 @@ type sseUsage struct {
 }
 
 type sseCachedDetails struct {
-	CachedTokens int `json:"cached_tokens"`
+	CachedTokens     int `json:"cached_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
 }
 
 type sseReasoningDetails struct {
@@ -313,8 +314,11 @@ func usageWire(u *provider.Usage) *sseUsage {
 		CompletionTokens: u.CompletionTokens,
 		TotalTokens:      u.TotalTokens,
 	}
-	if u.CachedTokens != 0 {
-		out.PromptTokensDetails = &sseCachedDetails{CachedTokens: u.CachedTokens}
+	if u.CachedTokens != 0 || u.CacheWriteTokens != 0 {
+		out.PromptTokensDetails = &sseCachedDetails{
+			CachedTokens:     u.CachedTokens,
+			CacheWriteTokens: u.CacheWriteTokens,
+		}
 	}
 	if u.ReasoningTokens != 0 {
 		out.CompletionTokensDetails = &sseReasoningDetails{ReasoningTokens: u.ReasoningTokens}

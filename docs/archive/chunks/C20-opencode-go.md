@@ -368,6 +368,7 @@ type OpenCodeGoConfig struct {
 | RSP20 | image message sends a content array | a user message with text and a PNG part | `content` is `[input_text, input_image]` with a `data:` URL |
 | RSP21 | text-only content stays a string | `User("hi")` | `content` is the string `"hi"` |
 | RSP22 | cache marker per catalog | non-implicit, implicit, unknown model | top-level `cache_control` present, absent, absent |
+| RSP23 | cache-write tokens mapped | `input_tokens_details.cache_write_tokens` 7 | `Usage.CacheWriteTokens` 7, reads kept |
 | MSG01 | plain text turn | `message_start`, text block, `message_delta(end_turn)`, `message_stop` | one text delta; content; finish `stop` |
 | MSG02 | request body shape | any turn | `model`, `system`, `messages`, `tools.input_schema`, `max_tokens`, `stream:true` |
 | MSG03 | headers | any request | `x-api-key` and `anthropic-version: 2023-06-01` |
@@ -388,6 +389,7 @@ type OpenCodeGoConfig struct {
 | MSG18 | image message block | a user message with text and a PNG part | `content` is `[text, image]` with a base64 source |
 | MSG19 | text-only message block | `User("hi")` | `content` is one text block, no image |
 | MSG20 | cache marker per catalog | non-implicit, implicit, unknown model; explicit opt-out | top-level `cache_control` present, absent, absent, absent |
+| MSG21 | cache-creation tokens mapped | `cache_creation_input_tokens` 7 | `Usage.CacheWriteTokens` 7, reads kept |
 | OPG01 | `New` names the provider | any config | `Name()` is `opencodego` |
 | OPG02 | chat model routes to chat | `APIFor("opencode-go/glm-5.3")` | `DialectChat` |
 | OPG03 | responses model routes to Responses | `APIFor("opencode-go/grok-4.7")` | `DialectResponses` |

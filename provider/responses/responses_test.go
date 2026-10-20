@@ -495,3 +495,18 @@ func TestResponses_RSP22_CacheMarkerPerCatalog(t *testing.T) {
 		}
 	}
 }
+
+// TestResponses_RSP23_CacheWriteTokensMapped checks the write half of the
+// cache accounting on the Responses dialect.
+func TestResponses_RSP23_CacheWriteTokensMapped(t *testing.T) {
+	p, _ := newProvider(t, Config{},
+		sse("response.completed", `{"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12,"input_tokens_details":{"cached_tokens":3,"cache_write_tokens":7}}}}`),
+	)
+	resp, _, err := run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Usage.CachedTokens != 3 || resp.Usage.CacheWriteTokens != 7 {
+		t.Fatalf("usage = %+v, want 3 read and 7 written", resp.Usage)
+	}
+}

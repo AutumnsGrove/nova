@@ -462,3 +462,19 @@ func TestMessages_MSG20_CacheMarkerPerCatalog(t *testing.T) {
 		}
 	}
 }
+
+// TestMessages_MSG21_CacheWriteTokensMapped checks cache creation tokens from
+// message_start land in the write field.
+func TestMessages_MSG21_CacheWriteTokensMapped(t *testing.T) {
+	p, _ := newProvider(t, Config{},
+		sse("message_start", `{"type":"message_start","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":2,"cache_creation_input_tokens":7}}}`),
+		sse("message_stop", `{"type":"message_stop"}`),
+	)
+	resp, _, err := run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Usage.CachedTokens != 2 || resp.Usage.CacheWriteTokens != 7 {
+		t.Fatalf("usage = %+v, want 2 read and 7 written", resp.Usage)
+	}
+}

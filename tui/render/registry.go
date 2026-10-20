@@ -8,17 +8,19 @@ package render
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"path"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
-	"github.com/charmbracelet/x/ansi"
 )
 
 // Call is everything a renderer knows about one tool call. Now is the render
@@ -339,11 +341,7 @@ func pickArg(m map[string]any) (string, string, bool) {
 			return k, v, true
 		}
 	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(m))
 	for _, k := range keys {
 		if v, ok := m[k].(string); ok {
 			return k, v, true

@@ -12,6 +12,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/client"
+	"github.com/AutumnsGrove/nova/tui/dialog"
 	"github.com/AutumnsGrove/nova/tui/splash"
 )
 
@@ -55,6 +56,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case noticeMsg:
 		m.notice = msg.text
+		return m, nil
+
+	case infoMsg:
+		m.pushDialog(dialog.NewInfo(msg.title, msg.lines), msg.intent)
 		return m, nil
 
 	case clipboardMsg:

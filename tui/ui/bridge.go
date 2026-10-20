@@ -4,17 +4,12 @@ package ui
 
 import (
 	"encoding/json"
-	"fmt"
-	"os"
 	"strings"
 	"time"
-	"unicode"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AutumnsGrove/nova/auth/providerauth"
-	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/dialog"
 	"github.com/AutumnsGrove/nova/tui/widget"
@@ -516,102 +511,6 @@ func (m *Model) requestTree() tea.Cmd {
 func (m *Model) requestExtensions() tea.Cmd {
 	m.await = intentExtensions
 	return m.client.Send(proto.Command{Type: proto.CmdGetExtensions})
-}
-
-// openHelp shows the key and command reference.
-func (m *Model) openHelp() {
-	keys := []dialog.KeyHelp{
-		{Key: "enter", Description: "send prompt"},
-		{Key: "alt+enter", Description: "queue a follow-up"},
-		{Key: "esc", Description: "abort the run / close a dialog"},
-		{Key: "ctrl+o", Description: "expand thinking and tools"},
-		{Key: "click", Description: "expand or collapse one block"},
-		{Key: "ctrl+g", Description: "edit in $EDITOR"},
-		{Key: "ctrl+l", Description: "pick a model"},
-		{Key: "ctrl+r", Description: "resume a session"},
-		{Key: "ctrl+t", Description: "cycle thinking effort"},
-		{Key: "ctrl+c twice", Description: "quit"},
-	}
-	all := m.allCommands()
-	names := make([]string, 0, len(all)+1)
-	names = append(names, "log")
-	for _, c := range all {
-		names = append(names, c.Name)
-	}
-	m.pushDialog(dialog.NewHelp(keys, names), intentHelp)
-}
-
-// showCrashLog opens the most recent crash report in a read-only overlay. It is
-// a local command: the report lives on this machine, beside the TUI.
-func (m *Model) showCrashLog() tea.Cmd {
-	rec := diag.Default()
-	if rec == nil || rec.CrashPath() == "" {
-		m.notice = "no crash reports"
-		return nil
-	}
-	data, err := os.ReadFile(rec.CrashPath())
-	if err != nil {
-		m.notice = "no crash reports"
-		return nil
-	}
-	body := strings.TrimRight(string(diag.LatestReport(data)), "\n")
-	m.pushDialog(dialog.NewInfo("Crash log", strings.Split(body, "\n")), intentCrash)
-	return nil
-}
-
-// bashOutputLines caps the lines of a shell result the overlay keeps; the
-// server already truncates, this only bounds what the dialog holds.
-const bashOutputLines = 500
-
-// showBashOutput opens the result of a `!cmd` in a read-only overlay. The
-// server records it in the session, but nothing else tells the user what the
-// command printed.
-func (m *Model) showBashOutput(resp proto.Response) {
-	if !resp.OK {
-		if resp.Error != nil {
-			m.notice = resp.Error.Message
-		}
-		return
-	}
-	var out struct {
-		Content string `json:"content"`
-		IsError bool   `json:"is_error"`
-	}
-	if json.Unmarshal(resp.Data, &out) != nil {
-		return
-	}
-	title := "Shell output"
-	if out.IsError {
-		title = "Shell command failed"
-	}
-	lines := outputLines(out.Content, bashOutputLines)
-	if len(lines) == 0 {
-		lines = []string{"(no output)"}
-	}
-	m.pushDialog(dialog.NewInfo(title, lines), intentBash)
-}
-
-// outputLines turns untrusted command output into at most limit plain lines
-// plus a note when it was cut. Escape sequences, carriage returns, and other
-// control characters are dropped so the output cannot move the cursor, retitle
-// the terminal, or overwrite the overlay; tabs become spaces so widths hold.
-func outputLines(s string, limit int) []string {
-	s = strings.ReplaceAll(ansi.Strip(s), "\t", "    ")
-	s = strings.Map(func(r rune) rune {
-		if r != '\n' && unicode.IsControl(r) {
-			return -1
-		}
-		return r
-	}, s)
-	s = strings.TrimRight(s, "\n")
-	if s == "" {
-		return nil
-	}
-	lines := strings.Split(s, "\n")
-	if extra := len(lines) - limit; extra > 0 {
-		lines = append(lines[:limit], fmt.Sprintf("… %d more lines", extra))
-	}
-	return lines
 }
 
 // cycleThinking advances off -> low -> medium -> high -> off.

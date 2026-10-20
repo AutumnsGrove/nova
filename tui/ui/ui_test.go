@@ -1069,9 +1069,10 @@ func TestUI_LogCommand_ShowsReport(t *testing.T) {
 	}
 	m, _, _ := newModel(t)
 	cmd, handled := m.localCommand("log", "")
-	if !handled || cmd != nil {
-		t.Fatalf("localCommand(log) = (%v, %v), want handled with no command", cmd, handled)
+	if !handled || cmd == nil {
+		t.Fatalf("localCommand(log) = (%v, %v), want handled with a command: Update must not read the file", cmd, handled)
 	}
+	update(m, do(cmd))
 	if !strings.Contains(m.View().Content, "boom") {
 		t.Fatalf("crash report not shown:\n%s", m.View().Content)
 	}
@@ -1082,9 +1083,11 @@ func TestUI_LogCommand_NoReports(t *testing.T) {
 	diag.SetDefault(rec)
 	defer diag.SetDefault(nil)
 	m, _, _ := newModel(t)
-	if _, handled := m.localCommand("log", ""); !handled {
+	cmd, handled := m.localCommand("log", "")
+	if !handled {
 		t.Fatal("log command not handled")
 	}
+	update(m, do(cmd))
 	if m.notice != "no crash reports" {
 		t.Fatalf("notice = %q, want no crash reports", m.notice)
 	}

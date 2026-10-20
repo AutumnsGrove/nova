@@ -452,6 +452,38 @@ func TestRead_RDF34_ReadErrorSurfaces(t *testing.T) {
 	}
 }
 
+// FuzzLineReader checks the line reader reproduces a file's lines exactly for any
+// bytes, with a tiny buffer so lines span many chunks and the \r\n and rune
+// boundaries fall on chunk edges.
+func FuzzLineReader(f *testing.F) {
+	for _, seed := range []string{"", "a", "a\n", "a\r\nb", "\r\n\r\n", "é\r", "x\xc3\n\xa9", strings.Repeat("ab\r\n", 20)} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, content string) {
+		want := strings.SplitAfter(content, "\n")
+		if want[len(want)-1] == "" {
+			want = want[:len(want)-1]
+		}
+		lr := &lineReader{r: bufio.NewReaderSize(strings.NewReader(content), 16), maxRunes: 1 << 30}
+		for i, raw := range want {
+			wantLine, wantEnding := raw, ""
+			if strings.HasSuffix(raw, "\n") {
+				wantLine, wantEnding = strings.TrimSuffix(raw, "\n"), "lf"
+				if strings.HasSuffix(wantLine, "\r") {
+					wantLine, wantEnding = strings.TrimSuffix(wantLine, "\r"), "crlf"
+				}
+			}
+			line, ending, err := lr.next()
+			if err != nil || line != wantLine || ending != wantEnding {
+				t.Fatalf("line %d = %q %q %v, want %q %q", i+1, line, ending, err, wantLine, wantEnding)
+			}
+		}
+		if _, _, err := lr.next(); !errors.Is(err, io.EOF) {
+			t.Fatalf("after the last line, error = %v, want io.EOF", err)
+		}
+	})
+}
+
 // TestRead_RDF35_InvalidUTF8OutsidePage checks the invalid-bytes note describes
 // the lines shown, not lines the caller paged past.
 func TestRead_RDF35_InvalidUTF8OutsidePage(t *testing.T) {

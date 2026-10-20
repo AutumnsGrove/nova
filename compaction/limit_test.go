@@ -121,3 +121,13 @@ func Test_LIM12_LimitBelowSystemPrompt(t *testing.T) {
 		t.Fatalf("Compact err = %v, want ErrNothingToCompact", err)
 	}
 }
+
+// assistant message itself must be estimated with the messages after it.
+func Test_LIM13_LastAssistantMessageCounted(t *testing.T) {
+	s := enabled(Settings{ContextLimit: 100000, Reserve: 16000})
+	msgs := []message.Message{message.User("q"), msgTokens(message.RoleAssistant, 20000)}
+	last := &provider.Usage{PromptTokens: 70000}
+	if !ShouldCompact(s, msgs, last) {
+		t.Fatal("70k prompt + a 20k reply is 90k, over the 84k threshold")
+	}
+}

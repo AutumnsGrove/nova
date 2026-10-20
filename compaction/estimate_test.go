@@ -85,3 +85,20 @@ func Test_EST07_LinearTime(t *testing.T) {
 		t.Fatal("doubling the messages should double the estimate")
 	}
 }
+
+// it a screenshot-heavy session looks small and compaction triggers too late.
+func Test_EST08_ImagePartsCounted(t *testing.T) {
+	plain := message.User("look")
+	withImage := plain.WithParts(message.ImagePart("image/png", strings.Repeat("A", 100000)))
+	if got := EstimateMessage(withImage) - EstimateMessage(plain); got != imageTokens {
+		t.Fatalf("an image adds %d tokens, want the fixed %d (not its base64 length)", got, imageTokens)
+	}
+}
+
+func Test_CMP24_SummariserSeesImagePlaceholder(t *testing.T) {
+	m := message.User("look").WithParts(message.ImagePart("image/png", "QUFBQQ=="))
+	got := serializeSpan([]message.Message{m})
+	if !strings.Contains(got, "[image]") || strings.Contains(got, "QUFBQQ") {
+		t.Fatalf("serialized = %q, want a [image] placeholder and no base64", got)
+	}
+}

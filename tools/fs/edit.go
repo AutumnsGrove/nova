@@ -161,15 +161,9 @@ func locate(s, sub string) (first, count int) {
 // regular text file, and be within the size cap. A named pipe or device is
 // refused before it is opened, because opening one can block forever.
 func readEditableFile(abs string) (string, os.FileInfo, error) {
-	info, err := os.Stat(abs)
+	info, err := statRegular(abs)
 	if err != nil {
 		return "", nil, err
-	}
-	if info.IsDir() {
-		return "", nil, fmt.Errorf("%s is a directory", abs)
-	}
-	if !info.Mode().IsRegular() {
-		return "", nil, fmt.Errorf("%s is not a regular file", abs)
 	}
 	if info.Size() > int64(maxFileBytes) {
 		return "", nil, fmt.Errorf("%s is %d bytes, over the %d byte limit", abs, info.Size(), maxFileBytes)

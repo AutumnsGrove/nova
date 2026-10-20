@@ -398,25 +398,46 @@ func TestRead_RDF28_HugeStreaming(t *testing.T) {
 	}
 }
 
-// TestRead_RDF29_StreamEndsEarly checks a stream that ends before its size
-// returns what was read without panicking.
-func TestRead_RDF29_StreamEndsEarly(t *testing.T) {
+// TestRead_RDF29_NamedPipeIsRefused checks read refuses a pipe before opening
+// it. Opening a FIFO that has no writer blocks forever, so the check must be a
+// stat, and it must cover the image path too, which reads the whole file.
+func TestRead_RDF29_NamedPipeIsRefused(t *testing.T) {
 	dir := t.TempDir()
-	fifo := filepath.Join(dir, "pipe")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
-	}
-	go func() {
-		w, err := os.OpenFile(fifo, os.O_WRONLY, 0)
-		if err != nil {
-			return
+	for _, name := range []string{"pipe", "pic.png"} {
+		fifo := filepath.Join(dir, name)
+		if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+			t.Skipf("mkfifo: %v", err)
 		}
-		w.WriteString("a\nb\n")
-		w.Close()
-	}()
-	res := run(t, Read(), &tool.Context{WorkDir: dir}, map[string]any{"path": "pipe"})
-	if res.IsError || !strings.Contains(res.Content, "2\tb") {
-		t.Fatalf("result = %+v, want the two lines", res)
+		// A writer waits for a reader, so an unfixed read finds data instead of
+		// hanging. Opening the pipe for reading afterwards releases it.
+		go func() {
+			if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+				_, _ = w.WriteString("a\nb\n")
+				_ = w.Close()
+			}
+		}()
+		t.Cleanup(func() {
+			if r, err := os.OpenFile(fifo, os.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
+				_ = r.Close()
+			}
+		})
+		res := run(t, Read(), &tool.Context{WorkDir: dir}, map[string]any{"path": name})
+		if !res.IsError || !strings.Contains(res.Content, "not a regular file") {
+			t.Errorf("%s: result = %+v, want a not-a-regular-file error", name, res)
+		}
+	}
+}
+
+// TestRead_RDF37_StreamEndsEarly checks a stream that ends before its size
+// says it should returns what was read without panicking.
+func TestRead_RDF37_StreamEndsEarly(t *testing.T) {
+	lr := &lineReader{r: bufio.NewReader(strings.NewReader("a\nb\n")), maxRunes: maxLineChars}
+	page, err := scanPage(context.Background(), lr, 0, maxReadLines)
+	if err != nil {
+		t.Fatalf("scanPage: %v", err)
+	}
+	if !page.counted || page.lines != 2 || !strings.Contains(page.text.String(), "2\tb") {
+		t.Fatalf("page = %+v text %q, want the two lines", page, page.text.String())
 	}
 }
 

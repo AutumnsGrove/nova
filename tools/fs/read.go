@@ -40,7 +40,7 @@ func isImagePath(path string) bool {
 // readImage decodes and normalizes an image file into a result the model can
 // see. media.Normalize applies the one set of size and format limits.
 func readImage(abs string) tool.Result {
-	info, err := os.Stat(abs)
+	info, err := statRegular(abs)
 	if err != nil {
 		return tool.Errorf("%v", err)
 	}
@@ -130,18 +130,15 @@ const ctxCheckEvery = 4096
 // renderRead streams abs and renders lines offset..offset+limit-1, stopping early
 // at the byte cap while still counting the remaining lines.
 func renderRead(ctx context.Context, abs string, offset, limit int) tool.Result {
+	info, err := statRegular(abs)
+	if err != nil {
+		return tool.Errorf("%v", err)
+	}
 	f, err := os.Open(abs)
 	if err != nil {
 		return tool.Errorf("%v", err)
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return tool.Errorf("%v", err)
-	}
-	if info.IsDir() {
-		return tool.Errorf("%s is a directory; use list", abs)
-	}
 	prefix, err := io.ReadAll(io.LimitReader(f, tool.BinarySniffBytes))
 	if err != nil {
 		return tool.Errorf("%v", err)

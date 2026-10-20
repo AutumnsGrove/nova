@@ -209,7 +209,7 @@ diffMaxLines   = 5000
 | RDF26 | dangling symlink | | error result |
 | RDF27 | symlink loop | | error result, no hang |
 | RDF28 | huge file read is streaming | 200 MiB sparse file, `limit 10` | returns quickly; memory stays small |
-| RDF29 | file shrinks while reading | | no panic; returns what was read |
+| RDF29 | named pipe | a FIFO, also named `.png` | a not-a-regular-file error before any open; never blocks (replaces the old stream-ends-early case, which a FIFO only imitated; that case is now RDF37) |
 | RDF30 | `Details` content | | path, start, end, total, line endings, bom |
 | RDF31 | tool annotations | | `ReadOnly` and `Parallel` true |
 | RDF32 | an image path returns an image part | a PNG file | one `image/png` part and a read-image note |
@@ -217,6 +217,7 @@ diffMaxLines   = 5000
 | RDF34 | the stream fails mid-file | a reader that errors after some text | the line reader returns that error, not EOF |
 | RDF35 | invalid UTF-8 only on a line before `offset` | `offset: 2` | no invalid-bytes note |
 | RDF36 | cancelled context | | error result; the scan stops |
+| RDF37 | stream ends early | a reader that ends after two lines | the two lines, counted, no panic |
 | WRT01 | create a new file | | file exists; message says `created` |
 | WRT02 | overwrite | | content replaced; says `overwrote` |
 | WRT03 | creates parent directories | `a/b/c.txt` | exists; dirs 0755 |

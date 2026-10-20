@@ -1,7 +1,11 @@
 // Package fs provides the core filesystem tools: read, write, edit, and list.
 package fs
 
-import "sync"
+import (
+	"fmt"
+	"os"
+	"sync"
+)
 
 // Limits. They are variables so tests can lower them without re-reading a huge
 // file, and named here so every tool agrees on the caps.
@@ -25,4 +29,20 @@ func lockPath(path string) func() {
 	mu := value.(*sync.Mutex)
 	mu.Lock()
 	return mu.Unlock
+}
+
+// statRegular stats abs and refuses anything but a regular file. A pipe or
+// device can block forever when it is opened or read, so the check is a stat,
+// made before the open.
+func statRegular(abs string) (os.FileInfo, error) {
+	info, err := os.Stat(abs)
+	switch {
+	case err != nil:
+		return nil, err
+	case info.IsDir():
+		return nil, fmt.Errorf("%s is a directory; use list", abs)
+	case !info.Mode().IsRegular():
+		return nil, fmt.Errorf("%s is not a regular file", abs)
+	}
+	return info, nil
 }

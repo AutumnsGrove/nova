@@ -83,6 +83,14 @@ func open(path string, opt Options, template *Header) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{path: path, opt: opt, file: f, index: map[string]int{}}
+	// Hold the lock from the first read through the header write or the tail
+	// repair, so two processes opening one new path cannot both write a header
+	// and a half-written append by another process is not mistaken for junk.
+	if err := lockFile(f); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("session: lock %s: %w", path, err)
+	}
+	defer unlockFile(f)
 	data, err := io.ReadAll(f)
 	if err != nil {
 		f.Close()
@@ -125,8 +133,7 @@ func open(path string, opt Options, template *Header) (*Store, error) {
 			f.Close()
 			return nil, err
 		}
-		s.offset++
-		s.lines++
+		s.offset++ // the newline ends the junk line already counted by load
 	}
 	return s, nil
 }
@@ -419,6 +426,9 @@ func (s *Store) refresh() error {
 		s.lines++
 		s.loadEntry(s.lines, raw)
 	}
+	// Lines from another process get the same parent repair as a load, so a
+	// self-parent or a missing parent there cannot corrupt the tree either.
+	s.fixParents()
 	return nil
 }
 

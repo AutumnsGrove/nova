@@ -148,6 +148,28 @@ func TestWrite_WRT09_AtomicOnFailure(t *testing.T) {
 	}
 }
 
+// TestWrite_WRT18_RenameFailsCleanly checks a failed rename removes the
+// temporary file. Renaming a file over a non-empty directory fails even for
+// root, unlike the permission trick WRT09 relies on.
+func TestWrite_WRT18_RenameFailsCleanly(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	writeFile(t, filepath.Join(target, "child.txt"), "keep")
+	if err := writeAtomic(target, []byte("new"), 0o644); err == nil {
+		t.Fatal("writeAtomic over a non-empty directory succeeded, want an error")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "target" {
+		t.Fatalf("entries = %v, want only the untouched target directory", entries)
+	}
+	if got := readFile(t, filepath.Join(target, "child.txt")); got != "keep" {
+		t.Fatalf("child content = %q, want keep", got)
+	}
+}
+
 // TestWrite_WRT10_NoTemp checks a successful write leaves only the target.
 func TestWrite_WRT10_NoTemp(t *testing.T) {
 	dir := t.TempDir()

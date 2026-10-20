@@ -180,12 +180,9 @@ func scanPage(ctx context.Context, lr *lineReader, offset, limit int) (*pageScan
 			}
 		}
 		line, ending, err := lr.next()
-		if errors.Is(err, io.EOF) {
-			p.counted = true
-			return p, nil
-		}
 		if err != nil {
-			return p, nil
+			p.counted = errors.Is(err, io.EOF)
+			break
 		}
 		p.lines++
 		switch ending {
@@ -208,6 +205,7 @@ func scanPage(ctx context.Context, lr *lineReader, offset, limit int) (*pageScan
 		p.lastLine = p.lines
 		full = p.lastLine-offset+1 >= limit || p.text.Len() >= maxReadBytes
 	}
+	return p, nil
 }
 
 // result shapes a scan into the tool result: the page plus a footer saying how to

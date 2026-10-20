@@ -57,7 +57,7 @@ func Edit() tool.Tool {
 			},
 			"required": []string{"path", "edits"},
 		},
-	}, func(ctx context.Context, args json.RawMessage, tctx *tool.Context) (tool.Result, error) {
+	}, func(_ context.Context, args json.RawMessage, tctx *tool.Context) (tool.Result, error) {
 		var in struct {
 			Path  string     `json:"path"`
 			Edits []editSpec `json:"edits"`
@@ -226,7 +226,7 @@ func editResult(abs, before, after string, n int) tool.Result {
 	details := map[string]any{"path": abs, "added": 0, "removed": 0}
 	if len(splitLinesKeepEnds(before)) > maxDiffLines {
 		details["diff_omitted"] = true
-	} else if diff, added, removed, ok := unifiedDiff(abs, before, after, 3); ok {
+	} else if diff, added, removed, ok := unifiedDiff(abs, before, after); ok {
 		details["diff"] = diff
 		details["added"] = added
 		details["removed"] = removed

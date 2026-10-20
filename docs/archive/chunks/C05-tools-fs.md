@@ -180,6 +180,7 @@ diffMaxLines   = 5000
 | PTH13 | spaces and Unicode in path | `dir é/ファイル.txt` | works end to end |
 | PTH14 | `Roots` is the filesystem root `/` | | everything is allowed |
 | PTH15 | `Roots` set, sibling directory sharing the root name as a prefix | `/w/work-secrets` vs root `/w/work` | refused; `..foo` inside the root is allowed |
+| PTH16 | `Roots` set, `read`, `list`, `write` and `edit` given an outside path and an escaping symlink | | each returns the outside-roots error; nothing leaks or changes |
 | RDF01 | read a normal file | 3 lines | `1\ta`, `2\tb`, `3\tc`; no trailer |
 | RDF02 | trailing newline creates no extra line | `"a\nb\n"` | 2 lines |
 | RDF03 | no trailing newline | `"a\nb"` | 2 lines |
@@ -233,6 +234,7 @@ diffMaxLines   = 5000
 | WRT15 | `Details` | | path, created, bytes |
 | WRT16 | content with CRLF, NUL, invalid UTF-8 | | written byte for byte |
 | WRT17 | tool annotations | | `Destructive`; not `Parallel` |
+| WRT18 | the final rename fails | target is a non-empty directory (fails for root too) | error; no temporary file left |
 | EDT01 | single edit | | applied; file correct |
 | EDT02 | `oldText` not found | | error naming edit 1; file unchanged |
 | EDT03 | `oldText` appears twice | | error with count; file unchanged |

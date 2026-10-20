@@ -189,6 +189,45 @@ func TestResolve_PTH15_SiblingPrefix(t *testing.T) {
 	}
 }
 
+// TestResolve_PTH16_EveryToolHonoursRoots checks each tool refuses a path outside
+// the roots and a symlink inside them that leads out, and that write creates
+// nothing in either case.
+func TestResolve_PTH16_EveryToolHonoursRoots(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	outside := filepath.Join(base, "outside")
+	writeFile(t, filepath.Join(outside, "secret.txt"), "top secret")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	testkit.Symlink(t, root, "escape", outside)
+	ctx := &tool.Context{WorkDir: root, Roots: []string{root}}
+
+	for _, target := range []string{"../outside/secret.txt", "escape/secret.txt"} {
+		calls := map[string]struct {
+			tl   tool.Tool
+			args map[string]any
+		}{
+			"read":  {Read(), map[string]any{"path": target}},
+			"list":  {List(), map[string]any{"path": filepath.Dir(target)}},
+			"write": {Write(), map[string]any{"path": target, "content": "pwned"}},
+			"edit":  {Edit(), map[string]any{"path": target, "edits": []map[string]string{{"oldText": "top", "newText": "x"}}}},
+		}
+		for name, c := range calls {
+			res := run(t, c.tl, ctx, c.args)
+			if !res.IsError || !strings.Contains(res.Content, "outside the allowed directories") {
+				t.Errorf("%s %q: result = %+v, want the outside-roots error", name, target, res)
+			}
+			if strings.Contains(res.Content, "top secret") {
+				t.Errorf("%s %q leaked the secret: %q", name, target, res.Content)
+			}
+		}
+	}
+	if got := readFile(t, filepath.Join(outside, "secret.txt")); got != "top secret" {
+		t.Fatalf("outside file = %q, want it untouched", got)
+	}
+}
+
 // FuzzResolve checks resolve never panics and returns an absolute clean path or
 // an error.
 func FuzzResolve(f *testing.F) {

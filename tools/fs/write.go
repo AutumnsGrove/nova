@@ -3,6 +3,7 @@ package fs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,7 +27,7 @@ func Write() tool.Tool {
 			},
 			"required": []string{"path", "content"},
 		},
-	}, func(ctx context.Context, args json.RawMessage, tctx *tool.Context) (tool.Result, error) {
+	}, func(_ context.Context, args json.RawMessage, tctx *tool.Context) (tool.Result, error) {
 		var in struct {
 			Path    string `json:"path"`
 			Content string `json:"content"`
@@ -55,7 +56,7 @@ func Write() tool.Tool {
 			return tool.Errorf("%v", err), nil
 		}
 		_, statErr := os.Stat(target)
-		created := os.IsNotExist(statErr)
+		created := errors.Is(statErr, os.ErrNotExist)
 		if err := writeAtomic(target, []byte(in.Content), fileMode(target, 0o644)); err != nil {
 			return tool.Errorf("%v", err), nil
 		}

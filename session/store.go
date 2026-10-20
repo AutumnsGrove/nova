@@ -76,11 +76,11 @@ func open(path string, opt Options, template *Header) (*Store, error) {
 	opt = withDefaults(opt)
 	path = filepath.Clean(path)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("session: create directory: %w", err)
 	}
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("session: open: %w", err)
 	}
 	s := &Store{path: path, opt: opt, file: f, index: map[string]int{}}
 	// Hold the lock from the first read through the header write or the tail
@@ -183,7 +183,6 @@ func (s *Store) load(data []byte) error {
 		return fmt.Errorf("session: %s: missing header", s.path)
 	}
 	s.fixParents()
-	s.pickLeaf()
 	return nil
 }
 
@@ -273,17 +272,6 @@ func (s *Store) fixParents() {
 	}
 }
 
-// pickLeaf sets the leaf to the last entry that is not display-only.
-func (s *Store) pickLeaf() {
-	for i := len(s.entries) - 1; i >= 0; i-- {
-		if !s.entries[i].displayOnly() {
-			s.leaf = s.entries[i].ID
-			return
-		}
-	}
-	s.leaf = ""
-}
-
 // warn records a skipped or repaired line.
 // A repair that Messages reports every turn is recorded once.
 func (s *Store) warn(line int, err error) {
@@ -340,6 +328,9 @@ func (s *Store) appendLocked(useLeaf bool, parent string, e Entry) (Entry, error
 	if err := s.refresh(); err != nil {
 		return Entry{}, err
 	}
+	if err := s.terminateTail(); err != nil {
+		return Entry{}, err
+	}
 	if e.Parent == "" {
 		if useLeaf {
 			e.Parent = s.leaf
@@ -363,7 +354,11 @@ func (s *Store) appendLocked(useLeaf bool, parent string, e Entry) (Entry, error
 		return Entry{}, err
 	}
 	if _, err := s.file.Write(b); err != nil {
-		return Entry{}, err
+		// A short write leaves half a line that the next append would glue onto
+		// its own, corrupting a good entry. We hold the lock, so cutting back to
+		// the last known end is safe.
+		_ = s.file.Truncate(s.offset)
+		return Entry{}, fmt.Errorf("session: append to %s: %w", s.path, err)
 	}
 	if s.opt.Sync {
 		if err := s.file.Sync(); err != nil {
@@ -379,6 +374,31 @@ func (s *Store) appendLocked(useLeaf bool, parent string, e Entry) (Entry, error
 		s.leaf = e.ID
 	}
 	return e, nil
+}
+
+// terminateTail ends an unterminated last line. Writers hold the file lock for
+// a whole append, so under it a tail without a newline is a crashed write, not
+// one in progress; appending straight after it would glue a good entry onto the
+// junk. The junk is loaded as a line, which records the usual warning.
+func (s *Store) terminateTail() error {
+	info, err := s.file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() <= s.offset {
+		return nil
+	}
+	tail := make([]byte, info.Size()-s.offset)
+	if _, err := s.file.ReadAt(tail, s.offset); err != nil {
+		return err
+	}
+	if _, err := s.file.Write([]byte{'\n'}); err != nil {
+		return err
+	}
+	s.offset = info.Size() + 1
+	s.lines++
+	s.loadEntry(s.lines, tail)
+	return nil
 }
 
 // marshalEntry encodes an entry, preserving an unknown entry's raw line.

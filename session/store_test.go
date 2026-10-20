@@ -647,3 +647,38 @@ func TestSession_SES31_SelfParentOnLoad(t *testing.T) {
 		t.Fatalf("entry = %+v branch = %v err = %v warnings = %v, want a root with a warning", e, branch, err, s.Warnings())
 	}
 }
+
+// A process that crashed mid-append leaves an unterminated line. A store that
+// was already open must not glue its next entry onto it.
+func TestSession_SES32_AppendAfterAnotherProcessCrashed(t *testing.T) {
+	s, path := openStore(t, Options{})
+	if _, err := s.Append(userEntry("a")); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := f.WriteString(`{"type":"message","id":"half"`); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	f.Close()
+
+	e, err := s.Append(userEntry("b"))
+	if err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	for i, line := range fileLines(t, path)[1:] {
+		if strings.Contains(line, `"half"`) && strings.Contains(line, `"b"`) {
+			t.Fatalf("line %d glues the new entry to the junk: %s", i+2, line)
+		}
+	}
+	reopened, err := Open(path, Options{})
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer reopened.Close()
+	if _, ok := reopened.Get(e.ID); !ok {
+		t.Fatalf("entry %s lost after reopen", e.ID)
+	}
+}

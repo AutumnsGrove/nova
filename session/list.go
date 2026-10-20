@@ -1,6 +1,7 @@
 package session
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,7 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -40,51 +41,51 @@ func List(dir string) ([]Info, error) {
 			out = append(out, info)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Modified.After(out[j].Modified) })
+	slices.SortStableFunc(out, func(a, b Info) int { return b.Modified.Compare(a.Modified) })
 	return out, nil
 }
 
-// scanInfo reads only a header and counts entry lines, taking the last
-// session_info name. It reports false when the header is missing or invalid.
+// scanInfo streams a session file, parsing the header and counting entry lines
+// without holding the whole file in memory, and takes the last session_info
+// name. It reports false when the header is missing or invalid.
 func scanInfo(path string) (Info, bool) {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return Info{}, false
 	}
-	fi, err := os.Stat(path)
+	defer f.Close()
+	fi, err := f.Stat()
 	if err != nil {
 		return Info{}, false
 	}
 	info := Info{Path: path, Modified: fi.ModTime()}
 	headerSeen := false
-	for _, raw := range bytes.Split(data, []byte{'\n'}) {
-		if len(bytes.TrimSpace(raw)) == 0 {
-			continue
-		}
-		var probe struct {
-			Type    string    `json:"type"`
-			ID      string    `json:"id"`
-			CWD     string    `json:"cwd"`
-			Created time.Time `json:"created"`
-			Name    string    `json:"name"`
-		}
-		if err := json.Unmarshal(raw, &probe); err != nil {
-			if !headerSeen {
-				return Info{}, false
+	r := bufio.NewReader(f)
+	for {
+		raw, readErr := r.ReadBytes('\n')
+		if len(bytes.TrimSpace(raw)) > 0 {
+			var probe struct {
+				Type    string    `json:"type"`
+				ID      string    `json:"id"`
+				CWD     string    `json:"cwd"`
+				Created time.Time `json:"created"`
+				Name    string    `json:"name"`
 			}
-			continue
-		}
-		if !headerSeen {
-			if probe.Type != headerType {
+			switch err := json.Unmarshal(raw, &probe); {
+			case !headerSeen && (err != nil || probe.Type != headerType):
 				return Info{}, false
+			case !headerSeen:
+				headerSeen = true
+				info.ID, info.CWD, info.Created = probe.ID, probe.CWD, probe.Created
+			case err == nil:
+				info.Entries++
+				if probe.Type == TypeSessionInfo && probe.Name != "" {
+					info.Name = probe.Name
+				}
 			}
-			headerSeen = true
-			info.ID, info.CWD, info.Created = probe.ID, probe.CWD, probe.Created
-			continue
 		}
-		info.Entries++
-		if probe.Type == TypeSessionInfo && probe.Name != "" {
-			info.Name = probe.Name
+		if readErr != nil {
+			break
 		}
 	}
 	if !headerSeen {
@@ -119,6 +120,7 @@ func Fork(src *Store, from, dst string, opt Options) (*Store, error) {
 	for _, e := range branch {
 		if _, err := s.AppendOn(e.Parent, e); err != nil {
 			_ = s.Close()
+			_ = os.Remove(dst) // keep the promise that a failed fork leaves no file
 			return nil, err
 		}
 	}

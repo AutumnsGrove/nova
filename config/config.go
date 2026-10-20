@@ -273,10 +273,15 @@ func fileExists(readFile func(string) ([]byte, error), base string) bool {
 }
 
 // mergeMaps deep-merges maps and replaces every other value, so lists and
-// scalars from a higher layer win whole. Nested maps are copied, so a later
-// merge into the destination cannot mutate the source layers.
+// scalars from a higher layer win whole. A null is "not set": a section header
+// with every child commented out parses as null, and it must not erase what a
+// lower layer configured, permissions included. Nested maps are copied, so a
+// later merge into the destination cannot mutate the source layers.
 func mergeMaps(dst, src map[string]any) {
 	for key, value := range src {
+		if value == nil {
+			continue
+		}
 		if sm, ok := value.(map[string]any); ok {
 			if dm, ok := dst[key].(map[string]any); ok {
 				mergeMaps(dm, sm)

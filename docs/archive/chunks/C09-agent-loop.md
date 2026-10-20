@@ -133,7 +133,7 @@ type Result struct {
     Messages  []message.Message // the full transcript, history included
     New       []message.Message // messages produced by this run
     Answer    string
-    Turns     int
+    Turns     int               // completed turns, plus the failed one when the run ends in error
     Usage     provider.Usage
     Reason    string // done | exhausted | aborted | error
     Exhausted bool

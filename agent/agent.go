@@ -165,7 +165,8 @@ type Result struct {
 	New []message.Message
 	// Answer is the last non-empty assistant text.
 	Answer string
-	// Turns is the number of turns this run completed.
+	// Turns is the number of turns this run completed, plus the one whose
+	// request failed when the run ends in error; an abort does not count.
 	Turns int
 	// Usage is the usage summed over every successful response.
 	Usage provider.Usage

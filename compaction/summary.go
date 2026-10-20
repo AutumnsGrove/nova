@@ -6,7 +6,6 @@ import (
 	"errors"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
@@ -166,10 +165,13 @@ func renderSpan(names map[string]string, span []message.Message) string {
 
 // truncateRunes cuts s to at most n runes.
 func truncateRunes(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
+	for i := range s {
+		if n == 0 {
+			return s[:i]
+		}
+		n--
 	}
-	return string([]rune(s)[:n])
+	return s
 }
 
 // existingSummary returns a `<summary>` user message from the span, if any.

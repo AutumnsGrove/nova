@@ -40,20 +40,16 @@ func (c *Compactor) Compact(ctx context.Context, msgs []message.Message, instruc
 	if !ok {
 		return nil, ErrNothingToCompact
 	}
-	start := 0
-	if len(msgs) > 0 && msgs[0].Role == message.RoleSystem {
-		start = 1
-	}
-	if cut <= start || len(msgs) <= start {
-		return nil, ErrNothingToCompact
-	}
 	if c.Provider == nil {
 		return nil, errors.New("compaction: no provider")
 	}
-	span := msgs[start:cut]
-	if len(span) == 0 {
-		return nil, ErrNothingToCompact
+	// CutPoint never cuts at or before a leading system message, so the span is
+	// never empty.
+	start := 0
+	if msgs[0].Role == message.RoleSystem {
+		start = 1
 	}
+	span := msgs[start:cut]
 
 	input := serializeSpan(span)
 	existing := existingSummary(span)
@@ -114,13 +110,12 @@ func Run(ctx context.Context, st *session.Store, c *Compactor, instructions stri
 	if res.FirstKept >= 0 && res.FirstKept < len(ids) {
 		firstKept = ids[res.FirstKept]
 	}
-	usage := res.Usage
 	appended, err := st.Append(session.Entry{
 		Type:         session.TypeCompaction,
 		Summary:      res.Summary,
 		FirstKept:    firstKept,
 		TokensBefore: res.TokensBefore,
-		Usage:        &usage,
+		Usage:        &res.Usage,
 	})
 	if err != nil {
 		return nil, err

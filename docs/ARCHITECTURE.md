@@ -333,10 +333,12 @@ dialect only parses its own events.
 
 `auth` owns login. `nova login` runs OpenRouter's OAuth PKCE flow with a loopback
 redirect (or prints a URL with `--no-browser`) and stores the key in the user's
-config directory with mode 0600. Resolution order: explicit config, `OPENROUTER_API_KEY`,
-stored key. OpenCode Go resolves `provider.opencode_go.api_key` then
-`OPENCODE_GO_API_KEY`; it has no OAuth flow at launch. Credentials resolve per
-request so a refreshed token takes effect mid-run.
+config directory (`auth.json`) with mode 0600. The OpenRouter order is
+`OPENROUTER_API_KEY`, then the stored key; the config has no OpenRouter key field.
+OpenCode Go resolves `provider.opencode_go.api_key`, then `OPENCODE_GO_API_KEY`,
+then the key `nova login opencode-go` stored in `opencode-go.json`, which comes
+from the Console device grant rather than PKCE (D67). Credentials resolve per
+request so a key saved by `/login` takes effect mid-run.
 
 Models are a code-defined catalog (stable id, wire slug, context window, pricing)
 so a stored choice keeps resolving when a provider renames a slug, and cost has a

@@ -94,7 +94,10 @@ func saveOpenRouter(home string, c Credential) (string, error) {
 
 func loadOpenRouter(home string) (Credential, bool, error) {
 	key, err := auth.NewFileStore(openRouterStorePath(home)).Load()
-	if err != nil {
+	// A loose file mode is a warning that arrives with the key (D83), so the
+	// key still counts; only a real failure is an error.
+	var loose *auth.PermissionWarning
+	if err != nil && !errors.As(err, &loose) {
 		if errors.Is(err, auth.ErrNoKey) {
 			return Credential{}, false, nil
 		}

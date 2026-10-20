@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -21,9 +22,6 @@ type TrustStore interface {
 	Trust(dir string) error
 	Revoke(dir string) error
 }
-
-// renameFile is a package variable so a test can force a failed rename.
-var renameFile = os.Rename
 
 // fileTrustStore is a TrustStore backed by a JSON file.
 type fileTrustStore struct {
@@ -56,19 +54,17 @@ func (s *fileTrustStore) IsTrusted(dir string) bool {
 	return false
 }
 
-// Trust adds dir. It refuses the filesystem root and the home directory.
+// Trust adds dir. It refuses the filesystem root, the home directory, and any
+// directory that contains home, since trust covers every descendant.
 func (s *fileTrustStore) Trust(dir string) error {
 	real := realPath(dir)
-	if real == string(filepath.Separator) {
-		return fmt.Errorf("%w: %s", ErrTooBroad, real)
-	}
-	if s.home != "" && real == realPath(s.home) {
+	if filepath.Dir(real) == real || (s.home != "" && isSameOrAncestor(real, realPath(s.home))) {
 		return fmt.Errorf("%w: %s", ErrTooBroad, real)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.loadLocked()
-	if !contains(s.dirs, real) {
+	if !slices.Contains(s.dirs, real) {
 		s.dirs = append(s.dirs, real)
 	}
 	return s.writeLocked()
@@ -96,7 +92,7 @@ func (s *fileTrustStore) loadLocked() {
 		return
 	}
 	s.loaded = true
-	data, err := os.ReadFile(s.path)
+	data, err := readRegularFile(s.path, maxReadBytes)
 	if err != nil {
 		return
 	}
@@ -111,38 +107,11 @@ func (s *fileTrustStore) loadLocked() {
 
 // writeLocked replaces the file atomically with mode 0600.
 func (s *fileTrustStore) writeLocked() error {
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("config: trust dir: %w", err)
-	}
 	data, err := json.Marshal(s.dirs)
 	if err != nil {
 		return fmt.Errorf("config: trust encode: %w", err)
 	}
-	tmp, err := os.CreateTemp(dir, ".trust-*.tmp")
-	if err != nil {
-		return fmt.Errorf("config: trust temp: %w", err)
-	}
-	tmpPath := tmp.Name()
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("config: trust chmod: %w", err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("config: trust write: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("config: trust close: %w", err)
-	}
-	if err := renameFile(tmpPath, s.path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("config: trust rename: %w", err)
-	}
-	return nil
+	return writeFileAtomic(s.path, data, "trust store")
 }
 
 // realPath cleans a path to absolute and resolves symlinks where it can.
@@ -164,14 +133,4 @@ func isSameOrAncestor(ancestor, path string) bool {
 		return true
 	}
 	return strings.HasPrefix(path, ancestor+string(filepath.Separator))
-}
-
-// contains reports whether list holds want.
-func contains(list []string, want string) bool {
-	for _, item := range list {
-		if item == want {
-			return true
-		}
-	}
-	return false
 }

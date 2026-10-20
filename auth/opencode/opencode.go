@@ -5,8 +5,10 @@
 package opencode
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +30,9 @@ const (
 	deviceGrant = "urn:ietf:params:oauth:grant-type:device_code"
 	// consoleAlias is remapped to opencode.ai in verification URLs.
 	consoleAlias = "console.opencode.ai"
+	// maxResponseBytes caps any Console response we decode, so a misbehaving
+	// server cannot make a login or usage poll allocate without bound.
+	maxResponseBytes = 1 << 20
 )
 
 // Config configures a login.
@@ -156,7 +161,7 @@ func RequestDeviceCode(ctx context.Context, cfg Config) (DeviceCode, error) {
 		return DeviceCode{}, err
 	}
 	if payload.DeviceCode == "" || payload.UserCode == "" {
-		return DeviceCode{}, fmt.Errorf("opencode: incomplete device-code response")
+		return DeviceCode{}, errors.New("opencode: incomplete device-code response")
 	}
 	verification := payload.VerificationURICompl
 	if verification == "" {
@@ -197,7 +202,7 @@ func resolveVerificationURL(server, verification string) (string, error) {
 	}
 	resolved := base.ResolveReference(ref)
 	if resolved.Scheme != "http" && resolved.Scheme != "https" {
-		return "", fmt.Errorf("opencode: non-HTTP verification URL")
+		return "", errors.New("opencode: non-HTTP verification URL")
 	}
 	if resolved.Hostname() == consoleAlias {
 		resolved.Host = strings.Replace(resolved.Host, consoleAlias, "opencode.ai", 1)
@@ -238,19 +243,19 @@ func PollToken(ctx context.Context, cfg Config, device DeviceCode) (Tokens, erro
 			interval += 5 * time.Second
 			continue
 		case "expired_token":
-			return Tokens{}, fmt.Errorf("opencode: device code expired")
+			return Tokens{}, errors.New("opencode: device code expired")
 		case "access_denied":
-			return Tokens{}, fmt.Errorf("opencode: sign-in denied")
+			return Tokens{}, errors.New("opencode: sign-in denied")
 		case "":
 		default:
 			return Tokens{}, fmt.Errorf("opencode: sign-in failed: %s", payload.Error)
 		}
 		if payload.AccessToken == "" {
-			return Tokens{}, fmt.Errorf("opencode: token exchange returned no token")
+			return Tokens{}, errors.New("opencode: token exchange returned no token")
 		}
 		return Tokens{Access: payload.AccessToken, Refresh: payload.Refresh, OrgID: payload.OrgID}, nil
 	}
-	return Tokens{}, fmt.Errorf("opencode: device code expired")
+	return Tokens{}, errors.New("opencode: device code expired")
 }
 
 // fetchOrgID reads the first org the signed-in account belongs to.
@@ -273,7 +278,9 @@ func ProvisionKey(ctx context.Context, cfg Config, tokens Tokens) (string, error
 	if err != nil {
 		return "", err
 	}
-	// Revoke an active key with the same per-machine name first.
+	// Revoke an active key with the same per-machine name first, so re-login
+	// replaces this machine's key instead of piling up. This is best effort on
+	// purpose: failing to list or revoke must not block minting the new key.
 	var detail struct {
 		Keys []struct {
 			ID     string `json:"id"`
@@ -297,7 +304,7 @@ func ProvisionKey(ctx context.Context, cfg Config, tokens Tokens) (string, error
 		return "", err
 	}
 	if created.Token == "" {
-		return "", fmt.Errorf("opencode: provisioning returned no key")
+		return "", errors.New("opencode: provisioning returned no key")
 	}
 	return created.Token, nil
 }
@@ -336,7 +343,7 @@ func ensureServiceAccount(ctx context.Context, cfg Config, tokens Tokens) (strin
 	if created.ID != "" {
 		return created.ID, nil
 	}
-	return "", fmt.Errorf("opencode: could not create the service account")
+	return "", errors.New("opencode: could not create the service account")
 }
 
 // getJSON performs an authenticated GET.
@@ -357,7 +364,7 @@ func getJSON(ctx context.Context, cfg Config, url, token, orgID string, out any)
 
 // postJSON performs a JSON POST.
 func postJSON(ctx context.Context, cfg Config, url, token string, body []byte, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -387,7 +394,7 @@ func doJSON(cfg Config, req *http.Request, out any) error {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(out); err != nil {
 		return fmt.Errorf("opencode: decode %s: %w", req.URL.Path, err)
 	}
 	return nil

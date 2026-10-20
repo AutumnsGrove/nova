@@ -3,6 +3,7 @@ package opencode
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -154,7 +155,10 @@ func FetchUsage(ctx context.Context, cfg Config, key, orgID string) ([]UsageMete
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &UsageError{Kind: ErrHTTP, Status: resp.StatusCode, Message: fmt.Sprintf("OpenCode Go usage request failed (%d).", resp.StatusCode)}
 	}
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return nil, &UsageError{Kind: ErrNetwork, Message: "OpenCode Go usage response could not be read."}
+	}
 	meters := ParseStatus(body)
 	if len(meters) == 0 {
 		var probe struct {
@@ -213,9 +217,6 @@ func FormatBar(ratio float64, width int) string {
 		clamped = 0
 	}
 	filled := int(math.Round(clamped * float64(width)))
-	if filled > width {
-		filled = width
-	}
 	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
 }
 
@@ -278,7 +279,7 @@ func FooterStatus(meters []UsageMeter, now time.Time) string {
 // DescribeUsageError turns a usage failure into a one-line message.
 func DescribeUsageError(err error) string {
 	var ue *UsageError
-	if ok := asUsageError(err, &ue); ok {
+	if errors.As(err, &ue) {
 		switch ue.Kind {
 		case ErrNoCredentials:
 			return "Not signed in. Run `nova login opencode-go`."
@@ -296,20 +297,4 @@ func DescribeUsageError(err error) string {
 		return ""
 	}
 	return err.Error()
-}
-
-// asUsageError is errors.As specialised to avoid an import cycle in callers.
-func asUsageError(err error, target **UsageError) bool {
-	for err != nil {
-		if ue, ok := err.(*UsageError); ok {
-			*target = ue
-			return true
-		}
-		unwrapper, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = unwrapper.Unwrap()
-	}
-	return false
 }

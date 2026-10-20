@@ -378,7 +378,7 @@ type OpenCodeGoConfig struct {
 | MSG07 | two tool blocks | blocks 0 and 1 | two calls in index order |
 | MSG08 | tool result round-trip | assistant `tool_use` and a user `tool_result` | `tool_result` content block |
 | MSG09 | `tool_choice` mapping | auto and a named tool | `{type:"auto"}` / `{type:"tool", name}` |
-| MSG10 | usage across events | `message_start` input, two `message_delta` outputs | input and summed output |
+| MSG10 | usage across events | `message_start` input 10 + read 2, two `message_delta` outputs | prompt 12 (input + cache counts), read 2, output 7 |
 | MSG11 | stop reason mapping | `end_turn`, `tool_use`, `max_tokens`, `stop_sequence` | `stop`, `tool_calls`, `length`, `stop` |
 | MSG12 | `ping` ignored | ping between events | no event, no error |
 | MSG13 | `error` event | error block | non-retryable `*provider.Error` |
@@ -390,6 +390,7 @@ type OpenCodeGoConfig struct {
 | MSG19 | text-only message block | `User("hi")` | `content` is one text block, no image |
 | MSG20 | cache marker per catalog | non-implicit, implicit, unknown model; explicit opt-out | top-level `cache_control` present, absent, absent, absent |
 | MSG21 | cache-creation tokens mapped | `cache_creation_input_tokens` 7 | `Usage.CacheWriteTokens` 7, reads kept |
+| MSG22 | prompt tokens include the cache | warm (read 19700) and cold (written 19700) records with input 100 | `PromptTokens` 19800 both times; read/write fields kept |
 | OPG01 | `New` names the provider | any config | `Name()` is `opencodego` |
 | OPG02 | chat model routes to chat | `APIFor("opencode-go/glm-5.3")` | `DialectChat` |
 | OPG03 | responses model routes to Responses | `APIFor("opencode-go/grok-4.7")` | `DialectResponses` |

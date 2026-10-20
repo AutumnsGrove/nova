@@ -204,9 +204,13 @@ func (p *Provider) consume(s *ssestream.Stream, req provider.Request, onEvent fu
 		}
 		switch ev.Type {
 		case "message_start":
-			result.Usage.PromptTokens = ev.Message.Usage.InputTokens
-			result.Usage.CachedTokens = ev.Message.Usage.CacheReadInputTokens
-			result.Usage.CacheWriteTokens = ev.Message.Usage.CacheCreationInputTokens
+			// Anthropic's input_tokens is the uncached remainder; the cache
+			// counts are separate. Usage.PromptTokens means the whole prompt
+			// on every dialect, so sum all three here.
+			usage := ev.Message.Usage
+			result.Usage.PromptTokens = usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens
+			result.Usage.CachedTokens = usage.CacheReadInputTokens
+			result.Usage.CacheWriteTokens = usage.CacheCreationInputTokens
 		case "content_block_start":
 			if ev.ContentBlock.Type == "tool_use" {
 				if _, ok := calls[ev.Index]; !ok {

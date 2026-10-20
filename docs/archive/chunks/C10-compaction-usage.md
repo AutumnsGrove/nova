@@ -172,7 +172,9 @@ func CostFor(m provider.Model, u provider.Usage) (usd float64, source string)
     known model, `(prompt-cached-write) * InPerM/1e6 + cached * InPerM/1e6 * 0.1 +
     write * InPerM/1e6 * 1.25 + completion * OutPerM/1e6` with source `catalog`, where `cached` is
     `CachedTokens` capped at `PromptTokens` and `write` is `CacheWriteTokens` capped at what the
-    prompt has left. An unknown model or no price gives `0, ""`.
+    prompt has left. An unknown model or no price gives `0, ""`. This assumes every dialect's
+    `PromptTokens` is the whole prompt, cached tokens included (MSG22); a dialect that reports the
+    uncached remainder would silently drop the cache from the bill.
 20. `Ledger.Add` fills in `CostUSD` and `CostSource` through `CostFor`, adds to the total and to
     the model's entry, and returns the filled-in usage. It is safe for concurrent use.
 21. `Rebuild` replaces the ledger's contents from the `message` and `compaction` entries'
@@ -256,6 +258,8 @@ func CostFor(m provider.Model, u provider.Usage) (usd float64, source string)
 | LED13 | cache writes priced at 1.25x | 1000 prompt, 1000 written | `0.0025` for a $2/M model |
 | LED14 | reads and writes share the prompt cap | 100 prompt, 80 read, 80 written | 80 at 10% and 20 at 1.25x, non-negative |
 | LED15 | a provider cost ignores catalog rates | `CostUSD` 0.5 with cache writes | unchanged, source `provider` |
+| LED16 | a Messages warm-cache record is priced in full | prompt 19800, read 19700 | 100 at 1x and 19700 at 0.1x |
+| LED17 | a Messages cold-cache record is priced in full | prompt 19800, written 19700 | 100 at 1x and 19700 at 1.25x |
 
 ## Fuzz and property tests
 

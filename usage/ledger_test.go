@@ -201,3 +201,25 @@ func Test_LED15_ProviderCostIgnoresCatalogRates(t *testing.T) {
 		t.Fatalf("usd = %v source = %q, want the provider's 0.5", usd, source)
 	}
 }
+
+// Test_LED16_MessagesWarmCache prices a Messages-dialect record whose prompt is
+// the whole prompt (#34): the read tokens are billed at the read rate, not
+// dropped by the prompt cap.
+func Test_LED16_MessagesWarmCache(t *testing.T) {
+	m := provider.Model{ID: "x", InPerM: 1, OutPerM: 0}
+	usd, source := CostFor(m, provider.Usage{PromptTokens: 19800, CachedTokens: 19700})
+	want := (100*1 + 19700*1*0.1) / 1e6
+	if math.Abs(usd-want) > 1e-12 || source != "catalog" {
+		t.Fatalf("usd = %v source = %q, want %v catalog", usd, source, want)
+	}
+}
+
+// Test_LED17_MessagesColdCache prices the write half the same way.
+func Test_LED17_MessagesColdCache(t *testing.T) {
+	m := provider.Model{ID: "x", InPerM: 1, OutPerM: 0}
+	usd, _ := CostFor(m, provider.Usage{PromptTokens: 19800, CacheWriteTokens: 19700})
+	want := (100*1 + 19700*1*1.25) / 1e6
+	if math.Abs(usd-want) > 1e-12 {
+		t.Fatalf("usd = %v, want %v", usd, want)
+	}
+}

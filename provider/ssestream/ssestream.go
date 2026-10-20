@@ -126,7 +126,7 @@ func Open(ctx context.Context, cfg Config, url string, headers http.Header, body
 		data := readCapped(resp.Body, maxErrorBody)
 		resp.Body.Close()
 		cancel()
-		return nil, httpError(resp.StatusCode, resp.Header, data)
+		return nil, httpError(resp.StatusCode, resp.Header, data, credentials(headers))
 	}
 
 	idleFired := &atomic.Bool{}

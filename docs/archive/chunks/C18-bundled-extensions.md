@@ -293,6 +293,8 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 | TSK27 | no UI client | print mode | works; no widget calls |
 | TSK28 | unicode titles | | stored and shown intact |
 | TSK29 | equivalence with the subprocess port | same call script against both | identical results and state |
+| TSK30 | rejected update changes nothing | `update` with a valid title and a bad status; `Apply` on a shared state | the task is unchanged and `Apply` never modifies its input |
+| TSK31 | unsaved change is rolled back | the session cannot append the snapshot | an error naming the failure; the list and next id are unchanged |
 | ASK01 | one single-select question | | form request sent; answer in the result text |
 | ASK02 | multi and text questions | | labels joined; text shown |
 | ASK03 | other answer | | `Other: …` |

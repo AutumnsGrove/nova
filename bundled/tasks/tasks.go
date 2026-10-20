@@ -43,7 +43,10 @@ func (e *Extension) Init(env *ext.Env) error {
 		}
 	})
 	e.rebuild()
-	if len(e.state.Tasks) > 0 {
+	e.mu.Lock()
+	has := len(e.state.Tasks) > 0
+	e.mu.Unlock()
+	if has {
 		e.publish()
 	}
 	return nil
@@ -86,23 +89,29 @@ func (e *Extension) run(_ context.Context, args json.RawMessage, _ *tool.Context
 		return tool.Errorf("%v", err), nil
 	}
 	if changed {
-		e.state = next
-		e.persistLocked()
+		if err := e.commitLocked(next); err != nil {
+			return tool.Errorf("%v", err), nil
+		}
 	}
 	return tool.Text("%s", text), nil
 }
 
-// persistLocked appends the full snapshot and republishes the widget.
-func (e *Extension) persistLocked() {
-	if e.env == nil || e.env.Session == nil {
-		return
+// commitLocked saves next as the session snapshot and, only if that worked,
+// makes it the current state and republishes the widget. A change that cannot
+// be saved would vanish on resume, so it must not be reported as done.
+func (e *Extension) commitLocked(next State) error {
+	if e.env != nil && e.env.Session != nil {
+		data, err := Encode(next)
+		if err != nil {
+			return fmt.Errorf("could not save the task list: %w", err)
+		}
+		if err := e.env.Session.AppendEntry(stateKind, data, true); err != nil {
+			return fmt.Errorf("could not save the task list: %w", err)
+		}
 	}
-	data, err := Encode(e.state)
-	if err != nil {
-		return
-	}
-	_ = e.env.Session.AppendEntry(stateKind, data, true)
+	e.state = next
 	e.publishLocked()
+	return nil
 }
 
 // rebuild replaces the in-memory state from the last snapshot on the active
@@ -125,16 +134,17 @@ func (e *Extension) rebuild() {
 
 // command implements `/todos` and `/todos clear`.
 func (e *Extension) command(_ context.Context, args string) (string, error) {
-	if strings.TrimSpace(args) == "clear" {
-		e.mu.Lock()
-		e.state.Tasks = nil
-		e.persistLocked()
-		e.mu.Unlock()
-		return "Tasks cleared.", nil
-	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return resultText(e.state), nil
+	if strings.TrimSpace(args) != "clear" {
+		return resultText(e.state), nil
+	}
+	cleared := e.state
+	cleared.Tasks = nil
+	if err := e.commitLocked(cleared); err != nil {
+		return "", err
+	}
+	return "Tasks cleared.", nil
 }
 
 // publish sends the widget and status, taking the lock.

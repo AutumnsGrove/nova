@@ -453,6 +453,7 @@ type OpenCodeGoConfig struct {
 | OPG34 | an unknown model id falls back | `ModelID` not in the catalog | the request goes to OpenRouter |
 | RSP27 | event that is not JSON | a truncated delta payload after good text | non-retryable invalid-JSON error; earlier text kept |
 | RSP28 | top-level `error` event | `code` and `message` at the top level | `Code` and `Message` read from them |
+| RSP29 | failures inside the stream are classed | `rate_limit_exceeded`, an overload message, `server_error`, and `invalid_prompt` | the first two are retryable; the others are not (a server fault can arrive after output has started) |
 | RSP24 | incomplete reasons | `max_output_tokens`, `content_filter`, an unknown reason | `length`, `content_filter`, `stop` |
 | RSP25 | stream cut mid-call | added and an argument fragment, then close | retryable; no tool call returned or delivered |
 | RSP26 | call with no `call_id` | a function call without one | a generated id |

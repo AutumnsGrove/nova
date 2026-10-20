@@ -86,7 +86,7 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
    tags stripped. The body is read with a 1 MiB cap.
 7. A 2xx response whose stream's first event is a JSON object with a top-level `error`
    field is an error: `Status` 200, `Code` from `error.code`, not retryable unless the
-   code is `rate_limit_exceeded` or the message mentions overload.
+   code is `rate_limit_exceeded`, or the message mentions overload (the rule is shared with the Responses dialect).
 8. Connection failures (refused, DNS, reset before any data, timeout to first byte) are
    `*provider.Error` with `Retryable: true` and `Err` set. Context cancellation returns
    `ctx.Err()` unwrapped (not a `*provider.Error`).

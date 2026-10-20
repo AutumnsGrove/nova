@@ -104,6 +104,16 @@ func bodyError(body []byte) (code, message string) {
 	return code, message
 }
 
+// StreamErrorRetryable reports whether an error that arrived inside a 200
+// stream is one that clears on its own: a rate limit or an overload. The HTTP
+// status said success, so the code and message decide. A server fault is not on
+// the list: it can arrive after output has started, where a retry would repeat
+// work the user already saw.
+func StreamErrorRetryable(code, message string) bool {
+	return code == "rate_limit_exceeded" ||
+		strings.Contains(strings.ToLower(message), "overload")
+}
+
 // CodeString renders a JSON error code that may be a string, a number, or
 // absent. Every dialect's error objects share it.
 func CodeString(v any) string {

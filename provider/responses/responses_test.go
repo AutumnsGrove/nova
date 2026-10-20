@@ -285,6 +285,33 @@ func TestResponses_RSP12_Failed(t *testing.T) {
 	}
 }
 
+// A failure that arrives inside the stream is retried when it is the kind that
+// clears on its own, like the same failure arriving as an HTTP status.
+func TestResponses_RSP29_FailureRetryClasses(t *testing.T) {
+	cases := []struct {
+		name      string
+		frame     string
+		retryable bool
+	}{
+		{"rate limit", `{"type":"response.failed","response":{"error":{"code":"rate_limit_exceeded","message":"slow down"}}}`, true},
+		{"server error", `{"type":"response.failed","response":{"error":{"code":"server_error","message":"oops"}}}`, false},
+		{"overload message", `{"type":"error","message":"The server is overloaded"}`, true},
+		{"bad prompt", `{"type":"response.failed","response":{"error":{"code":"invalid_prompt","message":"no"}}}`, false},
+	}
+	for _, c := range cases {
+		typ := "response.failed"
+		if strings.Contains(c.frame, `"type":"error"`) {
+			typ = "error"
+		}
+		p, _ := newProvider(t, Config{}, sse(typ, c.frame))
+		_, _, err := run(t, p, provider.Request{Model: "m"})
+		var perr *provider.Error
+		if !errors.As(err, &perr) || perr.Retryable != c.retryable {
+			t.Errorf("%s: err = %v, want retryable=%v", c.name, err, c.retryable)
+		}
+	}
+}
+
 func TestResponses_RSP13_TopLevelError(t *testing.T) {
 	p, _ := newProvider(t, Config{},
 		sse("error", `{"type":"error","error":{"message":"bad"}}`),

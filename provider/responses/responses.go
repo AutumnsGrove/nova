@@ -189,5 +189,6 @@ func incompleteFinish(reason string) string {
 // failure builds the non-retryable error for a failed response or an error
 // event. fallback is the message when the server gave none.
 func failure(code any, message, fallback string) *provider.Error {
-	return &provider.Error{Code: ssestream.CodeString(code), Message: cmp.Or(message, fallback)}
+	c, m := ssestream.CodeString(code), cmp.Or(message, fallback)
+	return &provider.Error{Code: c, Message: m, Retryable: ssestream.StreamErrorRetryable(c, m)}
 }

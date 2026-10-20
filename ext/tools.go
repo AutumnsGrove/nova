@@ -32,20 +32,15 @@ func (t *protocolTool) Info() tool.Info {
 
 // Run sends one tool_call and waits for its result. A timeout, a crash, or a
 // cancellation is an error result, never a hang.
-func (t *protocolTool) Run(ctx context.Context, args json.RawMessage, tctx *tool.Context) (tool.Result, error) {
+func (t *protocolTool) Run(ctx context.Context, args json.RawMessage, _ *tool.Context) (tool.Result, error) {
 	timeout := defaultToolCallTimeout
 	if t.def.TimeoutMS > 0 {
 		timeout = time.Duration(t.def.TimeoutMS) * time.Millisecond
-	}
-	callID := ""
-	if tctx != nil {
-		callID = tctx.SessionID
 	}
 	reply, err := t.inst.request(ctx, &outFrame{
 		Type:       "tool_call",
 		Name:       t.def.Name,
 		Arguments:  args,
-		CallID:     callID,
 		DeadlineMS: int(timeout / time.Millisecond),
 	}, timeout)
 	if err != nil {

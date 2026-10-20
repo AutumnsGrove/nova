@@ -57,7 +57,6 @@ type outFrame struct {
 	DeadlineMS   int               `json:"deadline_ms,omitempty"`
 	Name         string            `json:"name,omitempty"`
 	Arguments    json.RawMessage   `json:"arguments,omitempty"`
-	CallID       string            `json:"call_id,omitempty"`
 	Args         string            `json:"args,omitempty"`
 	Kind         string            `json:"kind,omitempty"`
 	Data         json.RawMessage   `json:"data,omitempty"`

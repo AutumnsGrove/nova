@@ -178,7 +178,7 @@ host → ext   {"type":"init","version":1,"extension":"tasks","session":"…","c
 ext  → host  {"type":"register","tools":[…],"commands":[…],"hooks":["tool_call","turn_end"],"flags":[…],"providers":[…]}
 host → ext   {"type":"hook","id":"h1","hook":"tool_call","event":{…},"deadline_ms":2000}
 ext  → host  {"type":"hook_result","id":"h1","result":{"block":true,"reason":"…"}}
-host → ext   {"type":"tool_call","id":"t1","name":"todo","arguments":{…},"call_id":"…"}
+host → ext   {"type":"tool_call","id":"t1","name":"todo","arguments":{…},"deadline_ms":120000}
 ext  → host  {"type":"tool_result","id":"t1","content":"…","is_error":false,"details":{…},"parts":[{"type":"image","mime_type":"image/png","data":"…"}]}
 host → ext   {"type":"command","id":"c1","name":"todos","args":"…"}
 ext  → host  {"type":"ui_request",…}   // same UI methods as above

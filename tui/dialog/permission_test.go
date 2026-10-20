@@ -138,3 +138,32 @@ func TestPermission_PRD09_NoRemember(t *testing.T) {
 		t.Fatal("s should do nothing when remember is not offered")
 	}
 }
+
+// The prompt shows what is about to run. A carriage return, a backspace or a
+// bidirectional override in it would be drawn as something else, so no field of
+// the request may reach the screen with one.
+func TestPermission_PRD20_NothingTheTerminalActsOnIsDrawn(t *testing.T) {
+	hostile := "ok\rrm -rf /\b\b\a\x00 \u202eexe.txt\u2066"
+	req := permReq(true, nil)
+	req.Title = "Allow " + hostile + "?"
+	req.Tool = "bash"
+	req.Message = "rule " + hostile
+	req.Args = json.RawMessage(`{"command":` + strconvQuote(hostile) + `}`)
+	for _, expanded := range []bool{false, true} {
+		v := NewPermission(req, expanded).View(80, 30, styles.Styles{})
+		for _, bad := range []string{"\r", "\b", "\a", "\x00", "\x7f", "\u202e", "\u2066", "\u2069"} {
+			if strings.Contains(v, bad) {
+				t.Errorf("expanded=%v: the view contains %q:\n%q", expanded, bad, v)
+			}
+		}
+		if !strings.Contains(v, "rm -rf /") {
+			t.Errorf("expanded=%v: the command text itself is missing:\n%s", expanded, v)
+		}
+	}
+}
+
+// strconvQuote is JSON string quoting for a test literal.
+func strconvQuote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}

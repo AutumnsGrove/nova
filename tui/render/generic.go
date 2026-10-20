@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -49,7 +50,7 @@ func genericBody(c Call, st styles.Styles, width int, expanded bool) string {
 	if c.Running {
 		text, limit = lastLines(c.Live, 5), 0
 	}
-	if strings.TrimSpace(ansi.Strip(text)) != "" {
+	if strings.TrimSpace(sanitize.Text(text)) != "" {
 		if !expanded && !c.Running {
 			parts = append(parts, previewText(text, st, width, false, previewCap(c)))
 		} else {

@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -136,7 +137,7 @@ func (s *settingsDialog) View(w, h int, st styles.Styles) string {
 		if i == s.cursor {
 			marker = "> "
 		}
-		line := marker + safe(r.Label)
+		line := marker + sanitize.Text(r.Label)
 		val := strconv.Itoa(s.rowValue(i))
 		if pad := inner - ansi.StringWidth(line) - len(val) - 1; pad > 0 {
 			line += strings.Repeat(" ", pad)

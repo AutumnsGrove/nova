@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -117,7 +118,7 @@ func (m *modelPicker) Size(maxW, maxH int) (int, int) {
 func (m *modelPicker) View(w, h int, st styles.Styles) string {
 	inner, rows := w-2, h-4
 	vis := m.visible()
-	body := []string{st.Muted.Render("filter: " + safe(m.filter))}
+	body := []string{st.Muted.Render("filter: " + sanitize.Text(m.filter))}
 	if len(vis) == 0 {
 		body = append(body, "no models")
 	} else {
@@ -142,7 +143,7 @@ func modelLine(info ModelInfo, selected bool, m *modelPicker, inner int, st styl
 	} else {
 		line += "  "
 	}
-	line += safe(info.Name)
+	line += sanitize.Text(info.Name)
 	if info.ContextWindow > 0 {
 		line += "  " + st.Muted.Render(formatContext(info.ContextWindow))
 	}

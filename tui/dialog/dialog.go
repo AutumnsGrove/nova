@@ -15,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -190,7 +191,7 @@ func clipPad(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	s = ansi.Truncate(ansi.Strip(s), width, "")
+	s = ansi.Truncate(sanitize.Text(s), width, "")
 	return s + strings.Repeat(" ", max(width-ansi.StringWidth(s), 0))
 }
 
@@ -227,7 +228,9 @@ func frame(title string, body []string, hint string, w, h int, st styles.Styles)
 	}
 	inner := w - 2
 	out := make([]string, 0, h)
-	out = append(out, "┌"+edge(" "+title+" ", inner)+"┐")
+	// The title comes from the request (a permission prompt names the tool), so it
+	// is cleaned like every other line.
+	out = append(out, "┌"+edge(" "+sanitize.Text(title)+" ", inner)+"┐")
 	rows := h - 2
 	hintRows := 0
 	if hint != "" && rows > 0 {
@@ -246,7 +249,7 @@ func frame(title string, body []string, hint string, w, h int, st styles.Styles)
 		out = append(out, "│"+clipPad(line, inner)+"│")
 	}
 	if hintRows == 1 {
-		out = append(out, "│"+clipPad(st.Dim.Render(ansi.Strip(hint)), inner)+"│")
+		out = append(out, "│"+clipPad(st.Dim.Render(sanitize.Text(hint)), inner)+"│")
 	}
 	out = append(out, "└"+strings.Repeat("─", inner)+"┘")
 	return strings.Join(out, "\n")
@@ -292,6 +295,3 @@ func prettyArgs(raw json.RawMessage, maxLines int) []string {
 	}
 	return lines
 }
-
-// splitArgsRunes caps a raw string for display, stripping control sequences.
-func safe(s string) string { return ansi.Strip(s) }

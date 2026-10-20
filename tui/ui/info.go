@@ -11,11 +11,11 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/dialog"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 )
 
 // overlayMaxLines caps the lines of untrusted text (a shell result, a crash
@@ -139,7 +139,7 @@ func (m *Model) showBashOutput(resp proto.Response) {
 // terminal, or overwrite the overlay; tabs become spaces so widths hold, and
 // bytes that are not valid UTF-8 (a tail can start mid-rune) are discarded.
 func outputLines(s string, limit int) []string {
-	s = strings.ReplaceAll(ansi.Strip(strings.ToValidUTF8(s, "")), "\t", "    ")
+	s = strings.ReplaceAll(sanitize.Text(s), "\t", "    ")
 	s = strings.Map(func(r rune) rune {
 		if r != '\n' && unicode.IsControl(r) {
 			return -1

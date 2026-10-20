@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -95,16 +96,16 @@ func (e *extView) line(i, inner int, st styles.Styles) string {
 	case "disabled":
 		style = st.Muted
 	}
-	line := marker + safe(it.Name)
+	line := marker + sanitize.Text(it.Name)
 	if it.Version != "" {
-		line += " " + st.Muted.Render(safe(it.Version))
+		line += " " + st.Muted.Render(sanitize.Text(it.Version))
 	}
 	line += " " + style.Render(state)
 	if it.Restarts > 0 {
 		line += st.Dim.Render(fmt.Sprintf(" restarts:%d", it.Restarts))
 	}
 	if it.LastError != "" {
-		line += " " + st.Error.Render(safe(it.LastError))
+		line += " " + st.Error.Render(sanitize.Text(it.LastError))
 	}
 	return ansi.Truncate(line, inner, "…")
 }
@@ -135,11 +136,11 @@ func (h *helpDialog) ID() string { return "" }
 func (h *helpDialog) lines(st styles.Styles) []string {
 	out := []string{st.Bold.Render("keys")}
 	for _, k := range h.keys {
-		out = append(out, "  "+st.Warm.Render(safe(k.Key))+"  "+safe(k.Description))
+		out = append(out, "  "+st.Warm.Render(sanitize.Text(k.Key))+"  "+sanitize.Text(k.Description))
 	}
 	out = append(out, "", st.Bold.Render("commands"))
 	for _, c := range h.cmds {
-		out = append(out, "  /"+safe(c))
+		out = append(out, "  /"+sanitize.Text(c))
 	}
 	return out
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -145,7 +146,7 @@ func (s *selectDialog) View(w, h int, st styles.Styles) string {
 	rows := h - 4 // filter row, blank, hint, plus two borders
 	vis := s.visible()
 	var body []string
-	body = append(body, st.Muted.Render("filter: "+safe(s.filter)))
+	body = append(body, st.Muted.Render("filter: "+sanitize.Text(s.filter)))
 	if len(vis) == 0 {
 		body = append(body, "no matches")
 	} else {
@@ -167,10 +168,10 @@ func (s *selectDialog) View(w, h int, st styles.Styles) string {
 			} else if s.multi {
 				marker = "[ ] "
 			}
-			line := marker + safe(o.Label)
+			line := marker + sanitize.Text(o.Label)
 			if o.Description != "" {
 				pad := max(inner-ansi.StringWidth(line)-ansi.StringWidth(o.Description)-2, 1)
-				line += strings.Repeat(" ", pad) + st.Dim.Render(safe(o.Description))
+				line += strings.Repeat(" ", pad) + st.Dim.Render(sanitize.Text(o.Description))
 			}
 			body = append(body, line)
 		}

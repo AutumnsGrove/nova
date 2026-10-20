@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/status, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
-budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 150,  ./mode: 2470, ./mode/attach: 160, ./tui/ui: 3050, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
+budgets: { ./tui/sanitize: 60, ./tui/dialog: 2050, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 150,  ./mode: 2470, ./mode/attach: 160, ./tui/ui: 3050, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -252,6 +252,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | PRD06 | `n` and `esc` deny | | `ok:false` |
 | PRD07 | `tab` expands arguments | | pretty JSON, capped at 30 lines |
 | PRD08 | hostile arguments | control sequences and 1 MiB strings | stripped; capped; widths correct |
+| PRD20 | nothing the terminal acts on is drawn | a request whose title, tool, reason and command hold `\r`, backspace, bell, NUL and bidi overrides | none reaches the view, expanded or not, and the command text itself is still shown |
 | PRD09 | no `remember` offered | request without it | no session choice shown |
 | SEL01 | single select | | `enter` returns one id |
 | SEL02 | multi select | `space` toggles | ids in option order |
@@ -315,6 +316,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | WDG06 | table kind | | columns fit; truncated with `…` |
 | WDG07 | progress kind | 0.4 | bar and `40%` |
 | WDG08 | clipped to width; control sequences stripped | | yes |
+| WDG20 | extension text is cleaned | text, list and table widgets whose strings hold control and bidi characters | none reaches a drawn line |
 | WDG09 | sidebar widget with no sidebar | | drawn under the editor |
 | WDG10 | placements independent | | each has its own cap |
 | WDG11 | `Height` matches `Lines` | | equal |

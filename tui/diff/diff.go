@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AutumnsGrove/nova/tui/highlight"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -145,7 +146,7 @@ func markerFor(k kind) string {
 func styleCode(style interface{ Render(...string) string }, marker, seg, path string, color bool) string {
 	body := highlight.Line(seg, path, color)
 	if !color {
-		return marker + ansi.Strip(body)
+		return marker + sanitize.Text(body)
 	}
 	return style.Render(marker + body)
 }

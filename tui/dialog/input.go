@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -120,7 +121,7 @@ func (d *inputDialog) View(w, h int, st styles.Styles) string {
 	var shown string
 	switch {
 	case len(runes) == 0 && d.placeholder != "":
-		shown = st.Dim.Render(safe(d.placeholder))
+		shown = st.Dim.Render(sanitize.Text(d.placeholder))
 	case d.secret:
 		bullets := []rune(strings.Repeat("•", len(runes)))
 		shown = string(bullets[:pos]) + "▏" + string(bullets[pos:])

@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AutumnsGrove/nova/tui/highlight"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -17,7 +18,7 @@ func Highlight(code, filename string, st styles.Styles, width int) []string {
 	lines := highlight.Lines(code, filename, color)
 	for i, l := range lines {
 		if !color {
-			l = ansi.Strip(l)
+			l = sanitize.Text(l)
 		}
 		lines[i] = ansi.Truncate(l, width, "")
 	}

@@ -14,6 +14,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -206,7 +207,7 @@ func contentLines(c *Content, width int, st styles.Styles) []string {
 func textLines(lines []string, width int, style lipgloss.Style) []string {
 	var out []string
 	for _, line := range lines {
-		for _, wrapped := range strings.Split(ansi.Wordwrap(ansi.Strip(line), width, ""), "\n") {
+		for _, wrapped := range strings.Split(ansi.Wordwrap(sanitize.Text(line), width, ""), "\n") {
 			out = append(out, style.Render(wrapped))
 		}
 	}
@@ -226,9 +227,9 @@ func listLines(items []Item, width int, st styles.Styles) []string {
 		if it.State == "doing" {
 			style = st.Warm
 		}
-		line := style.Render(glyph + " " + ansi.Strip(it.Text))
+		line := style.Render(glyph + " " + sanitize.Text(it.Text))
 		if it.Detail != "" {
-			line += st.Dim.Render("  " + ansi.Strip(it.Detail))
+			line += st.Dim.Render("  " + sanitize.Text(it.Detail))
 		}
 		out = append(out, ansi.Truncate(line, width, "…"))
 	}
@@ -247,7 +248,7 @@ func tableLines(columns []string, rows [][]string, width int, st styles.Styles) 
 		for i := 0; i < n; i++ {
 			cell := ""
 			if i < len(cells) {
-				cell = ansi.Truncate(ansi.Strip(cells[i]), share, "…")
+				cell = ansi.Truncate(sanitize.Text(cells[i]), share, "…")
 			}
 			parts[i] = cell + strings.Repeat(" ", max(share-ansi.StringWidth(cell), 0))
 		}
@@ -272,7 +273,7 @@ func progressLines(label string, value float64, width int, st styles.Styles) []s
 	line := strings.Repeat("▮", filled) + strings.Repeat("▯", barWidth-filled) +
 		fmt.Sprintf(" %d%%", int(value*100+0.5))
 	if label != "" {
-		line = ansi.Strip(label) + " " + line
+		line = sanitize.Text(label) + " " + line
 	}
 	return []string{st.Text.Render(ansi.Truncate(line, width, "…"))}
 }
@@ -314,7 +315,7 @@ func (s *Store) Toasts(now time.Time, width int, st styles.Styles) []string {
 		} else if t.level == "error" {
 			style = st.Error
 		}
-		out = append(out, style.Render(ansi.Truncate(ansi.Strip(t.text), max(width, 0), "…")))
+		out = append(out, style.Render(ansi.Truncate(sanitize.Text(t.text), max(width, 0), "…")))
 	}
 	return out
 }

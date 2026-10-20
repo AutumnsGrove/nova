@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -208,7 +209,7 @@ func moreHint(n int, earlier bool, st styles.Styles) string {
 // with a hint for the rest. It is the compact view of a finished result; an
 // empty result gives "".
 func previewText(s string, st styles.Styles, width int, tail bool, limit int) string {
-	s = strings.TrimRight(strings.ReplaceAll(ansi.Strip(s), "\r", ""), "\n")
+	s = strings.TrimRight(sanitize.Text(s), "\n")
 	if strings.TrimSpace(s) == "" {
 		return ""
 	}
@@ -231,7 +232,7 @@ func clipPreview(lines []string, st styles.Styles, width int, tail bool, limit i
 // renderText strips control sequences, caps the line count, and wraps to width.
 // A limit of zero means the cap for the body (see bodyLimit) is used, or none.
 func renderText(s string, st styles.Styles, width, limit int) string {
-	s = strings.ReplaceAll(ansi.Strip(s), "\r", "")
+	s = sanitize.Text(s)
 	lines := strings.Split(s, "\n")
 	if limit > 0 && len(lines) > limit {
 		extra := len(lines) - limit

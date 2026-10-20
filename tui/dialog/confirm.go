@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -100,7 +101,7 @@ func (c *confirm) Size(maxW, maxH int) (int, int) {
 
 // body is the dialog's inner content.
 func (c *confirm) body(inner int) []string {
-	out := wrap(safe(c.message), inner)
+	out := wrap(sanitize.Text(c.message), inner)
 	out = append(out, "")
 	out = append(out, c.choices())
 	return out

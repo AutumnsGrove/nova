@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -40,7 +41,7 @@ func (s searchRenderer) Body(c Call, st styles.Styles, width int, expanded bool)
 	if !expanded && strings.TrimSpace(c.Content) == "" {
 		return ""
 	}
-	lines := strings.Split(strings.TrimRight(ansi.Strip(c.Content), "\n"), "\n")
+	lines := strings.Split(strings.TrimRight(sanitize.Text(c.Content), "\n"), "\n")
 	for i, l := range lines {
 		if s.kind == "grep" {
 			if pat := argString(c.Args, "pattern"); pat != "" {
@@ -77,11 +78,11 @@ func (s searchRenderer) count(c Call) (int, bool) {
 	if n, ok := detailInt(c.Details, key); ok {
 		return n, true
 	}
-	if strings.TrimSpace(ansi.Strip(c.Content)) == "" {
+	if strings.TrimSpace(sanitize.Text(c.Content)) == "" {
 		return 0, false
 	}
 	n := 0
-	for _, l := range strings.Split(ansi.Strip(c.Content), "\n") {
+	for _, l := range strings.Split(sanitize.Text(c.Content), "\n") {
 		if strings.TrimSpace(l) != "" {
 			n++
 		}

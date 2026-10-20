@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -124,7 +125,7 @@ func (s *sessionList) line(i, inner int, st styles.Styles) string {
 	if name == "" {
 		name = "untitled"
 	}
-	line := marker + safe(name)
+	line := marker + sanitize.Text(name)
 	line += "  " + st.Muted.Render(fmt.Sprintf("%s · %d entries", age(it.Modified, s.now), it.Entries))
 	if it.Current {
 		line += " " + st.Success.Render("(current)")
@@ -283,6 +284,6 @@ func treeLine(r treeRow, selected bool, inner int, st styles.Styles) string {
 			indent = "> "
 		}
 	}
-	line := style.Render(indent+marker+safe(r.id)) + " " + st.Dim.Render(safe(r.preview))
+	line := style.Render(indent+marker+sanitize.Text(r.id)) + " " + st.Dim.Render(sanitize.Text(r.preview))
 	return ansi.Truncate(line, inner, "…")
 }

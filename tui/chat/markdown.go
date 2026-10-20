@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 )
 
 // Renderer renders one markdown block at a width. The markdown type calls it
@@ -55,7 +57,7 @@ func (m *markdown) drain() {
 		m.pending = rest
 		if strings.TrimSpace(block) != "" {
 			// Model and tool output must never carry ANSI into the UI.
-			m.closed = append(m.closed, ansi.Strip(block))
+			m.closed = append(m.closed, sanitize.Text(block))
 		}
 	}
 }
@@ -90,10 +92,10 @@ func (m *markdown) String() string {
 // (whitespace and ANSI only), leaving inner blank lines untouched.
 func trimBlankEdges(s string) string {
 	lines := strings.Split(s, "\n")
-	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[0])) == "" {
+	for len(lines) > 0 && strings.TrimSpace(sanitize.Text(lines[0])) == "" {
 		lines = lines[1:]
 	}
-	for len(lines) > 0 && strings.TrimSpace(ansi.Strip(lines[len(lines)-1])) == "" {
+	for len(lines) > 0 && strings.TrimSpace(sanitize.Text(lines[len(lines)-1])) == "" {
 		lines = lines[:len(lines)-1]
 	}
 	return strings.Join(lines, "\n")
@@ -111,7 +113,7 @@ func (m *markdown) render(block string) string {
 // cheap wraps text to width without the full markdown renderer. It strips ANSI
 // first so output cannot move the cursor or change colours.
 func cheap(src string, width int) string {
-	src = ansi.Strip(src)
+	src = sanitize.Text(src)
 	if width <= 0 {
 		return src
 	}

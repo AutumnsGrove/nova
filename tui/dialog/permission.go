@@ -11,6 +11,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/render"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -129,13 +130,13 @@ func (p *permission) Size(maxW, maxH int) (int, int) {
 func (p *permission) body(inner int) []string {
 	var out []string
 	if p.tool != "" {
-		out = append(out, "tool: "+safe(p.tool))
+		out = append(out, "tool: "+sanitize.Text(p.tool))
 	}
 	if sum := render.Summarize(p.tool, p.args, inner-6); sum != "" {
-		out = append(out, "      "+safe(sum))
+		out = append(out, "      "+sanitize.Text(sum))
 	}
 	if p.reason != "" {
-		out = append(out, wrap(safe(p.reason), inner)...)
+		out = append(out, wrap(sanitize.Text(p.reason), inner)...)
 	}
 	out = append(out, "")
 	for i, opt := range p.options() {

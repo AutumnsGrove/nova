@@ -17,6 +17,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/tui/render"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -311,7 +312,7 @@ func extensionLines(ext []Ext, width, maxLines int, st styles.Styles) []string {
 	}
 	styled := make([]string, len(ext))
 	for i, e := range ext {
-		styled[i] = styleFor(e.Style, st).Render(ansi.Strip(e.Text))
+		styled[i] = styleFor(e.Style, st).Render(sanitize.Text(e.Text))
 	}
 	var lines []string
 	cur := ""

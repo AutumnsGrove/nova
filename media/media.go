@@ -78,6 +78,23 @@ func Dimensions(data []byte) (w, h int, ok bool) {
 	return cfg.Width, cfg.Height, true
 }
 
+// PNG returns data as a PNG, for a terminal that can draw only that format. A
+// PNG comes back untouched; anything else is decoded and re-encoded, so it
+// costs a decode and should be done once per image shown, never per frame.
+func PNG(data []byte) ([]byte, error) {
+	if mime, ok := Sniff(data); !ok {
+		return nil, ErrUnsupported
+	} else if mime == "image/png" {
+		return data, nil
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnsupported, err)
+	}
+	out, _, err := encode(img, false)
+	return out, err
+}
+
 // Normalize decodes data, applies EXIF orientation, resizes it to fit the
 // limits, and re-encodes it under MaxBytes. The mime type a caller claims is
 // ignored (the decoded format decides how it is re-encoded); the parameter stays

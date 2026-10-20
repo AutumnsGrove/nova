@@ -372,6 +372,8 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | IMG03 | fallback text | a named PNG with dimensions; empty | a labelled line; `[image]` |
 | IMG04 | Kitty encoding chunks | a short payload; one over 4096 chars | params with `C=1`; `m=1` then `m=0` |
 | IMG05 | render returns the rows an image covers | a Kitty part; iTerm2; no data | lines starting `\x1b_G`; false for the last two |
+| IMG09 | a JPEG part is drawn as PNG | a Kitty JPEG part | the escape payload decodes to a PNG |
+| IMG10 | undecodable data is not drawn | a part whose bytes are not an image | false, so the caller shows the text line |
 
 ## Fuzz and property tests
 

@@ -186,3 +186,27 @@ func TestMedia_MED08_Dimensions(t *testing.T) {
 		t.Fatal("Dimensions accepted junk")
 	}
 }
+
+func TestMedia_MED09_PNGConvertsForDisplay(t *testing.T) {
+	var jpg bytes.Buffer
+	if err := jpeg.Encode(&jpg, solid(4, 3), nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := PNG(jpg.Bytes())
+	if err != nil {
+		t.Fatalf("PNG(jpeg): %v", err)
+	}
+	if mime, _ := Sniff(got); mime != "image/png" {
+		t.Fatalf("converted type = %q, want image/png", mime)
+	}
+	if w, h, _ := Dimensions(got); w != 4 || h != 3 {
+		t.Fatalf("converted size = %dx%d, want 4x3", w, h)
+	}
+	same := pngOf(2, 2)
+	if again, err := PNG(same); err != nil || !bytes.Equal(again, same) {
+		t.Fatalf("a PNG should come back untouched (err %v)", err)
+	}
+	if _, err := PNG([]byte("not an image")); err == nil {
+		t.Fatal("PNG accepted junk")
+	}
+}

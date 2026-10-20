@@ -14,6 +14,8 @@ import (
 
 // Defaults for the API root and the attribution headers.
 const (
+	// ProviderName is the provider id in the registry and the catalog.
+	ProviderName = "openrouter"
 	// DefaultBaseURL is OpenRouter's chat-completions API root.
 	DefaultBaseURL = "https://openrouter.ai/api/v1"
 	// DefaultReferer is sent as HTTP-Referer for attribution.
@@ -52,7 +54,7 @@ func New(cfg Config) *openaicompat.Provider {
 		cfg.Title = DefaultTitle
 	}
 	return openaicompat.New(openaicompat.Config{
-		Name:       "openrouter",
+		Name:       ProviderName,
 		BaseURL:    cfg.BaseURL,
 		APIKey:     cfg.APIKey,
 		APIKeyFunc: cfg.APIKeyFunc,

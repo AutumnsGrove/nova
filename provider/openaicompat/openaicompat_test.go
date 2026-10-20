@@ -1275,23 +1275,18 @@ func FuzzToolCallAssembly(f *testing.F) {
 	f.Fuzz(func(t *testing.T, seed int64, a, b, c uint8) {
 		const arguments = `{"x":1}`
 		fragments := interleave(arguments, []int{int(a)%4 + 1, int(b)%4 + 1, int(c)%4 + 1})
-		asm := &assembler{calls: map[int]*callAcc{}}
+		col := provider.NewCollector("m", nil)
 		for n, frag := range fragments {
 			id := ""
 			name := ""
 			if n == 0 {
 				id, name = "c1", "read"
 			}
-			asm.add(toolCallDelta{
-				Index:    intPtr(0),
-				ID:       id,
-				Type:     "function",
-				Function: funcDelta(name, frag),
-			})
+			col.ToolCall(0, id, "function", name, frag)
 		}
-		calls, dropped := asm.assembled()
-		if dropped != 0 || len(calls) != 1 {
-			t.Fatalf("seed %d: calls=%v dropped=%d", seed, calls, dropped)
+		calls := col.Finish("tool_calls").Message.ToolCalls
+		if len(calls) != 1 {
+			t.Fatalf("seed %d: calls=%v", seed, calls)
 		}
 		if calls[0].ID != "c1" || calls[0].Function.Name != "read" {
 			t.Fatalf("seed %d: call = %+v", seed, calls[0])
@@ -1316,19 +1311,6 @@ func interleave(s string, sizes []int) []string {
 		i += size
 	}
 	return out
-}
-
-func intPtr(v int) *int { return &v }
-
-// funcDelta fills the anonymous function field of a tool-call delta.
-func funcDelta(name, args string) struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-} {
-	return struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	}{Name: name, Arguments: args}
 }
 
 func TestStream_OAI63_ImageMessageContentArray(t *testing.T) {
@@ -1391,5 +1373,40 @@ func TestStream_OAI65_TextOnlyContentStaysString(t *testing.T) {
 	got := msgs[0].(map[string]any)["content"]
 	if got != "hi" {
 		t.Errorf("content = %T %v, want the string \"hi\"", got, got)
+	}
+}
+
+// OpenRouter reports an upstream failure after the first token as an error
+// object on a later chunk, with finish_reason "error". Treating that chunk as a
+// chunk with no choices would end the turn as a success with a cut-off answer.
+func TestStream_OAI66_MidStreamErrorObjectFailsTheTurn(t *testing.T) {
+	p, _ := served(t, Config{}, testkit.ServerTurn{Raw: []string{
+		deltaLine(map[string]any{"content": "partial"}),
+		sseLine(map[string]any{
+			"error":   map[string]any{"code": "server_error", "message": "upstream disconnected"},
+			"choices": []any{map[string]any{"delta": map[string]any{"content": ""}, "finish_reason": "error"}},
+		}),
+		doneLine,
+	}})
+	resp, err := p.Stream(context.Background(), textRequest("m"), nil)
+	pe := assertErr(t, err, -1, false)
+	if pe.Code != "server_error" || !strings.Contains(pe.Message, "upstream disconnected") {
+		t.Errorf("error = %v, want the upstream code and message", pe)
+	}
+	if resp == nil || resp.Message.Content != "partial" {
+		t.Errorf("partial response = %+v, want the text delivered so far", resp)
+	}
+}
+
+func TestStream_OAI67_FinishReasonErrorWithoutObjectFailsTheTurn(t *testing.T) {
+	p, _ := served(t, Config{}, testkit.ServerTurn{Raw: []string{
+		deltaLine(map[string]any{"content": "partial"}),
+		sseLine(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{}, "finish_reason": "error"}}}),
+		doneLine,
+	}})
+	resp, err := p.Stream(context.Background(), textRequest("m"), nil)
+	assertErr(t, err, -1, false)
+	if resp == nil || resp.Message.Content != "partial" {
+		t.Errorf("partial response = %+v, want the text delivered so far", resp)
 	}
 }

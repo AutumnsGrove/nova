@@ -6,6 +6,10 @@ import "github.com/AutumnsGrove/nova/provider"
 // configured.
 const DefaultModel = "deepseek/deepseek-v4.1"
 
+// textAndImage marks a model that accepts image input, mirroring
+// OpenRouter's input_modalities for the entries below.
+var textAndImage = []string{"text", "image"}
+
 // Catalog is the code-defined set of OpenRouter models Nova ships with. It is
 // deliberately small: a stable id keeps a stored choice resolving when a
 // provider renames a slug, and the listed price gives cost accounting a
@@ -14,15 +18,11 @@ const DefaultModel = "deepseek/deepseek-v4.1"
 // IDs, slugs, context windows, and per-million-token prices were taken from
 // OpenRouter's model list (GET https://openrouter.ai/api/v1/models) on
 // 2026-10-09. Prices are in US dollars per million tokens.
-// textAndImage marks a model that accepts image input, mirroring
-// OpenRouter's input_modalities for the entries below.
-var textAndImage = []string{"text", "image"}
-
 var Catalog = []provider.Model{
 	{
 		ID:            DefaultModel,
 		Name:          "DeepSeek V4.1 Flash",
-		Provider:      "openrouter",
+		Provider:      ProviderName,
 		Slug:          "deepseek/deepseek-v4.1-flash",
 		ContextWindow: 1_048_576,
 		InPerM:        0.3,
@@ -31,7 +31,7 @@ var Catalog = []provider.Model{
 	{
 		ID:              "anthropic/claude-opus-5.5",
 		Name:            "Claude Opus 5.5",
-		Provider:        "openrouter",
+		Provider:        ProviderName,
 		Slug:            "anthropic/claude-opus-5.5",
 		ContextWindow:   1_000_000,
 		InPerM:          4,
@@ -41,7 +41,7 @@ var Catalog = []provider.Model{
 	{
 		ID:              "anthropic/claude-haiku-5.5",
 		Name:            "Claude Haiku 5.5",
-		Provider:        "openrouter",
+		Provider:        ProviderName,
 		Slug:            "anthropic/claude-haiku-5.5",
 		ContextWindow:   1_000_000,
 		InPerM:          0.1,
@@ -51,7 +51,7 @@ var Catalog = []provider.Model{
 	{
 		ID:              "openai/gpt-6.1-sol",
 		Name:            "GPT-6.1 Sol",
-		Provider:        "openrouter",
+		Provider:        ProviderName,
 		Slug:            "openai/gpt-6.1-sol",
 		ContextWindow:   1_050_000,
 		InPerM:          2,
@@ -61,7 +61,7 @@ var Catalog = []provider.Model{
 	{
 		ID:              "openai/gpt-6-luna",
 		Name:            "GPT-6 Luna",
-		Provider:        "openrouter",
+		Provider:        ProviderName,
 		Slug:            "openai/gpt-6-luna",
 		ContextWindow:   1_050_000,
 		InPerM:          0.1,

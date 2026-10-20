@@ -199,6 +199,8 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 | OAI63 | image message sends a content array | a user message with text and a PNG part | `content` is `[text, image_url]` with a `data:` URL |
 | OAI64 | image-only message sends a content array | a user message with one image and no text | `content` is one `image_url` block |
 | OAI65 | text-only content stays a string | `User("hi")` | `content` is the string `"hi"`, not an array |
+| OAI66 | error object after output has started | a chunk with `error` and `finish_reason` `error` after a text delta | non-retryable `*provider.Error` with the code; the delivered text is kept |
+| OAI67 | `finish_reason` `error` with no error object | text, then a chunk finishing with `error` | non-retryable `*provider.Error`; the delivered text is kept |
 
 ## Fuzz and property tests
 

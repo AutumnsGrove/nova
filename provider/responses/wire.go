@@ -1,24 +1,21 @@
 package responses
 
 import (
-	"encoding/json"
-
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
 )
 
 // request is the Responses API request body.
 type request struct {
-	Model           string         `json:"model"`
-	Instructions    string         `json:"instructions,omitempty"`
-	Input           []inputItem    `json:"input"`
-	Stream          bool           `json:"stream"`
-	Tools           []toolDef      `json:"tools,omitempty"`
-	ToolChoice      any            `json:"tool_choice,omitempty"`
-	Temperature     *float64       `json:"temperature,omitempty"`
-	MaxOutputTokens *int           `json:"max_output_tokens,omitempty"`
-	Reasoning       *reasoning     `json:"reasoning,omitempty"`
-	Extra           map[string]any `json:"-"`
+	Model           string      `json:"model"`
+	Instructions    string      `json:"instructions,omitempty"`
+	Input           []inputItem `json:"input"`
+	Stream          bool        `json:"stream"`
+	Tools           []toolDef   `json:"tools,omitempty"`
+	ToolChoice      any         `json:"tool_choice,omitempty"`
+	Temperature     *float64    `json:"temperature,omitempty"`
+	MaxOutputTokens int         `json:"max_output_tokens"`
+	Reasoning       *reasoning  `json:"reasoning,omitempty"`
 }
 
 // inputItem is one input entry: a role message, a function call, or a function
@@ -44,36 +41,18 @@ type contentItem struct {
 
 // wireContent renders a message's content as a plain string, or as an input
 // array when it carries image parts. An empty message returns nil so the field
-// stays omitted, as it was before parts existed. Text precedes the images; an
-// unknown part kind or a part with no bytes or URL is skipped.
+// stays omitted.
 func wireContent(m message.Message) any {
-	if len(m.Parts) == 0 {
-		if m.Content == "" {
-			return nil
-		}
-		return m.Content
+	items := provider.ContentParts(m,
+		func(text string) contentItem { return contentItem{Type: "input_text", Text: text} },
+		func(url string) contentItem { return contentItem{Type: "input_image", ImageURL: url} })
+	if len(items) > 0 {
+		return items
 	}
-	content := make([]contentItem, 0, len(m.Parts)+1)
-	if m.Content != "" {
-		content = append(content, contentItem{Type: "input_text", Text: m.Content})
+	if m.Content == "" {
+		return nil
 	}
-	for _, p := range m.Parts {
-		url := p.URL
-		if url == "" && p.Data != "" {
-			url = "data:" + p.MimeType + ";base64," + p.Data
-		}
-		if p.Type != message.PartImage || url == "" {
-			continue
-		}
-		content = append(content, contentItem{Type: "input_image", ImageURL: url})
-	}
-	if len(content) == 0 {
-		if m.Content == "" {
-			return nil
-		}
-		return m.Content
-	}
-	return content
+	return m.Content
 }
 
 // toolDef is one flattened tool.
@@ -93,14 +72,11 @@ type reasoning struct {
 type event struct {
 	Type        string `json:"type"`
 	Delta       string `json:"delta"`
-	ItemID      string `json:"item_id"`
 	OutputIndex int    `json:"output_index"`
 	Item        struct {
-		ID        string `json:"id"`
-		Type      string `json:"type"`
-		CallID    string `json:"call_id"`
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
+		Type   string `json:"type"`
+		CallID string `json:"call_id"`
+		Name   string `json:"name"`
 	} `json:"item"`
 	Response struct {
 		Usage struct {
@@ -114,73 +90,50 @@ type event struct {
 				ReasoningTokens int `json:"reasoning_tokens"`
 			} `json:"output_tokens_details"`
 		} `json:"usage"`
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
+		Error             errorBody `json:"error"`
 		IncompleteDetails struct {
 			Reason string `json:"reason"`
 		} `json:"incomplete_details"`
 	} `json:"response"`
-	Error struct {
-		Message string `json:"message"`
-	} `json:"error"`
+	// An "error" event carries its code and message at the top level; some
+	// gateways nest them under "error" as a failed response does.
+	Error   errorBody `json:"error"`
+	Code    any       `json:"code"`
+	Message string    `json:"message"`
 }
 
-// decodeEvent unmarshals one SSE payload.
-func decodeEvent(data []byte) (event, error) {
-	var ev event
-	err := json.Unmarshal(data, &ev)
-	return ev, err
+// errorBody is the error object inside a failed response.
+type errorBody struct {
+	Code    any    `json:"code"`
+	Message string `json:"message"`
 }
 
 // buildInput converts the transcript into instructions plus input items.
 func buildInput(messages []message.Message) (string, []inputItem) {
-	instructions := ""
+	instructions, rest := provider.SplitSystem(messages)
 	var items []inputItem
-	for _, m := range messages {
-		if m.Role == message.RoleSystem {
-			if instructions == "" {
-				instructions = m.Content
-			} else {
-				instructions += "\n\n" + m.Content
-			}
-			continue
-		}
+	for _, m := range rest {
 		if m.Role == message.RoleTool {
 			items = append(items, inputItem{Type: "function_call_output", CallID: m.ToolCallID, Output: m.Content})
 			continue
 		}
-		if len(m.ToolCalls) > 0 {
-			for _, tc := range m.ToolCalls {
-				items = append(items, inputItem{
-					Type:      "function_call",
-					CallID:    tc.ID,
-					Name:      tc.Function.Name,
-					Arguments: tc.Function.Arguments,
-				})
-			}
-			if m.Content == "" {
-				continue
-			}
+		for _, tc := range m.ToolCalls {
+			items = append(items, inputItem{
+				Type:      "function_call",
+				CallID:    tc.ID,
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			})
+		}
+		if len(m.ToolCalls) > 0 && m.Content == "" {
+			continue
 		}
 		items = append(items, inputItem{Role: string(m.Role), Content: wireContent(m)})
 	}
 	return instructions, items
 }
 
-// flattenTools converts tool definitions to the Responses shape.
-func flattenTools(tools []provider.ToolDef) []toolDef {
-	if len(tools) == 0 {
-		return nil
-	}
-	out := make([]toolDef, 0, len(tools))
-	for _, t := range tools {
-		out = append(out, toolDef{
-			Type:        "function",
-			Name:        t.Function.Name,
-			Description: t.Function.Description,
-			Parameters:  t.Function.Parameters,
-		})
-	}
-	return out
+// flattenTool converts one tool definition to the Responses shape.
+func flattenTool(f provider.ToolFunction) toolDef {
+	return toolDef{Type: "function", Name: f.Name, Description: f.Description, Parameters: f.Parameters}
 }

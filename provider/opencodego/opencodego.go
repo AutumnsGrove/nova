@@ -30,9 +30,12 @@ const (
 type Dialect string
 
 const (
-	DialectChat      Dialect = "chat_completions"
+	// DialectChat is the OpenAI chat-completions API.
+	DialectChat Dialect = "chat_completions"
+	// DialectResponses is the OpenAI Responses API.
 	DialectResponses Dialect = "responses"
-	DialectMessages  Dialect = "messages"
+	// DialectMessages is the Anthropic Messages API.
+	DialectMessages Dialect = "messages"
 )
 
 // Config configures the preset.
@@ -123,18 +126,18 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 // APIFor reports the dialect for a model id. It consults the catalog's endpoint
 // table first, then infers from the model id, and defaults to chat completions.
 func APIFor(model string) Dialect {
-	if d, ok := EndpointTable[model]; ok {
+	mu.RLock()
+	d, ok := EndpointTable[model]
+	mu.RUnlock()
+	if ok {
 		return d
 	}
 	return inferDialect(stripPrefix(model))
 }
 
-// stripPrefix removes the "opencode-go/" catalog prefix.
+// stripPrefix removes the catalog prefix, leaving the wire slug.
 func stripPrefix(model string) string {
-	if rest, ok := strings.CutPrefix(model, "opencode-go/"); ok {
-		return rest
-	}
-	return model
+	return strings.TrimPrefix(model, idPrefix)
 }
 
 // inferDialect mirrors OpenCode's endpoint table for a live model id that the

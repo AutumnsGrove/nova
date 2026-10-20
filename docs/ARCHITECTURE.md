@@ -43,8 +43,8 @@ nova/
     openaicompat/ chat-completions + SSE                        ≤ 600
     responses/    OpenAI Responses API + SSE                    ≤ 480
     messages/     Anthropic Messages API + SSE                  ≤ 480
-    ssestream/    shared POST + SSE transport, timeouts         ≤ 320
-    opencodego/   preset: catalog, endpoint routing             ≤ 320
+    ssestream/    shared POST + SSE transport, timeouts         ≤ 420
+    opencodego/   preset: catalog, endpoint routing             ≤ 560
     openrouter/   preset: routing options, headers, usage       ≤ 300
   auth/           OAuth PKCE login, key store                   ≤ 500
   tool/           Tool contract, registry, schema validation    ≤ 600
@@ -303,9 +303,13 @@ options, the attribution headers, and OpenRouter's `cost` field. `opencodego` is
 the second: a preset with its own catalog that routes each model to one of three
 streaming dialects, `provider/responses` (the OpenAI Responses API),
 `provider/messages` (the Anthropic Messages API), or `openaicompat`. All three
-dialects sit on `provider/ssestream`, which owns the connect timeout (30 s), the
-idle timeout (120 s), the SSE line reader, and the `provider.Classify` error
-mapping, so a network timeout is retryable and identical on every endpoint.
+dialects sit on `provider/ssestream`, which owns the request plumbing (header
+precedence, the credential), the connect timeout (30 s), the idle timeout
+(120 s), the SSE line reader, and the `provider.Classify` error mapping, so a
+network timeout or a stream cut mid-event is retryable and identical on every
+endpoint. They also share `provider.Collector`, which turns deltas into the
+`Response` (text, reasoning, usage, tool-call assembly, finish reason), so a
+dialect only parses its own events.
 `mode/providers` builds both providers and picks one by the model's catalog entry.
 
 `auth` owns login. `nova login` runs OpenRouter's OAuth PKCE flow with a loopback

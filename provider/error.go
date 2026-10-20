@@ -76,22 +76,12 @@ func parseRetryAfter(now time.Time, header string) time.Duration {
 			return 0
 		}
 		// Cap before multiplying so a huge number cannot overflow Duration.
-		if secs >= int64(maxRetryAfter/time.Second) {
-			return maxRetryAfter
-		}
-		return time.Duration(secs) * time.Second
+		return time.Duration(min(secs, int64(maxRetryAfter/time.Second))) * time.Second
 	}
 	if when, err := http.ParseTime(header); err == nil {
 		if d := when.Sub(now); d > 0 {
-			return capRetryAfter(d)
+			return min(d, maxRetryAfter)
 		}
 	}
 	return 0
-}
-
-func capRetryAfter(d time.Duration) time.Duration {
-	if d > maxRetryAfter {
-		return maxRetryAfter
-	}
-	return d
 }

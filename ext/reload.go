@@ -36,9 +36,12 @@ func (h *Host) rebuildChanged(ctx context.Context) []error {
 	for _, dir := range h.opt.Dirs {
 		key, hash := hashKey(dir), ManifestHash(dir)
 		if prev, ok := old[key]; !ok || prev != hash {
-			if err := h.rebuild(ctx, dir); err != nil {
-				errs = append(errs, err)
-				continue
+			// A manifest that no longer loads is left for start to report.
+			if m, err := LoadManifest(dir); err == nil && len(m.Build) > 0 {
+				if err := runBuild(ctx, h.opt.Run, dir, m.Build, defaultBuildTimeout); err != nil {
+					errs = append(errs, fmt.Errorf("ext: rebuild %s: %w", m.Name, err))
+					continue
+				}
 			}
 		}
 		h.mu.Lock()
@@ -46,19 +49,6 @@ func (h *Host) rebuildChanged(ctx context.Context) []error {
 		h.mu.Unlock()
 	}
 	return errs
-}
-
-// rebuild runs one extension's build step, if its manifest has one. A manifest
-// that no longer loads is left for start to report.
-func (h *Host) rebuild(ctx context.Context, dir string) error {
-	m, err := LoadManifest(dir)
-	if err != nil || len(m.Build) == 0 {
-		return nil
-	}
-	if err := runBuild(ctx, h.opt.Run, dir, m.Build, defaultBuildTimeout); err != nil {
-		return fmt.Errorf("ext: rebuild %s: %w", m.Name, err)
-	}
-	return nil
 }
 
 // hashKey is the map key for a manifest hash: the absolute directory.

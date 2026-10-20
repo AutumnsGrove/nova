@@ -1,9 +1,13 @@
 package install
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -25,13 +29,17 @@ type lockFile struct {
 	Extensions []LockEntry `yaml:"extensions"`
 }
 
-// readLock loads the lockfile at path. A missing file is an empty lock; a
-// corrupt file is an empty lock with a warning.
+// readLock loads the lockfile at path. A missing file is an empty lock; one that
+// cannot be read or parsed is an empty lock with a warning, which the next
+// write replaces.
 func readLock(path string) (map[string]LockEntry, []string) {
 	out := map[string]LockEntry{}
 	data, err := os.ReadFile(path)
-	if err != nil {
+	if errors.Is(err, fs.ErrNotExist) {
 		return out, nil
+	}
+	if err != nil {
+		return out, []string{"ext: unreadable lockfile: " + err.Error()}
 	}
 	var lf lockFile
 	if err := yaml.Unmarshal(data, &lf); err != nil {
@@ -50,7 +58,7 @@ func writeLock(path string, entries map[string]LockEntry) error {
 	for _, e := range entries {
 		lf.Extensions = append(lf.Extensions, e)
 	}
-	sortLockEntries(lf.Extensions)
+	slices.SortFunc(lf.Extensions, func(a, b LockEntry) int { return strings.Compare(a.Name, b.Name) })
 	data, err := yaml.Marshal(lf)
 	if err != nil {
 		return err
@@ -63,9 +71,15 @@ func writeLock(path string, entries map[string]LockEntry) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	// After a successful rename the temp file is gone and this is a no-op.
+	defer func() { _ = os.Remove(tmpName) }()
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
+		return err
+	}
+	// Sync before the rename, or a crash could leave the new name on an empty file.
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {
@@ -75,13 +89,4 @@ func writeLock(path string, entries map[string]LockEntry) error {
 		return fmt.Errorf("ext: write lockfile: %w", err)
 	}
 	return nil
-}
-
-// sortLockEntries orders entries by name so the file is deterministic.
-func sortLockEntries(entries []LockEntry) {
-	for i := 1; i < len(entries); i++ {
-		for j := i; j > 0 && entries[j].Name < entries[j-1].Name; j-- {
-			entries[j], entries[j-1] = entries[j-1], entries[j]
-		}
-	}
 }

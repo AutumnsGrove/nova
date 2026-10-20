@@ -142,12 +142,12 @@ func LoadManifest(dir string) (*Manifest, error) {
 	return parseManifest(abs, data)
 }
 
-// readManifestFile reads path, which must be a regular file, up to one byte
-// over the manifest cap. A repository chooses what extension.yaml is, so it may
-// be a named pipe (opening it would block) or a device (reading it would never
-// end).
+// readManifestFile reads path, which must be a regular file and not a symlink,
+// up to one byte over the manifest cap. A repository chooses what
+// extension.yaml is, so it may be a named pipe (opening it would block), a
+// device (reading it would never end), or a link to a file elsewhere.
 func readManifestFile(path string) ([]byte, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
 	}

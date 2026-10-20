@@ -90,7 +90,7 @@ func open(path string, opt Options, template *Header) (*Store, error) {
 		f.Close()
 		return nil, fmt.Errorf("session: lock %s: %w", path, err)
 	}
-	defer unlockFile(f)
+	defer func() { _ = unlockFile(f) }() // closing the file releases the lock anyway
 	data, err := io.ReadAll(f)
 	if err != nil {
 		f.Close()
@@ -324,7 +324,7 @@ func (s *Store) appendLocked(useLeaf bool, parent string, e Entry) (Entry, error
 	if err := lockFile(s.file); err != nil {
 		return Entry{}, err
 	}
-	defer unlockFile(s.file)
+	defer func() { _ = unlockFile(s.file) }() // closing the file releases the lock anyway
 	if err := s.refresh(); err != nil {
 		return Entry{}, err
 	}

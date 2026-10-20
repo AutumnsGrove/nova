@@ -1,10 +1,11 @@
 // Package provider defines the model-provider contract and the registry that
 // lets applications plug in new providers.
 //
-// The first concrete implementation lives in provider/openaicompat (with
-// provider/openrouter as a preset on top of it), but nothing in this package
-// depends on a specific wire protocol. A provider only has to turn a Request
-// into a stream of events and a final Response.
+// Nothing in this package depends on a specific wire protocol. A provider only
+// has to turn a Request into a stream of events and a final Response. The
+// concrete wire dialects (provider/openaicompat, provider/responses and
+// provider/messages) share the Collector, which assembles that Response from
+// deltas, and the request helpers in wire.go.
 package provider
 
 import (

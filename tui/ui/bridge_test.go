@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/AutumnsGrove/nova/proto"
@@ -55,5 +56,18 @@ func TestUI_DLG11_ExpiryOfAQueuedRequestDropsIt(t *testing.T) {
 		if a.ID == "second" {
 			t.Fatalf("an expired request was answered: %+v", a)
 		}
+	}
+}
+
+// The title is written into an operating-system command; an extension's text
+// must not be able to end that command early and start its own.
+func TestUI_UXB10_TitleCannotCarryControlBytes(t *testing.T) {
+	m, _, _ := newModel(t)
+	pushUI(m, proto.UIRequest{Method: "title", Text: "build\x07\x1b]0;pwned\x07 done\n"})
+	if strings.ContainsAny(m.title, "\x07\x1b\n") {
+		t.Fatalf("title = %q, want no control bytes", m.title)
+	}
+	if !strings.Contains(m.title, "build") || !strings.Contains(m.title, "done") {
+		t.Fatalf("title = %q, want the visible words kept", m.title)
 	}
 }

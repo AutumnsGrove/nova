@@ -12,6 +12,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/dialog"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/widget"
 )
 
@@ -68,7 +69,7 @@ func (m *Model) handleUIRequest(req proto.UIRequest) tea.Cmd {
 	case "widget":
 		m.applyWidget(req)
 	case "title":
-		m.title = req.Text
+		m.title = sanitize.Line(req.Text)
 	case "set_editor_text":
 		m.applyEditorText(req.Text)
 	case "confirm", "select", "input", "form":

@@ -338,6 +338,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | UXB07 | undeclared method frame | | ignored |
 | UXB08 | hello declares the capabilities | | the documented list |
 | UXB09 | end to end with a real server | extension asks a form; user answers | the extension receives the answers |
+| UXB10 | a title carries no control bytes | a `title` request with a bell, an escape and a newline | the stored title keeps the words and none of those |
 | TRP01 | untrusted project with content | | prompt shown with what would load |
 | TRP02 | trust | | store updated; project loads |
 | TRP03 | continue without | | not trusted; project skipped |

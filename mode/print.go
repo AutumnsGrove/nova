@@ -17,11 +17,36 @@ func RunPrint(ctx context.Context, s *Server, prompt string, out, errOut io.Writ
 
 	resp := s.Handle(ctx, proto.Command{Type: proto.CmdPrompt, Text: prompt})
 	if !resp.OK {
-		fmt.Fprintln(errOut, resp.Error.Message)
+		// A progress line that cannot be written has nowhere better to go.
+		_, _ = fmt.Fprintln(errOut, resp.Error.Message)
 		return exitForError(resp.Error.Code)
 	}
 
 	var answer string
+	return driveRun(ctx, s, events, func(ev proto.Event) {
+		switch ev.Type {
+		case proto.EventToolCall:
+			if ev.Call != nil {
+				_, _ = fmt.Fprintf(errOut, "· %s\n", ev.Call.Name)
+			}
+		case proto.EventError:
+			if ev.Error != nil {
+				_, _ = fmt.Fprintln(errOut, ev.Error.Message)
+			}
+		case proto.EventMessageEnd:
+			if ev.Message != nil && ev.Message.Role == message.RoleAssistant && ev.Message.Content != "" {
+				answer = ev.Message.Content
+			}
+		case proto.EventRunEnd:
+			_, _ = fmt.Fprintln(out, answer)
+		}
+	})
+}
+
+// driveRun hands each event to onEvent until run_end and returns the exit code.
+// A cancelled ctx aborts the run once and the loop keeps reading, so the run
+// still ends with its run_end and the code becomes 130.
+func driveRun(ctx context.Context, s *Server, events <-chan proto.Event, onEvent func(proto.Event)) int {
 	interrupted := false
 	ctxDone := ctx.Done()
 	for {
@@ -34,21 +59,8 @@ func RunPrint(ctx context.Context, s *Server, prompt string, out, errOut io.Writ
 			if !ok {
 				return 1
 			}
-			switch ev.Type {
-			case proto.EventToolCall:
-				if ev.Call != nil {
-					fmt.Fprintf(errOut, "· %s\n", ev.Call.Name)
-				}
-			case proto.EventError:
-				if ev.Error != nil {
-					fmt.Fprintln(errOut, ev.Error.Message)
-				}
-			case proto.EventMessageEnd:
-				if ev.Message != nil && ev.Message.Role == message.RoleAssistant && ev.Message.Content != "" {
-					answer = ev.Message.Content
-				}
-			case proto.EventRunEnd:
-				fmt.Fprintln(out, answer)
+			onEvent(ev)
+			if ev.Type == proto.EventRunEnd {
 				if interrupted {
 					return 130
 				}
@@ -74,10 +86,8 @@ func exitForReason(reason string) int {
 
 // exitForError maps a protocol error code to an exit code.
 func exitForError(code string) int {
-	switch code {
-	case proto.CodeBadRequest:
+	if code == proto.CodeBadRequest {
 		return 2
-	default:
-		return 1
 	}
+	return 1
 }

@@ -25,7 +25,7 @@ type PromptInput struct {
 func BuildSystemPrompt(in PromptInput) string {
 	date := in.Date
 	if date.IsZero() {
-		date = now()
+		date = time.Now()
 	}
 	var blocks []string
 	appendBlock := func(text string) {

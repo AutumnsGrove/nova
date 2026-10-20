@@ -30,6 +30,9 @@ func checkReadable(info os.FileInfo, limit int64) error {
 	return nil
 }
 
+// readConfigFile is the default reader for config layers and the trust store.
+func readConfigFile(path string) ([]byte, error) { return readRegularFile(path, maxReadBytes) }
+
 // readRegularFile reads path, following symlinks, but only when it is a regular
 // file of at most limit bytes. The stat comes first so a named pipe is refused
 // without opening it. A missing file keeps its fs.ErrNotExist.

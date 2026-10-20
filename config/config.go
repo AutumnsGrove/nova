@@ -9,12 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -175,7 +175,7 @@ func Defaults() Config {
 // warnings. An error is returned only for an invalid call, never for a bad file.
 func Load(opt LoadOptions) (*Config, []Warning, error) {
 	if opt.CWD == "" {
-		return nil, nil, fmt.Errorf("config: LoadOptions.CWD is required")
+		return nil, nil, errors.New("config: LoadOptions.CWD is required")
 	}
 	cwd := filepath.Clean(opt.CWD)
 	home := opt.Home
@@ -193,7 +193,7 @@ func Load(opt LoadOptions) (*Config, []Warning, error) {
 	}
 	readFile := opt.ReadFile
 	if readFile == nil {
-		readFile = func(path string) ([]byte, error) { return readRegularFile(path, maxReadBytes) }
+		readFile = readConfigFile
 	}
 
 	var warnings []Warning
@@ -210,7 +210,7 @@ func Load(opt LoadOptions) (*Config, []Warning, error) {
 			if m, ok := readLayer(readFile, path, &warnings); ok {
 				mergeMaps(merged, m)
 			}
-		} else if fileExists(readFile, path) {
+		} else if _, existing, _ := readFirst(readFile, path); existing != "" {
 			warnings = append(warnings, Warning{Source: path, Message: "project is not trusted; skipping project config"})
 		}
 	}
@@ -260,16 +260,6 @@ func readFirst(readFile func(string) ([]byte, error), base string) ([]byte, stri
 		}
 	}
 	return nil, "", nil
-}
-
-// fileExists reports whether either config extension for base can be read.
-func fileExists(readFile func(string) ([]byte, error), base string) bool {
-	for _, ext := range []string{".yaml", ".json"} {
-		if _, err := readFile(base + ext); err == nil {
-			return true
-		}
-	}
-	return false
 }
 
 // mergeMaps deep-merges maps and replaces every other value, so lists and
@@ -364,7 +354,7 @@ func envValue(env func(string) string, name string) (string, bool) {
 // warnings are stable.
 func flagsMap(flags map[string]any) map[string]any {
 	m := map[string]any{}
-	for _, key := range sortedFlagKeys(flags) {
+	for _, key := range slices.Sorted(maps.Keys(flags)) {
 		parts := strings.Split(key, ".")
 		if parts[0] == "bash" {
 			parts = append([]string{"tools"}, parts...)
@@ -372,16 +362,6 @@ func flagsMap(flags map[string]any) map[string]any {
 		setNested(m, parts, flags[key])
 	}
 	return m
-}
-
-// sortedFlagKeys returns the flag keys in order.
-func sortedFlagKeys(flags map[string]any) []string {
-	keys := make([]string, 0, len(flags))
-	for key := range flags {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // setNested writes value at parts, creating intermediate maps.
@@ -456,13 +436,7 @@ func displayLines(v *int, def int, name string, warnings *[]Warning) {
 	case *v == 0:
 		*v = def
 	case *v < 1 || *v > 50:
-		clamped := *v
-		if clamped < 1 {
-			clamped = 1
-		}
-		if clamped > 50 {
-			clamped = 50
-		}
+		clamped := min(max(*v, 1), 50)
 		*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("%s out of range; using %d", name, clamped)})
 		*v = clamped
 	}
@@ -504,6 +478,3 @@ func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
-
-// now is the clock BuildSystemPrompt uses when PromptInput.Date is zero.
-func now() time.Time { return time.Now() }

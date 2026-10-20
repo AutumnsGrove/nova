@@ -1,8 +1,8 @@
 ---
 chunk: C16
 title: "TUI rendering: thinking block, tool cards, diffs, themes, splash"
-packages: [./tui/render, ./tui/diff, ./tui/chat, ./tui/styles, ./tui/ui, ./tui/status, ./tui/git]
-budgets: { ./tui/render: 750, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 3050, ./tui/status: 320, ./tui/git: 120 }
+packages: [./tui/render, ./tui/diff, ./tui/chat, ./tui/styles, ./tui/ui, ./tui/status, ./tui/git, ./tui/highlight]
+budgets: { ./tui/render: 750, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 3050, ./tui/status: 320, ./tui/git: 120, ./tui/highlight: 80 }
 depends: [C15]
 ---
 

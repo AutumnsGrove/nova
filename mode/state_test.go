@@ -3,9 +3,11 @@ package mode
 import (
 	"context"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/proto"
@@ -33,6 +35,19 @@ func noSessionServer(t *testing.T, turns ...testkit.Turn) *Server {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s
+}
+
+// waitIdle blocks until the agent has released its run. run_end is emitted a
+// moment before that, and a session command sent in the gap is refused as busy.
+func waitIdle(t *testing.T, s *Server) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for s.agent.Running() {
+		if time.Now().After(deadline) {
+			t.Fatal("the agent never became idle")
+		}
+		runtime.Gosched()
+	}
 }
 
 // effectiveLimit reads get_state's effective_limit.
@@ -114,6 +129,7 @@ func TestServer_SRV50_SessionSwitchForgetsLastUsage(t *testing.T) {
 			if got := promptAndWait(t, s, "first"); !got.OK {
 				t.Fatalf("prompt = %+v", got)
 			}
+			waitIdle(t, s)
 			if resp := s.Handle(context.Background(), switchCmd(s)); !resp.OK {
 				t.Fatalf("%s = %+v", name, resp)
 			}

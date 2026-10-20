@@ -155,6 +155,7 @@ func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 		ReasoningEffort: req.ReasoningEffort,
 		Stream:          true,
 		StreamOptions:   map[string]bool{"include_usage": true},
+		CacheControl:    provider.RequestCacheControl(req),
 	}
 	if req.MaxTokens > 0 {
 		maxTokens := req.MaxTokens

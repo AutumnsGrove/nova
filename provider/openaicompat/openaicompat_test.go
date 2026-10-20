@@ -1393,3 +1393,68 @@ func TestStream_OAI65_TextOnlyContentStaysString(t *testing.T) {
 		t.Errorf("content = %T %v, want the string \"hi\"", got, got)
 	}
 }
+
+// --- prompt caching: OAI66-OAI68 ------------------------------------------
+
+// cacheModel registers a catalog entry for the marker decision and returns its
+// id. The catalog is process-wide, so every test uses its own id.
+func cacheModel(t *testing.T, id string, implicit bool) string {
+	t.Helper()
+	provider.RegisterModel(provider.Model{ID: id, Provider: "test", Slug: id, ImplicitCaching: implicit})
+	return id
+}
+
+// cacheMarkerOf returns the body's top-level cache_control object, or nil.
+func cacheMarkerOf(t *testing.T, srv *testkit.Server) map[string]any {
+	t.Helper()
+	marker, _ := bodyOf(t, srv)["cache_control"].(map[string]any)
+	return marker
+}
+
+func TestStream_OAI66_CacheMarkerForNonImplicitModel(t *testing.T) {
+	id := cacheModel(t, "oai66", false)
+	p, srv := served(t, Config{}, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	if _, err := p.Stream(context.Background(), textRequest(id), nil); err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	marker := cacheMarkerOf(t, srv)
+	if marker == nil || marker["type"] != "ephemeral" {
+		t.Fatalf("cache_control = %v, want {type: ephemeral}", marker)
+	}
+}
+
+func TestStream_OAI67_NoCacheMarkerForImplicitOrUnknownModel(t *testing.T) {
+	implicit := cacheModel(t, "oai67-implicit", true)
+	cases := map[string]string{
+		"implicit model":   implicit,
+		"unknown model":    "oai67-unknown",
+		"explicit opt-out": cacheModel(t, "oai67-out", false),
+	}
+	for name, model := range cases {
+		p, srv := served(t, Config{}, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+		req := textRequest(model)
+		if name == "explicit opt-out" {
+			off := false
+			req.PromptCache = &off
+		}
+		if _, err := p.Stream(context.Background(), req, nil); err != nil {
+			t.Fatalf("%s: Stream: %v", name, err)
+		}
+		if _, ok := bodyOf(t, srv)["cache_control"]; ok {
+			t.Errorf("%s: body has a cache_control marker", name)
+		}
+	}
+}
+
+func TestStream_OAI68_ProviderOptionOverridesCacheMarker(t *testing.T) {
+	id := cacheModel(t, "oai68", true)
+	p, srv := served(t, Config{}, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	req := textRequest(id)
+	req.ProviderOptions = map[string]any{"cache_control": map[string]any{"type": "ephemeral"}}
+	if _, err := p.Stream(context.Background(), req, nil); err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if marker := cacheMarkerOf(t, srv); marker == nil || marker["type"] != "ephemeral" {
+		t.Fatalf("cache_control = %v, want the explicit option", marker)
+	}
+}

@@ -199,6 +199,9 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 | OAI63 | image message sends a content array | a user message with text and a PNG part | `content` is `[text, image_url]` with a `data:` URL |
 | OAI64 | image-only message sends a content array | a user message with one image and no text | `content` is one `image_url` block |
 | OAI65 | text-only content stays a string | `User("hi")` | `content` is the string `"hi"`, not an array |
+| OAI66 | cache marker for a non-implicit model | a catalog model with `ImplicitCaching` false | top-level `cache_control` is `{"type":"ephemeral"}` |
+| OAI67 | no marker for an implicit, unknown, or opted-out model | catalog true; no catalog entry; `PromptCache` false | no `cache_control` key |
+| OAI68 | an explicit `ProviderOptions` marker wins | model that gets no marker, option sets one | the option's `cache_control` is sent |
 
 ## Fuzz and property tests
 

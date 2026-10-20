@@ -382,6 +382,24 @@ func (inst *instance) waitDone(done <-chan struct{}, d time.Duration) bool {
 	}
 }
 
+// groupWaitDelay is how long Wait lingers for a killed command's output pipes.
+const groupWaitDelay = 2 * time.Second
+
+// groupCommand builds a command that runs in its own process group and is
+// killed as a whole group when ctx ends. Killing only the leader would leave a
+// script's children holding its output pipe open, so Wait would block until
+// they finished on their own.
+func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	setProcessGroup(cmd)
+	cmd.Cancel = func() error {
+		forceKillGroup(cmd.Process.Pid)
+		return cmd.Process.Kill()
+	}
+	cmd.WaitDelay = groupWaitDelay
+	return cmd
+}
+
 // procCloser closes the child's stdin and stdout; the process is killed
 // separately.
 type procCloser struct {

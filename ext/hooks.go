@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +22,9 @@ const (
 	hookTimeout        = 2 * time.Second
 	hookErrorInterval  = time.Minute
 	commandHookTimeout = 10 * time.Second
+	// maxHookOutputBytes bounds what a command hook may print, so a runaway
+	// script cannot exhaust memory. A decision is a few hundred bytes.
+	maxHookOutputBytes = 1 << 20
 )
 
 // toolCallEvent and toolCallResult are the tool_call hook's wire shapes.
@@ -478,18 +480,16 @@ func runHookScript(ctx context.Context, dir string, argv []string, stdin []byte,
 	}
 	call, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(call, resolveExec(dir, argv[0]), argv[1:]...)
+	cmd := groupCommand(call, resolveExec(dir, argv[0]), argv[1:]...)
 	cmd.Dir = dir
 	cmd.Stdin = bytes.NewReader(stdin)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = nil
-	setProcessGroup(cmd)
+	out := newCapBuffer(maxHookOutputBytes)
+	cmd.Stdout = out
 	if err := cmd.Run(); err != nil {
 		if call.Err() != nil {
-			return out.String(), -1, call.Err()
+			return string(out.bytes()), -1, call.Err()
 		}
-		return out.String(), exitCode(err), nil
+		return string(out.bytes()), exitCode(err), nil
 	}
-	return out.String(), 0, nil
+	return string(out.bytes()), 0, nil
 }

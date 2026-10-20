@@ -337,6 +337,18 @@ func TestBash_BSH39_TimeoutCapped(t *testing.T) {
 	}
 }
 
+// TestBash_BSH51_TimeoutOverflow checks a timeout so large that seconds times
+// time.Second overflows int64 is capped, not wrapped into a negative duration
+// that expires at once.
+func TestBash_BSH51_TimeoutOverflow(t *testing.T) {
+	for _, opts := range [][]Option{nil, {WithMaxTimeout(0)}} {
+		res := runBash(t, bashTool(t, opts...), &tool.Context{WorkDir: t.TempDir()}, map[string]any{"command": "echo hi", "timeout": 9_300_000_000})
+		if res.IsError || res.Content != "hi\n" {
+			t.Fatalf("result = %+v, want the command to run", res)
+		}
+	}
+}
+
 func TestBash_BSH40_TimeoutStringRejected(t *testing.T) {
 	reg := tool.NewRegistry()
 	reg.MustRegister(bashTool(t))

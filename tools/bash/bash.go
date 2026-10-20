@@ -5,7 +5,10 @@ package bash
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/AutumnsGrove/nova/tool"
@@ -99,7 +102,7 @@ func Bash(opts ...Option) tool.Tool {
 			Timeout int    `json:"timeout"`
 		}
 		if err := json.Unmarshal(args, &in); err != nil {
-			return tool.Result{}, err
+			return tool.Result{}, fmt.Errorf("invalid arguments: %w", err)
 		}
 		if in.Command == "" {
 			return tool.Errorf("command is required"), nil
@@ -109,15 +112,16 @@ func Bash(opts ...Option) tool.Tool {
 }
 
 // buildEnv is the parent environment plus the fixed variables plus the
-// configured extras. exec uses the last value for a duplicate key, so a later
-// entry overrides an earlier one.
+// configured extras, in key order so the environment is the same on every call.
+// exec uses the last value for a duplicate key, so a later entry overrides an
+// earlier one (D52).
 func buildEnv(extra map[string]string) []string {
 	env := append(os.Environ(),
 		"NOVA=1", "TERM=dumb", "NO_COLOR=1",
 		"PAGER=cat", "GIT_PAGER=cat", "GIT_TERMINAL_PROMPT=0",
 	)
-	for k, v := range extra {
-		env = append(env, k+"="+v)
+	for _, k := range slices.Sorted(maps.Keys(extra)) {
+		env = append(env, k+"="+extra[k])
 	}
 	return env
 }

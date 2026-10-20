@@ -160,7 +160,6 @@ type Model struct {
 	usageArmed    bool
 	runActive     bool
 	runStartedAt  time.Time
-	expanded      bool
 	quitArmed     bool
 	quitAt        time.Time
 	notice        string

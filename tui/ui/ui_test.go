@@ -735,11 +735,11 @@ func TestUI_KEY08_PageScroll(t *testing.T) {
 func TestUI_KEY09_CtrlOToggles(t *testing.T) {
 	m, _, _ := newModel(t)
 	update(m, ctrlKey('o'))
-	if !m.expanded || !strings.Contains(m.hint(), "collapse") {
-		t.Fatalf("expanded=%v hint=%q", m.expanded, m.hint())
+	if !m.display.ExpandTools || !strings.Contains(m.hint(), "collapse") {
+		t.Fatalf("expanded=%v hint=%q", m.display.ExpandTools, m.hint())
 	}
 	update(m, ctrlKey('o'))
-	if m.expanded {
+	if m.display.ExpandTools {
 		t.Fatal("ctrl+o did not collapse")
 	}
 }

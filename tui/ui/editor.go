@@ -304,7 +304,6 @@ func (m *Model) displayCommand(args string) tea.Cmd {
 		return nil
 	}
 	m.transcript.SetDisplay(m.display)
-	m.expanded = m.display.ExpandTools
 	if persist {
 		return m.persistSetting("display.thinking_lines", m.display.ThinkingPreviewLines)
 	}

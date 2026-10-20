@@ -150,7 +150,7 @@ func (m *Model) hint() string {
 		return "ctrl+c again to quit"
 	case m.runActive:
 		return "esc abort"
-	case m.expanded:
+	case m.display.ExpandTools:
 		return "ctrl+o collapse"
 	}
 	return "ctrl+o expand"

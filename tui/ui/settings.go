@@ -96,7 +96,6 @@ func (m *Model) applySettings(rows []dialog.Setting) tea.Cmd {
 		m.recompute()
 	}
 	m.transcript.SetDisplay(m.display)
-	m.expanded = m.display.ExpandTools
 	m.syncList()
 	return tea.Batch(cmds...)
 }

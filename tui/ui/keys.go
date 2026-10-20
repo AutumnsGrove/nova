@@ -78,11 +78,12 @@ func (m *Model) scrollEditor(msg tea.MouseWheelMsg) bool {
 	return true
 }
 
-// toggleExpanded flips both expansion flags together, as ctrl+o does.
+// toggleExpanded expands or collapses every thinking and tool block, as ctrl+o
+// does. The tools flag decides the direction (it is also what the footer hint
+// reads), so a display that starts with the two flags apart ends up uniform.
 func (m *Model) toggleExpanded() {
-	m.display.ExpandThinking = !m.display.ExpandThinking
-	m.display.ExpandTools = !m.display.ExpandTools
-	m.expanded = m.display.ExpandTools
+	expand := !m.display.ExpandTools
+	m.display.ExpandThinking, m.display.ExpandTools = expand, expand
 	m.transcript.SetDisplay(m.display)
 }
 

@@ -138,6 +138,8 @@ func (r *run) runCall(call message.ToolCall) (out callOutcome) {
 	r.emit(proto.Event{Type: proto.EventToolStart, CallID: call.ID})
 	diag.SetOp("tool " + call.Function.Name)
 	progress := newProgress(r, call.ID)
+	// Closed explicitly below so updates precede tool_end; this covers a panic.
+	defer progress.close()
 	tctx := r.toolContext()
 	tctx.Emit = progress.emit
 	tctx.Inject = func(m message.Message) { injected = append(injected, m) }
@@ -194,7 +196,7 @@ func (r *run) checkPermission(call message.ToolCall, args json.RawMessage) (bloc
 		if r.cfg.Ask == nil {
 			return true, tool.Errorf("not approved: %s", d.Reason)
 		}
-		allow, err := r.cfg.Ask(r.ctx, Question{Tool: call.Function.Name, Reason: d.Reason, Args: args, Rule: d.Rule})
+		allow, err := r.cfg.Ask(r.ctx, Question{Tool: call.Function.Name, Reason: d.Reason, Args: wireArgs(args), Rule: d.Rule})
 		if err != nil || !allow {
 			return true, tool.Errorf("not approved: %s", d.Reason)
 		}
@@ -250,11 +252,14 @@ func (p *progress) emit(u tool.Update) {
 }
 
 // close stops accepting updates and waits until every accepted one has been
-// emitted, so tool_update events always precede the call's tool_end.
+// emitted, so tool_update events always precede the call's tool_end. It is
+// safe to call more than once.
 func (p *progress) close() {
 	p.mu.Lock()
-	p.closed = true
-	close(p.ch)
+	if !p.closed {
+		p.closed = true
+		close(p.ch)
+	}
 	p.mu.Unlock()
 	<-p.done
 }

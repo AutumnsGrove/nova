@@ -318,6 +318,7 @@ history as given, as before.
 | LPT20 | transcript validity after every case in this group | | `message.Validate` passes |
 | LPT21 | progress after the tool returned | a tool keeps `Context.Emit` and calls it after the run | dropped; no panic |
 | LPT22 | `ToolResult` hook blanks a result | hook returns an empty result | `tool_end` and the transcript both say `(empty result)` |
+| LPT23 | truncated JSON arguments | a call whose arguments are `{"a":` | every event still marshals; the call gets an `invalid arguments` result |
 | LPH01 | `ToolCall` hook blocks | | `error: blocked: <reason>`; tool not run |
 | LPH02 | `ToolCall` hook rewrites arguments | | tool receives the new arguments |
 | LPH03 | `ToolCall` hook returns nil | | normal |

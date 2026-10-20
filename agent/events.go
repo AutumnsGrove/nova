@@ -51,9 +51,20 @@ func (r *run) emit(ev proto.Event) {
 // intp returns a pointer to v, for the event fields where zero is meaningful.
 func intp(v int) *int { return &v }
 
+// wireArgs returns raw when it can travel inside a JSON frame and nil when it
+// cannot. A model cut off mid-arguments leaves truncated JSON, and a RawMessage
+// holding that fails to marshal, which would lose the whole event.
+func wireArgs(raw json.RawMessage) json.RawMessage {
+	if json.Valid(raw) {
+		return raw
+	}
+	return nil
+}
+
 // emitToolCall reports one assembled tool call.
 func (r *run) emitToolCall(c message.ToolCall) {
-	r.emit(proto.Event{Type: proto.EventToolCall, Turn: intp(r.turn), Call: &proto.ToolCall{ID: c.ID, Name: c.Function.Name, Arguments: json.RawMessage(c.Function.Arguments)}})
+	args := wireArgs(json.RawMessage(c.Function.Arguments))
+	r.emit(proto.Event{Type: proto.EventToolCall, Turn: intp(r.turn), Call: &proto.ToolCall{ID: c.ID, Name: c.Function.Name, Arguments: args}})
 }
 
 // emitToolEnd reports a call's final result.

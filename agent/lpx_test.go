@@ -157,6 +157,25 @@ func Test_LPT22_EmptyResultFromHookIsNormalisedOnce(t *testing.T) {
 	}
 }
 
+func Test_LPT23_TruncatedArgumentsStillEncode(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	p := testkit.NewProvider(clock,
+		testkit.Turn{ToolCalls: []testkit.Call{toolCall("c1", "echo", `{"a":`)}},
+		testkit.Turn{Text: "done"},
+	)
+	_, events := runCollect(t, Config{Provider: p, Model: "m", Clock: clock, Tools: registry(echoTool())}, nil, message.User("go"))
+	if countType(events, proto.EventToolCall) != 1 {
+		t.Fatalf("want one tool_call event, got %v", eventTypes(events))
+	}
+	// A model cut off mid-arguments is routine; the frame must still serialise
+	// or the transports lose the whole call.
+	for _, e := range events {
+		if _, err := json.Marshal(e); err != nil {
+			t.Fatalf("%s event does not encode: %v", e.Type, err)
+		}
+	}
+}
+
 func Test_LPP11_UnknownPolicyActionFailsClosed(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	ran := false

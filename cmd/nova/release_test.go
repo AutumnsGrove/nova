@@ -23,11 +23,13 @@ import (
 
 // workflow is the subset of release.yml the REL tests read.
 type workflow struct {
-	On map[string]struct {
+	Permissions map[string]string `yaml:"permissions"`
+	On          map[string]struct {
 		Tags []string `yaml:"tags"`
 	} `yaml:"on"`
 	Jobs map[string]struct {
-		Steps []struct {
+		Permissions map[string]string `yaml:"permissions"`
+		Steps       []struct {
 			Run string            `yaml:"run"`
 			Env map[string]string `yaml:"env"`
 		} `yaml:"steps"`
@@ -585,5 +587,20 @@ func TestRelease_REL06_PublishedChecksumsInstall(t *testing.T) {
 	fr.setChecksums(string(published))
 	if out, code := runInstall(t, fr, t.TempDir(), t.TempDir()); code != 0 {
 		t.Fatalf("install.sh could not use the published checksums.txt (exit %d):\n%s\n%s", code, out, published)
+	}
+}
+
+// Only the job that publishes the release writes to the repository. A build or
+// acceptance step that is compromised should not hold a token that can.
+func TestRelease_REL07_WriteAccessOnlyWhereItIsUsed(t *testing.T) {
+	w := loadReleaseWorkflow(t)
+	if w.Permissions["contents"] != "read" {
+		t.Errorf("workflow permissions = %v, want contents: read", w.Permissions)
+	}
+	for name, job := range w.Jobs {
+		wantWrite := name == "release"
+		if got := job.Permissions["contents"] == "write"; got != wantWrite {
+			t.Errorf("job %s: contents write = %v, want %v", name, got, wantWrite)
+		}
 	}
 }

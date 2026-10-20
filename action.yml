@@ -31,15 +31,23 @@ runs:
         go-version: "1.26"
     - name: Install Nova
       shell: bash
-      run: go install -tags notui github.com/AutumnsGrove/nova/cmd/nova@${{ github.action_ref }}
+      env:
+        ACTION_REF: ${{ github.action_ref }}
+      run: go install -tags notui "github.com/AutumnsGrove/nova/cmd/nova@${ACTION_REF}"
     - name: Review the pull request
       shell: bash
+      # Inputs reach the script through the environment, never as ${{ }} text in
+      # the script, so no value can be read as shell code.
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        INPUT_MODEL: ${{ inputs.model }}
+        INPUT_MAX_COMMENTS: ${{ inputs.max-comments }}
+        INPUT_MAX_COST: ${{ inputs.max-cost }}
+        INPUT_WALL_CLOCK: ${{ inputs.wall-clock }}
       run: >-
         nova action review
-        --model "${{ inputs.model }}"
-        --max-comments "${{ inputs.max-comments }}"
-        --max-cost "${{ inputs.max-cost }}"
-        --wall-clock "${{ inputs.wall-clock }}"
+        --model "$INPUT_MODEL"
+        --max-comments "$INPUT_MAX_COMMENTS"
+        --max-cost "$INPUT_MAX_COST"
+        --wall-clock "$INPUT_WALL_CLOCK"

@@ -260,6 +260,7 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | REL04 | archive names and contents | dry run of the packaging step | as specified |
 | REL05 | checksums file | | one line per archive |
 | REL06 | the published checksums install | the release job's own checksum step run on two archives, its `checksums.txt` served as the release's | `install.sh` finds the archive and installs; the file names are bare (`./name` never matched) |
+| REL07 | write access only where used | the release workflow | `contents: read` for the workflow, `contents: write` for the `release` job only |
 | ISH01 | happy path | fake release server | binary installed 0755 in the default directory |
 | ISH02 | checksum mismatch | tampered archive | aborts before extraction; nothing installed |
 | ISH03 | unsupported OS or architecture | | clear error naming it |

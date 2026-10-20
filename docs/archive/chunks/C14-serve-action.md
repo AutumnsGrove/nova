@@ -322,6 +322,7 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | RVW28 | model text is length capped | a comment and a summary over the cap | both refused and neither recorded |
 | ACT01 | `action.yml` is valid YAML with the documented inputs | | parsed; inputs present |
 | ACT02 | install step uses `-tags notui` | | present |
+| ACT03 | no expression in a script | every `run` step of `action.yml` | none contains `${{ }}`; inputs arrive through `env` |
 
 ## Fuzz and property tests
 

@@ -62,3 +62,14 @@ func TestAction_ACT02_InstallUsesNotui(t *testing.T) {
 	}
 	t.Fatal("no go install step found")
 }
+
+// An input interpolated into shell text is code the input's author writes. The
+// action takes its inputs from the caller's workflow, so every value reaches the
+// script through the environment, never through ${{ }} in the script itself.
+func TestAction_ACT03_NoExpressionInAScript(t *testing.T) {
+	for _, step := range loadAction(t).Runs.Steps {
+		if strings.Contains(step.Run, "${{") {
+			t.Errorf("a run script interpolates an expression:\n%s", step.Run)
+		}
+	}
+}

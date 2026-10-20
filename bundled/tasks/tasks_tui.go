@@ -15,6 +15,3 @@ func Card(tasks []Task) string {
 	}
 	return fmt.Sprintf("%d tasks, %d done", len(tasks), done)
 }
-
-// WidgetTag is the widget key the tasks extension publishes under.
-func WidgetTag() string { return "tasks" }

@@ -29,6 +29,7 @@ type RunOptions struct {
 	Theme   string
 	Version string
 	NoColor bool
+	Resume  bool // open the session picker at start (nova --resume)
 }
 
 // capabilities are the UI methods the C17 client can answer. The server will
@@ -71,14 +72,15 @@ func runWith(ctx context.Context, srv *mode.Server, opt RunOptions, in io.Reader
 	display := chat.DefaultDisplay()
 	display.ThinkingPreviewLines, display.ToolPreviewLines, display.ShowImages, display.ImageWidthCells = srv.Display()
 	model := New(Options{
-		Client:   client.FromPipe(c),
-		Theme:    theme,
-		Profile:  profile,
-		CWD:      cwd,
-		Version:  opt.Version,
-		Renderer: chat.NewGlamourRenderer(st),
-		Display:  display,
-		Status:   srv.StatusConfig(),
+		Client:       client.FromPipe(c),
+		Theme:        theme,
+		Profile:      profile,
+		CWD:          cwd,
+		Version:      opt.Version,
+		Renderer:     chat.NewGlamourRenderer(st),
+		Display:      display,
+		Status:       srv.StatusConfig(),
+		OpenSessions: opt.Resume,
 	})
 	diag.SetMode("tui")
 	diag.SetOp("tui running")

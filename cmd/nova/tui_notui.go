@@ -11,7 +11,7 @@ import (
 )
 
 // startTUI is the notui build stub: it has no interactive UI.
-func startTUI(context.Context, *mode.Server) error {
+func startTUI(context.Context, *mode.Server, bool) error {
 	return fmt.Errorf("nova: this build has no TUI; use -p or --mode")
 }
 

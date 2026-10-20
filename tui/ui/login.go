@@ -6,8 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -230,22 +228,10 @@ func (m *Model) beginMethod(p providerauth.Provider, method providerauth.Method)
 		return nil
 	}
 	gen := m.loginGen
-	cfg := providerauth.Config{Home: m.home, Env: os.Getenv, OpenBrowser: openURL}
+	cfg := providerauth.Config{Home: m.home, Env: os.Getenv, OpenBrowser: providerauth.OpenBrowser}
 	return func() tea.Msg {
 		session, err := begin(context.Background(), cfg)
 		return loginBegunMsg{gen: gen, id: p.ID, method: method, session: session, err: err}
-	}
-}
-
-// openURL opens a sign-in page in the platform browser.
-func openURL(url string) error {
-	switch runtime.GOOS {
-	case "darwin":
-		return exec.Command("open", url).Start()
-	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
-	default:
-		return exec.Command("xdg-open", url).Start()
 	}
 }
 

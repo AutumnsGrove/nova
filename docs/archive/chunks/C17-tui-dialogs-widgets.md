@@ -306,6 +306,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | KYA01 | `ctrl+l`, `ctrl+r`, `ctrl+t` are live | | open picker, list, cycle |
 | KYA02 | `ctrl+t` cycles | four presses | off, low, medium, high, off |
 | KYA03 | `?` with an empty editor | | opens help; with text, types `?` |
+| RSM01 | `--resume` opens the picker | `Options.OpenSessions` set, then `Init` | `session.list` is requested at start; an ordinary start does not request it |
 | WDG01 | set a text widget | above | shown above the editor |
 | WDG02 | clear a widget | `nil` | removed |
 | WDG03 | order by first appearance | A, B, then update A | A stays first |

@@ -6,6 +6,9 @@ package providerauth
 import (
 	"context"
 	"errors"
+	"net/url"
+	"os/exec"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -266,4 +269,29 @@ func CredentialEnvFor(c config.BashConfig) []string {
 		return c.ScrubEnv
 	}
 	return append(CredentialEnv(), c.ScrubEnv...)
+}
+
+// OpenBrowser opens a sign-in page in the platform's browser. The URL can come
+// from a server's reply, and the opener would read "-h" as an option and
+// "file:///..." as a local file, so anything but an http or https URL is
+// refused. It does not wait for the browser, but it reaps the process.
+func OpenBrowser(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return errors.New("providerauth: the sign-in address is not an http or https URL")
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", rawURL)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL)
+	default:
+		cmd = exec.Command("xdg-open", rawURL)
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }

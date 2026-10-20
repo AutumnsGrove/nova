@@ -67,6 +67,7 @@ type Options struct {
 	Clipboard     clipboard.Reader // nil uses the OS clipboard
 	Status        config.StatusConfig
 	Git           git.Reader // nil reads the real repository
+	OpenSessions  bool       // ask for the session picker at start (nova --resume)
 }
 
 // commandInfo is one slash command from get_commands.
@@ -132,17 +133,18 @@ type Model struct {
 	clipboard   clipboard.Reader
 	pendingAtts []pendingAttachment
 
-	commands    []commandInfo
-	completion  completion
-	state       stateData
-	themes      []styles.Theme
-	display     chat.Display
-	status      config.StatusConfig
-	splashStart time.Time
-	splashAt    time.Duration
-	splashDone  bool
-	startedAt   time.Time
-	ticking     bool
+	commands     []commandInfo
+	completion   completion
+	state        stateData
+	themes       []styles.Theme
+	display      chat.Display
+	status       config.StatusConfig
+	splashStart  time.Time
+	splashAt     time.Duration
+	splashDone   bool
+	openSessions bool // ask for the session picker at start
+	startedAt    time.Time
+	ticking      bool
 
 	gitReader git.Reader
 	git       git.Info
@@ -215,30 +217,31 @@ func New(opt Options) *Model {
 	registry.Bundled()
 	transcript.SetRegistry(registry.renderers)
 	m := &Model{
-		client:      opt.Client,
-		clock:       opt.Clock,
-		clipboard:   opt.Clipboard,
-		renderer:    opt.Renderer,
-		st:          st,
-		theme:       opt.Theme,
-		profile:     opt.Profile,
-		cwd:         opt.CWD,
-		home:        home,
-		version:     opt.Version,
-		transcript:  transcript,
-		registry:    registry,
-		list:        list.New(),
-		editor:      ed,
-		editorProbe: probe,
-		pasted:      map[string]string{},
-		overlay:     dialog.NewOverlay(),
-		widgets:     widget.NewStore(),
-		answered:    map[string]bool{},
-		caps:        capabilitySet(capabilities),
-		splashStart: opt.Clock.Now(),
-		startedAt:   opt.Clock.Now(),
-		status:      opt.Status,
-		gitReader:   opt.Git,
+		client:       opt.Client,
+		clock:        opt.Clock,
+		clipboard:    opt.Clipboard,
+		openSessions: opt.OpenSessions,
+		renderer:     opt.Renderer,
+		st:           st,
+		theme:        opt.Theme,
+		profile:      opt.Profile,
+		cwd:          opt.CWD,
+		home:         home,
+		version:      opt.Version,
+		transcript:   transcript,
+		registry:     registry,
+		list:         list.New(),
+		editor:       ed,
+		editorProbe:  probe,
+		pasted:       map[string]string{},
+		overlay:      dialog.NewOverlay(),
+		widgets:      widget.NewStore(),
+		answered:     map[string]bool{},
+		caps:         capabilitySet(capabilities),
+		splashStart:  opt.Clock.Now(),
+		startedAt:    opt.Clock.Now(),
+		status:       opt.Status,
+		gitReader:    opt.Git,
 	}
 	if len(m.status.Lines) == 0 {
 		m.status = status.Default()
@@ -369,7 +372,7 @@ const splashHeroUntil = splash.Sequence / 2
 // Init issues the first commands: the initial state, commands, messages, and
 // the first event wait.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		m.client.Send(proto.Command{Type: proto.CmdGetState}),
 		m.client.Send(proto.Command{Type: proto.CmdGetCommands}),
 		m.client.Send(proto.Command{Type: proto.CmdGetMessages}),
@@ -378,7 +381,11 @@ func (m *Model) Init() tea.Cmd {
 		m.scheduleGit(),
 		m.scheduleTick(),
 		m.client.Next(),
-	)
+	}
+	if m.openSessions {
+		cmds = append(cmds, m.requestSessionList())
+	}
+	return tea.Batch(cmds...)
 }
 
 // Transcript exposes the transcript for tests.

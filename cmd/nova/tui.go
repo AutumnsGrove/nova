@@ -13,9 +13,10 @@ import (
 	"github.com/AutumnsGrove/nova/tui/ui"
 )
 
-// startTUI runs the interactive UI against a built server.
-func startTUI(ctx context.Context, s *mode.Server) error {
-	return ui.Run(ctx, s, ui.RunOptions{Version: version})
+// startTUI runs the interactive UI against a built server. resume opens the
+// session picker first.
+func startTUI(ctx context.Context, s *mode.Server, resume bool) error {
+	return ui.Run(ctx, s, ui.RunOptions{Version: version, Resume: resume})
 }
 
 // shouldStartTUI reports whether a bare invocation should open the TUI.

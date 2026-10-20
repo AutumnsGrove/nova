@@ -305,6 +305,8 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | CLI16 | `nova completion bash`, `zsh`, `fish` | | a valid completion script on stdout; exit 0 |
 | CLI17 | cobra errors map to exit 2 | unknown flag, missing argument, unknown subcommand | message on stderr; exit 2; no stack |
 | CLI18 | flags after subcommands and `--` | `nova docs -- --help` | handled as cobra documents |
+| CLI19 | `logout` names the provider | `logout opencode-go`, a second one, `logout nope` | the OpenCode Go key is removed, a repeat succeeds, an unknown name is an error naming it; no argument still means OpenRouter |
+| RSM02 | `--resume` needs a terminal | `--resume` with no terminal | an error about the interactive UI, not "not built yet" |
 | FUL01 | the whole stack | scripted: read a file, edit it, answer | file changed; events as expected; session file valid |
 | FUL02 | tool permission denied by config | policy denies `write` | tool blocked; file unchanged; model sees the error |
 | FUL03 | compaction in a real run | small limit | compacted; the next request contains the summary |

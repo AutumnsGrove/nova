@@ -25,7 +25,7 @@ func maybeFirstRun(ctx context.Context, home string, in io.Reader, out io.Writer
 		SignIn: providerauth.Login{Cfg: providerauth.Config{
 			Home:        home,
 			Env:         os.Getenv,
-			OpenBrowser: openBrowser,
+			OpenBrowser: providerauth.OpenBrowser,
 		}},
 		SaveModel: func(id string) error { return config.SetUser(home, "model", id) },
 	})

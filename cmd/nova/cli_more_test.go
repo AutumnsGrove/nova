@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/session"
 	"github.com/AutumnsGrove/nova/testkit"
@@ -228,5 +229,29 @@ func TestCLI_FUL05_UntrustedProjectWarns(t *testing.T) {
 	body := string(srv.Requests()[0].Body)
 	if strings.Contains(body, "sneaky") {
 		t.Fatalf("an untrusted project config must be ignored: %s", body)
+	}
+}
+
+// logout removes the stored credential of the provider it names, OpenRouter's
+// when none is named. It used to reach OpenRouter only, so an OpenCode Go key
+// could not be removed from the command line.
+func TestCLI_CLI19_LogoutNamesTheProvider(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	keyPath := opencode.DefaultKeyPath(home)
+	if err := opencode.SaveKey(keyPath, "go-key"); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := runCLI(t, "logout", "opencode-go"); code != 0 {
+		t.Fatalf("logout opencode-go: exit %d stderr %q", code, errOut)
+	}
+	if _, err := os.Stat(keyPath); err == nil {
+		t.Fatal("the OpenCode Go key survived its logout")
+	}
+	if code, _, _ := runCLI(t, "logout", "opencode-go"); code != 0 {
+		t.Fatal("a second logout of the same provider should also succeed")
+	}
+	if code, _, errOut := runCLI(t, "logout", "nope"); code == 0 || !strings.Contains(errOut, "nope") {
+		t.Fatalf("an unknown provider: exit %d stderr %q, want an error naming it", code, errOut)
 	}
 }

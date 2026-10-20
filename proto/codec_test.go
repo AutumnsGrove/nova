@@ -236,12 +236,11 @@ func TestProto_PRT02_UnknownCommand(t *testing.T) {
 }
 
 func TestProto_PRT03_DecodeEachEvent(t *testing.T) {
-	names := []string{
-		EventRunStart, EventTurnStart, EventMessageStart, EventTextDelta, EventThinkingStart,
-		EventThinkingDelta, EventThinkingEnd, EventToolCall, EventToolStart, EventToolUpdate,
-		EventToolEnd, EventPermission, EventMessageEnd, EventTurnEnd, EventUsage, EventRetry,
-		EventCompaction, EventQueueUpdate, EventRunEnd, EventError, EventExtensionError,
-		EventUIExpired, EventSessionChanged, EventStateChanged,
+	// The names come from the source so a new Event constant that is missing
+	// from eventNames (and would decode as a Command) fails here.
+	names := constValues(t, "Event")
+	if len(names) != len(eventNames) {
+		t.Fatalf("%d Event constants but %d in eventNames", len(names), len(eventNames))
 	}
 	for _, name := range names {
 		f, err := Decode([]byte(`{"type":"` + name + `"}`))
@@ -434,7 +433,23 @@ func FuzzDecode(f *testing.F) {
 		if !utf8.Valid(line) {
 			return
 		}
-		Decode(line)
+		f, err := Decode(line)
+		var unknown *UnknownTypeError
+		if err != nil {
+			if !errors.Is(err, ErrBadFrame) && !errors.As(err, &unknown) {
+				t.Fatalf("err = %v, want ErrBadFrame or UnknownTypeError", err)
+			}
+			return
+		}
+		set := 0
+		for _, present := range []bool{f.Command != nil, f.Response != nil, f.Event != nil, f.UIRequest != nil, f.UIResponse != nil, f.Hello != nil} {
+			if present {
+				set++
+			}
+		}
+		if set != 1 {
+			t.Fatalf("frame has %d fields set, want exactly one: %+v", set, f)
+		}
 	})
 }
 

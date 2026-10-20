@@ -360,7 +360,7 @@ func TestSubagent_SUB15_Cancel(t *testing.T) {
 func TestSubagent_SUB16_ProgressLines(t *testing.T) {
 	fake := &fakeSpawn{fn: func(_ context.Context, r ext.SpawnRequest) (*ext.SpawnResult, error) {
 		for _, name := range []string{"read", "grep", "bash"} {
-			r.OnEvent(proto.Event{Type: proto.EventToolStart, Call: &proto.ToolCall{Name: name}})
+			r.OnEvent(proto.Event{Type: proto.EventToolCall, Call: &proto.ToolCall{Name: name}})
 		}
 		return &ext.SpawnResult{Answer: "ok", Turns: 3, Reason: "done"}, nil
 	}}

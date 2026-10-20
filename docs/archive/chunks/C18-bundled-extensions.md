@@ -207,13 +207,13 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 23. The child inherits the parent's permission policy and approval path; an `ask` from the child reaches the user with the reason
     prefixed `[subagent]`. The parent's `tool_call` and `tool_result` hooks apply to the child's calls (so a block hook guards
     sub-agents too); its other hooks do not.
-24. At most **4 sub-agents run at once** across the session; extra calls wait. The call honours cancellation: abort stops the child
+24. At most **4 sub-agents run at once** at each nesting depth (a shared limit would deadlock a parent that holds a slot while its child waits for one); extra calls wait. The call honours cancellation: abort stops the child
     and returns a result for the call.
 25. Progress: while running, the tool emits `tool_update` lines `▸ <tool> <summary>` for each child tool call and a final line with
     the turn count. Reasoning text is not forwarded.
 26. The result `Content` is the child's final answer, cut at 20,000 characters (`Truncated`). A child that ends `exhausted` returns its last
     text with a note; one that errors returns an error result. `Details` is `{turns, tools, duration_ms, usage, reason}` and
-    `nested_usage` (the child's usage), which the server adds to the ledger and the footer.
+    `nested_usage` (the child's usage). The tool also reports that usage through `Context.AddUsage`, so the run total and the footer include it, and `Spawner` adds it to the ledger, even when the child failed or was aborted.
 27. The tool is not read-only and not parallel by annotation, but the loop treats separate `subagent` calls in one message as
     **parallel** (they declare `Parallel: true`, bounded by rule 24).
 
@@ -348,6 +348,12 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 | SUB22 | panic in the child | | error result; parent continues |
 | SUB23 | no UI | print mode | works |
 | SUB24 | card renders | | nested summary with cost |
+| SUB25 | child lifecycle events stay off the host stream | child run | only permission and extension_error events reach the host; the caller's observer sees all |
+| SUB26 | one progress line per child tool | `tool_call` plus `tool_start` | one `▸ name` line each |
+| SUB27 | failed child still counts its usage | provider error on turn 2 | ledger and `AddUsage` include turn 1 |
+| SUB28 | nested call under `max_concurrent: 1` | child calls `subagent` | runs; does not wait for its parent's slot |
+| SUB29 | result cap on a character boundary | multi-byte answer | valid UTF-8 |
+| SUB30 | spawner depth cap | configured depth 10 | refused at 3 |
 | WFT01 | fetch an HTML page | local test server | markdown with header line |
 | WFT02 | plain text, markdown, JSON | | returned; JSON pretty-printed |
 | WFT03 | unsupported content type | `image/png` | error |

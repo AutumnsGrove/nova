@@ -2,7 +2,9 @@ package ext
 
 import (
 	"context"
+	"io"
 	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/AutumnsGrove/nova/agent"
@@ -31,12 +33,16 @@ func FuzzHostFrames(f *testing.F) {
 			Name:         "fuzz",
 			Capabilities: []string{"tools", "ui:confirm", "session:append_entry", "model:complete"},
 		})
+		// The peer's stdout is empty, so the connection closes at once, and its
+		// stdin is discarded: replies are written but never read.
+		c := newConn("fuzz", strings.NewReader(""), io.Discard, nil, realClock{}, nil)
+		defer c.close()
 		defer func() {
 			if rec := recover(); rec != nil {
 				t.Fatalf("handleFrame(%q, %q) panicked: %v", typ, data, rec)
 			}
 		}()
-		h.handleFrame(inst, nil, typ, data, reply{Type: typ})
+		h.handleFrame(inst, c, typ, data, reply{Type: typ})
 	})
 }
 

@@ -132,7 +132,9 @@ func (h *Host) startBundled(b Bundled) error {
 	inst.cmdRun = map[string]InProcCommand{}
 	inst.envHooks = agent.Hooks{}
 	inst.bundleHooks = map[string]bool{}
-	h.addInstance(inst)
+	if !h.addInstance(inst) {
+		return nil
+	}
 	inst.env = h.newEnv(inst)
 	return h.initBundle(inst)
 }
@@ -152,7 +154,6 @@ func (h *Host) initBundle(inst *instance) (err error) {
 		return err
 	}
 	inst.setState(stateRunning, "")
-	inst.markRegistered()
 	return nil
 }
 
@@ -173,10 +174,7 @@ func (h *Host) newEnv(inst *instance) *Env {
 		HasUI:    h.hasUI,
 	}
 	env.Tool = func(t tool.Tool) error {
-		if _, exists := h.reg.Get(t.Info().Name); exists {
-			return fmt.Errorf("ext: tool %q is already registered", t.Info().Name)
-		}
-		return h.registerTool(inst, t.Info(), &bundledTool{inst: inst, t: t})
+		return h.registerTool(inst, &bundledTool{inst: inst, t: t}, false)
 	}
 	env.Command = func(c InProcCommand) error {
 		if c.Name == "" {
@@ -364,7 +362,7 @@ func (b *bundledTool) Run(ctx context.Context, args json.RawMessage, tctx *tool.
 }
 
 // runBundledCommand runs a bundled command with panic recovery.
-func (h *Host) runBundledCommand(inst *instance, cmd InProcCommand, ctx context.Context, args string) (out string, err error) {
+func (h *Host) runBundledCommand(ctx context.Context, inst *instance, cmd InProcCommand, args string) (out string, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			h.reportHookErr(inst, "command:"+cmd.Name, fmt.Errorf("panic: %v", rec))

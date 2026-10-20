@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 )
@@ -19,6 +20,10 @@ const maxFrameLine = 16 << 20
 // writeQueueSize is how many frames may wait for the writer before a sender
 // has to wait for the peer to read.
 const writeQueueSize = 64
+
+// maxPeerRequests is how many slow requests (a user prompt, a model call) one
+// extension may have in flight at once.
+const maxPeerRequests = 8
 
 // Errors a request can fail with.
 var (
@@ -97,6 +102,7 @@ type conn struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	once   sync.Once
+	slots  chan struct{}
 
 	mu      sync.Mutex
 	next    int64
@@ -116,6 +122,7 @@ func newConn(name string, r io.Reader, w io.Writer, closer io.Closer, clock Cloc
 		writeCh: make(chan any, writeQueueSize),
 		ctx:     ctx,
 		cancel:  cancel,
+		slots:   make(chan struct{}, maxPeerRequests),
 		pending: map[string]chan reply{},
 	}
 	go c.writeLoop()
@@ -164,9 +171,34 @@ func (c *conn) readLoop() {
 		if c.handler != nil {
 			var r reply
 			_ = json.Unmarshal(line, &r)
-			c.handler(c, probe.Type, line, r)
+			c.dispatch(probe.Type, line, r)
 		}
 	}
+}
+
+// dispatch hands one frame to the handler. A panic in the host's own callbacks
+// (the UI bridge, the session) must not take the process down because of what
+// an extension sent.
+func (c *conn) dispatch(typ string, line []byte, r reply) {
+	defer diag.Catch("extension frame")
+	c.handler(c, typ, line, r)
+}
+
+// async runs fn on its own goroutine, with a context that ends with the
+// connection. It reports false, without running fn, when the peer already has
+// maxPeerRequests in flight.
+func (c *conn) async(fn func(ctx context.Context)) bool {
+	select {
+	case c.slots <- struct{}{}:
+	default:
+		return false
+	}
+	go func() {
+		defer func() { <-c.slots }()
+		defer diag.Catch("extension request")
+		fn(c.ctx)
+	}()
+	return true
 }
 
 // deliver routes a reply to the request waiting for it. It reports whether a

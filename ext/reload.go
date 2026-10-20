@@ -8,10 +8,9 @@ import (
 // Reload stops every extension, re-reads manifests, rebuilds changed ones, and
 // starts them again. A failure in one leaves the others running.
 func (h *Host) Reload(ctx context.Context) []error {
-	h.mu.Lock()
-	insts := append([]*instance(nil), h.insts...)
-	h.mu.Unlock()
-	for _, inst := range insts {
+	h.life.Lock()
+	defer h.life.Unlock()
+	for _, inst := range h.snapshot() {
 		inst.stop(ctx)
 		h.clearRegistrations(inst)
 	}
@@ -22,7 +21,7 @@ func (h *Host) Reload(ctx context.Context) []error {
 	h.mu.Unlock()
 	// Rebuild extensions whose manifest changed since the last load.
 	h.rebuildChanged(ctx)
-	return h.Start(ctx)
+	return h.start(ctx)
 }
 
 // rebuildChanged runs the build step for extensions whose manifest hash

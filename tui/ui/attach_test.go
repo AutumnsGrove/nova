@@ -40,3 +40,17 @@ func TestUI_PST07_RapidPromptsKeepTheirOwnText(t *testing.T) {
 		t.Fatalf("a prompt lost its text when two were in flight:\n%s", v)
 	}
 }
+
+// A file name is whatever the file system holds, and a downloaded archive can
+// make one that carries escape sequences.
+func TestUI_PST08_AttachmentChipHasNoControlBytes(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.pendingAtts = []pendingAttachment{{Name: "shot\x1b]0;pwned\x07\x1b[2J.png"}}
+	chip := m.chipLine()
+	if strings.Contains(chip, "\x1b]") || strings.Contains(chip, "[2J") || strings.ContainsRune(chip, '\x07') {
+		t.Fatalf("chip carries control bytes: %q", chip)
+	}
+	if !strings.Contains(chip, "shot.png") {
+		t.Fatalf("chip lost the visible name: %q", chip)
+	}
+}

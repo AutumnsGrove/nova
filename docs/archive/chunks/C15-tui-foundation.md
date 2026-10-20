@@ -427,6 +427,7 @@ time, `⠋ working 3s`, first so it survives truncation), a context bar and perc
 | PST02 | a clipboard with no image notices | the fake returns `ErrNoImage` | a notice, no attachment |
 | PST03 | an image path in the text auto-attaches | `describe shot.png` with the file present | the token becomes the base name and one attachment is sent |
 | PST04 | an `@` path in the text auto-attaches | `look at @shot.png` with the file present | the `@` is stripped, the token becomes the base name, and one attachment is sent |
+| PST08 | an attachment chip has no control bytes | a pending attachment named with escapes | the chip keeps the visible name and nothing else |
 | GLD01 | empty session at 40, 80, 120 | golden | matches |
 | GLD02 | a text turn at three widths | golden | matches |
 | GLD03 | a tool turn at three widths | golden | matches |

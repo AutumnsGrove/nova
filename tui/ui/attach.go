@@ -16,6 +16,7 @@ import (
 	"github.com/AutumnsGrove/nova/clipboard"
 	"github.com/AutumnsGrove/nova/media"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 )
 
 // maxPathAttachBytes caps a file the editor reads for @path auto-attach, so a
@@ -151,7 +152,7 @@ func (m *Model) chipLine() string {
 	}
 	names := make([]string, len(m.pendingAtts))
 	for i, a := range m.pendingAtts {
-		names[i] = a.Name + " ×"
+		names[i] = sanitize.Line(a.Name) + " ×"
 	}
 	return m.st.Muted.Render("attached: " + strings.Join(names, "  "))
 }

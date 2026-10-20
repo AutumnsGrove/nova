@@ -1,9 +1,7 @@
 package mode
 
 import (
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 
 	"github.com/AutumnsGrove/nova/media"
@@ -14,7 +12,9 @@ import (
 // StoreAttachment keeps an uploaded image for later turns and returns its id.
 // It checks and bounds the bytes here; attach.Message normalizes them again on
 // the way into a prompt. The store lives in memory and expires with the server.
-func (s *Server) StoreAttachment(name, mime string, data []byte) (string, error) {
+// The client's claimed mime type is ignored: the sniffed one is what the bytes
+// are, and the claim is only a hint a hostile client could get wrong.
+func (s *Server) StoreAttachment(name, _ string, data []byte) (string, error) {
 	if len(data) == 0 {
 		return "", fmt.Errorf("empty attachment")
 	}
@@ -25,7 +25,7 @@ func (s *Server) StoreAttachment(name, mime string, data []byte) (string, error)
 	if !ok {
 		return "", fmt.Errorf("attachment is not a supported image")
 	}
-	id := newAttachmentID()
+	id := randomHex(16)
 	s.mu.Lock()
 	if s.attachments == nil {
 		s.attachments = map[string]proto.Attachment{}
@@ -33,13 +33,6 @@ func (s *Server) StoreAttachment(name, mime string, data []byte) (string, error)
 	s.attachments[id] = proto.Attachment{Kind: "image", Name: name, MimeType: sniffed, Data: base64.StdEncoding.EncodeToString(data)}
 	s.mu.Unlock()
 	return id, nil
-}
-
-// newAttachmentID returns a random opaque id for one stored upload.
-func newAttachmentID() string {
-	var b [16]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
 }
 
 // resolveAttachments replaces an attachment that names a stored id with the

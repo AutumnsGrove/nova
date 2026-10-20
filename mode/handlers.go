@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -12,7 +13,6 @@ import (
 	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
-	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/mode/providers"
 	"github.com/AutumnsGrove/nova/proto"
@@ -24,14 +24,21 @@ import (
 // builtinCommands are the slash commands handled in-process.
 var builtinCommands = []string{"model", "thinking", "context", "compact", "new", "clear", "name", "cost", "help", "quit", "exit"}
 
-// handleGetMessages returns the active branch as model messages.
+// handleGetMessages returns the active branch as model messages. Without a
+// session store the transcript is the in-memory one, which has no branches, so
+// an entry id has nothing to select.
 func (s *Server) handleGetMessages(cmd proto.Command) proto.Response {
-	if s.store == nil {
-		return okResponse(cmd, map[string]any{"messages": []message.Message{}})
+	var msgs []message.Message
+	if store := s.sessionStore(); store == nil {
+		msgs = s.history()
+	} else {
+		var err error
+		if msgs, err = store.Messages(cmd.Entry); err != nil {
+			return failResponse(cmd, proto.CodeBadRequest, err.Error())
+		}
 	}
-	msgs, err := s.store.Messages(cmd.Entry)
-	if err != nil {
-		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	if msgs == nil {
+		msgs = []message.Message{}
 	}
 	return okResponse(cmd, map[string]any{"messages": msgs})
 }
@@ -86,9 +93,13 @@ type usageInfo struct {
 	ResetsAt string  `json:"resets_at,omitempty"`
 }
 
+// usageTimeout bounds one OpenCode Go usage lookup, which a footer refresh
+// must not let hang.
+const usageTimeout = 5 * time.Second
+
 // handleGetUsage fetches the OpenCode Go usage meters for the footer and the
 // /usage view. A missing key is not an error: the response says so.
-func (s *Server) handleGetUsage(cmd proto.Command) proto.Response {
+func (s *Server) handleGetUsage(ctx context.Context, cmd proto.Command) proto.Response {
 	key, _, _ := providers.ResolveOpenCodeGoKey(s.cfg, os.Getenv)
 	if key == "" {
 		if stored, err := opencode.LoadKey(opencode.DefaultKeyPath(s.home)); err == nil {
@@ -101,7 +112,7 @@ func (s *Server) handleGetUsage(cmd proto.Command) proto.Response {
 			"error": "Not signed in. Run `nova login opencode-go`.",
 		})
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, usageTimeout)
 	defer cancel()
 	meters, err := opencode.FetchUsage(ctx, opencode.Config{Server: os.Getenv("OPENCODE_CONSOLE_SERVER")}, key, "")
 	if err != nil {
@@ -135,8 +146,8 @@ type sessionInfo struct {
 // handleSessionList lists sessions for the working directory, newest first.
 func (s *Server) handleSessionList(cmd proto.Command) proto.Response {
 	infos, err := session.List(session.DefaultDir(s.cwd))
-	if err != nil {
-		return okResponse(cmd, []sessionInfo{})
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return failResponse(cmd, proto.CodeInternal, "session.list: "+err.Error())
 	}
 	s.mu.Lock()
 	path := s.path
@@ -155,12 +166,8 @@ func (s *Server) handleSessionList(cmd proto.Command) proto.Response {
 	return okResponse(cmd, out)
 }
 
-// handleGetExtensions returns the extension host's supervision status, or an
-// empty list when there is no host.
+// handleGetExtensions returns the extension host's supervision status.
 func (s *Server) handleGetExtensions(cmd proto.Command) proto.Response {
-	if s.ext == nil {
-		return okResponse(cmd, []ext.Status{})
-	}
 	return okResponse(cmd, s.ext.Status())
 }
 
@@ -178,7 +185,7 @@ func (s *Server) handleGetCommands(cmd proto.Command) proto.Response {
 	for _, tpl := range s.templates() {
 		out = append(out, commandInfo{Name: tpl.Name, Description: tpl.Description, Kind: "template"})
 	}
-	for _, c := range s.extensionCommands() {
+	for _, c := range s.ext.Commands() {
 		out = append(out, commandInfo{Name: c.Name, Description: c.Description, Kind: "extension"})
 	}
 	return okResponse(cmd, map[string]any{"commands": out})
@@ -196,7 +203,8 @@ func (s *Server) templates() []config.Template {
 }
 
 // handleRunCommand runs a built-in or expands a prompt template.
-func (s *Server) handleRunCommand(cmd proto.Command) proto.Response {
+func (s *Server) handleRunCommand(ctx context.Context, cmd proto.Command) proto.Response {
+	args := strings.TrimSpace(cmd.Args)
 	switch cmd.Name {
 	case "help":
 		return okResponse(cmd, map[string]any{"text": "commands: " + strings.Join(builtinCommands, ", ")})
@@ -209,22 +217,25 @@ func (s *Server) handleRunCommand(cmd proto.Command) proto.Response {
 		msgs := s.history()
 		return okResponse(cmd, map[string]any{"text": fmt.Sprintf("estimated context: %d tokens", compaction.Estimate(msgs))})
 	case "model":
-		if strings.TrimSpace(cmd.Args) == "" {
-			return okResponse(cmd, map[string]any{"text": s.cfg.Model})
+		if args == "" {
+			s.mu.Lock()
+			model := s.cfg.Model
+			s.mu.Unlock()
+			return okResponse(cmd, map[string]any{"text": model})
 		}
-		return s.handleSetModel(proto.Command{Type: proto.CmdSetModel, ID: cmd.ID, Model: strings.TrimSpace(cmd.Args)})
+		return s.handleSetModel(proto.Command{Type: proto.CmdSetModel, ID: cmd.ID, Model: args})
 	case "thinking":
-		if strings.TrimSpace(cmd.Args) == "" {
+		if args == "" {
 			s.mu.Lock()
 			level := s.think
 			s.mu.Unlock()
 			return okResponse(cmd, map[string]any{"text": level})
 		}
-		return s.handleSetThinking(proto.Command{Type: proto.CmdSetThinking, ID: cmd.ID, Level: strings.TrimSpace(cmd.Args)})
+		return s.handleSetThinking(proto.Command{Type: proto.CmdSetThinking, ID: cmd.ID, Level: args})
 	case "name":
 		return s.handleSessionName(proto.Command{Type: proto.CmdSessionName, ID: cmd.ID, Name: cmd.Args})
 	case "compact":
-		return s.handleCompact(proto.Command{Type: proto.CmdCompact, ID: cmd.ID})
+		return s.handleCompact(ctx, proto.Command{Type: proto.CmdCompact, ID: cmd.ID})
 	case "new", "clear":
 		// /new and /clear start a fresh session; both are the session.new
 		// command, so the TUI, print, json, and rpc front doors all get it.
@@ -240,17 +251,14 @@ func (s *Server) handleRunCommand(cmd proto.Command) proto.Response {
 			if strings.TrimSpace(text) == "" {
 				return failResponse(cmd, proto.CodeBadRequest, "template produced an empty prompt")
 			}
-			if s.agent.Running() {
-				return failResponse(cmd, proto.CodeBusy, "a run is already in progress")
-			}
 			if err := s.startRun(message.User(text)); err != nil {
 				return startFailure(cmd, err)
 			}
 			return okResponse(cmd, nil)
 		}
 	}
-	if s.ext != nil && s.hasExtensionCommand(cmd.Name) {
-		out, err := s.ext.RunCommand(context.Background(), cmd.Name, cmd.Args)
+	if s.hasExtensionCommand(cmd.Name) {
+		out, err := s.ext.RunCommand(ctx, cmd.Name, cmd.Args)
 		if err != nil {
 			return failResponse(cmd, proto.CodeInternal, err.Error())
 		}
@@ -260,23 +268,19 @@ func (s *Server) handleRunCommand(cmd proto.Command) proto.Response {
 }
 
 // handleCompact runs compaction on demand.
-func (s *Server) handleCompact(cmd proto.Command) proto.Response {
-	if s.store == nil {
+func (s *Server) handleCompact(ctx context.Context, cmd proto.Command) proto.Response {
+	store := s.sessionStore()
+	if store == nil {
 		return failResponse(cmd, proto.CodeBadRequest, "no session to compact")
 	}
-	out, err := compaction.Run(context.Background(), s.store, s.compactor, cmd.Instructions)
+	out, err := compaction.Run(ctx, store, s.compactionState(), cmd.Instructions)
 	if err != nil {
 		if errors.Is(err, compaction.ErrNothingToCompact) {
 			return failResponse(cmd, proto.CodeBadRequest, "nothing to compact")
 		}
 		return failResponse(cmd, proto.CodeInternal, "compaction failed: "+err.Error())
 	}
-	s.emit(proto.Event{
-		Type:         proto.EventCompaction,
-		Entry:        out.Entry.ID,
-		TokensBefore: out.TokensBefore,
-		TokensAfter:  out.TokensAfter,
-	})
+	s.emitCompaction(out)
 	return okResponse(cmd, nil)
 }
 
@@ -286,11 +290,11 @@ func (s *Server) handleSessionName(cmd proto.Command) proto.Response {
 	if name == "" {
 		return failResponse(cmd, proto.CodeBadRequest, "session.name: name is required")
 	}
-	if s.store == nil {
+	store := s.sessionStore()
+	if store == nil {
 		return failResponse(cmd, proto.CodeBadRequest, "no session")
 	}
-	_, err := s.store.Append(session.Entry{Type: session.TypeSessionInfo, Name: name})
-	if err != nil {
+	if _, err := store.Append(session.Entry{Type: session.TypeSessionInfo, Name: name}); err != nil {
 		return failResponse(cmd, proto.CodeInternal, err.Error())
 	}
 	s.emitSession()
@@ -299,25 +303,37 @@ func (s *Server) handleSessionName(cmd proto.Command) proto.Response {
 
 // handleSessionNavigate moves the active leaf.
 func (s *Server) handleSessionNavigate(cmd proto.Command) proto.Response {
-	if s.store == nil {
+	store := s.sessionStore()
+	if store == nil {
 		return failResponse(cmd, proto.CodeBadRequest, "no session")
 	}
 	if s.agent.Running() {
-		return failResponse(cmd, proto.CodeBusy, "a run is in progress")
+		return busyResponse(cmd)
 	}
-	if err := s.store.SetLeaf(cmd.Entry); err != nil {
+	if err := store.SetLeaf(cmd.Entry); err != nil {
 		return failResponse(cmd, proto.CodeBadRequest, err.Error())
 	}
+	s.forgetLastUsage()
 	s.emitSession()
-	return okResponse(cmd, map[string]any{"leaf": s.store.Leaf()})
+	return okResponse(cmd, map[string]any{"leaf": store.Leaf()})
+}
+
+// forgetLastUsage drops the last response's token counts. They describe the
+// conversation that produced them, so once the active branch or session
+// changes they would make a short conversation look as full as the old one.
+func (s *Server) forgetLastUsage() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastUse = provider.Usage{}
 }
 
 // handleSessionTree returns every entry as a nested tree.
 func (s *Server) handleSessionTree(cmd proto.Command) proto.Response {
-	if s.store == nil {
+	store := s.sessionStore()
+	if store == nil {
 		return okResponse(cmd, map[string]any{"tree": []any{}})
 	}
-	return okResponse(cmd, map[string]any{"tree": s.tree("")})
+	return okResponse(cmd, map[string]any{"tree": entryTree(store, "")})
 }
 
 // treeNode is one entry and its children.
@@ -326,32 +342,29 @@ type treeNode struct {
 	Children []*treeNode   `json:"children,omitempty"`
 }
 
-// tree builds the entry tree below parent.
-func (s *Server) tree(parent string) []*treeNode {
+// entryTree builds the entry tree below parent.
+func entryTree(store *session.Store, parent string) []*treeNode {
 	var out []*treeNode
-	for _, id := range s.store.Children(parent) {
-		entry, ok := s.store.Get(id)
+	for _, id := range store.Children(parent) {
+		entry, ok := store.Get(id)
 		if !ok {
 			continue
 		}
-		out = append(out, &treeNode{Entry: entry, Children: s.tree(id)})
+		out = append(out, &treeNode{Entry: entry, Children: entryTree(store, id)})
 	}
 	return out
 }
 
 // emitSession emits a session_changed event.
 func (s *Server) emitSession() {
-	s.mu.Lock()
-	id := s.sessionID()
-	leaf := s.leafID()
-	s.mu.Unlock()
-	s.emit(proto.Event{Type: proto.EventSessionChanged, Session: id, Leaf: leaf})
+	store := s.sessionStore()
+	s.emit(proto.Event{Type: proto.EventSessionChanged, Session: storeID(store), Leaf: storeLeaf(store)})
 }
 
 // handleSessionNew starts a fresh session file.
 func (s *Server) handleSessionNew(cmd proto.Command) proto.Response {
 	if s.agent.Running() {
-		return failResponse(cmd, proto.CodeBusy, "a run is in progress")
+		return busyResponse(cmd)
 	}
 	path := defaultSessionPath(s.cwd)
 	if err := s.openSession(path); err != nil {
@@ -364,7 +377,7 @@ func (s *Server) handleSessionNew(cmd proto.Command) proto.Response {
 // handleSessionResume opens an existing session by path or id.
 func (s *Server) handleSessionResume(cmd proto.Command) proto.Response {
 	if s.agent.Running() {
-		return failResponse(cmd, proto.CodeBusy, "a run is in progress")
+		return busyResponse(cmd)
 	}
 	target := strings.TrimSpace(cmd.Session)
 	if target == "" {
@@ -387,24 +400,18 @@ func (s *Server) handleSessionResume(cmd proto.Command) proto.Response {
 // handleSessionFork copies the branch up to an entry into a new session.
 func (s *Server) handleSessionFork(cmd proto.Command) proto.Response {
 	if s.agent.Running() {
-		return failResponse(cmd, proto.CodeBusy, "a run is in progress")
+		return busyResponse(cmd)
 	}
-	if s.store == nil {
+	store := s.sessionStore()
+	if store == nil {
 		return failResponse(cmd, proto.CodeBadRequest, "no session")
 	}
 	dst := defaultSessionPath(s.cwd)
-	forked, err := session.Fork(s.store, cmd.Entry, dst, session.Options{})
+	forked, err := session.Fork(store, cmd.Entry, dst, session.Options{})
 	if err != nil {
 		return failResponse(cmd, proto.CodeBadRequest, err.Error())
 	}
-	s.mu.Lock()
-	old := s.store
-	s.store = forked
-	s.path = dst
-	s.mu.Unlock()
-	if old != nil {
-		_ = old.Close()
-	}
+	s.swapStore(forked, dst)
 	s.emitSession()
 	return okResponse(cmd, map[string]any{"id": s.sessionID(), "path": dst})
 }
@@ -415,16 +422,21 @@ func (s *Server) openSession(path string) error {
 	if err != nil {
 		return err
 	}
+	s.swapStore(store, path)
+	return nil
+}
+
+// swapStore installs a new store and closes the old one. The in-memory
+// transcript and the last response's usage belonged to the old conversation, so
+// they go with it.
+func (s *Server) swapStore(store *session.Store, path string) {
 	s.mu.Lock()
 	old := s.store
-	s.store = store
-	s.path = path
-	s.mem = nil
+	s.store, s.path, s.mem, s.lastUse = store, path, nil, provider.Usage{}
 	s.mu.Unlock()
 	if old != nil {
 		_ = old.Close()
 	}
-	return nil
 }
 
 // findSession resolves a session id to a path in cwd's session directory.
@@ -442,26 +454,26 @@ func findSession(cwd, id string) (string, error) {
 }
 
 // handleBash runs a user shell command and records it as a custom message.
-func (s *Server) handleBash(cmd proto.Command) proto.Response {
-	command := cmd.Command
-	if strings.TrimSpace(command) == "" {
+func (s *Server) handleBash(ctx context.Context, cmd proto.Command) proto.Response {
+	command, quiet := strings.CutPrefix(strings.TrimSpace(cmd.Command), "!!")
+	if command = strings.TrimSpace(command); command == "" {
 		return failResponse(cmd, proto.CodeBadRequest, "bash: command is required")
 	}
-	quiet := strings.HasPrefix(strings.TrimSpace(command), "!!")
-	if quiet {
-		command = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(command), "!!"))
+	args, err := json.Marshal(map[string]string{"command": command})
+	if err != nil {
+		return failResponse(cmd, proto.CodeInternal, err.Error())
 	}
-	shell, ok := s.pool["bash"]
-	if !ok {
-		return failResponse(cmd, proto.CodeBadRequest, "the bash tool is not active")
-	}
-	args, _ := json.Marshal(map[string]string{"command": command})
-	res, err := shell.Run(context.Background(), args, &tool.Context{WorkDir: s.cwd, Roots: []string{s.cwd}})
+	// The pool always holds bash, whether or not the model may call it: a user
+	// shell command is the user's own, so it skips the permission policy.
+	res, err := s.pool["bash"].Run(ctx, args, &tool.Context{WorkDir: s.cwd, Roots: []string{s.cwd}})
 	if err != nil {
 		res = tool.Errorf("%v", err)
 	}
-	if !quiet && s.store != nil {
-		_, _ = s.store.Append(session.Entry{Type: session.TypeCustomMessage, Content: res.Content, Display: true, InContext: false})
+	if store := s.sessionStore(); !quiet && store != nil {
+		entry := session.Entry{Type: session.TypeCustomMessage, Content: res.Content, Display: true, InContext: false}
+		if _, err := store.Append(entry); err != nil {
+			s.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: proto.CodeInternal, Message: "bash output was not recorded: " + err.Error()}})
+		}
 	}
 	return okResponse(cmd, map[string]any{"content": res.Content, "is_error": res.IsError})
 }
@@ -476,10 +488,8 @@ func (s *Server) handleReload(ctx context.Context, cmd proto.Command) proto.Resp
 	s.mu.Lock()
 	s.system = buildSystemPrompt(s.cfg, s.cwd, s.home, s.tools, s.clock.Now())
 	s.mu.Unlock()
-	if s.ext != nil {
-		for _, err := range s.ext.Reload(ctx) {
-			s.emit(proto.Event{Type: proto.EventExtensionError, Error: &proto.Error{Code: proto.CodeInternal, Message: err.Error()}})
-		}
+	for _, err := range s.ext.Reload(ctx) {
+		s.emitExtensionError(err)
 	}
 	s.emitState()
 	return okResponse(cmd, map[string]any{"reloaded": []string{"config", "skills", "templates", "extensions"}})

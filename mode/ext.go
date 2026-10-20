@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -54,9 +55,12 @@ func (s *Server) buildExtensionHost() *ext.Host {
 // tool_call and tool_result hooks.
 func (s *Server) spawn(ctx context.Context, r ext.SpawnRequest) (*ext.SpawnResult, error) {
 	hooks := s.ext.Hooks()
+	s.mu.Lock()
+	model := s.model
+	s.mu.Unlock()
 	sp := &subagent.Spawner{
 		Provider:   s.prov,
-		Model:      s.model,
+		Model:      model,
 		Registry:   s.tools,
 		Policy:     &s.policy,
 		Ask:        s.ask,
@@ -76,12 +80,14 @@ func (s *Server) spawn(ctx context.Context, r ext.SpawnRequest) (*ext.SpawnResul
 // startExtensions starts the host in the background and reports a per-extension
 // failure as an extension_error event.
 func (s *Server) startExtensions() {
-	if s.ext == nil {
-		return
-	}
 	for _, err := range s.ext.Start(context.Background()) {
-		s.emit(proto.Event{Type: proto.EventExtensionError, Error: &proto.Error{Code: proto.CodeInternal, Message: err.Error()}})
+		s.emitExtensionError(err)
 	}
+}
+
+// emitExtensionError reports a failure to load or reload one extension.
+func (s *Server) emitExtensionError(err error) {
+	s.emit(proto.Event{Type: proto.EventExtensionError, Error: &proto.Error{Code: proto.CodeInternal, Message: err.Error()}})
 }
 
 // extensionDirs lists the extension directories to load: explicit config dirs,
@@ -98,7 +104,6 @@ func extensionDirs(cfg *config.Config, cwd, home string) []string {
 	return dirs
 }
 
-// complete performs one non-streaming provider call for model:complete.
 // complete is the nested model call a tool gets as Context.Complete. An empty
 // request picks up the current model; a request that names a catalog ModelID is
 // resolved to that model's slug, so a describe tool can ask for a vision
@@ -119,18 +124,20 @@ func (s *Server) complete(ctx context.Context, req provider.Request) (*provider.
 type sessionBridge struct{ s *Server }
 
 func (b sessionBridge) AppendEntry(kind string, data json.RawMessage, keep bool) error {
-	if b.s.store == nil {
+	store := b.s.sessionStore()
+	if store == nil {
 		return nil
 	}
-	_, err := b.s.store.Append(session.Entry{Type: session.TypeCustom, Kind: kind, Data: data, Keep: keep})
+	_, err := store.Append(session.Entry{Type: session.TypeCustom, Kind: kind, Data: data, Keep: keep})
 	return err
 }
 
 func (b sessionBridge) Entries(kind string) []json.RawMessage {
-	if b.s.store == nil {
+	store := b.s.sessionStore()
+	if store == nil {
 		return nil
 	}
-	entries, err := b.s.store.Branch("")
+	entries, err := store.Branch("")
 	if err != nil {
 		return nil
 	}
@@ -171,22 +178,9 @@ func (b uiBridge) Notify(req proto.UIRequest) {
 // errUnsupportedUI reports a UI method the attached client cannot answer.
 var errUnsupportedUI = errors.New("the UI client cannot answer this method")
 
-// extensionCommands returns the running extensions' slash commands.
-func (s *Server) extensionCommands() []ext.Command {
-	if s.ext == nil {
-		return nil
-	}
-	return s.ext.Commands()
-}
-
 // hasExtensionCommand reports whether a running extension owns name.
 func (s *Server) hasExtensionCommand(name string) bool {
-	for _, c := range s.extensionCommands() {
-		if c.Name == name {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(s.ext.Commands(), func(c ext.Command) bool { return c.Name == name })
 }
 
 // modeName maps an empty mode to "rpc", the protocol default.
@@ -197,13 +191,19 @@ func modeName(mode string) string {
 	return mode
 }
 
+// isExtensionDir reports whether dir holds an extension manifest.
+func isExtensionDir(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "extension.yaml"))
+	return err == nil
+}
+
 // extensionsIn returns the immediate extension directories below root. A root
 // that is itself an extension is returned as-is.
 func extensionsIn(root string) []string {
 	if root == "" {
 		return nil
 	}
-	if pathExists(filepath.Join(root, "extension.yaml")) {
+	if isExtensionDir(root) {
 		return []string{root}
 	}
 	entries, err := os.ReadDir(root)
@@ -215,8 +215,7 @@ func extensionsIn(root string) []string {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		dir := filepath.Join(root, e.Name())
-		if pathExists(filepath.Join(dir, "extension.yaml")) {
+		if dir := filepath.Join(root, e.Name()); isExtensionDir(dir) {
 			out = append(out, dir)
 		}
 	}

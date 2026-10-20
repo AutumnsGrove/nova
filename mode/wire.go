@@ -1,6 +1,7 @@
 package mode
 
 import (
+	"cmp"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -75,16 +76,27 @@ func buildTools(cfg *config.Config) (*tool.Registry, map[string]tool.Tool, error
 	return registry, all, nil
 }
 
-// registerTools replaces the registry's contents with the named tools.
+// registerTools replaces the registry's contents with the named tools. It
+// resolves every name before touching the registry, so a bad list leaves the
+// current set exactly as it was instead of half rebuilt.
 func registerTools(registry *tool.Registry, pool map[string]tool.Tool, active []string) error {
-	for _, name := range registry.Names() {
-		registry.Unregister(name)
-	}
+	chosen := make([]tool.Tool, 0, len(active))
+	seen := make(map[string]bool, len(active))
 	for _, name := range active {
 		t, ok := pool[name]
 		if !ok {
 			return fmt.Errorf("unknown tool %q", name)
 		}
+		if seen[name] {
+			return fmt.Errorf("tool %q is listed twice", name)
+		}
+		seen[name] = true
+		chosen = append(chosen, t)
+	}
+	for _, name := range registry.Names() {
+		registry.Unregister(name)
+	}
+	for _, t := range chosen {
 		if err := registry.Register(t); err != nil {
 			return err
 		}
@@ -125,20 +137,26 @@ func buildSystemPrompt(cfg *config.Config, cwd, home string, registry *tool.Regi
 	})
 }
 
+// The model helpers rely on GetModel returning the zero Model for an id the
+// catalog does not know, so each falls back to its zero value.
+
 // modelSlug maps a stable model id to its wire slug when the catalog knows it.
 func modelSlug(id string) string {
-	if m, ok := provider.GetModel(id); ok {
-		return m.Slug
-	}
-	return id
+	m, _ := provider.GetModel(id)
+	return cmp.Or(m.Slug, id)
 }
 
 // modelWindow is the catalog context window, or 0 when unknown.
 func modelWindow(id string) int {
-	if m, ok := provider.GetModel(id); ok {
-		return m.ContextWindow
-	}
-	return 0
+	m, _ := provider.GetModel(id)
+	return m.ContextWindow
+}
+
+// modelModalities returns a catalog model's declared input kinds, or nil when
+// the model is unknown (which the protocol treats as text only).
+func modelModalities(id string) []string {
+	m, _ := provider.GetModel(id)
+	return m.InputModalities
 }
 
 // compactionSettings builds the compactor's settings from the config.
@@ -156,37 +174,26 @@ func compactionSettings(cfg *config.Config, model string) compaction.Settings {
 	return s
 }
 
-// findRoot walks up for the nearest .nova or .git directory.
+// findRoot is the project root for cwd: the nearest ancestor holding .nova or
+// .git, or cwd itself when there is none.
 func findRoot(cwd string) string {
-	dir := cwd
-	for {
-		if pathExists(filepath.Join(dir, ".nova")) || pathExists(filepath.Join(dir, ".git")) {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return cwd
-		}
-		dir = parent
+	if root, ok := config.ProjectRoot(cwd); ok {
+		return root
 	}
+	return cwd
 }
 
-// pathExists reports whether a path can be stat'd.
-func pathExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-// defaultSessionPath returns a new session file for cwd.
+// defaultSessionPath returns a new session file for cwd. The name is long
+// enough that two sessions started together cannot collide, because opening an
+// existing file would silently continue that session.
 func defaultSessionPath(cwd string) string {
-	return filepath.Join(session.DefaultDir(cwd), randomID()+".jsonl")
+	return filepath.Join(session.DefaultDir(cwd), randomHex(8)+".jsonl")
 }
 
-// randomID returns n random bytes as hex.
-func randomID() string {
-	var b [4]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(b[:])
+// randomHex returns n random bytes as lowercase hex. crypto/rand cannot fail
+// since Go 1.24 (it ends the process instead), so there is no error to handle.
+func randomHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }

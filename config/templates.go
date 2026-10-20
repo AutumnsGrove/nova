@@ -40,7 +40,7 @@ func LoadTemplates(dirs []string) ([]Template, []Warning) {
 				warnings = append(warnings, Warning{Source: path, Message: "invalid template name " + name})
 				continue
 			}
-			data, err := os.ReadFile(path)
+			data, err := readRegularFile(path, maxReadBytes)
 			if err != nil {
 				warnings = append(warnings, Warning{Source: path, Message: "cannot read template: " + err.Error()})
 				continue

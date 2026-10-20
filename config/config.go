@@ -193,7 +193,7 @@ func Load(opt LoadOptions) (*Config, []Warning, error) {
 	}
 	readFile := opt.ReadFile
 	if readFile == nil {
-		readFile = os.ReadFile
+		readFile = func(path string) ([]byte, error) { return readRegularFile(path, maxReadBytes) }
 	}
 
 	var warnings []Warning

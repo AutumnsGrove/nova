@@ -67,7 +67,7 @@ func TestSkills_SKL04_MissingDescription(t *testing.T) {
 
 func TestSkills_SKL05_LongDescription(t *testing.T) {
 	root := t.TempDir()
-	makeSkill(t, root, "foo", skillFront("foo", strings.Repeat("d", maxDescriptionBytes+1)), "")
+	makeSkill(t, root, "foo", skillFront("foo", strings.Repeat("d", maxDescriptionChars+1)), "")
 	skills, warnings := LoadSkills([]string{root})
 	if len(skills) != 0 || len(warnings) == 0 {
 		t.Fatalf("skills = %v warnings = %v, want skipped with a warning", skills, warnings)

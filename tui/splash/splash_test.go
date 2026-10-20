@@ -392,5 +392,5 @@ func FuzzRender(f *testing.F) {
 
 // blendWarm is the shadow colour at the given opacity, for sequence tests.
 func blendWarm(st styles.Styles, opacity float64) color.Color {
-	return blend(role(st, "bg"), role(st, "warm"), opacity)
+	return mixColors(role(st, "bg"), role(st, "warm"), opacity)
 }

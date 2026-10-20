@@ -349,7 +349,7 @@ func TestSplash_SQN20_SlashGlyphAndShadow(t *testing.T) {
 			t.Fatalf("face cell (%d,%d) is not a slash", p.x, p.y)
 		}
 	}
-	want := blend(role(st, "bg"), role(st, "warm"), 0.42)
+	want := mixColors(role(st, "bg"), role(st, "warm"), 0.42)
 	for _, p := range shadowSet(fullGeom.word) {
 		cell := cells[fullGeom.wordY+p.y][fullGeom.wordX+p.x]
 		if cell.Ch != '╱' {

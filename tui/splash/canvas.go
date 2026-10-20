@@ -57,7 +57,7 @@ func (c *canvas) put(x, y int, glyph rune, col color.Color, opacity float64) {
 	if opacity < 0.03 {
 		return
 	}
-	converted := c.p.Convert(blend(c.bg, col, clamp01(opacity)))
+	converted := c.p.Convert(mixColors(c.bg, col, clamp01(opacity)))
 	if converted == nil {
 		return
 	}
@@ -125,17 +125,8 @@ func role(st styles.Styles, name string) color.Color {
 	return parseHexColor(hex)
 }
 
-// blend mixes col over bg by opacity: opacity 0 gives bg, 1 gives col.
-func blend(bg, col color.Color, opacity float64) color.Color {
-	br, bgc, bb := rgb8(bg)
-	r, g, b := rgb8(col)
-	mix := func(a, b uint8) uint8 {
-		return uint8(float64(a)*(1-opacity) + float64(b)*opacity + 0.5)
-	}
-	return color.RGBA{R: mix(br, r), G: mix(bgc, g), B: mix(bb, b), A: 255}
-}
-
-// mixColors blends a and b by t: t 0 gives a, t 1 gives b.
+// mixColors blends b over a by t: t 0 gives a, t 1 gives b. The canvas uses it
+// to fade a glyph toward the background.
 func mixColors(a, b color.Color, t float64) color.Color {
 	ar, ag, ab := rgb8(a)
 	br, bg, bb := rgb8(b)

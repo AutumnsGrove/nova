@@ -145,6 +145,38 @@ func TestMatch_GLB14_Unicode(t *testing.T) {
 	}
 }
 
+// TestMatchString_GLB15_StarCrossesNewline checks * and ? match a newline, so a
+// deny pattern cannot be dodged by splitting a command across lines.
+func TestMatchString_GLB15_StarCrossesNewline(t *testing.T) {
+	if !MatchString("*rm -rf*", "echo hi\nrm -rf /") {
+		t.Error("* did not match across a newline")
+	}
+	if !MatchString("a?b", "a\nb") {
+		t.Error("? did not match a newline")
+	}
+	if !MatchPath("a/**", "a/b\nc/d") {
+		t.Error("** did not match a path segment containing a newline")
+	}
+}
+
+// TestMatchPath_GLB16_NegatedClassStopsAtSlash checks a negated class cannot
+// match a separator, because a path glob must not span segments except via **.
+func TestMatchPath_GLB16_NegatedClassStopsAtSlash(t *testing.T) {
+	if MatchPath("a[!b]c", "a/c") {
+		t.Error("[!b] matched a slash")
+	}
+	if MatchPath("a[^b]c", "a/c") {
+		t.Error("[^b] matched a slash")
+	}
+	if !MatchPath("a[!b]c", "axc") {
+		t.Error("[!b] did not match x")
+	}
+	// A string glob has no separators, so a negated class may match "/".
+	if !MatchString("a[!b]c", "a/c") {
+		t.Error("MatchString [!b] did not match /")
+	}
+}
+
 // FuzzMatchPath checks MatchPath never panics and stays fast.
 func FuzzMatchPath(f *testing.F) {
 	f.Add("src/**/*.go", "src/a/b/c.go")

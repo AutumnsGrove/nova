@@ -3,6 +3,7 @@ package permission
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -79,7 +80,7 @@ func (p *Policy) Validate() error {
 		return fmt.Errorf("permission: invalid headless action %q", p.Headless)
 	}
 	if p.Headless == Ask {
-		return fmt.Errorf("permission: headless action cannot be ask")
+		return errors.New("permission: headless action cannot be ask")
 	}
 	for i, r := range p.Rules {
 		if r.Tool == "" {
@@ -88,16 +89,16 @@ func (p *Policy) Validate() error {
 		if !validAction(r.Action) {
 			return fmt.Errorf("permission: rule %d: invalid action %q", i, r.Action)
 		}
-		if !validGlob(r.Tool) {
+		if !ValidPath(r.Tool) {
 			return fmt.Errorf("permission: rule %d: invalid tool glob %q", i, r.Tool)
 		}
 		for key, pattern := range r.Match {
-			if !validGlob(pattern) {
+			if !ValidPath(pattern) {
 				return fmt.Errorf("permission: rule %d: invalid match glob %q for %q", i, pattern, key)
 			}
 		}
 		for _, pattern := range r.Paths {
-			if !validGlob(pattern) {
+			if !ValidPath(pattern) {
 				return fmt.Errorf("permission: rule %d: invalid path glob %q", i, pattern)
 			}
 		}

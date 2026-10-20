@@ -44,21 +44,22 @@ func MatchString(pattern, s string) bool {
 	return re.MatchString(s)
 }
 
-// validGlob reports whether a pattern is well-formed enough to match with.
-func validGlob(pattern string) bool {
+// ValidPath reports whether pattern is a glob that MatchPath and MatchString
+// can use: every character class is closed.
+func ValidPath(pattern string) bool {
 	_, ok := compileGlob(pattern, true)
 	return ok
 }
-
-// ValidPath reports whether pattern is a path glob that MatchPath can use.
-func ValidPath(pattern string) bool { return validGlob(pattern) }
 
 // compileGlob translates a glob into an anchored regular expression. The
 // translation runs on bytes so multibyte literals pass through unchanged.
 // It returns false for an unbalanced character class.
 func compileGlob(pattern string, pathMode bool) (*regexp.Regexp, bool) {
 	var out strings.Builder
-	out.WriteByte('^')
+	// The s flag lets `.` match a newline. Without it a deny pattern such as
+	// `*rm -rf*` would stop matching once a command spans two lines, which is
+	// exactly how a command would slip past it.
+	out.WriteString(`(?s)^`)
 	for i := 0; i < len(pattern); {
 		switch c := pattern[i]; c {
 		case '*':
@@ -93,6 +94,10 @@ func compileGlob(pattern string, pathMode bool) (*regexp.Regexp, bool) {
 			out.WriteByte('[')
 			if i < len(pattern) && (pattern[i] == '!' || pattern[i] == '^') {
 				out.WriteByte('^')
+				if pathMode {
+					// A path glob never spans a separator except through `**`.
+					out.WriteByte('/')
+				}
 				i++
 			}
 			if i < len(pattern) && pattern[i] == ']' {

@@ -277,6 +277,11 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | RPC12 | correlation ids | two concurrent commands with ids | each response carries its id |
 | RPC13 | backpressure | client reads slowly | no deadlock; server not killed |
 | RPC14 | large event | 1 MiB tool result | delivered intact |
+| RPC15 | a slow command does not stall events | `reload` queued while a run emits more events than the subscriber buffer holds | every event is delivered, no `subscriber too slow` error, the reload then answers `ok` |
+| RPC16 | `abort` overtakes a blocked command | `reload` waiting on a hung run, then `abort` | the abort answers at once, the run ends `aborted`, the reload then answers `ok` |
+| RPC17 | no goroutine outlives `ServeRPC` | cancelled context with unread input | `testkit.NoLeaks` passes |
+| RPC18 | server hello capabilities | | `steer`, `fork`, `compact` |
+| RPC19 | no frame after return | a UI request after `ServeRPC` returned | refused; nothing written |
 | CLI01 | `--help` | | usage on stdout; exit 0 |
 | CLI02 | unknown flag | | message and usage on stderr; exit 2 |
 | CLI03 | conflicting modes | `-p x --mode rpc` | exit 2 |

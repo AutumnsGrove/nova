@@ -32,11 +32,17 @@ func NewPipe(s *Server, capabilities ...string) *Client {
 	for _, cap := range capabilities {
 		caps[cap] = true
 	}
-	s.uiMu.Lock()
-	s.uiCaps = caps
-	s.uiHandler = c.serveUI
-	s.uiMu.Unlock()
+	s.attachUI(caps, c.serveUI)
 	return c
+}
+
+// attachUI installs the handler that delivers UI requests to a client, and the
+// methods that client can answer.
+func (s *Server) attachUI(caps map[string]bool, h func(context.Context, proto.UIRequest) (proto.UIResponse, error)) {
+	s.uiMu.Lock()
+	defer s.uiMu.Unlock()
+	s.uiCaps = caps
+	s.uiHandler = h
 }
 
 // serveUI hands a request to the client and waits for its answer. Fire-and-

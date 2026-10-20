@@ -172,7 +172,7 @@ history as given, as before.
    When a caller sets a positive budget, reaching it ends the run with
    `Reason: "exhausted"`, `Exhausted: true`, and **no error**.
 4. Exactly one `run_start` and exactly one `run_end` are emitted per run, including for
-   errors, aborts, and exhaustion. Nothing is emitted after `run_end`. `Seq` is strictly
+   errors, aborts, and exhaustion. Nothing is emitted after `run_end`, and the agent is already idle (`Running()` false, `Steer` and `FollowUp` refused, a new `Start` accepted) when `run_end` is delivered. `Seq` is strictly
    increasing across the agent's lifetime; `Run` is `r_<n>`; `TS` comes from `Clock`.
 5. Event order for a turn: `turn_start`, `message_start`, then any of `thinking_*` and
    `text_delta`, then `tool_call` for each assembled call, `message_end`, then for each call
@@ -309,6 +309,8 @@ history as given, as before.
 | LPE19 | final answer text | | `Result.Answer` |
 | LPE20 | `New` contains only this run's messages | | excludes history |
 | LPE21 | the provider panics | `Stream` panics | the run ends `error` with one `run_end`; the process survives |
+| LPE22 | `run_end` is delivered to an idle agent | from the `Emit` callback on `run_end`: `Running()`, `Steer`, `FollowUp`, `Start` | `Running()` false; `ErrNotRunning` twice; `Start` accepted and its run completes |
+| LPE23 | a run started in reaction to `run_end` | `Start` from the `run_end` callback | the new run's `run_start` comes after the old `run_end` |
 | LPT01 | one tool call | | result appended after the assistant message |
 | LPT02 | many calls, parallel | 5 slow `Parallel` tools | run concurrently (peak concurrency > 1) |
 | LPT03 | completion order differs from call order | call 1 slow | results still appended in call order |

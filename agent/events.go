@@ -30,6 +30,18 @@ func (a *Agent) emitQueueUpdate(runID string) {
 	a.emitLocked(proto.Event{Type: proto.EventQueueUpdate, Run: runID, Steering: &steering, FollowUp: &followUp})
 }
 
+// emitRunEnd releases the run and delivers its run_end in one step under the
+// emit lock. A client that reacts to run_end by sending a command therefore
+// finds the agent idle, and a run started in reaction cannot emit its
+// run_start before the old run's run_end.
+func (a *Agent) emitRunEnd(r *run, ev proto.Event) {
+	a.emitMu.Lock()
+	defer a.emitMu.Unlock()
+	r.release()
+	ev.Run = r.id
+	a.emitLocked(ev)
+}
+
 // emitLocked is emit for a caller that already holds emitMu.
 func (a *Agent) emitLocked(ev proto.Event) {
 	a.seq++

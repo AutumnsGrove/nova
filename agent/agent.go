@@ -90,7 +90,7 @@ type RetryPolicy struct {
 	Max    int           // default 3 retries (so 4 attempts); negative disables
 	Base   time.Duration // default 1s
 	Cap    time.Duration // default 30s
-	Jitter float64       // default 0.2 when the whole policy is zero
+	Jitter float64       // fraction of the delay added at random; 0 means the default 0.2, negative means none
 }
 
 // Clock is the time seam, so tests can drive time with a fake clock.

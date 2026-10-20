@@ -122,7 +122,7 @@ type RetryPolicy struct {
     Max    int           // default 3 retries (so 4 attempts); negative disables
     Base   time.Duration // default 1s
     Cap    time.Duration // default 30s
-    Jitter float64       // 0 to 1; default 0.2
+    Jitter float64       // fraction of the delay; 0 means the default 0.2, negative means none
 }
 type Clock interface {
     Now() time.Time
@@ -377,6 +377,7 @@ history as given, as before.
 | LPR09 | `Max` negative disables | | one attempt |
 | LPR10 | jitter bounds | many runs | delay within `[d, d*(1+Jitter)]` |
 | LPR11 | error on a later turn after tools ran | | transcript valid (ends with tool results); earlier usage kept |
+| LPR12 | `Jitter` zero is the default, negative is none | `RetryPolicy{Base: 1s}` and `Jitter: -1` | zero gives delays in [1s, 1.2s] with some jitter; negative gives exactly 1s |
 | LPC01 | cancel before the first request | | only run_start and run_end; reason aborted; `context.Canceled` |
 | LPC02 | cancel during streaming | `Hang` turn | partial message discarded; reason aborted |
 | LPC03 | cancel during a tool | slow tool honouring ctx | results for **all** calls appended (`error: cancelled` for the unfinished); transcript valid; reason aborted |

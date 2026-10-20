@@ -195,6 +195,9 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | FRS13 | every registered provider is offered | OpenRouter and OpenCode Go | both appear, with sign-in and paste-key rows |
 | FRS14 | a device flow shows its page and code | a fake device session | the verification URL, the user code, and the status line |
 | FRS15 | the chosen provider and method reach the login backend | select OpenCode Go device | `Begin` is called once with the device method |
+| FRS16 | a pasted key fills the field | a bracketed paste of a key with a line ending, on the paste-key screen | the key is saved without the line ending and is never shown |
+| FRS17 | a paste elsewhere is ignored | a paste on the provider list | nothing is kept |
+| FRS18 | server text is cleaned | a sign-in page, code, status and error holding escapes and a newline | no control byte reaches the view and the words stay |
 | CFW01 | set a new key in a new file | | created with mode 0600; directory 0700 |
 | CFW02 | change an existing key | | only that key changes |
 | CFW03 | comments and order preserved | | byte-identical elsewhere |

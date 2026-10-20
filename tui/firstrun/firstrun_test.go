@@ -1,3 +1,5 @@
+//go:build !notui
+
 package firstrun
 
 import (
@@ -338,5 +340,55 @@ func TestFirstRun_FRS15_ChosenMethodReachesBegin(t *testing.T) {
 	_ = cmd()
 	if h.gotMethod != providerauth.Device || h.begins != 1 {
 		t.Fatalf("Begin got method %q after %d calls, want device once", h.gotMethod, h.begins)
+	}
+}
+
+// A terminal delivers a paste as one message, not as key presses, and pasting
+// is how most people enter a key.
+func TestFirstRun_FRS16_PasteFillsTheKey(t *testing.T) {
+	h := newHarness()
+	m, _ := chooseTo(t, New(h.options()), 1) // Paste a One key
+	next, cmd := m.Update(tea.PasteMsg{Content: "sk-pasted-secret\r\n"})
+	if cmd != nil {
+		t.Fatal("a paste started a command")
+	}
+	m = next.(Flow)
+	if text := view(m); strings.Contains(text, "sk-pasted-secret") || !strings.Contains(text, strings.Repeat("•", len("sk-pasted-secret"))) {
+		t.Fatalf("the pasted key must be masked and counted:\n%s", text)
+	}
+	m = act(t, m, "enter")
+	if h.savedCred.Key != "sk-pasted-secret" {
+		t.Fatalf("saved key = %q, want the pasted key without its line ending", h.savedCred.Key)
+	}
+}
+
+func TestFirstRun_FRS17_PasteOutsideTheKeyFieldIsIgnored(t *testing.T) {
+	h := newHarness()
+	m := New(h.options())
+	next, _ := m.Update(tea.PasteMsg{Content: "sk-stray"})
+	if got := next.(Flow); len(got.input) != 0 {
+		t.Fatalf("a paste on the list screen was kept: %q", string(got.input))
+	}
+}
+
+// Error text and the sign-in page and code come from servers and libraries, not
+// from this program, so none of it may reach the terminal as a control sequence.
+func TestFirstRun_FRS18_ServerTextIsCleaned(t *testing.T) {
+	h := newHarness()
+	h.session = &fakeSession{
+		prompt: "go to\x1b]0;x\x07 the page", url: "https://example.test/\x1b[2J", code: "AB\x1b[31mCD",
+		status: "waiting\x1b[H",
+	}
+	m, cmd := chooseTo(t, New(h.options()), 2)
+	m, _ = deliver(t, m, cmd)
+	m.errText = "boom\x1b[2J\nsecond line"
+	text := view(m)
+	if strings.ContainsRune(text, '\x1b') || strings.ContainsRune(text, '\x07') {
+		t.Fatalf("view carries control bytes: %q", text)
+	}
+	for _, want := range []string{"the page", "https://example.test/", "ABCD", "waiting", "boom"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("view lost %q:\n%s", want, text)
+		}
 	}
 }

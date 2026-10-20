@@ -106,43 +106,62 @@ func (s *FileStore) Save(key string) error {
 	if s.err != nil {
 		return s.err
 	}
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("auth: create key store directory: %w", err)
-	}
 	data, err := json.Marshal(fileFormat{OpenRouterKey: key})
 	if err != nil {
 		return fmt.Errorf("auth: encode key store: %w", err)
 	}
+	return writeSecretFile(s.path, data, "key store", s.rename)
+}
+
+// WriteSecretFile atomically replaces path with data, creating its directory
+// 0700 and the file 0600. The bytes go to a fresh random-named temporary file
+// that is created 0600 before any byte is written, so there is no moment when a
+// secret sits in a file other users can read, and a stale file left by a crash
+// cannot lend its looser mode. what names the file in error messages.
+func WriteSecretFile(path string, data []byte, what string) error {
+	return writeSecretFile(path, data, what, nil)
+}
+
+// writeSecretFile is WriteSecretFile with an injectable rename, so a test can
+// prove a failed final step leaves the previous file intact. A nil rename is
+// os.Rename.
+func writeSecretFile(path string, data []byte, what string, rename func(oldpath, newpath string) error) (err error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("auth: create %s directory: %w", what, err)
+	}
 	tmp, err := os.CreateTemp(dir, ".auth-*.tmp")
 	if err != nil {
-		return fmt.Errorf("auth: create temporary key store: %w", err)
+		return fmt.Errorf("auth: create temporary %s: %w", what, err)
 	}
 	tmpName := tmp.Name()
 	defer func() {
-		if tmpName != "" {
-			os.Remove(tmpName)
+		if err != nil {
+			_ = os.Remove(tmpName)
 		}
 	}()
+	// CreateTemp already creates 0600; stating it keeps the guarantee explicit.
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return fmt.Errorf("auth: secure temporary key store: %w", err)
+		_ = tmp.Close()
+		return fmt.Errorf("auth: secure temporary %s: %w", what, err)
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("auth: write temporary key store: %w", err)
+		_ = tmp.Close()
+		return fmt.Errorf("auth: write temporary %s: %w", what, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("auth: sync temporary %s: %w", what, err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("auth: close temporary key store: %w", err)
+		return fmt.Errorf("auth: close temporary %s: %w", what, err)
 	}
-	rename := s.rename
 	if rename == nil {
 		rename = os.Rename
 	}
-	if err := rename(tmpName, s.path); err != nil {
-		return fmt.Errorf("auth: replace key store: %w", err)
+	if err := rename(tmpName, path); err != nil {
+		return fmt.Errorf("auth: replace %s: %w", what, err)
 	}
-	tmpName = "" // consumed by rename
 	return nil
 }
 

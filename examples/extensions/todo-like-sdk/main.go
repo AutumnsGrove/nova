@@ -6,6 +6,7 @@ package main
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/AutumnsGrove/nova/bundled/tasks"
 	"github.com/AutumnsGrove/nova/ext/sdk"
@@ -13,6 +14,8 @@ import (
 
 func main() {
 	sdk.Run(func(h *sdk.Host) error {
+		// Tool calls and commands run on their own goroutines; mu guards state.
+		var mu sync.Mutex
 		state := tasks.NewState()
 
 		h.Tool(sdk.Tool{
@@ -28,6 +31,8 @@ func main() {
 			),
 			ReadOnly: false,
 		}, func(c *sdk.Call) (sdk.Result, error) {
+			mu.Lock()
+			defer mu.Unlock()
 			next, text, changed, err := tasks.Apply(state, c.Raw())
 			if err != nil {
 				return sdk.Error("error: %v", err), nil
@@ -42,6 +47,8 @@ func main() {
 		})
 
 		h.Command("todos", "Show or clear the task list", func(c *sdk.Command) error {
+			mu.Lock()
+			defer mu.Unlock()
 			if strings.TrimSpace(c.Args) == "clear" {
 				state.Tasks = nil
 				if err := h.AppendEntry(tasks.StateKind(), state, true); err != nil {

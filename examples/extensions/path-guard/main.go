@@ -16,8 +16,10 @@ func main() {
 				Tool      string          `json:"tool"`
 				Arguments json.RawMessage `json:"arguments"`
 			}
+			// An event the hook cannot read is an error, which the SDK answers
+			// as "no opinion"; returning nil, nil would hide it.
 			if err := e.Decode(&event); err != nil {
-				return nil, nil
+				return nil, err
 			}
 			if event.Tool != "write" && event.Tool != "edit" {
 				return nil, nil
@@ -25,7 +27,9 @@ func main() {
 			var args struct {
 				Path string `json:"path"`
 			}
-			_ = json.Unmarshal(event.Arguments, &args)
+			if err := json.Unmarshal(event.Arguments, &args); err != nil {
+				return nil, err
+			}
 			if outside(args.Path) {
 				return &sdk.HookDecision{
 					Block:  true,

@@ -252,6 +252,8 @@ func CostFor(m provider.Model, u provider.Usage) (usd float64, source string)
 | LED10 | `Rebuild` ignores entries without usage | | unchanged totals |
 | LED11 | concurrent `Add` | 20 goroutines; `-race` | exact total |
 | LED12 | `CostFor` with a negative or NaN input | | 0; no panic |
+| LED13 | `CostFor` with a NaN, +Inf, -Inf or negative provider cost | | NaN and +Inf cost 0; the others fall back to the catalog |
+| LED14 | `Rebuild` while another goroutine reads | `-race` | a reader sees the old or the new totals, never a partial one |
 
 ## Fuzz and property tests
 

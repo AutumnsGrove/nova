@@ -368,25 +368,38 @@ func (h *Host) registerOrReplace(inst *instance, info tool.Info, t tool.Tool) er
 	return nil
 }
 
-// clearRegistrations removes an instance's tools and command/hook lists.
-func (h *Host) clearRegistrations(inst *instance) {
-	if inst == nil {
-		return
-	}
-	for _, name := range inst.reg.tools {
-		h.reg.Unregister(name)
-	}
+// clearProcessRegistrations removes what an instance's process contributed:
+// its tools, commands, and hooks. Declarative tools stay, since they do not
+// depend on the process.
+func (h *Host) clearProcessRegistrations(inst *instance) {
+	inst.mu.Lock()
+	tools := inst.reg.tools
 	inst.reg.tools = nil
 	inst.reg.command = nil
 	inst.reg.hooks = nil
+	inst.mu.Unlock()
+	for _, name := range tools {
+		h.reg.Unregister(name)
+	}
+}
+
+// clearRegistrations removes everything an instance registered.
+func (h *Host) clearRegistrations(inst *instance) {
+	h.clearProcessRegistrations(inst)
+	inst.mu.Lock()
+	decl := inst.reg.decl
+	inst.reg.decl = nil
+	inst.mu.Unlock()
+	for _, name := range decl {
+		h.reg.Unregister(name)
+	}
 }
 
 // deny sends an error frame to an extension.
 func (h *Host) deny(inst *instance, code, msg string) {
-	if inst.conn == nil {
-		return
+	if c := inst.getConn(); c != nil {
+		_ = c.notify(&outFrame{Type: "error", Error: &proto.Error{Code: code, Message: msg}})
 	}
-	_ = inst.conn.notify(&outFrame{Type: "error", Error: &proto.Error{Code: code, Message: msg}})
 }
 
 // handleUI forwards a UI request, checking the method capability.
@@ -415,8 +428,8 @@ func (h *Host) handleUI(inst *instance, line []byte) {
 	}
 	resp.Type = proto.FrameUIResponse
 	resp.ID = req.ID
-	if inst.conn != nil {
-		_ = inst.conn.notify(resp)
+	if c := inst.getConn(); c != nil {
+		_ = c.notify(resp)
 	}
 }
 
@@ -493,8 +506,8 @@ func (h *Host) handleComplete(inst *instance, line []byte) {
 		frame.Message = resp.Message
 		frame.Usage = resp.Usage
 	}
-	if inst.conn != nil {
-		_ = inst.conn.notify(frame)
+	if c := inst.getConn(); c != nil {
+		_ = c.notify(frame)
 	}
 }
 
@@ -549,7 +562,7 @@ func (h *Host) RunCommand(ctx context.Context, name, args string) (string, error
 		}
 		return h.runBundledCommand(target, cmd, ctx, args)
 	}
-	reply, err := target.conn.request(ctx, &outFrame{Type: "command", Name: name, Args: args}, defaultToolCallTimeout)
+	reply, err := target.request(ctx, &outFrame{Type: "command", Name: name, Args: args}, defaultToolCallTimeout)
 	if err != nil {
 		return "", fmt.Errorf("ext: %s: %w", target.manifest.Name, err)
 	}
@@ -589,9 +602,9 @@ func (h *Host) Shutdown(ctx context.Context) error {
 func (h *Host) disable(inst *instance, reason string) {
 	h.clearRegistrations(inst)
 	inst.setState(stateDisabled, reason)
-	if inst.conn != nil {
-		inst.conn.tryNotify(&outFrame{Type: "shutdown"})
-		inst.conn.close()
+	if c := inst.getConn(); c != nil {
+		c.tryNotify(&outFrame{Type: "shutdown"})
+		c.close()
 	}
 	if h.opt.Emit != nil {
 		h.opt.Emit(proto.Event{

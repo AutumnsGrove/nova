@@ -3,10 +3,12 @@ package ext
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +32,16 @@ const (
 	healthyAfter      = 60 * time.Second
 	shutdownGrace     = 2 * time.Second
 	defaultMaxRestart = 3
+	// maxBackoffDoublings caps the backoff at 32 seconds, so a large
+	// restart.max cannot overflow the shift or wait unreasonably long.
+	maxBackoffDoublings = 5
+	// groupWaitDelay is how long Wait lingers for a killed command's output
+	// pipes.
+	groupWaitDelay = 2 * time.Second
 )
+
+// errStopping reports that a start lost a race with a stop.
+var errStopping = errors.New("extension is stopping")
 
 // instance is one loaded extension and its running process.
 type instance struct {
@@ -53,6 +64,10 @@ type instance struct {
 	registerCh chan struct{}
 	crashCh    chan struct{}
 	doneCh     chan struct{}
+	// stopCtx ends when stop begins, so a supervisor sleeping out a restart
+	// backoff wakes up and does not respawn a process nothing will stop.
+	stopCtx    context.Context
+	stopCancel context.CancelFunc
 
 	// Bundled extensions run in-process and contribute Go hooks and
 	// observers rather than protocol frames.
@@ -66,7 +81,11 @@ type instance struct {
 
 // registration is what one instance currently contributes.
 type registration struct {
-	tools   []string
+	// tools are the tools the process (or a bundled extension) registered; they
+	// go away when it stops.
+	tools []string
+	// decl are the manifest's exec tools, which do not depend on the process.
+	decl    []string
 	command []RegisterCommand
 	hooks   []string
 	flags   []FlagSpec
@@ -74,6 +93,7 @@ type registration struct {
 
 // newInstance creates a stopped instance.
 func newInstance(h *Host, m *Manifest) *instance {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &instance{
 		host:       h,
 		manifest:   m,
@@ -81,51 +101,90 @@ func newInstance(h *Host, m *Manifest) *instance {
 		registerCh: make(chan struct{}, 1),
 		crashCh:    make(chan struct{}, 1),
 		doneCh:     make(chan struct{}),
+		stopCtx:    ctx,
+		stopCancel: cancel,
 	}
 }
 
-// spawn starts the process and its connection and sends init. It does not wait
-// for registration.
-func (inst *instance) spawn(_ context.Context) error {
+// getConn returns the current connection, or nil when no process has started.
+func (inst *instance) getConn() *conn {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	return inst.conn
+}
+
+// request sends a frame to the current process and waits for its answer.
+func (inst *instance) request(ctx context.Context, frame *outFrame, timeout time.Duration) (reply, error) {
+	c := inst.getConn()
+	if c == nil {
+		return reply{}, errExited
+	}
+	return c.request(ctx, frame, timeout)
+}
+
+// launch starts the process and its connection. It refuses once stop has begun,
+// and records the process under the same lock stop reads it with, so a stop
+// either prevents the start or sees the process and kills it.
+func (inst *instance) launch() (*conn, error) {
 	m := inst.manifest
 	if len(m.Run) == 0 {
 		inst.setState(stateDisabled, "no run command")
-		return fmt.Errorf("ext: %s has no run command", m.Name)
+		return nil, fmt.Errorf("ext: %s has no run command", m.Name)
 	}
-	argv := append([]string(nil), m.Run...)
+	argv := slices.Clone(m.Run)
 	argv[0] = resolveExec(m.Dir, argv[0])
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = m.Dir
 	cmd.Env = inst.host.childEnv(m)
 	setProcessGroup(cmd)
+
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	if inst.stopped {
+		return nil, errStopping
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return fmt.Errorf("ext: %s stdin: %w", m.Name, err)
+		return nil, fmt.Errorf("ext: %s stdin: %w", m.Name, err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("ext: %s stdout: %w", m.Name, err)
+		return nil, fmt.Errorf("ext: %s stdout: %w", m.Name, err)
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return fmt.Errorf("ext: %s stderr: %w", m.Name, err)
+		return nil, fmt.Errorf("ext: %s stderr: %w", m.Name, err)
+	}
+	// A register token left by the previous incarnation would make the next
+	// startup look finished before the new process has said anything.
+	select {
+	case <-inst.registerCh:
+	default:
 	}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("ext: start %s: %w", m.Name, err)
+		return nil, fmt.Errorf("ext: start %s: %w", m.Name, err)
 	}
 	done := make(chan struct{})
-	inst.mu.Lock()
+	c := newConn(m.Name, stdout, stdin, &procCloser{stdin: stdin, stdout: stdout}, inst.host.clock, inst.handle)
 	inst.cmd = cmd
 	inst.procDone = done
+	inst.conn = c
 	inst.startedAt = inst.host.clock.Now()
 	inst.state = stateStarting
 	inst.lastErr = ""
-	inst.mu.Unlock()
-
 	go inst.forwardStderr(stderr)
-	inst.conn = newConn(m.Name, stdout, stdin, &procCloser{stdin: stdin, stdout: stdout}, inst.host.clock, inst.handle)
-	go inst.waitExit(cmd, done)
+	go inst.waitExit(cmd, c, done)
+	return c, nil
+}
 
+// spawn starts the process and sends init and the replayed entries. It does
+// not wait for registration.
+func (inst *instance) spawn() error {
+	c, err := inst.launch()
+	if err != nil {
+		return err
+	}
+	m := inst.manifest
 	flags := map[string]string{}
 	for _, f := range m.Flags {
 		flags[f.Name] = f.Default
@@ -143,10 +202,10 @@ func (inst *instance) spawn(_ context.Context) error {
 		Capabilities: m.Capabilities,
 		Flags:        flags,
 	}
-	if err := inst.conn.notify(init); err != nil {
+	if err := c.notify(init); err != nil {
 		return fmt.Errorf("ext: init %s: %w", m.Name, err)
 	}
-	inst.replay()
+	inst.replay(c)
 	return nil
 }
 
@@ -157,26 +216,29 @@ func (inst *instance) forwardStderr(r io.Reader) {
 	for sc.Scan() {
 		inst.host.logf("info", inst.manifest.Name+": "+sc.Text())
 	}
+	// A line over the limit stops the scanner; keep draining so the child
+	// never blocks writing to a pipe nobody reads.
+	_, _ = io.Copy(io.Discard, r)
 }
 
 // replay sends the instance's prior session entries for the kinds it declared.
-func (inst *instance) replay() {
+func (inst *instance) replay(c *conn) {
 	if inst.host.opt.Session == nil {
 		return
 	}
 	inst.mu.Lock()
-	kinds := append([]string(nil), inst.entryKinds...)
+	kinds := slices.Clone(inst.entryKinds)
 	inst.mu.Unlock()
 	for _, kind := range kinds {
 		for _, data := range inst.host.opt.Session.Entries(kind) {
-			_ = inst.conn.notify(&outFrame{Type: "replay", Kind: kind, Data: data})
+			_ = c.notify(&outFrame{Type: "replay", Kind: kind, Data: data})
 		}
 	}
 }
 
 // waitExit reaps one process, closes its done channel, and signals the
 // supervisor. done is closed exactly once, by this goroutine.
-func (inst *instance) waitExit(cmd *exec.Cmd, done chan struct{}) {
+func (inst *instance) waitExit(cmd *exec.Cmd, c *conn, done chan struct{}) {
 	err := cmd.Wait()
 	inst.mu.Lock()
 	stopped := inst.stopped
@@ -184,9 +246,7 @@ func (inst *instance) waitExit(cmd *exec.Cmd, done chan struct{}) {
 	if !stopped && err != nil {
 		inst.host.logf("warn", inst.manifest.Name+" exited: "+err.Error())
 	}
-	if inst.conn != nil {
-		inst.conn.close()
-	}
+	c.close()
 	close(done)
 	select {
 	case inst.crashCh <- struct{}{}:
@@ -232,13 +292,13 @@ func (inst *instance) status() Status {
 
 // start launches the instance and waits for it to register or fail.
 func (inst *instance) start(ctx context.Context) error {
-	if err := inst.spawn(ctx); err != nil {
+	if err := inst.spawn(); err != nil {
 		inst.setState(stateFailed, err.Error())
 		return err
 	}
 	if err := inst.awaitRegister(ctx); err != nil {
 		inst.setState(stateFailed, err.Error())
-		inst.closeConn()
+		inst.abort()
 		return err
 	}
 	inst.mu.Lock()
@@ -267,61 +327,87 @@ func (inst *instance) awaitRegister(ctx context.Context) error {
 	}
 }
 
-// closeConn closes the current connection, ignoring a nil one.
-func (inst *instance) closeConn() {
-	if inst.conn != nil {
-		inst.conn.close()
+// abort ends a process that never finished starting, so a failed extension
+// does not linger until shutdown.
+func (inst *instance) abort() {
+	inst.mu.Lock()
+	c, cmd, done := inst.conn, inst.cmd, inst.procDone
+	inst.mu.Unlock()
+	if c != nil {
+		c.close()
+	}
+	select {
+	case <-done:
+		// Already reaped: its pid may belong to someone else by now.
+	default:
+		if cmd != nil && cmd.Process != nil {
+			forceKillGroup(cmd.Process.Pid)
+			_ = cmd.Process.Kill()
+		}
 	}
 }
 
 // supervise restarts the process after an unexpected exit.
 func (inst *instance) supervise() {
 	defer close(inst.doneCh)
-	max := inst.manifest.Restart.Max
-	if max <= 0 {
-		max = defaultMaxRestart
+	limit := inst.manifest.Restart.Max
+	if limit <= 0 {
+		limit = defaultMaxRestart
 	}
-	for range inst.crashCh {
-		inst.mu.Lock()
-		if inst.stopped {
-			inst.mu.Unlock()
+	for {
+		select {
+		case <-inst.crashCh:
+		case <-inst.stopCtx.Done():
 			return
 		}
-		healthy := inst.host.clock.Now().Sub(inst.startedAt) >= healthyAfter
-		if healthy {
-			inst.restarts = 0
-		}
-		restarts := inst.restarts
-		inst.mu.Unlock()
-		if healthy {
-			inst.host.clearRegistrations(inst)
-		}
-		if restarts >= max {
-			inst.host.disable(inst, fmt.Sprintf("crashed %d times", restarts))
-			return
-		}
-		inst.mu.Lock()
-		inst.restarts++
-		inst.mu.Unlock()
-		inst.host.clearRegistrations(inst)
-		inst.setState(stateStarting, "")
-		if err := inst.host.clock.Sleep(context.Background(), restartBackoff<<restarts); err != nil {
-			return
-		}
-		if err := inst.restart(); err != nil {
-			inst.setState(stateFailed, err.Error())
+		if !inst.recoverFromCrash(limit) {
 			return
 		}
 	}
 }
 
+// recoverFromCrash handles one unexpected exit: it restarts the process after a
+// backoff, or gives up once the restart limit is spent. It reports whether
+// supervision should continue.
+func (inst *instance) recoverFromCrash(limit int) bool {
+	inst.mu.Lock()
+	if inst.stopped {
+		inst.mu.Unlock()
+		return false
+	}
+	if inst.host.clock.Now().Sub(inst.startedAt) >= healthyAfter {
+		inst.restarts = 0
+	}
+	restarts := inst.restarts
+	inst.mu.Unlock()
+	if restarts >= limit {
+		inst.host.disable(inst, fmt.Sprintf("crashed %d times", restarts))
+		return false
+	}
+	inst.mu.Lock()
+	inst.restarts++
+	inst.mu.Unlock()
+	inst.host.clearProcessRegistrations(inst)
+	inst.setState(stateStarting, "")
+	if inst.host.clock.Sleep(inst.stopCtx, restartBackoff<<min(restarts, maxBackoffDoublings)) != nil {
+		return false
+	}
+	if err := inst.restart(); err != nil {
+		if !errors.Is(err, errStopping) {
+			inst.setState(stateFailed, err.Error())
+		}
+		return false
+	}
+	return true
+}
+
 // restart respawns the process and waits for registration.
 func (inst *instance) restart() error {
-	if err := inst.spawn(context.Background()); err != nil {
+	if err := inst.spawn(); err != nil {
 		return err
 	}
-	if err := inst.awaitRegister(context.Background()); err != nil {
-		inst.closeConn()
+	if err := inst.awaitRegister(inst.stopCtx); err != nil {
+		inst.abort()
 		return err
 	}
 	inst.mu.Lock()
@@ -340,10 +426,9 @@ func (inst *instance) stop(ctx context.Context) {
 		return
 	}
 	inst.stopped = true
-	c := inst.conn
-	cmd := inst.cmd
-	done := inst.procDone
+	c, cmd, done, supervised := inst.conn, inst.cmd, inst.procDone, inst.supervised
 	inst.mu.Unlock()
+	inst.stopCancel()
 
 	if c != nil {
 		c.tryNotify(&outFrame{Type: "shutdown"})
@@ -359,10 +444,9 @@ func (inst *instance) stop(ctx context.Context) {
 		// Always kill the group, so a forked child cannot outlive the call.
 		forceKillGroup(pid)
 	}
-	inst.closeConn()
-	inst.mu.Lock()
-	supervised := inst.supervised
-	inst.mu.Unlock()
+	if c != nil {
+		c.close()
+	}
 	if supervised {
 		select {
 		case <-inst.doneCh:
@@ -381,9 +465,6 @@ func (inst *instance) waitDone(done <-chan struct{}, d time.Duration) bool {
 		return false
 	}
 }
-
-// groupWaitDelay is how long Wait lingers for a killed command's output pipes.
-const groupWaitDelay = 2 * time.Second
 
 // groupCommand builds a command that runs in its own process group and is
 // killed as a whole group when ctx ends. Killing only the leader would leave a
@@ -405,22 +486,16 @@ func groupCommand(ctx context.Context, name string, args ...string) *exec.Cmd {
 type procCloser struct {
 	stdin  io.WriteCloser
 	stdout io.Closer
-	closed bool
-	mu     sync.Mutex
+	once   sync.Once
+	err    error
 }
 
 func (p *procCloser) Close() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
-		return nil
-	}
-	p.closed = true
-	err := p.stdin.Close()
-	if p.stdout != nil {
+	p.once.Do(func() {
+		p.err = p.stdin.Close()
 		_ = p.stdout.Close()
-	}
-	return err
+	})
+	return p.err
 }
 
 // childEnv builds the environment for an extension process: the host base,
@@ -434,7 +509,7 @@ func (h *Host) childEnv(m *Manifest) []string {
 	out := make([]string, 0, len(base)+5)
 	for _, kv := range base {
 		name, _, _ := strings.Cut(kv, "=")
-		if h.scrubbed(name, scrub) && !h.passed(name) {
+		if isScrubbed(name, scrub) && !slices.Contains(h.opt.PassEnv, name) {
 			continue
 		}
 		out = append(out, kv)
@@ -454,22 +529,10 @@ func (h *Host) scrubPatterns() []string {
 	return append([]string{"OPENROUTER_API_KEY", "_API_KEY", "_TOKEN", "_SECRET"}, h.opt.ScrubEnv...)
 }
 
-// scrubbed reports whether name matches a scrub pattern or suffix.
-func (h *Host) scrubbed(name string, patterns []string) bool {
-	for _, p := range patterns {
-		if name == p || (strings.HasPrefix(p, "_") && strings.HasSuffix(name, p)) {
-			return true
-		}
-	}
-	return false
-}
-
-// passed reports whether name is explicitly passed through.
-func (h *Host) passed(name string) bool {
-	for _, p := range h.opt.PassEnv {
-		if p == name {
-			return true
-		}
-	}
-	return false
+// isScrubbed reports whether name matches a scrub pattern: an exact name, or a
+// suffix when the pattern starts with an underscore.
+func isScrubbed(name string, patterns []string) bool {
+	return slices.ContainsFunc(patterns, func(p string) bool {
+		return name == p || (strings.HasPrefix(p, "_") && strings.HasSuffix(name, p))
+	})
 }

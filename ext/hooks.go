@@ -140,7 +140,7 @@ func (h *Host) callHook(ctx context.Context, inst *instance, hook string, event 
 	if err != nil {
 		return false
 	}
-	reply, err := inst.conn.request(ctx, &outFrame{
+	reply, err := inst.request(ctx, &outFrame{
 		Type:       "hook",
 		Hook:       hook,
 		Event:      raw,

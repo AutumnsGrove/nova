@@ -41,7 +41,7 @@ func (t *protocolTool) Run(ctx context.Context, args json.RawMessage, tctx *tool
 	if tctx != nil {
 		callID = tctx.SessionID
 	}
-	reply, err := t.inst.conn.request(ctx, &outFrame{
+	reply, err := t.inst.request(ctx, &outFrame{
 		Type:       "tool_call",
 		Name:       t.def.Name,
 		Arguments:  args,

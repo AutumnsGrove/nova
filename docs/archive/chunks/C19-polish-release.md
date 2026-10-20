@@ -235,6 +235,7 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | DOC07 | piped output | | no colour |
 | DOC08 | embedded set | | includes the examples and the SDK documentation |
 | DOC09 | authoring context size | | under 40,000 estimated tokens |
+| DOC10 | an excerpt never splits a character | a hit on a line whose 100th byte is inside a multi-byte character | the excerpt is valid UTF-8 |
 | SKA01 | skill embedded and listed | | `extension-author`, `Source: builtin` |
 | SKA02 | lowest precedence | user skill of the same name | the user's wins |
 | SKA03 | body contains the workflow steps | | each step present |

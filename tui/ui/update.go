@@ -5,6 +5,7 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -30,7 +31,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handlePaste(msg.Content)
 
 	case tea.MouseMsg:
-		return m, m.handleMouse(msg)
+		m.handleMouse(msg)
+		return m, nil
 
 	case client.ResponseMsg:
 		return m, m.handleResponse(msg.Response)
@@ -154,7 +156,7 @@ func (m *Model) handleResponse(resp proto.Response) tea.Cmd {
 	case proto.CmdListProviders:
 		return m.onProviders(resp)
 	case proto.CmdPrompt, proto.CmdSteer, proto.CmdFollowUp:
-		return m.finishSend(resp)
+		m.finishSend(resp)
 	case proto.CmdAbort:
 		m.finishAbort(resp)
 	case proto.CmdShutdown:
@@ -189,7 +191,7 @@ func (m *Model) decodeCommands(resp proto.Response) {
 }
 
 // finishSend handles the response to a prompt, steer, or follow-up.
-func (m *Model) finishSend(resp proto.Response) tea.Cmd {
+func (m *Model) finishSend(resp proto.Response) {
 	p := m.pending
 	m.pending = pendingSend{}
 	if !resp.OK {
@@ -197,7 +199,7 @@ func (m *Model) finishSend(resp proto.Response) tea.Cmd {
 			m.notice = resp.Error.Message
 		}
 		m.setEditorText(p.text)
-		return nil
+		return
 	}
 	switch p.kind {
 	case "steer":
@@ -208,7 +210,6 @@ func (m *Model) finishSend(resp proto.Response) tea.Cmd {
 		m.transcript.AddUser(p.text, p.atts)
 	}
 	m.syncList()
-	return nil
 }
 
 // finishAbort puts the returned queued messages back in the editor.
@@ -223,9 +224,7 @@ func (m *Model) finishAbort(resp proto.Response) {
 	if json.Unmarshal(resp.Data, &out) != nil {
 		return
 	}
-	var lines []string
-	lines = append(lines, out.Steering...)
-	lines = append(lines, out.FollowUp...)
+	lines := slices.Concat(out.Steering, out.FollowUp)
 	if len(lines) > 0 {
 		m.setEditorText(strings.Join(lines, "\n"))
 	}

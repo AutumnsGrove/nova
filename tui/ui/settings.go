@@ -38,7 +38,7 @@ type noticeMsg struct{ text string }
 
 // openSettings shows the display settings dialog. Its rows are the whole table:
 // adding a setting is one row here and one case in applySettings.
-func (m *Model) openSettings() tea.Cmd {
+func (m *Model) openSettings() {
 	rows := []dialog.Setting{
 		{Key: "display.thinking_lines", Label: "Thinking preview lines", Value: m.display.ThinkingPreviewLines, Min: 1, Max: 50},
 		{Key: "display.tool_lines", Label: "Tool result lines", Value: m.display.ToolPreviewLines, Min: 1, Max: 50},
@@ -50,7 +50,6 @@ func (m *Model) openSettings() tea.Cmd {
 		{Key: "display.status.model", Label: "Status: model on the right (0/1)", Value: boolValue(m.statusUses("model")), Min: 0, Max: 1},
 	}
 	m.pushDialog(dialog.NewSettings("Settings", rows), intentSettings)
-	return nil
 }
 
 // applySettings applies the dialog's values live and saves each to the user

@@ -129,7 +129,6 @@ type Model struct {
 	editorProbe textarea.Model
 	history     history
 	pasted      map[string]string
-	pasteSeq    int
 	clipboard   clipboard.Reader
 	pendingAtts []pendingAttachment
 

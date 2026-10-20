@@ -5,6 +5,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -23,12 +24,11 @@ type completionItem struct {
 
 // completion is the state of the command or path popup.
 type completion struct {
-	active      bool
-	kind        string // "command" | "path"
-	items       []completionItem
-	sel         int
-	base        string // text before the token being completed
-	replaceFrom int    // byte index where the token starts
+	active bool
+	kind   string // "command" | "path"
+	items  []completionItem
+	sel    int
+	base   string // text before the token being completed
 }
 
 // completionMsg carries directory entries read by a command.
@@ -97,7 +97,7 @@ func (m *Model) loadPaths(text string, at int) tea.Cmd {
 				files = append(files, completionItem{label: name, value: dir + name})
 			}
 		}
-		items := append(dirs, files...)
+		items := slices.Concat(dirs, files)
 		if len(items) > completionMax {
 			items = items[:completionMax]
 		}

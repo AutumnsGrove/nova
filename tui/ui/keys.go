@@ -22,11 +22,11 @@ const editorWheelLines = 3
 // pointer is over it and its content overflows, and the transcript otherwise;
 // a left click toggles the block under the pointer. ItemAt rejects a click
 // outside the main region, so only the overlay needs guarding.
-func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
+func (m *Model) handleMouse(msg tea.MouseMsg) {
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
 		if m.scrollEditor(msg) {
-			return nil
+			return
 		}
 		switch msg.Button {
 		case tea.MouseWheelUp:
@@ -41,7 +41,6 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 			}
 		}
 	}
-	return nil
 }
 
 // scrollEditor moves the editor window when the pointer is over it and its
@@ -169,7 +168,8 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.pasteImage()
 	case "?":
 		if strings.TrimSpace(m.editor.Value()) == "" {
-			return m.openHelp()
+			m.openHelp()
+			return nil
 		}
 	case "ctrl+l":
 		return m.requestModelPicker()

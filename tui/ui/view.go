@@ -156,26 +156,6 @@ func (m *Model) hint() string {
 	return "ctrl+o expand"
 }
 
-// truncateJoin joins parts with sep and truncates the result to width cells.
-func truncateJoin(parts []string, width int, sep string) string {
-	if width <= 0 {
-		return ""
-	}
-	joined := strings.Join(parts, sep)
-	if ansi.StringWidth(joined) <= width {
-		return joined
-	}
-	// Drop segments from the right until the rest fits.
-	for len(parts) > 1 {
-		parts = parts[:len(parts)-1]
-		joined = strings.Join(parts, sep)
-		if ansi.StringWidth(joined)+ansi.StringWidth("…") <= width {
-			return joined + "…"
-		}
-	}
-	return ansi.Truncate(joined, width, "")
-}
-
 // fitLines returns exactly h lines, padding with blanks or truncating.
 func fitLines(lines []string, h int) []string {
 	if h <= 0 {

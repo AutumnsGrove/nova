@@ -71,9 +71,9 @@ func (m *Model) handleUIRequest(req proto.UIRequest) tea.Cmd {
 	case "title":
 		m.title = req.Text
 	case "set_editor_text":
-		return m.applyEditorText(req.Text)
+		m.applyEditorText(req.Text)
 	case "confirm", "select", "input", "form":
-		return m.enqueueOrPush(req, dialogFor(req))
+		m.enqueueOrPush(req)
 	default:
 		return m.answerUnsupported(req)
 	}
@@ -98,13 +98,12 @@ func dialogFor(req proto.UIRequest) dialog.Dialog {
 }
 
 // enqueueOrPush queues a request while another dialog is open, or shows it.
-func (m *Model) enqueueOrPush(req proto.UIRequest, d dialog.Dialog) tea.Cmd {
+func (m *Model) enqueueOrPush(req proto.UIRequest) {
 	if m.overlay.Len() > 0 {
 		m.queuedReqs = append(m.queuedReqs, req)
-		return nil
+		return
 	}
-	m.pushDialog(d, intentUI)
-	return nil
+	m.pushDialog(dialogFor(req), intentUI)
 }
 
 // pushDialog adds a dialog and remembers why it was opened.
@@ -124,14 +123,13 @@ func (m *Model) popIntent() string {
 }
 
 // showNextQueued opens the next queued protocol request.
-func (m *Model) showNextQueued() tea.Cmd {
+func (m *Model) showNextQueued() {
 	if m.overlay.Len() > 0 || len(m.queuedReqs) == 0 {
-		return nil
+		return
 	}
 	req := m.queuedReqs[0]
 	m.queuedReqs = m.queuedReqs[1:]
 	m.pushDialog(dialogFor(req), intentUI)
-	return nil
 }
 
 // finishDialog routes a closed dialog's result.
@@ -142,7 +140,8 @@ func (m *Model) finishDialog(d dialog.Dialog, intent string, r dialog.Result) te
 	} else {
 		cmd = m.applyLocalIntent(intent, r)
 	}
-	return tea.Batch(cmd, m.showNextQueued())
+	m.showNextQueued()
+	return cmd
 }
 
 // answerUI sends one answer per request id.
@@ -235,7 +234,7 @@ func (m *Model) applyLocalIntent(intent string, r dialog.Result) tea.Cmd {
 	case intentLoginFlow:
 		switch {
 		case r.Cancelled:
-			return m.cancelLogin()
+			m.cancelLogin()
 		case r.Retry:
 			if p, found := providerauth.Get(m.loginProvider); found {
 				return m.beginMethod(p, m.loginMethod)
@@ -308,13 +307,12 @@ func (m *Model) applyWidget(req proto.UIRequest) {
 }
 
 // applyEditorText replaces the editor text unless the user just typed.
-func (m *Model) applyEditorText(text string) tea.Cmd {
+func (m *Model) applyEditorText(text string) {
 	if strings.TrimSpace(m.editor.Value()) != "" && m.clock.Now().Sub(m.lastInput) < editorGrace {
 		m.notice = "an extension wants to replace the editor text; clear it to apply"
-		return nil
+		return
 	}
 	m.setEditorText(text)
-	return nil
 }
 
 // editorGrace is how long after typing a set_editor_text is deferred.
@@ -517,7 +515,7 @@ func (m *Model) requestExtensions() tea.Cmd {
 }
 
 // openHelp shows the key and command reference.
-func (m *Model) openHelp() tea.Cmd {
+func (m *Model) openHelp() {
 	keys := []dialog.KeyHelp{
 		{Key: "enter", Description: "send prompt"},
 		{Key: "alt+enter", Description: "queue a follow-up"},
@@ -530,12 +528,13 @@ func (m *Model) openHelp() tea.Cmd {
 		{Key: "ctrl+t", Description: "cycle thinking effort"},
 		{Key: "ctrl+c twice", Description: "quit"},
 	}
-	cmds := []string{"log"}
-	for _, c := range m.allCommands() {
-		cmds = append(cmds, c.Name)
+	all := m.allCommands()
+	names := make([]string, 0, len(all)+1)
+	names = append(names, "log")
+	for _, c := range all {
+		names = append(names, c.Name)
 	}
-	m.pushDialog(dialog.NewHelp(keys, cmds), intentHelp)
-	return nil
+	m.pushDialog(dialog.NewHelp(keys, names), intentHelp)
 }
 
 // showCrashLog opens the most recent crash report in a read-only overlay. It is

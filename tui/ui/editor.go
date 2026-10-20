@@ -202,7 +202,8 @@ func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 	case "ext":
 		return m.requestExtensions(), true
 	case "help":
-		return m.openHelp(), true
+		m.openHelp()
+		return nil, true
 	case "usage":
 		return m.requestUsage(), true
 	case "log", "crash":
@@ -221,7 +222,8 @@ func (m *Model) localCommand(name, args string) (tea.Cmd, bool) {
 	case "display":
 		return m.displayCommand(args), true
 	case "settings", "config":
-		return m.openSettings(), true
+		m.openSettings()
+		return nil, true
 	case "login":
 		return m.loginCommand(args), true
 	case "logout":

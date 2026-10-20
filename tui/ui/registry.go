@@ -115,7 +115,7 @@ func (r *Registry) Bundled() {
 	r.Renderer("plan_submit", funcRenderer{header: func(c render.Call) string {
 		return "plan_submit: " + plan.Card(c.Live)
 	}})
-	r.Renderer("ask", funcRenderer{header: func(c render.Call) string {
+	r.Renderer("ask", funcRenderer{header: func(render.Call) string {
 		return "ask: " + ask.Card(0)
 	}})
 	r.Dialog("todos", func(string, any) dialog.Dialog { return dialog.NewInput(inputRequest("Todos")) })

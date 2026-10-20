@@ -276,7 +276,7 @@ func (m *Model) clearLogin() {
 }
 
 // cancelLogin stops the current flow and ignores any late result.
-func (m *Model) cancelLogin() tea.Cmd {
+func (m *Model) cancelLogin() {
 	if m.loginCancel != nil {
 		m.loginCancel()
 	}
@@ -285,7 +285,6 @@ func (m *Model) cancelLogin() tea.Cmd {
 	}
 	m.loginGen++
 	m.clearLogin()
-	return nil
 }
 
 // saveCredential writes the key in the background.

@@ -3,6 +3,7 @@ package install
 import (
 	"context"
 	"errors"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -498,6 +499,37 @@ func TestInstall_INS29_ConcurrentSame(t *testing.T) {
 	if entries, _ := readLock(lock); len(entries) != 1 {
 		t.Fatalf("lock = %+v", entries)
 	}
+}
+
+// FuzzParseSource checks that no input panics and that every source it accepts
+// obeys the rules of the spec: no option-looking source or ref, no file:// or
+// ext:: transport, no credentials, no plain http.
+func FuzzParseSource(f *testing.F) {
+	for _, seed := range []string{
+		"github.com/a/b@v1", "a/b", "https://host/a/b.git@main", "git@host:a/b.git", "./x", "/x", "~/x",
+		"file:///x", "ext::sh -c x", "https://u:p@host/a", "-x", "a/b@-x", "http://h/a", "a/b@..", "",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		src, err := ParseSource(input)
+		if err != nil {
+			return
+		}
+		if strings.HasPrefix(src.URL, "-") || strings.HasPrefix(src.Ref, "-") || strings.Contains(src.Ref, "..") {
+			t.Fatalf("ParseSource(%q) accepted an option-like source %+v", input, src)
+		}
+		for _, banned := range []string{"file://", "ext::", "http://"} {
+			if strings.HasPrefix(src.URL, banned) {
+				t.Fatalf("ParseSource(%q) accepted %s: %+v", input, banned, src)
+			}
+		}
+		if !src.Local {
+			if u, perr := url.Parse(src.URL); perr == nil && u.User != nil {
+				t.Fatalf("ParseSource(%q) accepted credentials: %+v", input, src)
+			}
+		}
+	})
 }
 
 // A commit ref must install that commit, not whatever the default branch holds.

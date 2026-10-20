@@ -4,6 +4,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
@@ -327,23 +328,37 @@ type editorTextMsg struct {
 // filesystem in Update.
 func (m *Model) openEditor() tea.Cmd {
 	text := m.editor.Value()
-	return func() tea.Msg {
-		ed := os.Getenv("EDITOR")
-		if ed == "" {
-			return editorStartMsg{err: errNoEditor}
-		}
-		f, err := os.CreateTemp("", "nova-*.md")
-		if err != nil {
-			return editorStartMsg{err: err}
-		}
-		path := f.Name()
-		if _, err := f.WriteString(text); err != nil {
-			f.Close()
-			return editorStartMsg{err: err}
-		}
-		f.Close()
-		return editorStartMsg{cmd: exec.Command(ed, path), path: path}
+	return func() tea.Msg { return prepareEditor(os.Getenv("EDITOR"), text) }
+}
+
+// prepareEditor writes text to a temp file and builds the editor command for
+// it. $EDITOR may carry arguments ("code --wait"), so it is split on white
+// space before the file name is appended; quoting is not supported.
+func prepareEditor(editor, text string) editorStartMsg {
+	argv := strings.Fields(editor)
+	if len(argv) == 0 {
+		return editorStartMsg{err: errNoEditor}
 	}
+	path, err := writeTempFile(text)
+	if err != nil {
+		return editorStartMsg{err: err}
+	}
+	return editorStartMsg{cmd: exec.Command(argv[0], append(argv[1:], path)...), path: path}
+}
+
+// writeTempFile stores text in a new private temp file and returns its path.
+// A file that could not be written completely is removed, not left behind.
+func writeTempFile(text string) (string, error) {
+	f, err := os.CreateTemp("", "nova-*.md")
+	if err != nil {
+		return "", fmt.Errorf("create editor file: %w", err)
+	}
+	_, werr := f.WriteString(text)
+	if err := errors.Join(werr, f.Close()); err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("write editor file: %w", err)
+	}
+	return f.Name(), nil
 }
 
 // startEditor returns the ExecProcess command for a prepared editor.
@@ -357,16 +372,21 @@ func (m *Model) startEditor(msg editorStartMsg) tea.Cmd {
 	})
 }
 
-// readEditor reads the temp file back and removes it.
+// readEditor reads the temp file back and removes it. The file is removed even
+// when the editor failed, so an abandoned draft does not pile up in the temp
+// directory.
 func (m *Model) readEditor(msg editorFinishedMsg) tea.Cmd {
+	path := msg.path
 	if msg.err != nil {
 		m.notice = msg.err.Error()
-		return nil
+		return func() tea.Msg {
+			_ = os.Remove(path)
+			return nil
+		}
 	}
-	path := msg.path
 	return func() tea.Msg {
 		data, err := os.ReadFile(path)
-		os.Remove(path)
+		_ = os.Remove(path)
 		return editorTextMsg{text: string(data), err: err}
 	}
 }

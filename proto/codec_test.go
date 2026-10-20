@@ -276,6 +276,21 @@ func TestProto_PRT05_InvalidJSON(t *testing.T) {
 	}
 }
 
+// A caller that wants the position of the syntax error must be able to reach
+// the JSON error behind ErrBadFrame, not only its text.
+func TestProto_PRT20_BadFrameKeepsCause(t *testing.T) {
+	_, err := Decode([]byte(`{`))
+	var syn *json.SyntaxError
+	if !errors.Is(err, ErrBadFrame) || !errors.As(err, &syn) {
+		t.Fatalf("syntax err = %v, want ErrBadFrame wrapping *json.SyntaxError", err)
+	}
+	_, err = Decode([]byte(`{"type":"prompt","text":5}`))
+	var typ *json.UnmarshalTypeError
+	if !errors.Is(err, ErrBadFrame) || !errors.As(err, &typ) {
+		t.Fatalf("type err = %v, want ErrBadFrame wrapping *json.UnmarshalTypeError", err)
+	}
+}
+
 func TestProto_PRT06_NotAnObject(t *testing.T) {
 	for _, in := range []string{`[1]`, `"x"`, `5`, `null`} {
 		if _, err := Decode([]byte(in)); !errors.Is(err, ErrBadFrame) {

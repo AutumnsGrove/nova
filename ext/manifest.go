@@ -7,12 +7,16 @@
 package ext
 
 import (
+	"cmp"
+	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -131,12 +135,31 @@ func LoadManifest(dir string) (*Manifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ext: manifest dir: %w", err)
 	}
-	path := filepath.Join(abs, "extension.yaml")
-	data, err := os.ReadFile(path)
+	data, err := readManifestFile(filepath.Join(abs, "extension.yaml"))
 	if err != nil {
 		return nil, fmt.Errorf("ext: read manifest: %w", err)
 	}
 	return parseManifest(abs, data)
+}
+
+// readManifestFile reads path, which must be a regular file, up to one byte
+// over the manifest cap. A repository chooses what extension.yaml is, so it may
+// be a named pipe (opening it would block) or a device (reading it would never
+// end).
+func readManifestFile(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", path)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(io.LimitReader(f, maxManifestBytes+1))
 }
 
 // parseManifest validates manifest bytes read from dir, so a fuzz target can
@@ -166,14 +189,14 @@ func (m *Manifest) Validate() error {
 	if err := validateName(m.Name); err != nil {
 		return err
 	}
-	if _, err := parseSemver(m.Version); err != nil {
+	if _, err := parseVersion(m.Version, 3); err != nil {
 		return fmt.Errorf("ext: version: %w", err)
 	}
 	if err := validateConstraint(m.Nova); err != nil {
 		return fmt.Errorf("ext: nova constraint: %w", err)
 	}
 	if strings.TrimSpace(m.Description) == "" {
-		return fmt.Errorf("ext: description is required")
+		return errors.New("ext: description is required")
 	}
 	if len([]rune(m.Description)) > maxDescription {
 		return fmt.Errorf("ext: description is over %d characters", maxDescription)
@@ -194,7 +217,7 @@ func (m *Manifest) Validate() error {
 func (m *Manifest) validateRun() error {
 	if len(m.Run) == 0 {
 		if !m.hasDeclarative() {
-			return fmt.Errorf("ext: run is required unless the manifest declares tools or hooks with run")
+			return errors.New("ext: run is required unless the manifest declares tools or hooks with run")
 		}
 		return nil
 	}
@@ -238,6 +261,9 @@ func (m *Manifest) validateTools() error {
 			return fmt.Errorf("ext: tool %q: parameters must be an object schema", t.Name)
 		}
 		if len(t.Exec) > 0 {
+			if placeholderRe.MatchString(t.Exec[0]) {
+				return fmt.Errorf("ext: tool %q exec[0] must not contain a placeholder: the command is fixed at load", t.Name)
+			}
 			if err := m.checkCommand(t.Exec[0]); err != nil {
 				return fmt.Errorf("ext: tool %q exec[0]: %w", t.Name, err)
 			}
@@ -272,7 +298,7 @@ func (m *Manifest) validateHooks() error {
 // PATH, or a relative path that stays inside the extension directory.
 func (m *Manifest) checkCommand(cmd string) error {
 	if cmd == "" {
-		return fmt.Errorf("command is empty")
+		return errors.New("command is empty")
 	}
 	if filepath.IsAbs(cmd) {
 		return nil
@@ -305,10 +331,10 @@ func inside(dir, path string) bool {
 // validateName enforces the extension-name rule.
 func validateName(name string) error {
 	if name == "" {
-		return fmt.Errorf("ext: name is required")
+		return errors.New("ext: name is required")
 	}
 	if len(name) > 64 {
-		return fmt.Errorf("ext: name is over 64 characters")
+		return errors.New("ext: name is over 64 characters")
 	}
 	if !nameRe.MatchString(name) {
 		return fmt.Errorf("ext: invalid name %q", name)
@@ -338,59 +364,56 @@ func validateCapabilities(caps []string) error {
 	return nil
 }
 
-// hasCapability reports whether the manifest declares cap.
-func (m *Manifest) hasCapability(cap string) bool {
-	for _, c := range m.Capabilities {
-		if c == cap {
-			return true
-		}
-	}
-	return false
+// hasCapability reports whether the manifest declares capability.
+func (m *Manifest) hasCapability(capability string) bool {
+	return slices.Contains(m.Capabilities, capability)
 }
 
-// semver is a parsed version, ignoring build metadata.
+// semver is a parsed version.
 type semver struct {
 	major, minor, patch int
 	pre                 string
 }
 
-// parseSemver parses "1.2.3", "v1.2.3", and an optional "-prerelease".
-func parseSemver(s string) (semver, error) {
+// parseVersion parses "1.2.3", "v1.2.3", and an optional "-prerelease". It
+// needs at least minParts numeric parts; a missing one counts as zero, so a
+// constraint may say "0.1".
+func parseVersion(s string, minParts int) (semver, error) {
 	orig := s
 	s = strings.TrimPrefix(s, "v")
 	var v semver
-	if pre := strings.IndexByte(s, '-'); pre >= 0 {
-		v.pre = s[pre+1:]
-		s = s[:pre]
+	if i := strings.IndexByte(s, '-'); i >= 0 {
+		v.pre = s[i+1:]
+		s = s[:i]
 	}
 	parts := strings.Split(s, ".")
-	if len(parts) != 3 {
+	if len(parts) < minParts || len(parts) > 3 {
 		return semver{}, fmt.Errorf("invalid version %q", orig)
 	}
-	nums := make([]int, 3)
+	nums := []*int{&v.major, &v.minor, &v.patch}
 	for i, p := range parts {
-		if p == "" || strings.ContainsFunc(p, func(r rune) bool { return r < '0' || r > '9' }) {
-			return semver{}, fmt.Errorf("invalid version %q", orig)
-		}
-		n, err := strconv.Atoi(p)
+		n, err := parseNumber(p)
 		if err != nil {
 			return semver{}, fmt.Errorf("invalid version %q", orig)
 		}
-		nums[i] = n
+		*nums[i] = n
 	}
-	v.major, v.minor, v.patch = nums[0], nums[1], nums[2]
 	return v, nil
+}
+
+// parseNumber parses a non-negative decimal number, refusing the signs and
+// spaces strconv.Atoi would accept.
+func parseNumber(s string) (int, error) {
+	if s == "" || strings.ContainsFunc(s, func(r rune) bool { return r < '0' || r > '9' }) {
+		return 0, errors.New("not a number")
+	}
+	return strconv.Atoi(s)
 }
 
 // compare orders two versions, treating a prerelease as lower than a release.
 func (v semver) compare(o semver) int {
-	for _, pair := range [][2]int{{v.major, o.major}, {v.minor, o.minor}, {v.patch, o.patch}} {
-		if pair[0] != pair[1] {
-			if pair[0] < pair[1] {
-				return -1
-			}
-			return 1
-		}
+	if c := cmp.Or(cmp.Compare(v.major, o.major), cmp.Compare(v.minor, o.minor), cmp.Compare(v.patch, o.patch)); c != 0 {
+		return c
 	}
 	switch {
 	case v.pre == o.pre:
@@ -399,11 +422,8 @@ func (v semver) compare(o semver) int {
 		return 1
 	case o.pre == "":
 		return -1
-	case v.pre < o.pre:
-		return -1
-	default:
-		return 1
 	}
+	return strings.Compare(v.pre, o.pre)
 }
 
 // validateConstraint parses the nova constraint, rejecting an unknown form.
@@ -420,30 +440,32 @@ func matchConstraint(constraint, version string) (bool, error) {
 	if constraint == "" {
 		return true, nil
 	}
-	ver, err := parseSemver(version)
+	ver, err := parseVersion(version, 3)
 	if err != nil {
 		return false, err
 	}
 	for _, op := range []string{">=", "<=", ">", "<", "=", "^", "~"} {
-		if !strings.HasPrefix(constraint, op) {
-			continue
+		if rest, ok := strings.CutPrefix(constraint, op); ok {
+			want, err := parseVersion(strings.TrimSpace(rest), 1)
+			if err != nil {
+				return false, err
+			}
+			return compareOp(op, ver, want), nil
 		}
-		want, err := parseConstraintVersion(strings.TrimSpace(constraint[len(op):]))
-		if err != nil {
-			return false, err
-		}
-		return compareOp(op, ver, want), nil
 	}
-	// A wildcard form such as "0.1.x" or "0.1.*".
-	trimmed := strings.TrimSuffix(strings.TrimSuffix(constraint, "x"), "*")
-	trimmed = strings.TrimSuffix(trimmed, ".")
+	return matchWildcard(constraint, ver)
+}
+
+// matchWildcard matches a version against "0.1.x", "0.1.*" or a bare "0.1.2".
+func matchWildcard(constraint string, ver semver) (bool, error) {
+	trimmed := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(constraint, "x"), "*"), ".")
 	parts := strings.Split(trimmed, ".")
 	if len(parts) < 2 || len(parts) > 3 {
 		return false, fmt.Errorf("invalid constraint %q", constraint)
 	}
 	nums := make([]int, len(parts))
 	for i, p := range parts {
-		n, err := strconv.Atoi(p)
+		n, err := parseNumber(p)
 		if err != nil {
 			return false, fmt.Errorf("invalid constraint %q", constraint)
 		}
@@ -452,36 +474,7 @@ func matchConstraint(constraint, version string) (bool, error) {
 	if nums[0] != ver.major || nums[1] != ver.minor {
 		return false, nil
 	}
-	if len(nums) == 3 && nums[2] != ver.patch {
-		return false, nil
-	}
-	return true, nil
-}
-
-// parseConstraintVersion parses a version with one to three numeric parts,
-// filling missing parts with zero, so "0.1" means "0.1.0".
-func parseConstraintVersion(s string) (semver, error) {
-	orig := s
-	s = strings.TrimPrefix(s, "v")
-	var pre string
-	if i := strings.IndexByte(s, '-'); i >= 0 {
-		pre = s[i+1:]
-		s = s[:i]
-	}
-	parts := strings.Split(s, ".")
-	if len(parts) < 1 || len(parts) > 3 {
-		return semver{}, fmt.Errorf("invalid version %q", orig)
-	}
-	v := semver{pre: pre}
-	nums := []*int{&v.major, &v.minor, &v.patch}
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || p == "" {
-			return semver{}, fmt.Errorf("invalid version %q", orig)
-		}
-		*nums[i] = n
-	}
-	return v, nil
+	return len(nums) < 3 || nums[2] == ver.patch, nil
 }
 
 // compareOp applies a comparison operator.
@@ -509,80 +502,49 @@ func compareOp(op string, v, want semver) bool {
 	return false
 }
 
+// manifestKeys are the known manifest keys. A key with a list of names holds a
+// map or a list of maps whose own keys are checked against that list.
+var manifestKeys = map[string][]string{
+	"name": nil, "version": nil, "description": nil, "nova": nil,
+	"run": nil, "build": nil, "capabilities": nil,
+	"restart": {"max"},
+	"tools":   {"name", "description", "parameters", "exec", "read_only", "timeout_ms", "render"},
+	"hooks":   {"on", "match", "run"},
+	"flags":   {"name", "description", "default"},
+}
+
 // unknownManifestKeys reports unknown keys by dotted path, deterministically.
 func unknownManifestKeys(raw map[string]any) []string {
 	var out []string
-	known := map[string]func(any){
-		"name": func(any) {}, "version": func(any) {}, "description": func(any) {},
-		"nova": func(any) {}, "run": func(any) {}, "build": func(any) {},
-		"restart": func(v any) {
-			checkKeys(v, map[string]bool{"max": true}, "restart", &out)
-		},
-		"capabilities": func(any) {},
-		"tools": func(v any) {
-			checkList(v, declToolKeys(), "tools", &out)
-		},
-		"hooks": func(v any) {
-			checkList(v, hookSpecKeys(), "hooks", &out)
-		},
-		"flags": func(v any) {
-			checkList(v, map[string]bool{"name": true, "description": true, "default": true}, "flags", &out)
-		},
-	}
-	for _, key := range sortedKeys(raw) {
-		fn, ok := known[key]
+	for _, key := range slices.Sorted(maps.Keys(raw)) {
+		known, ok := manifestKeys[key]
 		if !ok {
 			out = append(out, "unknown key: "+key)
 			continue
 		}
-		fn(raw[key])
+		if known == nil {
+			continue
+		}
+		switch v := raw[key].(type) {
+		case map[string]any:
+			out = appendUnknown(out, v, known, key)
+		case []any:
+			for i, item := range v {
+				if m, ok := item.(map[string]any); ok {
+					out = appendUnknown(out, m, known, fmt.Sprintf("%s[%d]", key, i))
+				}
+			}
+		}
 	}
 	return out
 }
 
-// declToolKeys are the known keys of one declarative tool.
-func declToolKeys() map[string]bool {
-	return map[string]bool{
-		"name": true, "description": true, "parameters": true, "exec": true,
-		"read_only": true, "timeout_ms": true, "render": true,
-	}
-}
-
-// hookSpecKeys are the known keys of one hook.
-func hookSpecKeys() map[string]bool {
-	return map[string]bool{"on": true, "match": true, "run": true}
-}
-
-// checkList walks a list of maps and records unknown keys below prefix.
-func checkList(v any, known map[string]bool, prefix string, out *[]string) {
-	list, ok := v.([]any)
-	if !ok {
-		return
-	}
-	for i, item := range list {
-		checkKeys(item, known, fmt.Sprintf("%s[%d]", prefix, i), out)
-	}
-}
-
-// checkKeys records keys of a map not in known.
-func checkKeys(v any, known map[string]bool, prefix string, out *[]string) {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return
-	}
-	for _, key := range sortedKeys(m) {
-		if !known[key] {
-			*out = append(*out, "unknown key: "+prefix+"."+key)
+// appendUnknown records the keys of m that are not in known, below prefix.
+func appendUnknown(out []string, m map[string]any, known []string, prefix string) []string {
+	for _, key := range slices.Sorted(maps.Keys(m)) {
+		if !slices.Contains(known, key) {
+			out = append(out, "unknown key: "+prefix+"."+key)
 		}
 	}
-}
-
-// sortedKeys returns a map's keys in order.
-func sortedKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
+	return out
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -263,6 +264,89 @@ func TestSDK_SDK12_Concurrent(t *testing.T) {
 	}
 	if len(seen) != 20 {
 		t.Fatalf("distinct ids = %d, want 20", len(seen))
+	}
+}
+
+// A refused request is answered with an error frame carrying its id; the call
+// waiting for it must fail with the host's message instead of hanging.
+func TestSDK_SDK13_RefusedRequestFailsTheCall(t *testing.T) {
+	p := startSDK(t, func(h *Host) error {
+		h.Tool(Tool{Name: "ask"}, func(c *Call) (Result, error) {
+			_, err := c.UI.Confirm(c.Context(), "t", "m")
+			return Result{}, err
+		})
+		return nil
+	})
+	p.send(map[string]any{"type": "tool_call", "id": "t1", "name": "ask", "deadline_ms": 2000})
+	req := p.recv()
+	id, _ := req["id"].(string)
+	p.send(map[string]any{"type": "error", "id": id, "error": map[string]any{"code": "permission_denied", "message": "ui:confirm not declared"}})
+	got := p.recv()
+	content, _ := got["content"].(string)
+	if got["is_error"] != true || !strings.Contains(content, "ui:confirm not declared") {
+		t.Fatalf("result = %+v, want the host's refusal", got)
+	}
+}
+
+func TestSDK_SDK08b_AppendedEntriesAreVisibleToEntries(t *testing.T) {
+	p := startSDK(t, func(h *Host) error {
+		h.Tool(Tool{Name: "note"}, func(*Call) (Result, error) {
+			if err := h.AppendEntry("notes", map[string]string{"text": "a"}, true); err != nil {
+				return Result{}, err
+			}
+			return Text("%d", len(h.Entries("notes"))), nil
+		})
+		return nil
+	})
+	p.send(map[string]any{"type": "tool_call", "id": "t1", "name": "note"})
+	p.recv() // the append_entry frame
+	if got := p.recv(); got["content"] != "1" {
+		t.Fatalf("result = %+v, want the appended entry to read back", got)
+	}
+}
+
+func TestSDK_SDK01b_UIAvailableWhileRegistering(t *testing.T) {
+	var sawUI bool
+	startSDK(t, func(h *Host) error {
+		sawUI = h.UI != nil
+		return nil
+	})
+	if !sawUI {
+		t.Fatal("h.UI was nil inside the registration function")
+	}
+}
+
+func TestSDK_SDK06b_HookResultKeepsDetailsAndParts(t *testing.T) {
+	p := startSDK(t, func(h *Host) error {
+		h.On("tool_result", func(*Hook) (*HookDecision, error) {
+			return &HookDecision{Result: &Result{Content: "c", Details: map[string]any{"k": 1}, Parts: []Part{{Type: "image", MimeType: "image/png", Data: "aGk="}}}}, nil
+		})
+		return nil
+	})
+	p.send(map[string]any{"type": "hook", "id": "h1", "hook": "tool_result", "event": map[string]any{}})
+	res, _ := p.recv()["result"].(map[string]any)
+	inner, _ := res["result"].(map[string]any)
+	if inner["details"] == nil || inner["parts"] == nil {
+		t.Fatalf("hook result = %+v, want details and parts kept", res)
+	}
+}
+
+func TestSDK_SDK02b_ResultDetailsAndRender(t *testing.T) {
+	p := startSDK(t, func(h *Host) error {
+		h.Tool(Tool{Name: "plain"}, func(*Call) (Result, error) { return Text("x"), nil })
+		h.Tool(Tool{Name: "card"}, func(*Call) (Result, error) {
+			return Result{Content: "x", Details: map[string]any{"path": "a"}, Render: "a: x"}, nil
+		})
+		return nil
+	})
+	p.send(map[string]any{"type": "tool_call", "id": "t1", "name": "plain"})
+	if got := p.recv(); len(got) != 4 {
+		t.Fatalf("a result with no details sent %+v, want no details or parts key", got)
+	}
+	p.send(map[string]any{"type": "tool_call", "id": "t2", "name": "card"})
+	details, _ := p.recv()["details"].(map[string]any)
+	if details["path"] != "a" || details["render"] != "a: x" {
+		t.Fatalf("details = %+v, want the details with render merged in", details)
 	}
 }
 

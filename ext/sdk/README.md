@@ -33,18 +33,32 @@ func main() {
   marks a field required.
 - `h.Command(name, description, fn)` — a slash command. The handler gets a
   `*sdk.Command` with `Write` and `UI`.
-- `h.On(hook, fn)` — observe or change the loop. Return a `*sdk.HookDecision`.
+  The handler's `*sdk.Call` reads arguments with `String`, `Int`, `Bool`, and `Raw`,
+  and carries the host's deadline in `Context()`. A result is `sdk.Text` or
+  `sdk.Error`, or a `sdk.Result` with `Details` (machine-readable data), `Render`
+  (text for the tool's card, sent as `details.render`), and `Parts` (images).
+- `h.On(hook, fn)` — observe or change the loop. Return a `*sdk.HookDecision`, or
+  `nil` for no opinion. The `*sdk.Hook` has `Decode` for the event and `Context()`
+  for the deadline.
 - `h.Flag(name, description, def)` — add a CLI flag.
 - `h.AppendEntry(kind, data, keep)` — append a session entry; `keep` entries are
-  replayed to the extension on reload.
-- `h.Entries(kind)` — the replayed entries of one kind.
+  replayed to the extension on reload. Call `h.EntryKind(kind)` while registering
+  for every kind you read back, since the host replays only the kinds declared then.
+- `h.Entries(kind)` — the session's entries of one kind: those replayed at start
+  and those appended since.
 - `h.Complete(ctx, req)` — ask the model to complete a request.
 
 ## UI
 
 `c.UI` (and `h.UI` from a command) shows fixed components that fit the TUI:
 `Notify`, `Status`, `Widget`, `Confirm`, `Select`, and `Input`. The host refuses
-a UI call whose capability the manifest did not declare.
+a UI call whose capability the manifest did not declare, and the call returns that
+refusal as an error.
+
+## Concurrency
+
+Tool calls, commands, and hooks run on separate goroutines, so state they share
+(a counter, a task list) needs a lock.
 
 ## Rules
 

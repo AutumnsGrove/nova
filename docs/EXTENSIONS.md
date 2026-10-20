@@ -149,7 +149,7 @@ func main() {
         })
 
         h.Command("hello", "Say hello", func(c *sdk.Command) error {
-            return c.UI.Notify("Hello from an extension", sdk.Info)
+            return c.UI.Notify("Hello from an extension")
         })
 
         // Every hook has the same shape: decode the event you care about with

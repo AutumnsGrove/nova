@@ -1,32 +1,14 @@
-// Package sdk is the Go SDK for writing a Nova subprocess extension. It
-// handles framing, request correlation, deadlines, and panics, so an extension
-// only describes its tools, commands, and hooks.
-//
-// A minimal extension:
-//
-//	func main() {
-//		sdk.Run(func(h *sdk.Host) error {
-//			h.Tool(sdk.Tool{
-//				Name:        "hello",
-//				Description: "Greets someone.",
-//				Params:      sdk.Object(sdk.String("name", "Who to greet", sdk.Required)),
-//				ReadOnly:    true,
-//			}, func(c *sdk.Call) (sdk.Result, error) {
-//				return sdk.Text("Hello, %s!", c.String("name")), nil
-//			})
-//			return nil
-//		})
-//	}
 package sdk
 
 import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,12 +19,15 @@ const maxLine = 16 << 20
 
 // Host collects an extension's registrations and talks to the host process.
 type Host struct {
+	// wmu serialises writes to out. It is separate from mu so a host that has
+	// stopped reading cannot also stop handlers from looking up their tools.
+	wmu sync.Mutex
+	out io.Writer
+
 	mu       sync.Mutex
-	in       io.Reader
-	out      io.Writer
 	next     int64
 	tools    []Tool
-	handlers []handlerEntry
+	handlers map[string]func(*Call) (Result, error)
 	commands []CommandSpec
 	hooks    map[string]HookHandler
 	flags    []Flag
@@ -92,8 +77,12 @@ type Part struct {
 type Result struct {
 	Content string
 	IsError bool
+	// Details is machine-readable data sent beside Content.
 	Details any
-	Render  string
+	// Render is text for the tool's card. It is sent as details.render, the way
+	// a declarative tool's render template is, so it needs Details to be nil or
+	// a JSON object; it is dropped for any other kind of Details.
+	Render string
 	// Parts are images the model should see; the host turns them into one
 	// synthetic user message after the tool batch.
 	Parts []Part
@@ -112,13 +101,44 @@ func Error(format string, args ...any) Result {
 	return Result{Content: fmt.Sprintf(format, args...), IsError: true}
 }
 
+// wire renders the result's fields as a frame fragment. Details and parts are
+// left out when empty so the host does not see a literal null.
+func (r Result) wire() map[string]any {
+	m := map[string]any{"content": r.Content, "is_error": r.IsError}
+	if details := r.details(); details != nil {
+		m["details"] = details
+	}
+	if len(r.Parts) > 0 {
+		m["parts"] = r.Parts
+	}
+	return m
+}
+
+// details returns Details with Render merged in.
+func (r Result) details() any {
+	if r.Render == "" {
+		return r.Details
+	}
+	merged := map[string]any{}
+	if r.Details != nil {
+		raw, err := json.Marshal(r.Details)
+		if err != nil || json.Unmarshal(raw, &merged) != nil {
+			return r.Details
+		}
+		if merged == nil { // Details was a nil map, which encodes as null.
+			merged = map[string]any{}
+		}
+	}
+	merged["render"] = r.Render
+	return merged
+}
+
 // Call is one tool invocation.
 type Call struct {
 	ctx  context.Context
 	UI   *UI
 	name string
 	args map[string]any
-	host *Host
 }
 
 // Context returns the call's deadline-carrying context.
@@ -146,7 +166,6 @@ type Command struct {
 	Args string
 	UI   *UI
 	out  strings.Builder
-	host *Host
 }
 
 // Context returns the command's context.
@@ -157,11 +176,9 @@ func (c *Command) Write(text string) { c.out.WriteString(text) }
 
 // Hook is one hook invocation.
 type Hook struct {
-	ctx      context.Context
-	Hook     string
-	Event    json.RawMessage
-	host     *Host
-	deadline time.Duration
+	ctx   context.Context
+	Hook  string
+	Event json.RawMessage
 }
 
 // Context returns the hook's deadline-carrying context.
@@ -189,7 +206,7 @@ func (h *Host) Tool(t Tool, fn func(*Call) (Result, error)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.tools = append(h.tools, t)
-	h.handlers = append(h.handlers, handlerEntry{tool: t.Name, fn: fn})
+	h.handlers[t.Name] = fn
 }
 
 // Command registers a slash command.
@@ -203,9 +220,6 @@ func (h *Host) Command(name, description string, fn func(*Command) error) {
 func (h *Host) On(hook string, fn HookHandler) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.hooks == nil {
-		h.hooks = map[string]HookHandler{}
-	}
 	h.hooks[hook] = fn
 }
 
@@ -216,38 +230,47 @@ func (h *Host) Flag(name, description, def string) {
 	h.flags = append(h.flags, Flag{Name: name, Description: description, Default: def})
 }
 
-// AppendEntry writes a custom session entry and declares its kind for replay.
+// AppendEntry writes a custom session entry. Called while registering, it also
+// declares the entry's kind for replay. The entry is visible to Entries at
+// once, as it will be after a reload.
 func (h *Host) AppendEntry(kind string, data any, keep bool) error {
-	h.mu.Lock()
-	h.entries = append(h.entries, kind)
-	h.mu.Unlock()
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	return h.send(map[string]any{"type": "append_entry", "kind": kind, "data": json.RawMessage(raw), "keep": keep})
+	if err := h.send(map[string]any{"type": "append_entry", "kind": kind, "data": json.RawMessage(raw), "keep": keep}); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.declareKind(kind)
+	h.replay[kind] = append(h.replay[kind], raw)
+	return nil
 }
 
 // EntryKind declares a session entry kind during registration, so the host
-// replays the session's entries of that kind on reload and resume. Call it
-// once at startup; AppendEntry adds the kind on its own after that.
+// replays the session's entries of that kind on reload and resume. The host
+// reads the kinds from the register frame, so a kind first used after
+// registration is not replayed unless it is declared here.
 func (h *Host) EntryKind(kind string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.entries = append(h.entries, kind)
+	h.declareKind(kind)
 }
 
-// Entries returns the entries of kind replayed by the host.
+// declareKind records an entry kind once. The caller holds h.mu.
+func (h *Host) declareKind(kind string) {
+	if !slices.Contains(h.entries, kind) {
+		h.entries = append(h.entries, kind)
+	}
+}
+
+// Entries returns the session's entries of kind: those the host replayed and
+// those this extension has appended since.
 func (h *Host) Entries(kind string) []json.RawMessage {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return append([]json.RawMessage(nil), h.replay[kind]...)
-}
-
-// handlerEntry keeps a tool handler next to its name.
-type handlerEntry struct {
-	tool string
-	fn   func(*Call) (Result, error)
+	return slices.Clone(h.replay[kind])
 }
 
 // Complete makes a nested model call.
@@ -269,7 +292,14 @@ func Run(fn func(*Host) error) {
 
 // run is Run over explicit streams, so tests can drive it in process.
 func run(fn func(*Host) error, in io.Reader, out io.Writer) error {
-	h := &Host{in: in, out: out, replay: map[string][]json.RawMessage{}, pending: map[string]chan json.RawMessage{}}
+	h := &Host{
+		out:      out,
+		handlers: map[string]func(*Call) (Result, error){},
+		hooks:    map[string]HookHandler{},
+		replay:   map[string][]json.RawMessage{},
+		pending:  map[string]chan json.RawMessage{},
+	}
+	h.UI = &UI{host: h}
 	r := bufio.NewReaderSize(in, 4096)
 	line, err := readLine(r)
 	if err != nil {
@@ -279,12 +309,11 @@ func run(fn func(*Host) error, in io.Reader, out io.Writer) error {
 		Type string `json:"type"`
 	}
 	if json.Unmarshal(line, &init) != nil || init.Type != "init" {
-		return fmt.Errorf("first frame is not init")
+		return errors.New("first frame is not init")
 	}
 	if err := fn(h); err != nil {
 		return err
 	}
-	h.UI = &UI{host: h}
 	if err := h.sendRegister(); err != nil {
 		return err
 	}
@@ -310,9 +339,9 @@ func (h *Host) sendRegister() error {
 	for name := range h.hooks {
 		hooks = append(hooks, name)
 	}
-	sort.Strings(hooks)
-	entries := append([]string(nil), h.entries...)
-	flags := append([]Flag(nil), h.flags...)
+	slices.Sort(hooks)
+	entries := slices.Clone(h.entries)
+	flags := slices.Clone(h.flags)
 	h.mu.Unlock()
 	return h.send(map[string]any{"type": "register", "tools": tools, "commands": commands, "hooks": hooks, "flags": flags, "entries": entries})
 }
@@ -322,7 +351,7 @@ func (h *Host) serve(r *bufio.Reader) error {
 	for {
 		line, err := readLine(r)
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
@@ -337,9 +366,7 @@ func (h *Host) serve(r *bufio.Reader) error {
 		switch probe.Type {
 		case "shutdown":
 			return nil
-		case "ui_response":
-			h.deliver(probe.ID, line)
-		case "complete_result":
+		case "ui_response", "complete_result", "error":
 			h.deliver(probe.ID, line)
 		case "replay":
 			var f struct {
@@ -372,17 +399,11 @@ func (h *Host) handleTool(line []byte) {
 	_ = json.Unmarshal(line, &f)
 	ctx, cancel := deadlineContext(f.Deadline)
 	defer cancel()
-	call := &Call{ctx: ctx, UI: h.UI, name: f.Name, host: h, args: decodeArgs(f.Arguments)}
+	call := &Call{ctx: ctx, UI: h.UI, name: f.Name, args: decodeArgs(f.Arguments)}
 	h.mu.Lock()
-	var fn func(*Call) (Result, error)
-	for _, e := range h.handlers {
-		if e.tool == f.Name {
-			fn = e.fn
-		}
-	}
+	fn := h.handlers[f.Name]
 	h.mu.Unlock()
-	res := invokeTool(fn, call)
-	h.reply("tool_result", f.ID, map[string]any{"content": res.Content, "is_error": res.IsError, "details": res.Details, "parts": res.Parts})
+	h.reply("tool_result", f.ID, invokeTool(fn, call).wire())
 }
 
 // invokeTool runs a tool handler, turning a panic into an error result.
@@ -414,18 +435,15 @@ func (h *Host) handleHook(line []byte) {
 	h.mu.Lock()
 	fn := h.hooks[f.Hook]
 	h.mu.Unlock()
-	if fn == nil {
-		h.reply("hook_result", f.ID, map[string]any{"result": map[string]any{}})
-		return
+	result := map[string]any{}
+	if fn != nil {
+		ctx, cancel := deadlineContext(f.Deadline)
+		defer cancel()
+		if dec, err := safeHook(fn, &Hook{ctx: ctx, Hook: f.Hook, Event: f.Event}); err == nil && dec != nil {
+			result = decisionJSON(dec)
+		}
 	}
-	ctx, cancel := deadlineContext(f.Deadline)
-	defer cancel()
-	dec, err := safeHook(fn, &Hook{ctx: ctx, Hook: f.Hook, Event: f.Event, host: h})
-	if err != nil || dec == nil {
-		h.reply("hook_result", f.ID, map[string]any{"result": map[string]any{}})
-		return
-	}
-	h.reply("hook_result", f.ID, map[string]any{"result": decisionJSON(dec)})
+	h.reply("hook_result", f.ID, map[string]any{"result": result})
 }
 
 // safeHook runs a hook handler, converting a panic into an error.
@@ -446,10 +464,10 @@ func decisionJSON(d *HookDecision) map[string]any {
 		m["reason"] = d.Reason
 	}
 	if len(d.Arguments) > 0 {
-		m["arguments"] = json.RawMessage(d.Arguments)
+		m["arguments"] = d.Arguments
 	}
 	if d.Result != nil {
-		m["result"] = map[string]any{"content": d.Result.Content, "is_error": d.Result.IsError}
+		m["result"] = d.Result.wire()
 	}
 	if d.End {
 		m["end"] = true
@@ -472,22 +490,21 @@ func (h *Host) handleCommand(line []byte) {
 	}
 	_ = json.Unmarshal(line, &f)
 	h.mu.Lock()
-	var spec *CommandSpec
-	for i := range h.commands {
-		if h.commands[i].Name == f.Name {
-			spec = &h.commands[i]
-		}
+	i := slices.IndexFunc(h.commands, func(c CommandSpec) bool { return c.Name == f.Name })
+	var spec CommandSpec
+	if i >= 0 {
+		spec = h.commands[i]
 	}
 	h.mu.Unlock()
-	cmd := &Command{ctx: context.Background(), Args: f.Args, UI: h.UI, host: h}
-	code := 0
-	if spec == nil || spec.Run == nil {
-		code = 1
+	cmd := &Command{ctx: context.Background(), Args: f.Args, UI: h.UI}
+	failed := false
+	if spec.Run == nil {
+		failed = true
 	} else if err := runCommand(spec.Run, cmd); err != nil {
-		code = 1
+		failed = true
 		cmd.Write(err.Error())
 	}
-	h.reply("command_result", f.ID, map[string]any{"content": cmd.out.String(), "is_error": code != 0})
+	h.reply("command_result", f.ID, map[string]any{"content": cmd.out.String(), "is_error": failed})
 }
 
 // runCommand runs a command handler with panic recovery.
@@ -508,7 +525,9 @@ func deadlineContext(ms int) (context.Context, context.CancelFunc) {
 	return context.WithCancel(context.Background())
 }
 
-// decodeArgs parses tool arguments into a map.
+// decodeArgs parses tool arguments into a map. It is not shared with the host's
+// stricter decoder because this package imports nothing from Nova, so an
+// extension does not link the host to use it.
 func decodeArgs(raw json.RawMessage) map[string]any {
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
@@ -533,13 +552,14 @@ func (h *Host) send(v any) error {
 		return err
 	}
 	b = append(b, '\n')
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.wmu.Lock()
+	defer h.wmu.Unlock()
 	_, err = h.out.Write(b)
 	return err
 }
 
-// request sends a frame and waits for the reply with its id.
+// request sends a frame and waits for the reply with its id. A reply that is an
+// error frame, which is how the host refuses a request, comes back as an error.
 func (h *Host) request(ctx context.Context, frame map[string]any) (json.RawMessage, error) {
 	h.mu.Lock()
 	h.next++
@@ -558,13 +578,32 @@ func (h *Host) request(ctx context.Context, frame map[string]any) (json.RawMessa
 	}
 	select {
 	case raw := <-ch:
+		if err := refusal(raw); err != nil {
+			return nil, err
+		}
 		return raw, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 }
 
-// deliver routes a response to the waiting request.
+// refusal returns the error an error frame carries, or nil for any other frame.
+func refusal(raw json.RawMessage) error {
+	var f struct {
+		Type  string `json:"type"`
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(raw, &f) != nil || f.Type != "error" {
+		return nil
+	}
+	return fmt.Errorf("host refused the request: %s: %s", f.Error.Code, f.Error.Message)
+}
+
+// deliver routes a response to the waiting request. A frame with no id, or one
+// nobody waits for, is dropped.
 func (h *Host) deliver(id string, line []byte) {
 	h.mu.Lock()
 	ch := h.pending[id]
@@ -573,27 +612,27 @@ func (h *Host) deliver(id string, line []byte) {
 		return
 	}
 	select {
-	case ch <- append(json.RawMessage(nil), line...):
+	case ch <- slices.Clone(line):
 	default:
 	}
 }
 
-// readLine reads one protocol line.
+// readLine reads one protocol line of at most maxLine bytes. It does not use
+// the host's proto.Reader, which would make this package import Nova.
 func readLine(r *bufio.Reader) ([]byte, error) {
 	var buf []byte
 	for {
 		chunk, err := r.ReadSlice('\n')
 		buf = append(buf, chunk...)
 		if len(buf) > maxLine {
-			return nil, fmt.Errorf("line too long")
+			return nil, errors.New("line too long")
 		}
-		if err == nil {
+		switch {
+		case err == nil:
 			return buf[:len(buf)-1], nil
-		}
-		if err == bufio.ErrBufferFull {
+		case errors.Is(err, bufio.ErrBufferFull):
 			continue
-		}
-		if err == io.EOF && len(buf) > 0 {
+		case errors.Is(err, io.EOF) && len(buf) > 0:
 			return buf, nil
 		}
 		return nil, err

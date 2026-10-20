@@ -436,13 +436,13 @@ func runHookScript(ctx context.Context, dir string, argv []string, stdin []byte,
 	cmd.Dir = dir
 	cmd.Env = env
 	cmd.Stdin = bytes.NewReader(stdin)
-	out := newCapBuffer(maxHookOutputBytes)
+	out := tool.NewTailBuffer(maxHookOutputBytes)
 	cmd.Stdout = out
 	if err := cmd.Run(); err != nil {
 		if call.Err() != nil {
-			return string(out.bytes()), -1, call.Err()
+			return string(out.Bytes()), -1, call.Err()
 		}
-		return string(out.bytes()), exitCode(err), nil
+		return string(out.Bytes()), exitCode(err), nil
 	}
-	return string(out.bytes()), 0, nil
+	return string(out.Bytes()), 0, nil
 }

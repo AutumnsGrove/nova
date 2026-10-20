@@ -219,7 +219,7 @@ func runExec(ctx context.Context, work string, argv []string, timeout time.Durat
 		return nil
 	}
 	cmd.WaitDelay = groupWaitDelay
-	buf := newCapBuffer(maxExecOutputBytes)
+	buf := tool.NewTailBuffer(maxExecOutputBytes)
 	cmd.Stdout, cmd.Stderr = buf, buf
 
 	err := cmd.Run()
@@ -246,13 +246,13 @@ func runExec(ctx context.Context, work string, argv []string, timeout time.Durat
 		out.exit = exitCode(err)
 	}
 	out.content = shapeExecOutput(buf, out, timeout)
-	out.truncated = buf.truncated()
+	out.truncated = buf.Truncated()
 	return out
 }
 
 // shapeExecOutput adds the failure marker and sanitises the captured output.
-func shapeExecOutput(buf *capBuffer, out execOutcome, timeout time.Duration) string {
-	content := strings.ToValidUTF8(strings.ReplaceAll(string(buf.bytes()), "\x00", "\uFFFD"), "\uFFFD")
+func shapeExecOutput(buf *tool.TailBuffer, out execOutcome, timeout time.Duration) string {
+	content := strings.ToValidUTF8(strings.ReplaceAll(string(buf.Bytes()), "\x00", "\uFFFD"), "\uFFFD")
 	label := ""
 	switch {
 	case out.timedOut:
@@ -273,45 +273,3 @@ func shapeExecOutput(buf *capBuffer, out execOutcome, timeout time.Duration) str
 	}
 	return content
 }
-
-// capBuffer keeps the first 20% and last 80% of a fixed byte budget.
-type capBuffer struct {
-	headCap, tailCap int
-	head, tail       []byte
-	total            int
-}
-
-func newCapBuffer(limit int) *capBuffer {
-	head := limit * 20 / 100
-	return &capBuffer{headCap: head, tailCap: limit - head}
-}
-
-func (b *capBuffer) Write(in []byte) (int, error) {
-	n := len(in)
-	b.total += n
-	p := in
-	if keep := b.headCap - len(b.head); keep > 0 {
-		if keep > len(p) {
-			keep = len(p)
-		}
-		b.head = append(b.head, p[:keep]...)
-		p = p[keep:]
-	}
-	if b.tailCap > 0 && len(p) > 0 {
-		b.tail = append(b.tail, p...)
-		if len(b.tail) > b.tailCap {
-			b.tail = b.tail[len(b.tail)-b.tailCap:]
-		}
-	}
-	return n, nil
-}
-
-func (b *capBuffer) bytes() []byte {
-	out := append([]byte{}, b.head...)
-	if omitted := b.total - len(b.head) - len(b.tail); omitted > 0 {
-		out = append(out, fmt.Sprintf("\n... (%d bytes omitted) ...\n", omitted)...)
-	}
-	return append(out, b.tail...)
-}
-
-func (b *capBuffer) truncated() bool { return b.total > len(b.head)+len(b.tail) }

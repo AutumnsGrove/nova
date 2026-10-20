@@ -58,7 +58,7 @@ func (o *options) execute(ctx context.Context, tctx *tool.Context, command strin
 	}
 	timeout := o.callTimeout(seconds)
 	if ctx.Err() != nil {
-		return shapeResult(execution{cancelled: true}, newTailBuffer(o.maxOutputBytes), timeout)
+		return shapeResult(execution{cancelled: true}, tool.NewTailBuffer(o.maxOutputBytes), timeout)
 	}
 
 	flag := "-c"
@@ -90,7 +90,7 @@ func (o *options) execute(ctx context.Context, tctx *tool.Context, command strin
 	// the last process in the group lets go of it.
 	_ = pw.Close()
 
-	sink := &capture{buf: newTailBuffer(o.maxOutputBytes), clock: o.clock, tctx: tctx}
+	sink := &capture{buf: tool.NewTailBuffer(o.maxOutputBytes), clock: o.clock, tctx: tctx}
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
@@ -159,14 +159,14 @@ func (o *options) supervise(ctx context.Context, cmd *exec.Cmd, readDone <-chan 
 // capture writes the merged pipe into the capped buffer and emits throttled
 // progress updates. It is the io.Writer io.Copy reads into.
 type capture struct {
-	buf   *tailBuffer
+	buf   *tool.TailBuffer
 	clock Clock
 	tctx  *tool.Context
 	last  time.Time
 }
 
 func (c *capture) Write(p []byte) (int, error) {
-	c.buf.write(p)
+	_, _ = c.buf.Write(p)
 	// Progress is nil-safe, so a call with no listener costs only the clock read.
 	now := c.clock.Now()
 	if c.last.IsZero() || now.Sub(c.last) >= progressInterval {
@@ -188,8 +188,8 @@ func waitClosed(done <-chan struct{}, d time.Duration) bool {
 }
 
 // shapeResult turns the raw outcome and captured output into a tool result.
-func shapeResult(out execution, buf *tailBuffer, timeout time.Duration) tool.Result {
-	content := sanitizeOutput(buf.bytes())
+func shapeResult(out execution, buf *tool.TailBuffer, timeout time.Duration) tool.Result {
+	content := sanitizeOutput(buf.Bytes())
 	add := func(s string) {
 		if content != "" && !strings.HasSuffix(content, "\n") {
 			content += "\n"
@@ -216,7 +216,7 @@ func shapeResult(out execution, buf *tailBuffer, timeout time.Duration) tool.Res
 	if content == "" {
 		content = "(no output)"
 	}
-	details := bashDetails{DurationMS: out.duration.Milliseconds(), TimedOut: out.timedOut, Cancelled: out.cancelled, Truncated: buf.truncated()}
+	details := bashDetails{DurationMS: out.duration.Milliseconds(), TimedOut: out.timedOut, Cancelled: out.cancelled, Truncated: buf.Truncated()}
 	if out.signal != 0 {
 		name := signalName(out.signal)
 		details.Signal = &name
@@ -224,5 +224,5 @@ func shapeResult(out execution, buf *tailBuffer, timeout time.Duration) tool.Res
 		details.ExitCode = &out.exitCode
 	}
 	raw, _ := json.Marshal(details)
-	return tool.Result{Content: content, IsError: label != "", Truncated: buf.truncated(), Details: raw}
+	return tool.Result{Content: content, IsError: label != "", Truncated: buf.Truncated(), Details: raw}
 }

@@ -43,10 +43,10 @@ func (r ExecRunner) Run(ctx context.Context, dir string, argv []string) error {
 	cmd := groupCommand(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
 	cmd.Env = r.Env
-	out := newCapBuffer(maxBuildOutputBytes)
+	out := tool.NewTailBuffer(maxBuildOutputBytes)
 	cmd.Stdout, cmd.Stderr = out, out
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ext: build failed: %w: %s", err, strings.TrimSpace(string(out.bytes())))
+		return fmt.Errorf("ext: build failed: %w: %s", err, strings.TrimSpace(string(out.Bytes())))
 	}
 	return nil
 }

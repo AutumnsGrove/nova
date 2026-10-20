@@ -255,3 +255,24 @@ func TestCLI_CLI19_LogoutNamesTheProvider(t *testing.T) {
 		t.Fatalf("an unknown provider: exit %d stderr %q, want an error naming it", code, errOut)
 	}
 }
+
+// A lockfile the installer cannot read is replaced by an empty one. The user
+// must hear that on stderr, not find their extensions gone.
+func TestCLI_CLI20_DamagedLockfileIsReported(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".config", "nova")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "extensions.lock"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := runCLI(t, "ext", "list")
+	if code != 0 || !strings.Contains(errOut, "warning:") {
+		t.Fatalf("exit %d stdout %q stderr %q, want a warning on stderr", code, out, errOut)
+	}
+	if strings.Contains(out, "warning") {
+		t.Fatalf("the warning went to stdout: %q", out)
+	}
+}

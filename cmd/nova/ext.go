@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,20 +18,20 @@ import (
 )
 
 // extCommand builds the `nova ext` command tree.
-func extCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
+func extCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{Use: "ext", Short: "Install, list, update, remove, and check extensions"}
 	cmd.AddCommand(
-		extInstall(stdin, stdout),
-		extList(stdout),
-		extUpdate(stdin, stdout),
-		extRemove(stdout),
+		extInstall(stdin, stdout, stderr),
+		extList(stdout, stderr),
+		extUpdate(stdin, stdout, stderr),
+		extRemove(stdout, stderr),
 		extCheck(stdout),
 	)
 	return cmd
 }
 
 // newInstaller builds an installer rooted in the user config directory.
-func newInstaller(stdin io.Reader, stdout io.Writer, yes bool) (*install.Installer, error) {
+func newInstaller(stdin io.Reader, stdout, stderr io.Writer, yes bool) (*install.Installer, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
@@ -51,10 +52,11 @@ func newInstaller(stdin io.Reader, stdout io.Writer, yes bool) (*install.Install
 		LockPath: filepath.Join(dir, "extensions.lock"),
 		Confirm:  confirm,
 		ScrubEnv: providerauth.CredentialEnv(),
+		Warn:     func(msg string) { fmt.Fprintln(stderr, "warning: "+msg) },
 	}), nil
 }
 
-func extInstall(stdin io.Reader, stdout io.Writer) *cobra.Command {
+func extInstall(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	var yes bool
 	var ref string
 	cmd := &cobra.Command{
@@ -62,7 +64,7 @@ func extInstall(stdin io.Reader, stdout io.Writer) *cobra.Command {
 		Short: "Install an extension from git or a local directory",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			inst, err := newInstaller(stdin, stdout, yes)
+			inst, err := newInstaller(stdin, stdout, stderr, yes)
 			if err != nil {
 				return err
 			}
@@ -86,16 +88,16 @@ func extInstall(stdin io.Reader, stdout io.Writer) *cobra.Command {
 	return cmd
 }
 
-func extList(stdout io.Writer) *cobra.Command {
+func extList(stdout, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List installed extensions",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			inst, err := newInstaller(nil, stdout, false)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			inst, err := newInstaller(nil, stdout, stderr, false)
 			if err != nil {
 				return err
 			}
-			list, err := inst.List()
+			list, err := inst.List(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -111,18 +113,22 @@ func extList(stdout io.Writer) *cobra.Command {
 	}
 }
 
-func extUpdate(stdin io.Reader, stdout io.Writer) *cobra.Command {
+func extUpdate(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "update <name>",
 		Short: "Update an installed extension to its ref",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			inst, err := newInstaller(stdin, stdout, yes)
+			inst, err := newInstaller(stdin, stdout, stderr, yes)
 			if err != nil {
 				return err
 			}
 			m, err := inst.Update(cmd.Context(), args[0])
+			if errors.Is(err, install.ErrUpToDate) {
+				fmt.Fprintf(stdout, "%s is already up to date\n", args[0])
+				return nil
+			}
 			if err != nil {
 				return err
 			}
@@ -134,13 +140,13 @@ func extUpdate(stdin io.Reader, stdout io.Writer) *cobra.Command {
 	return cmd
 }
 
-func extRemove(stdout io.Writer) *cobra.Command {
+func extRemove(stdout, stderr io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove <name>",
 		Short: "Remove an installed extension",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			inst, err := newInstaller(nil, stdout, false)
+			inst, err := newInstaller(nil, stdout, stderr, false)
 			if err != nil {
 				return err
 			}

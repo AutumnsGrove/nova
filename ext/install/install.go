@@ -51,6 +51,10 @@ type InstallOptions struct {
 	ScrubEnv []string
 }
 
+// ErrUpToDate is returned by Update when the installed commit is already the
+// one the ref points at. It is an outcome to report, not a failure.
+var ErrUpToDate = errors.New("ext: already up to date")
+
 // Installer installs, updates, removes, and lists extensions.
 type Installer struct {
 	opt InstallOptions
@@ -469,7 +473,7 @@ func (i *Installer) Update(ctx context.Context, name string) (*ext.Manifest, err
 		return nil, err
 	}
 	if commit == entry.Commit && pathExists(dst) {
-		return nil, errors.New("ext: already up to date")
+		return nil, ErrUpToDate
 	}
 	found, err := discover(sub)
 	if err != nil {
@@ -540,7 +544,7 @@ func (i *Installer) Remove(name string) error {
 // List returns the lockfile entries with drift information. A damaged entry
 // name, or a git that does not answer within the installer's timeout, counts as
 // drift rather than hanging or failing the listing.
-func (i *Installer) List() ([]Installed, error) {
+func (i *Installer) List(ctx context.Context) ([]Installed, error) {
 	lock := i.lock()
 	out := make([]Installed, 0, len(lock))
 	for name, e := range lock {
@@ -550,7 +554,7 @@ func (i *Installer) List() ([]Installed, error) {
 		case err != nil || !pathExists(dir):
 			inst.Drifted = true
 		case e.Commit != linkCommit:
-			inst.Drifted = i.headDiffers(dir, e.Commit)
+			inst.Drifted = i.headDiffers(ctx, dir, e.Commit)
 		}
 		out = append(out, inst)
 	}
@@ -560,8 +564,8 @@ func (i *Installer) List() ([]Installed, error) {
 
 // headDiffers reports whether the clone in dir is at a commit other than want,
 // or its head cannot be read.
-func (i *Installer) headDiffers(dir, want string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), i.opt.Timeout)
+func (i *Installer) headDiffers(ctx context.Context, dir, want string) bool {
+	ctx, cancel := context.WithTimeout(ctx, i.opt.Timeout)
 	defer cancel()
 	head, err := gitHead(ctx, i.git, dir)
 	return err != nil || head != want

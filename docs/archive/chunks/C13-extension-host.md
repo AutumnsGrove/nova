@@ -410,7 +410,7 @@ twice, answer slowly, answer twice, print garbage to stdout, exit after N calls,
 | INS20 | cancel mid-install | | cleaned up |
 | INS21 | update to a new commit | | new plan with the capability diff; replaced atomically |
 | INS22 | update failure restores the old version | build fails | old directory and lock intact |
-| INS23 | update with nothing new | | reports up to date |
+| INS23 | update with nothing new | | `ErrUpToDate`, which the CLI reports as an outcome (exit 0), not a failure |
 | INS24 | remove | | directory and lock entry gone; not installed is an error |
 | INS25 | `List` drift | edit the directory's HEAD | `drifted` |
 | INS26 | lockfile atomic write | simulate a failed rename | old lock intact |

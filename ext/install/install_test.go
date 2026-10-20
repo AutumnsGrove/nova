@@ -363,8 +363,10 @@ func TestInstall_INS23_UpdateNothingNew(t *testing.T) {
 	if _, err := inst.Install(context.Background(), Source{URL: repo, Ref: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := inst.Update(context.Background(), "hello"); err == nil {
-		t.Fatal("expected up-to-date error")
+	// Nothing to update is an outcome a caller reports, not a failure, so it has
+	// its own error to recognise.
+	if _, err := inst.Update(context.Background(), "hello"); !errors.Is(err, ErrUpToDate) {
+		t.Fatalf("err = %v, want ErrUpToDate", err)
 	}
 }
 
@@ -397,7 +399,7 @@ func TestInstall_INS25_ListDrift(t *testing.T) {
 	runGit(t, filepath.Join(root, "hello"), "config", "user.email", "t@example.com")
 	runGit(t, filepath.Join(root, "hello"), "config", "user.name", "t")
 	runGit(t, filepath.Join(root, "hello"), "commit", "-q", "--allow-empty", "-m", "drift")
-	list, _ := inst.List()
+	list, _ := inst.List(context.Background())
 	if len(list) != 1 || !list[0].Drifted {
 		t.Fatalf("list = %+v", list)
 	}
@@ -656,7 +658,7 @@ func TestInstall_INS27b_CorruptLockIsReported(t *testing.T) {
 	}
 	var warned []string
 	inst := NewInstaller(InstallOptions{Root: root, LockPath: lock, Warn: func(msg string) { warned = append(warned, msg) }})
-	if list, err := inst.List(); err != nil || len(list) != 0 {
+	if list, err := inst.List(context.Background()); err != nil || len(list) != 0 {
 		t.Fatalf("list = %v, %v", list, err)
 	}
 	if len(warned) != 1 || !strings.Contains(warned[0], "corrupt") {

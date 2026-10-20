@@ -161,7 +161,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		logoutCommand(stdout),
 		docsCommand(stdout),
 		logCommand(stdout),
-		extCommand(stdin, stdout),
+		extCommand(stdin, stdout, stderr),
 		serveCommand(),
 		actionReview(stdout, exit),
 		doctorCommand(stdout, exit),

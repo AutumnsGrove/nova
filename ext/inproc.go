@@ -370,6 +370,9 @@ func (h *Host) runBundledCommand(ctx context.Context, inst *instance, cmd InProc
 // reported at most once per minute.
 func (h *Host) Observe(ev proto.Event) {
 	h.mu.Lock()
+	if ev.Type == proto.EventRunStart {
+		clear(h.complete) // the completion cap is per run
+	}
 	insts := append([]*instance(nil), h.insts...)
 	h.mu.Unlock()
 	for _, inst := range insts {

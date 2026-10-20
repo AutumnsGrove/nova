@@ -378,3 +378,21 @@ func TestHost_HST24_Status(t *testing.T) {
 		t.Fatalf("status = %+v", st)
 	}
 }
+
+// The completion cap is "per extension per run", so a new run starts every
+// extension's count again; otherwise an extension is locked out for good once
+// it has used its cap across a session.
+func TestHost_HST26_CompleteCapResetsEachRun(t *testing.T) {
+	h := NewHost(HostOptions{})
+	h.mu.Lock()
+	h.complete["echo"] = 5
+	h.mu.Unlock()
+
+	h.Observe(proto.Event{Type: proto.EventRunStart})
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if got := h.complete["echo"]; got != 0 {
+		t.Fatalf("count after run_start = %d, want 0", got)
+	}
+}

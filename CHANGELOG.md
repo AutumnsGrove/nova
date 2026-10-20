@@ -77,6 +77,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - An Anthropic stream that reports `overloaded_error`, `rate_limit_error` or `api_error` partway through is now
   retried like the same failure arriving as an HTTP status; a bad request or key still is not. The Responses
   dialect now retries a rate limit or overload reported inside its stream the way the chat dialect already did.
+- An extension's `complete` cap is per run, as documented. It was counted for the whole session, so an extension
+  that used its cap was refused for good.
 - A JPEG tool image is converted to PNG for Kitty, which draws only PNG, instead of showing nothing.
 - A pasted API key works on the first-run screen (the paste was ignored), and server text there is cleaned.
 - Compaction counts replies and images, keeps tool names and cuts only on real turns.

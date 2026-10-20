@@ -55,7 +55,11 @@ func (realClock) Sleep(ctx context.Context, d time.Duration) error {
 
 // Options configures a Server.
 type Options struct {
-	Config    *config.Config
+	Config *config.Config
+	// Reload re-reads the configuration for the reload command, applying the same
+	// files, environment and flags as the first load. It returns warnings to pass
+	// on. nil means reload leaves the configuration as it is.
+	Reload    func() (*config.Config, []string, error)
 	CWD       string
 	Home      string
 	Provider  provider.Provider // nil means build OpenRouter from the config and auth
@@ -102,6 +106,9 @@ type Server struct {
 	system    string
 	ext       *ext.Host
 	ledger    *usage.Ledger
+
+	// loaded is what the last config load read, to tell it from a runtime override.
+	loaded knobs
 
 	mu      sync.Mutex
 	subs    map[int64]*subscriber
@@ -208,15 +215,8 @@ func New(opt Options) (*Server, error) {
 	for _, t := range opt.ExtraTools {
 		s.pool[t.Info().Name] = t
 	}
-	s.active = append([]string(nil), cfg.Tools.Active...)
-	if len(s.active) == 0 {
-		s.active = append([]string(nil), defaultToolNames...)
-	}
-	if opt.NoTools {
-		s.active = nil
-	} else if opt.Tools != nil {
-		s.active = append([]string(nil), opt.Tools...)
-	}
+	s.active = s.activeTools(cfg)
+	s.loaded = knobsOf(cfg)
 	if err := registerTools(s.tools, s.pool, s.active); err != nil {
 		return nil, err
 	}
@@ -239,10 +239,7 @@ func New(opt Options) (*Server, error) {
 		Model:    s.model,
 		Settings: compactionSettings(cfg, cfg.Model),
 	}
-	s.system = buildSystemPrompt(cfg, opt.CWD, home, tools, clock.Now())
-	if opt.SystemPrompt != "" {
-		s.system = opt.SystemPrompt
-	}
+	s.system = s.systemPrompt()
 
 	s.ext = s.buildExtensionHost()
 	if !opt.NoTools {
@@ -275,15 +272,10 @@ func New(opt Options) (*Server, error) {
 			return modelModalities(s.cfg.Model)
 		},
 		ToolExecution: agent.Parallel,
-		Retry: agent.RetryPolicy{
-			Max:    cfg.Retry.Max,
-			Base:   time.Duration(cfg.Retry.BaseMS) * time.Millisecond,
-			Cap:    time.Duration(cfg.Retry.CapMS) * time.Millisecond,
-			Jitter: 0.2,
-		},
-		Emit:      s.emit,
-		OnMessage: s.onMessage,
-		Complete:  s.complete,
+		Retry:         retryPolicy(cfg),
+		Emit:          s.emit,
+		OnMessage:     s.onMessage,
+		Complete:      s.complete,
 		Hooks: agent.Hooks{
 			BeforeProviderRequest: func(ctx context.Context, req *provider.Request) {
 				s.beforeProviderRequest(ctx, req)

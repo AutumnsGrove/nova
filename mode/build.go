@@ -33,7 +33,8 @@ type BuildOptions struct {
 	DenyAll      bool
 }
 
-// Build loads the config for CWD, applies the flags, and builds a server.
+// Build loads the config for CWD, applies the flags, and builds a server. The
+// server can re-read the config on a reload, with the same flags applied again.
 func Build(o BuildOptions) (*Server, error) {
 	cwd, home := o.CWD, o.Home
 	if cwd == "" {
@@ -42,22 +43,42 @@ func Build(o BuildOptions) (*Server, error) {
 	if home == "" {
 		home, _ = os.UserHomeDir()
 	}
-	trust := config.NewTrustStore(trustPath(home))
-	cfg, warnings, err := config.Load(config.LoadOptions{CWD: cwd, Home: home, Trusted: trust.IsTrusted, Flags: o.Flags})
+	load := func() (*config.Config, []string, error) { return loadConfig(o, cwd, home) }
+	cfg, warnings, err := load()
 	if err != nil {
 		return nil, err
 	}
 	if o.Stderr != nil {
 		for _, w := range warnings {
-			fmt.Fprintf(o.Stderr, "warning: %s: %s\n", w.Source, w.Message)
+			fmt.Fprintf(o.Stderr, "warning: %s\n", w)
 		}
+		if o.Yes {
+			fmt.Fprintln(o.Stderr, "warning: --yes auto-approves tool calls for this run")
+		}
+	}
+	return New(Options{
+		Config: cfg, Reload: load, CWD: cwd, Home: home, Version: o.Version, Mode: o.Mode,
+		NoSession: o.NoSession, Session: o.Session,
+		Tools: o.Tools, NoTools: o.NoTools,
+		ExtraTools: o.ExtraTools, SystemPrompt: o.SystemPrompt,
+	})
+}
+
+// loadConfig reads the config for cwd and applies the command-line flags on top
+// of it. The warnings come back as text, "source: message".
+func loadConfig(o BuildOptions, cwd, home string) (*config.Config, []string, error) {
+	trust := config.NewTrustStore(trustPath(home))
+	cfg, found, err := config.Load(config.LoadOptions{CWD: cwd, Home: home, Trusted: trust.IsTrusted, Flags: o.Flags})
+	if err != nil {
+		return nil, nil, err
+	}
+	warnings := make([]string, len(found))
+	for i, w := range found {
+		warnings[i] = w.Source + ": " + w.Message
 	}
 	applyInteractiveDefault(cfg, o.Interactive, o.Yes)
 	if o.Yes {
 		cfg.Permissions.Headless = permission.Allow
-		if o.Stderr != nil {
-			fmt.Fprintln(o.Stderr, "warning: --yes auto-approves tool calls for this run")
-		}
 	}
 	if o.Model != "" {
 		cfg.Model = o.Model
@@ -68,12 +89,7 @@ func Build(o BuildOptions) (*Server, error) {
 	if o.DenyAll {
 		cfg.Permissions = permission.Policy{Default: permission.Deny, Headless: permission.Deny}
 	}
-	return New(Options{
-		Config: cfg, CWD: cwd, Home: home, Version: o.Version, Mode: o.Mode,
-		NoSession: o.NoSession, Session: o.Session,
-		Tools: o.Tools, NoTools: o.NoTools,
-		ExtraTools: o.ExtraTools, SystemPrompt: o.SystemPrompt,
-	})
+	return cfg, warnings, nil
 }
 
 // applyInteractiveDefault makes the interactive TUI run tools without asking,

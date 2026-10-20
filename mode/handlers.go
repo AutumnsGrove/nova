@@ -22,7 +22,7 @@ import (
 )
 
 // builtinCommands are the slash commands handled in-process.
-var builtinCommands = []string{"model", "thinking", "context", "compact", "new", "clear", "name", "cost", "help", "quit", "exit"}
+var builtinCommands = []string{"model", "thinking", "context", "compact", "new", "clear", "name", "cost", "help", "reload", "quit", "exit"}
 
 // handleGetMessages returns the active branch as model messages. Without a
 // session store the transcript is the in-memory one, which has no branches, so
@@ -240,6 +240,12 @@ func (s *Server) handleRunCommand(ctx context.Context, cmd proto.Command) proto.
 		// /new and /clear start a fresh session; both are the session.new
 		// command, so the TUI, print, json, and rpc front doors all get it.
 		return s.handleSessionNew(proto.Command{Type: proto.CmdSessionNew, ID: cmd.ID})
+	case "reload":
+		res, err := s.reload(ctx)
+		if err != nil {
+			return failResponse(cmd, proto.CodeBadRequest, err.Error())
+		}
+		return okResponse(cmd, map[string]any{"text": res.text()})
 	case "quit", "exit":
 		// Aliases for shutdown, so a headless client can quit the same way the
 		// TUI's /quit does.
@@ -476,23 +482,6 @@ func (s *Server) handleBash(ctx context.Context, cmd proto.Command) proto.Respon
 		}
 	}
 	return okResponse(cmd, map[string]any{"content": res.Content, "is_error": res.IsError})
-}
-
-// handleReload rebuilds the system prompt after the active run finishes.
-func (s *Server) handleReload(ctx context.Context, cmd proto.Command) proto.Response {
-	for s.agent.Running() {
-		if err := s.clock.Sleep(ctx, 10*time.Millisecond); err != nil {
-			return failResponse(cmd, proto.CodeBadRequest, err.Error())
-		}
-	}
-	s.mu.Lock()
-	s.system = buildSystemPrompt(s.cfg, s.cwd, s.home, s.tools, s.clock.Now())
-	s.mu.Unlock()
-	for _, err := range s.ext.Reload(ctx) {
-		s.emitExtensionError(err)
-	}
-	s.emitState()
-	return okResponse(cmd, map[string]any{"reloaded": []string{"config", "skills", "templates", "extensions"}})
 }
 
 // transformContext keeps the leading system message current after a reload.

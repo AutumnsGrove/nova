@@ -220,10 +220,18 @@ installing any program. For stronger isolation, run Nova in a container.
 `/reload` (or the `reload` command):
 
 1. stops every extension process (`shutdown`, then kill after a grace period);
-2. re-reads config, skills, prompt templates, and manifests;
+2. re-reads config, skills, prompt templates, and manifests (see below for what a config reload changes);
 3. rebuilds extensions whose source changed, if they declare `build`;
 4. starts the processes and replays each one's `keep` entries so it can rebuild state;
 5. emits `state_changed` and re-lists commands and tools.
+
+A config reload applies the permissions, the active tools and the `bash` settings, the
+compaction, retry and turn limits, the display, the system prompt extras, and the model,
+thinking level and context limit. Anything you set while running (`/model`,
+`set_thinking`, `set_context_limit`, `set_tools`) stays on top of the file. A config that
+does not load, or names a tool that does not exist, changes nothing and is reported in
+`config_error`. The `extensions.*` settings and the config the bundled extensions read at
+start need a restart.
 
 A reload during a run waits for the run to end. A reload that fails for one
 extension, including a failed rebuild, leaves the others running and reports the

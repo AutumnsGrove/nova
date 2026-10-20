@@ -2,7 +2,7 @@
 chunk: C12
 title: "The server core, modes, and the nova command"
 packages: [./mode, ./cmd/nova]
-budgets: { ./mode: 2320, ./cmd/nova: 1260 }
+budgets: { ./mode: 2470, ./cmd/nova: 1260 }
 depends: [C09, C10, C11]
 ---
 
@@ -246,6 +246,13 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV54 | fire-and-forget UI requests keep their order | several `Notify` calls to a pipe client | every request arrives, in order |
 | SRV55 | a client that never reads | more `Notify` calls than the queue holds | `Notify` never blocks |
 | SRV56 | `set_tools` keeps extension tools | a tool registered outside the built-in pool, then `set_tools` | the extension tool stays registered; only built-in tools change |
+| SRV57 | reload applies the edited config | `Options.Reload` returns a config with new display, permissions and active tools | the display, the policy and the registry follow it; `config` is in `reloaded` |
+| SRV58 | runtime overrides survive a reload | `set_model`, then a reload whose file names another model; thinking never set | the model stays the runtime choice, also after a second reload; thinking follows the file (SRV58b: a model never set follows the file) |
+| SRV59 | a failed load changes nothing | the reloader errors; a config naming an unknown tool | `config_error` is set, `config` is not in `reloaded`, the rest of the reload still ran, and the tools and model are as they were |
+| SRV60 | no reloader, no claim | `Options.Reload` nil | `config` is not in `reloaded` (SRV60b: the reloader's warnings are returned in `warnings`) |
+| SRV61 | the turn budget follows the file | a reload sets `max_turns` 2 | the next run ends `exhausted` after 2 turns |
+| SRV62 | an explicit system prompt survives | `Options.SystemPrompt` set, then a reload | the system message is still that prompt |
+| SRV63 | `/reload` is a slash command | `run_command` `reload`, with and without a reloader, and a rejected config | a one-line `text` naming what was reloaded and any config error; `reload` is listed by `get_commands` |
 | PRI01 | print mode answer | scripted "42" | stdout is `42\n`; exit 0 |
 | PRI02 | stdout has only the answer | tool calls in the run | tool progress only on stderr |
 | PRI03 | `-p -` reads stdin | | prompt from stdin |

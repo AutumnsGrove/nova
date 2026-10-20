@@ -78,7 +78,7 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 | `session.tree` | | entries as a tree |
 | `session.navigate` | `entry` | move the active leaf (`busy` during a run) |
 | `session.name` | `name` | |
-| `reload` | | restart extensions; re-read config, skills, prompts |
+| `reload` | | re-read config, skills and prompts, and restart extensions. Answers `{reloaded, warnings?, config_error?}`: `reloaded` lists what was re-read (`config` only when the server could re-read it), `warnings` are the config's, and `config_error` says why a config that did not load or apply was left as it was |
 | `get_messages` | `entry?` | the messages of the branch ending at `entry` (default: the active leaf); without a session store, the in-memory transcript |
 | `get_commands` | | slash commands, including extension and prompt-template ones |
 | `list_models` | `text?` | the model catalog: id, name, provider, context window, prices; `text` keeps the models whose id or name contains it |

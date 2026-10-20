@@ -58,7 +58,7 @@ nova/
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
   config/         YAML config, trust, context files, skills     ≤ 1460
-  mode/           server core, print, json, rpc                 ≤ 2320
+  mode/           server core, print, json, rpc                 ≤ 2470
     attach/       protocol attachments to content parts         ≤ 160
     serve/        the protocol over HTTP and SSE                ≤ 430
     action/       the GitHub review action                      ≤ 700

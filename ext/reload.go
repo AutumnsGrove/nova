@@ -2,6 +2,7 @@ package ext
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 )
 
@@ -19,36 +20,45 @@ func (h *Host) Reload(ctx context.Context) []error {
 	h.byName = map[string]*instance{}
 	h.complete = map[string]int{}
 	h.mu.Unlock()
-	// Rebuild extensions whose manifest changed since the last load.
-	h.rebuildChanged(ctx)
-	return h.start(ctx)
+	errs := h.rebuildChanged(ctx)
+	return append(errs, h.start(ctx)...)
 }
 
-// rebuildChanged runs the build step for extensions whose manifest hash
-// changed since the previous load.
-func (h *Host) rebuildChanged(ctx context.Context) {
+// rebuildChanged runs the build step of every extension whose manifest hash
+// changed since the previous load, and returns the builds that failed. A failed
+// build's hash is not remembered, so the next reload tries it again.
+func (h *Host) rebuildChanged(ctx context.Context) []error {
 	h.mu.Lock()
 	old := h.manifestHashes
 	h.manifestHashes = map[string]string{}
 	h.mu.Unlock()
+	var errs []error
 	for _, dir := range h.opt.Dirs {
-		hash := ManifestHash(dir)
-		if prev, ok := old[hashKey(dir)]; ok && prev == hash {
-			continue
+		key, hash := hashKey(dir), ManifestHash(dir)
+		if prev, ok := old[key]; !ok || prev != hash {
+			if err := h.rebuild(ctx, dir); err != nil {
+				errs = append(errs, err)
+				continue
+			}
 		}
-		m, err := LoadManifest(dir)
-		if err != nil || len(m.Build) == 0 {
-			continue
-		}
-		run := h.opt.Run
-		if run == nil {
-			run = ExecRunner{}
-		}
-		_ = run.Run(ctx, dir, m.Build)
 		h.mu.Lock()
-		h.manifestHashes[hashKey(dir)] = hash
+		h.manifestHashes[key] = hash
 		h.mu.Unlock()
 	}
+	return errs
+}
+
+// rebuild runs one extension's build step, if its manifest has one. A manifest
+// that no longer loads is left for start to report.
+func (h *Host) rebuild(ctx context.Context, dir string) error {
+	m, err := LoadManifest(dir)
+	if err != nil || len(m.Build) == 0 {
+		return nil
+	}
+	if err := runBuild(ctx, h.opt.Run, dir, m.Build, defaultBuildTimeout); err != nil {
+		return fmt.Errorf("ext: rebuild %s: %w", m.Name, err)
+	}
+	return nil
 }
 
 // hashKey is the map key for a manifest hash: the absolute directory.
@@ -64,9 +74,6 @@ func hashKey(dir string) string {
 func (h *Host) recordManifestHashes() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.manifestHashes == nil {
-		h.manifestHashes = map[string]string{}
-	}
 	for _, dir := range h.opt.Dirs {
 		h.manifestHashes[hashKey(dir)] = ManifestHash(dir)
 	}

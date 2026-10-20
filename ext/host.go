@@ -174,7 +174,9 @@ func (h *Host) Registry() *tool.Registry { return h.reg }
 func (h *Host) Start(ctx context.Context) []error {
 	h.life.Lock()
 	defer h.life.Unlock()
-	return h.start(ctx)
+	errs := h.start(ctx)
+	h.recordManifestHashes()
+	return errs
 }
 
 // start is Start without the lifecycle lock, for Reload, which already holds it.
@@ -222,7 +224,6 @@ func (h *Host) start(ctx context.Context) []error {
 	h.mu.Lock()
 	h.started = true
 	h.mu.Unlock()
-	h.recordManifestHashes()
 	return errs
 }
 

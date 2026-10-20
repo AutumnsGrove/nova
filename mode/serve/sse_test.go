@@ -2,6 +2,7 @@ package serve
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -401,5 +402,42 @@ func TestServe_HTP11_UIResponseRouted(t *testing.T) {
 		if b.data != "" && eventType(t, b.data) == proto.EventRunEnd {
 			return
 		}
+	}
+}
+
+// flushProbe is a ResponseWriter whose first Flush records how many clients
+// were subscribed at that moment.
+type flushProbe struct {
+	*httptest.ResponseRecorder
+	srv     *server
+	flushed bool
+	clients int
+}
+
+func (p *flushProbe) Flush() {
+	if !p.flushed {
+		p.flushed = true
+		p.srv.mu.Lock()
+		p.clients = len(p.srv.clients)
+		p.srv.mu.Unlock()
+	}
+	p.ResponseRecorder.Flush()
+}
+
+// A client that has seen the response headers must already be subscribed:
+// otherwise an event published right after it connects is delivered to nobody.
+func TestServe_SSE13_SubscribedBeforeHeaders(t *testing.T) {
+	s, _ := newModeServer(t, baseConfig())
+	_, srv := newTestHTTP(t, s, Options{})
+	// A cancelled request context makes the handler return as soon as it is streaming.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	probe := &flushProbe{ResponseRecorder: httptest.NewRecorder(), srv: srv}
+	srv.handleEvents(probe, httptest.NewRequest("GET", "/v1/events", nil).WithContext(ctx))
+	if !probe.flushed {
+		t.Fatal("handler never flushed")
+	}
+	if probe.clients != 1 {
+		t.Fatalf("clients subscribed at first flush = %d, want 1", probe.clients)
 	}
 }

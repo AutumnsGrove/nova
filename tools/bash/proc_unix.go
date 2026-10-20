@@ -31,16 +31,13 @@ func exitStatus(err error) (code, signal int) {
 		return 0, 0
 	}
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-			if ws.Signaled() {
-				return -1, int(ws.Signal())
-			}
-			return ws.ExitStatus(), 0
-		}
-		return exitErr.ExitCode(), 0
+	if !errors.As(err, &exitErr) {
+		return -1, 0
 	}
-	return -1, 0
+	if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		return -1, int(ws.Signal())
+	}
+	return exitErr.ExitCode(), 0
 }
 
 // signalNames maps the signals the tool names in a result.

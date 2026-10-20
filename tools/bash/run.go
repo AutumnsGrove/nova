@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -22,12 +23,12 @@ const (
 
 // bashDetails is the structured data the bash tool attaches to Result.Details.
 type bashDetails struct {
-	ExitCode   any   `json:"exit_code"`
-	Signal     any   `json:"signal"`
-	DurationMS int64 `json:"duration_ms"`
-	TimedOut   bool  `json:"timed_out"`
-	Cancelled  bool  `json:"cancelled"`
-	Truncated  bool  `json:"truncated"`
+	ExitCode   *int    `json:"exit_code"`
+	Signal     *string `json:"signal"`
+	DurationMS int64   `json:"duration_ms"`
+	TimedOut   bool    `json:"timed_out"`
+	Cancelled  bool    `json:"cancelled"`
+	Truncated  bool    `json:"truncated"`
 }
 
 // execution is the raw outcome of one command before it is shaped.
@@ -55,14 +56,8 @@ func (o *options) execute(ctx context.Context, tctx *tool.Context, command strin
 			return tool.Errorf("working directory %s does not exist", work)
 		}
 	}
-	timeout := o.timeout
-	if seconds > 0 {
-		timeout = time.Duration(seconds) * time.Second
-	}
-	if o.maxTimeout > 0 && timeout > o.maxTimeout {
-		timeout = o.maxTimeout
-	}
-	if ctx != nil && ctx.Err() != nil {
+	timeout := o.callTimeout(seconds)
+	if ctx.Err() != nil {
 		return shapeResult(execution{cancelled: true}, newTailBuffer(o.maxOutputBytes), timeout)
 	}
 
@@ -70,14 +65,12 @@ func (o *options) execute(ctx context.Context, tctx *tool.Context, command strin
 	if o.login {
 		flag = "-lc"
 	}
+	// A nil Stdin makes exec read from the null device, so the command can never
+	// wait on input the model cannot give.
 	cmd := exec.Command(o.shell, flag, command)
 	cmd.Dir = work
 	cmd.Env = buildEnv(o.env)
 	setProcessGroup(cmd)
-	if devnull, err := os.Open(os.DevNull); err == nil {
-		cmd.Stdin = devnull
-		defer devnull.Close()
-	}
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		return tool.Errorf("pipe: %v", err)
@@ -86,27 +79,56 @@ func (o *options) execute(ctx context.Context, tctx *tool.Context, command strin
 
 	began := o.clock.Now()
 	if err := cmd.Start(); err != nil {
-		pw.Close()
-		pr.Close()
+		_ = pw.Close()
+		_ = pr.Close()
 		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 			return tool.Errorf("shell not found: %s", o.shell)
 		}
 		return tool.Errorf("%v", err)
 	}
-	pw.Close()
-	pid := cmd.Process.Pid
+	// Only the child holds the write end now, so the read end reaches EOF when
+	// the last process in the group lets go of it.
+	_ = pw.Close()
 
 	sink := &capture{buf: newTailBuffer(o.maxOutputBytes), clock: o.clock, tctx: tctx}
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
 		defer pr.Close()
-		io.Copy(sink, pr)
+		// The copy ends at EOF or when the group is killed; either way what
+		// was captured is the result, so its error carries nothing more.
+		_, _ = io.Copy(sink, pr)
 	}()
+
+	out := o.supervise(ctx, cmd, readDone, timeout)
+	out.duration = o.clock.Now().Sub(began)
+	return shapeResult(out, sink.buf, timeout)
+}
+
+// callTimeout is the time one call may run: the requested seconds when positive,
+// else the default, never above the maximum. The seconds are clamped before they
+// become a Duration, because a huge request would overflow int64 nanoseconds and
+// wrap to a negative timeout that expires at once.
+func (o *options) callTimeout(seconds int) time.Duration {
+	timeout := o.timeout
+	if seconds > 0 {
+		timeout = time.Duration(min(int64(seconds), math.MaxInt64/int64(time.Second))) * time.Second
+	}
+	if o.maxTimeout > 0 {
+		timeout = min(timeout, o.maxTimeout)
+	}
+	return timeout
+}
+
+// supervise waits for the started command, its output pipe, the timeout, or
+// cancellation, then stops the whole process group. It always force-kills the
+// group at the end, even after a clean exit, so a background child that
+// redirected its output cannot outlive the call (D51).
+func (o *options) supervise(ctx context.Context, cmd *exec.Cmd, readDone <-chan struct{}, timeout time.Duration) (out execution) {
+	pid := cmd.Process.Pid
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- cmd.Wait() }()
 
-	var out execution
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	select {
@@ -131,8 +153,7 @@ func (o *options) execute(ctx context.Context, tctx *tool.Context, command strin
 	}
 	forceKillGroup(pid)
 	waitClosed(readDone, termGraceDefault)
-	out.duration = o.clock.Now().Sub(began)
-	return shapeResult(out, sink.buf, timeout)
+	return out
 }
 
 // capture writes the merged pipe into the capped buffer and emits throttled
@@ -146,19 +167,13 @@ type capture struct {
 
 func (c *capture) Write(p []byte) (int, error) {
 	c.buf.write(p)
-	if c.tctx == nil {
-		return len(p), nil
-	}
+	// Progress is nil-safe, so a call with no listener costs only the clock read.
 	now := c.clock.Now()
-	if !c.last.IsZero() && now.Sub(c.last) < progressInterval {
-		return len(p), nil
+	if c.last.IsZero() || now.Sub(c.last) >= progressInterval {
+		c.last = now
+		tail := p[max(len(p)-maxProgressBytes, 0):]
+		c.tctx.Progress(strings.ToValidUTF8(string(tail), "\uFFFD"))
 	}
-	c.last = now
-	text := p
-	if len(text) > maxProgressBytes {
-		text = text[len(text)-maxProgressBytes:]
-	}
-	c.tctx.Progress(string(text))
 	return len(p), nil
 }
 
@@ -203,9 +218,10 @@ func shapeResult(out execution, buf *tailBuffer, timeout time.Duration) tool.Res
 	}
 	details := bashDetails{DurationMS: out.duration.Milliseconds(), TimedOut: out.timedOut, Cancelled: out.cancelled, Truncated: buf.truncated()}
 	if out.signal != 0 {
-		details.Signal = signalName(out.signal)
+		name := signalName(out.signal)
+		details.Signal = &name
 	} else if !out.timedOut && !out.cancelled {
-		details.ExitCode = out.exitCode
+		details.ExitCode = &out.exitCode
 	}
 	raw, _ := json.Marshal(details)
 	return tool.Result{Content: content, IsError: label != "", Truncated: buf.truncated(), Details: raw}

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
 
@@ -26,7 +27,7 @@ func waitIdle(t *testing.T, a *Agent) {
 		if time.Now().After(deadline) {
 			t.Fatal("run did not end after Abort")
 		}
-		time.Sleep(time.Millisecond)
+		runtime.Gosched()
 	}
 }
 

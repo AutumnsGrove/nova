@@ -2,6 +2,7 @@ package fs
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -11,10 +12,14 @@ type diffOp struct {
 	text string
 }
 
-// unifiedDiff returns a unified diff of before and after, with context lines
+// diffContext is how many unchanged lines surround each change in a diff, the
+// default of the usual diff tools.
+const diffContext = 3
+
+// unifiedDiff returns a unified diff of before and after, with diffContext lines
 // around each change. It reports how many lines were added and removed, and
 // whether anything changed at all.
-func unifiedDiff(path, before, after string, context int) (string, int, int, bool) {
+func unifiedDiff(path, before, after string) (string, int, int, bool) {
 	if before == after {
 		return "", 0, 0, false
 	}
@@ -35,9 +40,9 @@ func unifiedDiff(path, before, after string, context int) (string, int, int, boo
 	var out strings.Builder
 	fmt.Fprintf(&out, "--- a/%s\n+++ b/%s\n", path, path)
 	beforeNo, afterNo := lineNumbers(ops)
-	for _, h := range hunks(ops, context) {
-		oldCount := countOps(ops[h[0]:h[1]], ' ', '-')
-		newCount := countOps(ops[h[0]:h[1]], ' ', '+')
+	for _, h := range hunks(ops, diffContext) {
+		oldCount := countOps(ops[h[0]:h[1]], " -")
+		newCount := countOps(ops[h[0]:h[1]], " +")
 		oldStart, newStart := beforeNo[h[0]], afterNo[h[0]]
 		if oldCount == 0 {
 			oldStart--
@@ -62,7 +67,7 @@ func unifiedDiff(path, before, after string, context int) (string, int, int, boo
 // within 2*context keeps of each other so their context is shared.
 func hunks(ops []diffOp, context int) [][2]int {
 	var groups [][2]int
-	last := -1000000
+	last := 0
 	for i, op := range ops {
 		if op.kind == ' ' {
 			continue
@@ -75,16 +80,8 @@ func hunks(ops []diffOp, context int) [][2]int {
 		last = i
 	}
 	for i := range groups {
-		if start := groups[i][0] - context; start > 0 {
-			groups[i][0] = start
-		} else {
-			groups[i][0] = 0
-		}
-		if end := groups[i][1] + context; end < len(ops) {
-			groups[i][1] = end
-		} else {
-			groups[i][1] = len(ops)
-		}
+		groups[i][0] = max(groups[i][0]-context, 0)
+		groups[i][1] = min(groups[i][1]+context, len(ops))
 	}
 	return groups
 }
@@ -111,15 +108,12 @@ func lineNumbers(ops []diffOp) (before, after []int) {
 	return before, after
 }
 
-// countOps counts ops whose kind is one of kinds.
-func countOps(ops []diffOp, kinds ...byte) int {
+// countOps counts ops whose kind is one of the bytes in kinds.
+func countOps(ops []diffOp, kinds string) int {
 	n := 0
 	for _, op := range ops {
-		for _, k := range kinds {
-			if op.kind == k {
-				n++
-				break
-			}
+		if strings.IndexByte(kinds, op.kind) >= 0 {
+			n++
 		}
 	}
 	return n
@@ -128,7 +122,7 @@ func countOps(ops []diffOp, kinds ...byte) int {
 // rangeText renders a hunk range, omitting the count when it is one.
 func rangeText(start, count int) string {
 	if count == 1 {
-		return fmt.Sprintf("%d", start)
+		return strconv.Itoa(start)
 	}
 	return fmt.Sprintf("%d,%d", start, count)
 }
@@ -196,10 +190,8 @@ func lcsOps(a, b []string) []diffOp {
 		for j := len(b) - 1; j >= 0; j-- {
 			if a[i] == b[j] {
 				dp[i][j] = dp[i+1][j+1] + 1
-			} else if dp[i+1][j] >= dp[i][j+1] {
-				dp[i][j] = dp[i+1][j]
 			} else {
-				dp[i][j] = dp[i][j+1]
+				dp[i][j] = max(dp[i+1][j], dp[i][j+1])
 			}
 		}
 	}

@@ -90,7 +90,7 @@ type RetryPolicy struct {
 	Max    int           // default 3 retries (so 4 attempts); negative disables
 	Base   time.Duration // default 1s
 	Cap    time.Duration // default 30s
-	Jitter float64       // default 0.2 when the whole policy is zero
+	Jitter float64       // fraction of the delay added at random; 0 means the default 0.2, negative means none
 }
 
 // Clock is the time seam, so tests can drive time with a fake clock.
@@ -114,7 +114,8 @@ type Config struct {
 	// Policy decides each tool call before dispatch. Nil allows everything.
 	Policy *permission.Policy
 	// Ask resolves a permission "ask". Nil means there is no one to ask, so
-	// the policy's headless action applies.
+	// the policy's headless action applies. Parallel tool calls may ask at the
+	// same time, so Ask must be safe for concurrent use.
 	Ask func(ctx context.Context, q Question) (allow bool, err error)
 
 	// WorkDir is the directory relative tool paths resolve against.
@@ -164,7 +165,8 @@ type Result struct {
 	New []message.Message
 	// Answer is the last non-empty assistant text.
 	Answer string
-	// Turns is the number of turns this run completed.
+	// Turns is the number of turns this run completed, plus the one whose
+	// request failed when the run ends in error; an abort does not count.
 	Turns int
 	// Usage is the usage summed over every successful response.
 	Usage provider.Usage
@@ -186,8 +188,11 @@ type Agent struct {
 	cfg   Config
 	clock Clock
 
-	mu       sync.Mutex
-	running  bool
+	mu      sync.Mutex
+	running bool
+	// closing is set once the run has made its last decision, so a message
+	// queued after that is refused instead of being accepted and then lost.
+	closing  bool
 	cancel   context.CancelFunc
 	runCount int
 	runID    string

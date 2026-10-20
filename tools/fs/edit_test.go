@@ -10,7 +10,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/AutumnsGrove/nova/tool"
 )
@@ -467,6 +469,73 @@ func TestEdit_EDT32_StartAndEnd(t *testing.T) {
 	}
 }
 
+// TestEdit_EDT34_OverlappingOccurrences checks text that occurs twice with the
+// matches overlapping is ambiguous, even though a non-overlapping count says one.
+func TestEdit_EDT34_OverlappingOccurrences(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.txt")
+	writeFile(t, path, "aaa")
+	res := edit(t, dir, "a.txt", [2]string{"aa", "b"})
+	if !res.IsError || !strings.Contains(res.Content, "2 times") {
+		t.Fatalf("result = %+v, want an ambiguity error naming 2 occurrences", res)
+	}
+	if got := readFile(t, path); got != "aaa" {
+		t.Fatalf("content = %q, want unchanged", got)
+	}
+}
+
+// TestEdit_EDT35_ThroughSymlink checks editing a symlink updates the file it
+// points to and leaves the link in place, as write does.
+func TestEdit_EDT35_ThroughSymlink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.txt")
+	link := filepath.Join(dir, "link.txt")
+	writeFile(t, real, "hello")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	res := edit(t, dir, "link.txt", [2]string{"hello", "bye"})
+	if res.IsError {
+		t.Fatalf("result = %+v", res)
+	}
+	if got := readFile(t, real); got != "bye" {
+		t.Fatalf("target content = %q, want bye", got)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the symlink was replaced by a regular file (err %v)", err)
+	}
+}
+
+// TestEdit_EDT36_NotRegular checks edit refuses a file that is not a regular
+// file instead of blocking on it.
+func TestEdit_EDT36_NotRegular(t *testing.T) {
+	dir := t.TempDir()
+	if err := syscall.Mkfifo(filepath.Join(dir, "pipe"), 0o600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan tool.Result, 1)
+	go func() { done <- edit(t, dir, "pipe", [2]string{"a", "b"}) }()
+	select {
+	case res := <-done:
+		if !res.IsError {
+			t.Fatalf("result = %+v, want an error", res)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("edit blocked on a named pipe")
+	}
+}
+
+// occurrences counts every position sub starts at, overlapping ones included.
+func occurrences(s, sub string) int {
+	n := 0
+	for i := range s {
+		if strings.HasPrefix(s[i:], sub) {
+			n++
+		}
+	}
+	return n
+}
+
 // referenceEdit applies edits to content the way the tool should: matched
 // against the original, exactly once, non-overlapping, and changed.
 func referenceEdit(content string, pairs [][2]string) (string, bool) {
@@ -476,7 +545,7 @@ func referenceEdit(content string, pairs [][2]string) (string, bool) {
 	}
 	var spans []span
 	for _, p := range pairs {
-		if p[0] == "" || strings.Count(content, p[0]) != 1 {
+		if p[0] == "" || occurrences(content, p[0]) != 1 {
 			return "", false
 		}
 		start := strings.Index(content, p[0])
@@ -556,8 +625,8 @@ func FuzzEditApply(f *testing.F) {
 		}
 		// The tool refuses binary content, which the reference does not model.
 		window := content
-		if len(window) > binarySniff {
-			window = window[:binarySniff]
+		if len(window) > tool.BinarySniffBytes {
+			window = window[:tool.BinarySniffBytes]
 		}
 		if strings.IndexByte(window, 0) >= 0 {
 			return

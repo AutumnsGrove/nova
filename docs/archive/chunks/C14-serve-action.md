@@ -266,6 +266,7 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | SSE10 | disconnect releases resources | `NoLeaks` | no leaked goroutines |
 | SSE11 | a run survives the last client leaving | | completes |
 | SSE12 | ring size honoured | RingSize 5, 20 events | only the last 5 replayable |
+| SSE13 | subscribed before headers | first flush of the 200 response | the client is already registered, so an event published after the client sees headers is delivered |
 | GHC01 | PR fetch and file list pagination | 250 files over 3 pages | all files collected |
 | GHC02 | more than 300 files | | first 300; note |
 | GHC03 | `403` with `Retry-After` | | retried after the delay |

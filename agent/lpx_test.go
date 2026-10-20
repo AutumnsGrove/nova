@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -207,6 +208,87 @@ func Test_LPQ19_AbortReturnsQueueSoRunEndCarriesNone(t *testing.T) {
 	// The caller already has the text; reporting it twice would restore it twice.
 	if end := runEnd(t, c.all()); end.DroppedQueue != nil {
 		t.Fatalf("dropped_queue = %+v after Abort returned the queue", end.DroppedQueue)
+	}
+}
+
+func Test_LPE22_RunEndIsObservedAfterDeregistration(t *testing.T) {
+	testkit.NoLeaks(t)
+	clock := testkit.NewFakeClock(baseTime)
+	p := testkit.NewProvider(clock, textTurn("one"), textTurn("two"))
+	var a *Agent
+	var runningAtEnd bool
+	var steerErr, followErr, startErr error
+	started := false
+	cfg := Config{Provider: p, Model: "m", Clock: clock}
+	cfg.Emit = func(e proto.Event) {
+		if e.Type != proto.EventRunEnd || started {
+			return
+		}
+		started = true
+		// A client reacts to run_end by sending a command; it must find the
+		// agent idle, not busy.
+		runningAtEnd = a.Running()
+		steerErr = a.Steer(message.User("late"))
+		followErr = a.FollowUp(message.User("late"))
+		startErr = a.Start(context.Background(), nil, message.User("next"))
+	}
+	a = New(cfg)
+	if _, err := a.Run(context.Background(), nil, message.User("go")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if runningAtEnd {
+		t.Error("Running() was true while run_end was being delivered")
+	}
+	if steerErr != ErrNotRunning || followErr != ErrNotRunning {
+		t.Errorf("Steer = %v, FollowUp = %v after run_end, want ErrNotRunning", steerErr, followErr)
+	}
+	if startErr != nil {
+		t.Fatalf("Start from the run_end callback = %v, want it accepted", startErr)
+	}
+	// The new run must survive the old run's cleanup.
+	for a.Running() {
+		runtime.Gosched()
+	}
+	if got := len(p.Requests()); got != 2 {
+		t.Fatalf("provider saw %d requests, want 2 (the follow-on run must have run)", got)
+	}
+}
+
+func Test_LPE23_NewRunOrdersAfterOldRunEnd(t *testing.T) {
+	testkit.NoLeaks(t)
+	clock := testkit.NewFakeClock(baseTime)
+	p := testkit.NewProvider(clock, textTurn("one"), textTurn("two"))
+	c := &collector{}
+	var a *Agent
+	started := false
+	cfg := Config{Provider: p, Model: "m", Clock: clock}
+	cfg.Emit = func(e proto.Event) {
+		c.emit(e)
+		if e.Type == proto.EventRunEnd && !started {
+			started = true
+			if err := a.Start(context.Background(), nil, message.User("next")); err != nil {
+				t.Errorf("Start: %v", err)
+			}
+		}
+	}
+	a = New(cfg)
+	if _, err := a.Run(context.Background(), nil, message.User("go")); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for a.Running() {
+		runtime.Gosched()
+	}
+	endOfFirst, startOfSecond := -1, -1
+	for i, e := range c.all() {
+		switch {
+		case e.Type == proto.EventRunEnd && e.Run == "r_1":
+			endOfFirst = i
+		case e.Type == proto.EventRunStart && e.Run == "r_2":
+			startOfSecond = i
+		}
+	}
+	if endOfFirst < 0 || startOfSecond < 0 || startOfSecond < endOfFirst {
+		t.Fatalf("r_1 run_end at %d, r_2 run_start at %d: %v", endOfFirst, startOfSecond, c.types())
 	}
 }
 

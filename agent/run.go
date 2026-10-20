@@ -17,6 +17,7 @@ type run struct {
 	a        *Agent
 	cfg      Config
 	ctx      context.Context
+	cancel   context.CancelFunc
 	id       string
 	turn     int
 	messages []message.Message
@@ -39,12 +40,12 @@ func (a *Agent) Run(ctx context.Context, history []message.Message, prompt messa
 // until a run is registered. Config errors and ErrBusy are returned here; the
 // run's own outcome arrives through Emit, ending in one run_end.
 func (a *Agent) Start(ctx context.Context, history []message.Message, prompt message.Message) error {
-	r, release, err := a.begin(ctx)
+	r, err := a.begin(ctx)
 	if err != nil {
 		return err
 	}
 	go func() {
-		defer release()
+		defer r.release()
 		defer diag.Catch("agent run")
 		_, _ = r.execute(history, &prompt)
 	}()
@@ -54,29 +55,28 @@ func (a *Agent) Start(ctx context.Context, history []message.Message, prompt mes
 // run is Run with an optional prompt; the compatibility function passes nil so
 // history is the whole transcript.
 func (a *Agent) run(ctx context.Context, history []message.Message, prompt *message.Message) (*Result, error) {
-	r, release, err := a.begin(ctx)
+	r, err := a.begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer release()
+	defer r.release()
 	return r.execute(history, prompt)
 }
 
 // begin validates the config and registers a run, so Running and Abort see it
-// from this point. The returned release ends the registration and must be
-// called exactly once, after the run finishes.
-func (a *Agent) begin(ctx context.Context) (*run, func(), error) {
+// from this point. The caller must call the run's release when it is done.
+func (a *Agent) begin(ctx context.Context) (*run, error) {
 	if a.cfg.Provider == nil {
-		return nil, nil, errors.New("agent: Provider is required")
+		return nil, errors.New("agent: Provider is required")
 	}
 	if a.cfg.Model == "" {
-		return nil, nil, errors.New("agent: Model is required")
+		return nil, errors.New("agent: Model is required")
 	}
 
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.running {
-		a.mu.Unlock()
-		return nil, nil, ErrBusy
+		return nil, ErrBusy
 	}
 	a.running = true
 	a.closing = false
@@ -84,15 +84,21 @@ func (a *Agent) begin(ctx context.Context) (*run, func(), error) {
 	a.runID = fmt.Sprintf("r_%d", a.runCount)
 	runCtx, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
-	a.mu.Unlock()
-	release := func() {
-		cancel()
-		a.mu.Lock()
+	return &run{a: a, cfg: a.cfg, ctx: runCtx, id: a.runID, cancel: cancel}, nil
+}
+
+// release ends this run's registration. It is safe to call more than once and
+// never touches a newer run's registration, because finish releases the run
+// before run_end is delivered and the deferred call then arrives late.
+func (r *run) release() {
+	r.cancel()
+	a := r.a
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.runID == r.id && a.running {
 		a.running = false
 		a.cancel = nil
-		a.mu.Unlock()
 	}
-	return &run{a: a, cfg: a.cfg, ctx: runCtx, id: a.runID}, release, nil
 }
 
 // execute runs the loop for a registered run. A panic in code the loop calls
@@ -334,6 +340,6 @@ func (r *run) finish(res *Result, err error) (*Result, error) {
 	}
 	usage := r.usage
 	r.ended = true
-	r.emit(proto.Event{Type: proto.EventRunEnd, Reason: res.Reason, Turn: intp(res.Turns), Usage: &usage, DroppedQueue: dropped})
+	r.a.emitRunEnd(r, proto.Event{Type: proto.EventRunEnd, Reason: res.Reason, Turn: intp(res.Turns), Usage: &usage, DroppedQueue: dropped})
 	return res, err
 }

@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/AutumnsGrove/nova/permission"
@@ -82,10 +82,7 @@ func Glob() tool.Tool {
 		var matches []string
 		opt := walkOptions{NoIgnore: in.NoIgnore, Hidden: in.Hidden, stats: &stats}
 		err = walk(ctx, root, opt, func(e walkEntry) error {
-			if e.IsDir != dirsOnly {
-				return nil
-			}
-			if globMatch(base, e.Rel) {
+			if e.IsDir == dirsOnly && globMatch(base, e.Rel) {
 				matches = append(matches, e.Rel)
 			}
 			return nil
@@ -93,31 +90,32 @@ func Glob() tool.Tool {
 		if err != nil {
 			return tool.Errorf("%v", err), nil
 		}
-
-		sort.Strings(matches)
-		truncated := len(matches) > maxGlobResults
-		omitted := 0
-		if truncated {
-			omitted = len(matches) - maxGlobResults
-			matches = matches[:maxGlobResults]
-		}
 		if len(matches) == 0 && stats.unreadable == 0 {
 			return tool.Text("no files match %s", in.Pattern), nil
 		}
-		var b strings.Builder
-		for _, m := range matches {
-			b.WriteString(m)
-			b.WriteByte('\n')
-		}
-		if truncated {
-			fmt.Fprintf(&b, "... (%d more matches omitted; narrow the pattern)\n", omitted)
-		}
-		if stats.unreadable > 0 {
-			fmt.Fprintf(&b, "(%d directories could not be read)\n", stats.unreadable)
-		}
-		details, _ := json.Marshal(globDetails{Count: len(matches), Truncated: truncated})
-		return tool.Result{Content: b.String(), Truncated: truncated, Details: details}, nil
+		return globResult(matches, stats.unreadable), nil
 	})
+}
+
+// globResult sorts the matches, caps them at maxGlobResults, and renders them one
+// per line with notes for what was left out.
+func globResult(matches []string, unreadable int) tool.Result {
+	slices.Sort(matches)
+	omitted := max(len(matches)-maxGlobResults, 0)
+	matches = matches[:len(matches)-omitted]
+	var b strings.Builder
+	for _, m := range matches {
+		b.WriteString(m)
+		b.WriteByte('\n')
+	}
+	if omitted > 0 {
+		fmt.Fprintf(&b, "... (%d more matches omitted; narrow the pattern)\n", omitted)
+	}
+	if unreadable > 0 {
+		fmt.Fprintf(&b, "(%d directories could not be read)\n", unreadable)
+	}
+	details, _ := json.Marshal(globDetails{Count: len(matches), Truncated: omitted > 0})
+	return tool.Result{Content: b.String(), Truncated: omitted > 0, Details: details}
 }
 
 // globMatch reports whether rel matches a pattern with the base directory

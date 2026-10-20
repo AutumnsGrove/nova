@@ -191,8 +191,19 @@ func TestWalk_WLK12_RootsContainment(t *testing.T) {
 			t.Fatalf("mkdir: %v", err)
 		}
 	}
-	if _, err := tool.ResolvePath(&tool.Context{WorkDir: dir, Roots: []string{root}}, "outside"); err == nil {
-		t.Fatal("a path outside the roots should be rejected")
+	writeFile(t, filepath.Join(outside, "secret.txt"), "x")
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	ctx := &tool.Context{WorkDir: root, Roots: []string{root}}
+	for _, path := range []string{"../outside", "escape"} {
+		res := run(t, Glob(), ctx, map[string]any{"pattern": "**/*", "path": path})
+		if !res.IsError || strings.Contains(res.Content, "secret.txt") {
+			t.Errorf("glob in %q: result = %+v, want the outside-roots error", path, res)
+		}
+	}
+	if res := run(t, Glob(), ctx, map[string]any{"pattern": "**/*"}); res.IsError || strings.Contains(res.Content, "secret.txt") {
+		t.Errorf("glob in the root: result = %+v, want no error and no escape through the symlink", res)
 	}
 }
 

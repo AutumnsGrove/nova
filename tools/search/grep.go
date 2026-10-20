@@ -35,6 +35,31 @@ type grepDetails struct {
 	Skipped   int  `json:"skipped"`
 }
 
+// grepInput is the arguments of one grep call.
+type grepInput struct {
+	Pattern         string `json:"pattern"`
+	Path            string `json:"path"`
+	Glob            string `json:"glob"`
+	CaseInsensitive bool   `json:"case_insensitive"`
+	FixedStrings    bool   `json:"fixed_strings"`
+	Context         int    `json:"context"`
+	MaxResults      int    `json:"max_results"`
+	Hidden          bool   `json:"hidden"`
+	NoIgnore        bool   `json:"no_ignore"`
+}
+
+// compile builds the matcher from the pattern and its flags.
+func (in grepInput) compile() (*regexp.Regexp, error) {
+	expr := in.Pattern
+	if in.FixedStrings {
+		expr = regexp.QuoteMeta(expr)
+	}
+	if in.CaseInsensitive {
+		expr = "(?i)" + expr
+	}
+	return regexp.Compile(expr)
+}
+
 // Grep returns the grep tool. It searches file contents with a RE2 regular
 // expression and prints matching lines with optional context.
 func Grep() tool.Tool {
@@ -59,47 +84,16 @@ func Grep() tool.Tool {
 			"required": []string{"pattern"},
 		},
 	}, func(ctx context.Context, args json.RawMessage, tctx *tool.Context) (tool.Result, error) {
-		var in struct {
-			Pattern         string `json:"pattern"`
-			Path            string `json:"path"`
-			Glob            string `json:"glob"`
-			CaseInsensitive bool   `json:"case_insensitive"`
-			FixedStrings    bool   `json:"fixed_strings"`
-			Context         int    `json:"context"`
-			MaxResults      int    `json:"max_results"`
-			Hidden          bool   `json:"hidden"`
-			NoIgnore        bool   `json:"no_ignore"`
-		}
+		var in grepInput
 		if err := json.Unmarshal(args, &in); err != nil {
 			return tool.Result{}, fmt.Errorf("invalid arguments: %w", err)
 		}
 		if in.Pattern == "" {
 			return tool.Errorf("pattern is required"), nil
 		}
-		expr := in.Pattern
-		if in.FixedStrings {
-			expr = regexp.QuoteMeta(expr)
-		}
-		if in.CaseInsensitive {
-			expr = "(?i)" + expr
-		}
-		re, err := regexp.Compile(expr)
+		re, err := in.compile()
 		if err != nil {
 			return tool.Errorf("invalid pattern: %v", err), nil
-		}
-		ctxLines := in.Context
-		if ctxLines < 0 {
-			ctxLines = 0
-		}
-		if ctxLines > maxGrepContext {
-			ctxLines = maxGrepContext
-		}
-		limit := in.MaxResults
-		if limit <= 0 {
-			limit = maxGrepMatches
-		}
-		if limit > maxGrepLimit {
-			limit = maxGrepLimit
 		}
 		globBase := strings.TrimSuffix(in.Glob, "/")
 		if globBase != "" && !permission.ValidPath(globBase) {
@@ -119,100 +113,118 @@ func Grep() tool.Tool {
 		if !info.IsDir() && !info.Mode().IsRegular() {
 			return tool.Errorf("%s is not a file or directory", in.Path), nil
 		}
-
+		g := &grepRun{
+			re:       re,
+			glob:     globBase,
+			ctxLines: min(max(in.Context, 0), maxGrepContext),
+			limit:    maxGrepMatches,
+		}
+		if in.MaxResults > 0 {
+			g.limit = min(in.MaxResults, maxGrepLimit)
+		}
 		var stats walkStats
-		var out strings.Builder
-		total, filesMatched, skipped := 0, 0, 0
-		truncated := false
 		opt := walkOptions{NoIgnore: in.NoIgnore, Hidden: in.Hidden, stats: &stats}
-		err = walk(ctx, root, opt, func(e walkEntry) error {
-			if e.IsDir {
-				return nil
-			}
-			if globBase != "" && !globMatch(globBase, e.Rel) {
-				return nil
-			}
-			if e.Size > maxGrepFileBytes {
-				skipped++
-				return nil
-			}
-			text, long, longCount, ok := loadGrepLines(e.Path)
-			if !ok {
-				skipped++
-				return nil
-			}
-			skipped += longCount
-			matches := matchGrepLines(re, text, long)
-			if len(matches) == 0 {
-				return nil
-			}
-			used, more := renderGrepFile(&out, e.Rel, text, matches, ctxLines, limit-total)
-			total += used
-			if used > 0 {
-				filesMatched++
-			}
-			if more || total >= limit {
-				truncated = true
-				return errStopWalk
-			}
-			return nil
-		})
-		if err != nil && !errors.Is(err, errStopWalk) {
+		if err := walk(ctx, root, opt, g.visit); err != nil && !errors.Is(err, errStopWalk) {
 			return tool.Errorf("%v", err), nil
 		}
-		details, _ := json.Marshal(grepDetails{Matches: total, Files: filesMatched, Truncated: truncated, Skipped: skipped})
-		if total == 0 {
-			content := fmt.Sprintf("no matches for %s", in.Pattern)
-			if stats.unreadable > 0 {
-				content += fmt.Sprintf("\n(%d directories could not be read)", stats.unreadable)
-			}
-			return tool.Result{Content: content, Details: details}, nil
-		}
-		content := out.String()
-		if truncated {
-			content += "... (more matches omitted; narrow the search)\n"
-		}
-		if stats.unreadable > 0 {
-			content += fmt.Sprintf("(%d directories could not be read)\n", stats.unreadable)
-		}
-		return tool.Result{Content: content, Truncated: truncated, Details: details}, nil
+		return g.result(in.Pattern, stats.unreadable), nil
 	})
 }
 
+// grepRun is the state of one search: what to match, how much to show, and
+// what has been found so far.
+type grepRun struct {
+	re       *regexp.Regexp
+	glob     string // empty means every file
+	ctxLines int
+	limit    int
+
+	out       strings.Builder
+	total     int  // matching lines shown
+	files     int  // files with at least one match (D50)
+	skipped   int  // files not searched, plus lines too long to match
+	truncated bool // the match cap was hit
+}
+
+// visit searches one walked file. It returns errStopWalk once the cap is hit.
+func (g *grepRun) visit(e walkEntry) error {
+	if e.IsDir || (g.glob != "" && !globMatch(g.glob, e.Rel)) {
+		return nil
+	}
+	// Only regular files are opened: a named pipe with no writer would block the
+	// open forever, and a device has no end.
+	if !e.Regular || e.Size > maxGrepFileBytes {
+		g.skipped++
+		return nil
+	}
+	text, long, tooLong, ok := loadGrepLines(e.Path)
+	if !ok {
+		g.skipped++
+		return nil
+	}
+	g.skipped += tooLong
+	matches := matchGrepLines(g.re, text, long)
+	if len(matches) == 0 {
+		return nil
+	}
+	used, more := renderGrepFile(&g.out, e.Rel, text, matches, g.ctxLines, g.limit-g.total)
+	g.total += used
+	if used > 0 {
+		g.files++
+	}
+	if more || g.total >= g.limit {
+		g.truncated = true
+		return errStopWalk
+	}
+	return nil
+}
+
+// result shapes the findings into the tool result. unreadable is how many
+// directories the walk could not read, which the model should know about.
+func (g *grepRun) result(pattern string, unreadable int) tool.Result {
+	details, _ := json.Marshal(grepDetails{Matches: g.total, Files: g.files, Truncated: g.truncated, Skipped: g.skipped})
+	note := fmt.Sprintf("(%d directories could not be read)", unreadable)
+	if g.total == 0 {
+		content := fmt.Sprintf("no matches for %s", pattern)
+		if unreadable > 0 {
+			content += "\n" + note
+		}
+		return tool.Result{Content: content, Details: details}
+	}
+	content := g.out.String()
+	if g.truncated {
+		content += "... (more matches omitted; narrow the search)\n"
+	}
+	if unreadable > 0 {
+		content += note + "\n"
+	}
+	return tool.Result{Content: content, Truncated: g.truncated, Details: details}
+}
+
 // loadGrepLines reads a file and returns its lines, a parallel slice marking
-// lines that were too long to match, and how many were skipped. ok is false
-// when the file was skipped: unreadable, binary, or too large.
-func loadGrepLines(path string) (text []string, long []bool, skipped int, ok bool) {
+// lines that were too long to match, and how many of those there were. ok is
+// false when the file was skipped: unreadable, binary, or too large.
+func loadGrepLines(path string) (text []string, long []bool, tooLong int, ok bool) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, nil, 0, false
 	}
 	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, maxGrepFileBytes+1))
-	if err != nil || len(data) > maxGrepFileBytes {
-		return nil, nil, 0, false
-	}
-	if tool.LooksBinary(data) {
+	if err != nil || len(data) > maxGrepFileBytes || tool.LooksBinary(data) {
 		return nil, nil, 0, false
 	}
 	for len(data) > 0 {
-		i := bytes.IndexByte(data, '\n')
-		raw := data
-		if i >= 0 {
-			raw, data = data[:i], data[i+1:]
-		} else {
-			data = nil
-		}
-		if len(raw) > 0 && raw[len(raw)-1] == '\r' {
-			raw = raw[:len(raw)-1]
-		}
+		raw, rest, _ := bytes.Cut(data, []byte{'\n'})
+		data = rest
+		raw = bytes.TrimSuffix(raw, []byte{'\r'})
 		if len(raw) > maxGrepLineBytes {
-			text, long, skipped = append(text, ""), append(long, true), skipped+1
+			text, long, tooLong = append(text, ""), append(long, true), tooLong+1
 			continue
 		}
 		text, long = append(text, string(raw)), append(long, false)
 	}
-	return text, long, skipped, true
+	return text, long, tooLong, true
 }
 
 // matchGrepLines returns the 1-based numbers of lines matching re. Lines marked
@@ -220,10 +232,7 @@ func loadGrepLines(path string) (text []string, long []bool, skipped int, ok boo
 func matchGrepLines(re *regexp.Regexp, text []string, long []bool) []int {
 	var out []int
 	for i, line := range text {
-		if long[i] {
-			continue
-		}
-		if re.MatchString(line) {
+		if !long[i] && re.MatchString(line) {
 			out = append(out, i+1)
 		}
 	}
@@ -231,8 +240,9 @@ func matchGrepLines(re *regexp.Regexp, text []string, long []bool) []int {
 }
 
 // renderGrepFile writes one file's matches and their context, stopping after
-// remaining matches. It reports whether more matches remained.
-func renderGrepFile(out *strings.Builder, rel string, text []string, matches []int, context, remaining int) (used int, truncated bool) {
+// remaining matches. It reports how many matches it wrote and whether more
+// remained.
+func renderGrepFile(out *strings.Builder, rel string, text []string, matches []int, ctxLines, remaining int) (used int, truncated bool) {
 	matchSet := make(map[int]bool, len(matches))
 	for _, m := range matches {
 		matchSet[m] = true
@@ -242,13 +252,7 @@ func renderGrepFile(out *strings.Builder, rel string, text []string, matches []i
 		if used >= remaining {
 			return used, true
 		}
-		start, end := m-context, m+context
-		if start < 1 {
-			start = 1
-		}
-		if end > len(text) {
-			end = len(text)
-		}
+		start, end := max(m-ctxLines, 1), min(m+ctxLines, len(text))
 		if lastEnd > 0 {
 			switch {
 			case start > lastEnd+1:
@@ -270,13 +274,19 @@ func renderGrepFile(out *strings.Builder, rel string, text []string, matches []i
 	return used, false
 }
 
-// cutGrepLine replaces invalid UTF-8 and cuts a long line to a displayable
-// length. Matching happened on the raw bytes; this is only for output.
+// cutGrepLine cuts a long line to a displayable length and replaces invalid
+// UTF-8. Matching happened on the raw bytes; this is only for output. It cuts
+// first, without converting the line to runes, so a megabyte-long line costs
+// nothing beyond the 500 characters shown.
 func cutGrepLine(line string) string {
-	line = strings.ToValidUTF8(line, "\uFFFD")
-	runes := []rune(line)
-	if len(runes) > maxGrepLineChars {
-		return string(runes[:maxGrepLineChars]) + "…"
+	suffix := ""
+	n := 0
+	for i := range line {
+		if n == maxGrepLineChars {
+			line, suffix = line[:i], "…"
+			break
+		}
+		n++
 	}
-	return line
+	return strings.ToValidUTF8(line, "�") + suffix
 }

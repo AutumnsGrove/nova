@@ -215,7 +215,7 @@ func (r *run) turnEndHook(assistant message.Message, results []tool.Result) (Tur
 	if h == nil {
 		return TurnDecision{}, nil
 	}
-	turn := Turn{Index: r.turn, Message: assistant, Results: results}
+	turn := Turn{Index: r.turn, Message: assistant.Clone(), Results: results}
 	td, ok := runHook(r, "turn_end", func(ctx context.Context) TurnDecision { return h(ctx, turn) })
 	if !ok || td.End {
 		return TurnDecision{End: td.End}, nil

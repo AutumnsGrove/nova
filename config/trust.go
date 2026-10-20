@@ -54,13 +54,11 @@ func (s *fileTrustStore) IsTrusted(dir string) bool {
 	return false
 }
 
-// Trust adds dir. It refuses the filesystem root and the home directory.
+// Trust adds dir. It refuses the filesystem root, the home directory, and any
+// directory that contains home, since trust covers every descendant.
 func (s *fileTrustStore) Trust(dir string) error {
 	real := realPath(dir)
-	if real == string(filepath.Separator) {
-		return fmt.Errorf("%w: %s", ErrTooBroad, real)
-	}
-	if s.home != "" && real == realPath(s.home) {
+	if filepath.Dir(real) == real || (s.home != "" && isSameOrAncestor(real, realPath(s.home))) {
 		return fmt.Errorf("%w: %s", ErrTooBroad, real)
 	}
 	s.mu.Lock()

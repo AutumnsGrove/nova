@@ -133,86 +133,99 @@ func (r *run) execute(history []message.Message, prompt *message.Message) (res *
 // provider fails, or an explicitly set budget runs out. With no budget the loop
 // is unbounded; the abort path is what stops a runaway run.
 func (r *run) loop() (*Result, error) {
-	maxTurns := r.cfg.MaxTurns
 	for r.turn = 0; ; r.turn++ {
-		// A budget is only in force when a caller set one; zero and negative
-		// both mean unlimited.
-		if maxTurns > 0 && r.turn >= maxTurns {
-			res := r.result("exhausted")
-			res.Exhausted = true
-			res.Turns = maxTurns
-			return r.finish(res, nil)
+		reason, err := r.runTurn()
+		if reason == "" {
+			continue
 		}
-		if err := r.ctx.Err(); err != nil {
-			return r.finish(r.result("aborted"), err)
-		}
-		r.emit(proto.Event{Type: proto.EventTurnStart, Turn: intp(r.turn)})
+		res := r.result(reason)
+		res.Exhausted = reason == "exhausted"
+		return r.finish(res, err)
+	}
+}
 
-		assistant, usage, err := r.turnRequest()
-		if err != nil {
-			if cerr := r.ctx.Err(); cerr != nil {
-				return r.finish(r.result("aborted"), cerr)
-			}
-			res := r.result("error")
-			res.Turns = r.turn + 1
-			return r.finish(res, err)
-		}
-		r.usage.Add(usage)
-		r.turns = r.turn + 1
-		if err := r.record(assistant, &usage); err != nil {
-			return r.finish(r.result("error"), err)
-		}
-		if assistant.Content != "" {
-			r.answer = assistant.Content
-		}
+// runTurn runs one turn: request, tools, the TurnEnd hook, and the queues. It
+// returns the reason the run ends, or "" when another turn should follow.
+func (r *run) runTurn() (string, error) {
+	// A budget is only in force when a caller set one; zero and negative both
+	// mean unlimited.
+	if r.cfg.MaxTurns > 0 && r.turn >= r.cfg.MaxTurns {
+		return "exhausted", nil
+	}
+	if err := r.ctx.Err(); err != nil {
+		return "aborted", err
+	}
+	r.emit(proto.Event{Type: proto.EventTurnStart, Turn: intp(r.turn)})
 
-		results, err := r.dispatchTools(assistant)
-		if err != nil {
-			return r.finish(r.result("error"), err)
-		}
-		r.emit(proto.Event{Type: proto.EventTurnEnd, Turn: intp(r.turn), Usage: &usage})
-		continueTurn := false
-		injected := 0
-		if r.cfg.Hooks.TurnEnd != nil {
-			turnIndex := r.turn
-			td, ok := runHook(r, "turn_end", func(ctx context.Context) TurnDecision {
-				return r.cfg.Hooks.TurnEnd(ctx, Turn{Index: turnIndex, Message: assistant, Results: results})
-			})
-			if ok {
-				if td.End {
-					return r.finish(r.result("done"), nil)
-				}
-				continueTurn = td.Continue
-				injected = len(td.Inject)
-				for _, m := range td.Inject {
-					if err := r.record(m, nil); err != nil {
-						return r.finish(r.result("error"), err)
-					}
-				}
-			}
-		}
-
-		steered, err := r.drainSteering()
-		if err != nil {
-			return r.finish(r.result("error"), err)
-		}
+	assistant, usage, err := r.turnRequest()
+	if err != nil {
 		if cerr := r.ctx.Err(); cerr != nil {
-			return r.finish(r.result("aborted"), cerr)
+			return "aborted", cerr
 		}
-		if len(assistant.ToolCalls) == 0 {
-			if steered > 0 || continueTurn || injected > 0 {
-				continue
-			}
-			more, err := r.takeQueued()
-			if err != nil {
-				return r.finish(r.result("error"), err)
-			}
-			if more {
-				continue
-			}
-			return r.finish(r.result("done"), nil)
+		// The failed request counts as a turn, so run_end reports the work done.
+		r.turns = r.turn + 1
+		return "error", err
+	}
+	r.usage.Add(usage)
+	r.turns = r.turn + 1
+	if err := r.record(assistant, &usage); err != nil {
+		return "error", err
+	}
+	if assistant.Content != "" {
+		r.answer = assistant.Content
+	}
+
+	results, err := r.dispatchTools(assistant)
+	if err != nil {
+		return "error", err
+	}
+	r.emit(proto.Event{Type: proto.EventTurnEnd, Turn: intp(r.turn), Usage: &usage})
+	td, err := r.turnEndHook(assistant, results)
+	if err != nil {
+		return "error", err
+	}
+	if td.End {
+		return "done", nil
+	}
+
+	steered, err := r.drainSteering()
+	if err != nil {
+		return "error", err
+	}
+	if cerr := r.ctx.Err(); cerr != nil {
+		return "aborted", cerr
+	}
+	if len(assistant.ToolCalls) > 0 || steered > 0 || td.Continue || len(td.Inject) > 0 {
+		return "", nil
+	}
+	more, err := r.takeQueued()
+	if err != nil {
+		return "error", err
+	}
+	if more {
+		return "", nil
+	}
+	return "done", nil
+}
+
+// turnEndHook runs the TurnEnd hook and records the messages it injects. A hook
+// that fails or times out decides nothing, so the zero decision is returned.
+func (r *run) turnEndHook(assistant message.Message, results []tool.Result) (TurnDecision, error) {
+	h := r.cfg.Hooks.TurnEnd
+	if h == nil {
+		return TurnDecision{}, nil
+	}
+	turn := Turn{Index: r.turn, Message: assistant, Results: results}
+	td, ok := runHook(r, "turn_end", func(ctx context.Context) TurnDecision { return h(ctx, turn) })
+	if !ok || td.End {
+		return TurnDecision{End: td.End}, nil
+	}
+	for _, m := range td.Inject {
+		if err := r.record(m, nil); err != nil {
+			return td, err
 		}
 	}
+	return td, nil
 }
 
 // takeQueued appends the next queued work, steering before follow-ups, and

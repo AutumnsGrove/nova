@@ -361,20 +361,22 @@ func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, fail(proto.CodeInternal, "streaming unsupported"))
 		return
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
-
 	lastID, hasLast := int64(0), false
 	if v := r.Header.Get("Last-Event-ID"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			lastID, hasLast = n, true
 		}
 	}
+	// Subscribe before the headers go out: a client that has seen the 200 may
+	// send a command at once, and its events must not be published to nobody.
 	replay, ch, resync := s.subscribe(lastID, hasLast)
 	defer s.unsubscribe(ch)
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
 
 	var skip int64
 	if resync {

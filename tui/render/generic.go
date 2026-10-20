@@ -16,7 +16,7 @@ import (
 type genericRenderer struct{}
 
 func (genericRenderer) Header(c Call, st styles.Styles, width int) string {
-	left := statusDot(c, st) + " " + st.Bold.Render(c.Name)
+	left := statusDot(c, st) + " " + st.Bold.Render(sanitize.Line(c.Name))
 	if s := Summarize(c.Name, c.Args, width); s != "" {
 		left += "  " + st.Muted.Render(s)
 	}

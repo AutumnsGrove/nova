@@ -303,9 +303,9 @@ func detailBool(details json.RawMessage, key string) bool {
 // pathOf returns the title path of a call from Details, then arguments.
 func pathOf(c Call) string {
 	if p := detailString(c.Details, "path"); p != "" {
-		return p
+		return sanitize.Line(p)
 	}
-	return argString(c.Args, "path", "file_path")
+	return sanitize.Line(argString(c.Args, "path", "file_path"))
 }
 
 // Summarize picks the argument that identifies a call and renders it as one

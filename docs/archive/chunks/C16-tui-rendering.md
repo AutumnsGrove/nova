@@ -246,6 +246,8 @@ type Display struct {
 | CRD13 | restored card matches live card | `Load` vs events | same output (ignoring timer) |
 | CRD14 | truncated marker | `Truncated` | shown |
 | CRD15 | `Toggle` expands one card | | only that card expands |
+| CRD16 | a header path has no control bytes | read, write and edit calls whose path holds escapes and a bidi override | the visible path is kept and no escape of the path survives |
+| CRD17 | an unknown tool's name has no control bytes | a call named with escapes | none survive in the header |
 | PNL01 | card panel is tinted by state | running, ok, error | a background on every line; the three differ; each line resets |
 | PNL02 | panel spans the width with side padding | widths 20 to 200 | every line is the full width; one cell on each side |
 | PNL03 | mono has no panel background | `Mono` | no escapes; still padded |

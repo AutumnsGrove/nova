@@ -109,7 +109,7 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
   `permission`; they never import each other or a higher layer.
 - `agent` imports `message`, `provider`, `tool`, `permission`, `proto`. `config`
   imports `permission` because it decodes the policy.
-- `session` imports `message`, `provider`, `proto`. `compaction` imports `session`, `provider`, `message`.
+- `session` imports `message` and `provider`. `compaction` imports `session`, `provider`, `message`.
 - `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.
 - `diag` is a stdlib-only leaf: it holds no Nova state, so `agent` and `ext` may
   import it for crash reporting without breaking the layering.
@@ -254,7 +254,7 @@ older entry makes a new branch without deleting the old one.
 Entry types: `message`, `model_change`, `compaction`, `branch_summary`, `custom`
 (an extension's data), `custom_message` (an extension's visible message),
 `label`, and `session_info`. A `custom` entry marked `keep: true` survives
-compaction. `session.Manager` is the only authority for the model-facing context;
+compaction. `session.Store` is the only authority for the model-facing context;
 assigning an in-memory slice never replaces the persisted one.
 
 ## 6. Compaction and the context limit
@@ -267,7 +267,7 @@ triggers when estimated context exceeds `context_limit - reserve`.
    result.**
 3. Summarise the older span with the session model.
 4. Insert a `compaction` entry that records what it replaced. Keep recent turns whole.
-5. Prune stale tool output at request time without dropping the summary.
+5. Prune stale tool output at request time without dropping the summary. (`compaction.PruneToolOutput` implements the rule; the loop does not call it yet.)
 
 If summarisation fails, the run continues without compaction and an event reports
 it. A failed compaction never loses entries.
@@ -353,7 +353,7 @@ The GitHub Action is a thin `action.yml` that installs the binary and runs
 - Tool calls in one assistant message run in parallel unless a tool declares
   otherwise. Results are stored by index.
 - File-mutating tools serialise per path.
-- `session.Manager` is safe for concurrent readers and serialises writers.
+- `session.Store` is safe for concurrent readers and serialises writers.
 - Each extension process has one reader and one writer goroutine per connection.
   A slow extension never blocks the loop past its hook deadline.
 

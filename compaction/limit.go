@@ -79,11 +79,12 @@ func ShouldCompact(s Settings, msgs []message.Message, last *provider.Usage) boo
 	est := Estimate(msgs)
 	if last != nil && last.PromptTokens > 0 && last.PromptTokens <= limit {
 		// last.PromptTokens covers the request that produced the most recent
-		// assistant message; everything after that message is new.
+		// assistant message, not the reply itself: the reply and everything
+		// after it are new.
 		tail := 0
 		for i := len(msgs) - 1; i >= 0; i-- {
 			if msgs[i].Role == message.RoleAssistant {
-				tail = i + 1
+				tail = i
 				break
 			}
 		}

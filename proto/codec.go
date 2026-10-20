@@ -144,7 +144,7 @@ func Decode(line []byte) (Frame, error) {
 		ID   string  `json:"id"`
 	}
 	if err := json.Unmarshal(line, &probe); err != nil {
-		return Frame{}, fmt.Errorf("%w: %v", ErrBadFrame, err)
+		return Frame{}, fmt.Errorf("%w: %w", ErrBadFrame, err)
 	}
 	if probe.Type == nil {
 		return Frame{}, fmt.Errorf("%w: missing type", ErrBadFrame)
@@ -173,7 +173,7 @@ func Decode(line []byte) (Frame, error) {
 func decodeInto[T any](line []byte, mk func(*T) Frame) (Frame, error) {
 	var v T
 	if err := json.Unmarshal(line, &v); err != nil {
-		return Frame{}, fmt.Errorf("%w: %v", ErrBadFrame, err)
+		return Frame{}, fmt.Errorf("%w: %w", ErrBadFrame, err)
 	}
 	return mk(&v), nil
 }

@@ -43,10 +43,12 @@ func CutPoint(msgs []message.Message, keepRecent int) (int, bool) {
 }
 
 // nearestUser is the closest user message at or before point, after start, so
-// the kept part begins at a user turn. The system message is never returned.
+// the kept part begins at a user turn. The system message is never returned, and
+// neither is a synthetic one: the image message the loop injects after a tool
+// batch belongs to that batch, not to a new turn.
 func nearestUser(msgs []message.Message, point, start int) (int, bool) {
 	for i := point; i > start; i-- {
-		if msgs[i].Role == message.RoleUser {
+		if msgs[i].Role == message.RoleUser && !msgs[i].Synthetic {
 			return i, true
 		}
 	}

@@ -2,7 +2,8 @@ package message
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 )
 
 // Validate checks that tool calls and their results pair up. It returns nil for
@@ -47,10 +48,5 @@ func Validate(msgs []Message) error {
 // firstPending returns the smallest outstanding call id, so an error message
 // does not depend on map iteration order.
 func firstPending(pending map[string]bool) string {
-	ids := make([]string, 0, len(pending))
-	for id := range pending {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids[0]
+	return slices.Min(slices.Collect(maps.Keys(pending)))
 }

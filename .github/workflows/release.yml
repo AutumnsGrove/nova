@@ -71,7 +71,9 @@ jobs:
         run: |
           set -eu
           cd dist
-          sha256sum ./*.tar.gz | sort -k2 >checksums.txt
+          # Bare file names: install.sh and `nova update` look an archive up by
+          # name, and "./name" would never match.
+          sha256sum -- *.tar.gz | sort -k2 >checksums.txt
           cat checksums.txt
       - uses: softprops/action-gh-release@v2
         with:

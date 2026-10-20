@@ -128,7 +128,7 @@ main() {
 	download "${release_url}/checksums.txt" "$tmp/checksums.txt" || err "could not download checksums.txt"
 
 	# A line is "<hash>  <name>", or "<hash> *<name>" when sha256sum was run with -b.
-	expected="$(awk -v f="$archive" '{ n = $2; sub(/^\*/, "", n) } n == f { print tolower($1) }' "$tmp/checksums.txt")"
+	expected="$(awk -v f="$archive" '{ n = $2; sub(/^\*/, "", n); sub(/^\.\//, "", n) } n == f { print tolower($1) }' "$tmp/checksums.txt")"
 	[ -n "$expected" ] || err "checksums.txt has no entry for $archive"
 	actual="$(sha256_file "$tmp/$archive")"
 	[ "$expected" = "$actual" ] || err "checksum mismatch for $archive: expected $expected, got $actual"

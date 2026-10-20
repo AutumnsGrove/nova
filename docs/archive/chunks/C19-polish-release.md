@@ -259,6 +259,7 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | REL03 | flags | | `CGO_ENABLED=0`, `-trimpath`, `-s -w`, the version variables |
 | REL04 | archive names and contents | dry run of the packaging step | as specified |
 | REL05 | checksums file | | one line per archive |
+| REL06 | the published checksums install | the release job's own checksum step run on two archives, its `checksums.txt` served as the release's | `install.sh` finds the archive and installs; the file names are bare (`./name` never matched) |
 | ISH01 | happy path | fake release server | binary installed 0755 in the default directory |
 | ISH02 | checksum mismatch | tampered archive | aborts before extraction; nothing installed |
 | ISH03 | unsupported OS or architecture | | clear error naming it |
@@ -273,7 +274,7 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | ISH12 | only the sanity check runs downloaded code | | `nova version` after install |
 | ISH13 | `sh` compatibility | run with `dash` | works |
 | ISH14 | the version must be a plain tag | `NOVA_VERSION` of `../../evil`, `v1/x`, a space, a leading dash, `?`, `;`; a bad tag from the release API | a version error and no download |
-| ISH15 | binary-mode checksum line | `checksums.txt` lines of the form `<hash> *<name>` | the install succeeds |
+| ISH15 | every checksum line form | lines of the form `<hash> *<name>` and `<hash>  ./<name>` | the install succeeds |
 | ISH16 | a symlink member is refused | an archive whose `nova` is a symlink | the install fails and no binary is written |
 
 ## Fuzz and property tests

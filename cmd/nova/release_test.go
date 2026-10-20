@@ -510,10 +510,12 @@ func TestInstall_ISH14_VersionMustBeAPlainTag(t *testing.T) {
 // sha256sum -b writes "<hash> *<name>"; the Go updater accepts it, so must this.
 func TestInstall_ISH15_BinaryModeChecksumLine(t *testing.T) {
 	fr := newFakeRelease(t, "v0.1.0")
-	fr.setChecksums(strings.ReplaceAll(fr.checksums, "  nova_", " *nova_"))
-	out, code := runInstall(t, fr, t.TempDir(), t.TempDir())
-	if code != 0 {
-		t.Fatalf("exit %d:\n%s", code, out)
+	for _, form := range []string{" *nova_", "  ./nova_"} {
+		fr.setChecksums(strings.ReplaceAll(fr.checksums, "  nova_", form))
+		if out, code := runInstall(t, fr, t.TempDir(), t.TempDir()); code != 0 {
+			t.Fatalf("checksum line form %q: exit %d:\n%s", form, code, out)
+		}
+		fr.setChecksums(strings.ReplaceAll(fr.checksums, form, "  nova_"))
 	}
 }
 
@@ -541,5 +543,47 @@ func TestInstall_ISH16_SymlinkMemberIsRefused(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(installDir, "nova")); err == nil {
 		t.Fatal("a binary was installed from a symlink member")
+	}
+}
+
+// The checksums.txt that is published is the one the release job writes, not the
+// ones package.sh writes per platform. install.sh and `nova update` look an
+// archive up by its bare name, so the workflow's own step must write bare names.
+func TestRelease_REL06_PublishedChecksumsInstall(t *testing.T) {
+	var script string
+	for _, s := range loadReleaseWorkflow(t).Jobs["release"].Steps {
+		if strings.Contains(s.Run, "checksums.txt") {
+			script = s.Run
+		}
+	}
+	if script == "" {
+		t.Fatal("the release job has no step that writes checksums.txt")
+	}
+	fr := newFakeRelease(t, "v0.1.0")
+	work := t.TempDir()
+	dist := filepath.Join(work, "dist")
+	if err := os.MkdirAll(dist, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		fmt.Sprintf("nova_v0.1.0_%s_%s.tar.gz", fr.os, fr.arch),
+		fmt.Sprintf("nova-min_v0.1.0_%s_%s.tar.gz", fr.os, fr.arch),
+	} {
+		if err := os.WriteFile(filepath.Join(dist, name), fr.archive, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	step := exec.Command("sh", "-c", script)
+	step.Dir = work
+	if out, err := step.CombinedOutput(); err != nil {
+		t.Fatalf("the checksum step failed: %v\n%s", err, out)
+	}
+	published, err := os.ReadFile(filepath.Join(dist, "checksums.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fr.setChecksums(string(published))
+	if out, code := runInstall(t, fr, t.TempDir(), t.TempDir()); code != 0 {
+		t.Fatalf("install.sh could not use the published checksums.txt (exit %d):\n%s\n%s", code, out, published)
 	}
 }

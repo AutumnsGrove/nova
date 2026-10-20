@@ -146,7 +146,7 @@ func download(ctx context.Context, opt Options, url string, limit int64) ([]byte
 func checksumFor(data []byte, name string) (string, bool) {
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) == 2 && strings.TrimPrefix(fields[1], "*") == name {
+		if len(fields) == 2 && strings.TrimPrefix(strings.TrimPrefix(fields[1], "*"), "./") == name {
 			return strings.ToLower(fields[0]), true
 		}
 	}

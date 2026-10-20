@@ -212,6 +212,7 @@ func updateCommand(stdout, stderr io.Writer, exit *int, run updateFunc) *cobra.C
 | UPD42 | the binary member must be a regular file | a symlink named `nova` | a regular-file error, target untouched |
 | UPD43 | the unpacked binary is capped | a member that unpacks past the cap | a too-large error, target untouched, no staged file left |
 | UPD44 | a symlinked running binary is resolved | the running binary is a link to another file | the target is the file behind the link, so the link survives |
+| UPD45 | every checksum naming form | `name`, `./name`, `*name`, `*./name`; a name that merely ends the same | the first four match, case-folded; the last does not |
 
 ## Fuzz and property tests
 

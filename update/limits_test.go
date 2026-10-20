@@ -149,3 +149,17 @@ func TestRun_UPD43_UnpackedBinaryIsCapped(t *testing.T) {
 		}
 	}
 }
+
+// checksums.txt written by `sha256sum ./*.tar.gz` names files "./name", and
+// `sha256sum -b` writes "*name". Both are the same file.
+func TestChecksumFor_UPD45_AcceptsEveryNamingForm(t *testing.T) {
+	for _, form := range []string{"name.tar.gz", "./name.tar.gz", "*name.tar.gz", "*./name.tar.gz"} {
+		got, ok := checksumFor([]byte("ABC123  "+form+"\nfff  other.tar.gz\n"), "name.tar.gz")
+		if !ok || got != "abc123" {
+			t.Errorf("form %q: got %q, %v, want abc123", form, got, ok)
+		}
+	}
+	if _, ok := checksumFor([]byte("abc  xname.tar.gz\n"), "name.tar.gz"); ok {
+		t.Error("a name that merely ends the same matched")
+	}
+}

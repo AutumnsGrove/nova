@@ -138,8 +138,10 @@ state_changed    { state, reason? }                 // state: model, thinking le
 login_end        { id, error?: {code, message} }    // an interactive sign-in finished; id is the provider id
 ```
 
-`usage` is `{prompt_tokens, completion_tokens, reasoning_tokens, total_tokens, cached_tokens, cost_usd,
-cost_source}`; zero `reasoning_tokens`, `cached_tokens`, `cost_usd`, and an empty `cost_source` are omitted.
+`usage` is `{prompt_tokens, completion_tokens, reasoning_tokens, total_tokens, cached_tokens, cache_write_tokens,
+cost_usd, cost_source}`; zero `reasoning_tokens`, `cached_tokens`, `cache_write_tokens`, `cost_usd`, and an empty
+`cost_source` are omitted. `cached_tokens` are cache reads and `cache_write_tokens` are tokens written into the cache
+on a cold prefix. `prompt_tokens` is the whole prompt on every dialect, cached tokens included.
 `cost_usd` is the provider's number when it reports one, otherwise computed from the
 model catalog; `cost_source` (`provider` or `catalog`) says which.
 

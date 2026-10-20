@@ -10,7 +10,7 @@ import (
 
 // A payload that is not JSON used to be skipped, so a damaged text delta
 // vanished and the turn still ended as a success with a hole in the answer.
-func TestResponses_RSP22_MalformedEventFailsTheTurn(t *testing.T) {
+func TestResponses_RSP27_MalformedEventFailsTheTurn(t *testing.T) {
 	p, _ := newProvider(t, Config{},
 		sse("response.output_text.delta", `{"type":"response.output_text.delta","delta":"kept"}`),
 		sse("response.output_text.delta", `{"type":"response.output_text.delta","delta":"lost`),
@@ -26,7 +26,7 @@ func TestResponses_RSP22_MalformedEventFailsTheTurn(t *testing.T) {
 	}
 }
 
-func TestResponses_RSP23_TopLevelErrorCarriesCodeAndMessage(t *testing.T) {
+func TestResponses_RSP28_TopLevelErrorCarriesCodeAndMessage(t *testing.T) {
 	// This is the shape the API documents for an "error" event.
 	p, _ := newProvider(t, Config{},
 		sse("error", `{"type":"error","code":"rate_limit_exceeded","message":"slow down","param":null}`),

@@ -5,17 +5,20 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 )
 
-// request is the Responses API request body.
+// request is the Responses API request body. CacheControl is the
+// automatic-caching marker; only a gateway that forwards to Anthropic uses it,
+// and RequestCacheControl keeps it off a model that caches by itself.
 type request struct {
-	Model           string      `json:"model"`
-	Instructions    string      `json:"instructions,omitempty"`
-	Input           []inputItem `json:"input"`
-	Stream          bool        `json:"stream"`
-	Tools           []toolDef   `json:"tools,omitempty"`
-	ToolChoice      any         `json:"tool_choice,omitempty"`
-	Temperature     *float64    `json:"temperature,omitempty"`
-	MaxOutputTokens int         `json:"max_output_tokens"`
-	Reasoning       *reasoning  `json:"reasoning,omitempty"`
+	Model           string                 `json:"model"`
+	Instructions    string                 `json:"instructions,omitempty"`
+	Input           []inputItem            `json:"input"`
+	Stream          bool                   `json:"stream"`
+	Tools           []toolDef              `json:"tools,omitempty"`
+	ToolChoice      any                    `json:"tool_choice,omitempty"`
+	Temperature     *float64               `json:"temperature,omitempty"`
+	MaxOutputTokens int                    `json:"max_output_tokens"`
+	Reasoning       *reasoning             `json:"reasoning,omitempty"`
+	CacheControl    *provider.CacheControl `json:"cache_control,omitempty"`
 }
 
 // inputItem is one input entry: a role message, a function call, or a function
@@ -84,7 +87,8 @@ type event struct {
 			OutputTokens int `json:"output_tokens"`
 			TotalTokens  int `json:"total_tokens"`
 			InputDetails struct {
-				CachedTokens int `json:"cached_tokens"`
+				CachedTokens     int `json:"cached_tokens"`
+				CacheWriteTokens int `json:"cache_write_tokens"`
 			} `json:"input_tokens_details"`
 			OutputDetails struct {
 				ReasoningTokens int `json:"reasoning_tokens"`

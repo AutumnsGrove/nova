@@ -77,6 +77,7 @@ type Request struct {
 
 type Usage struct {
     PromptTokens, CompletionTokens, ReasoningTokens, TotalTokens, CachedTokens int
+    CacheWriteTokens int // tokens this call wrote into a prompt cache
     CostUSD    float64
     CostSource string // "provider", "catalog", or ""
 }
@@ -90,6 +91,12 @@ type StreamEvent struct {
     Usage    *Usage
     Err      error
 }
+
+// CacheControl is the explicit prompt-cache marker the dialects share.
+type CacheControl struct{ Type string }
+
+// RequestCacheControl returns the marker a request should carry, or nil.
+func RequestCacheControl(req Request) *CacheControl
 
 // Error is what providers return for a failed request.
 type Error struct {
@@ -276,6 +283,8 @@ func NoLeaks(t testing.TB)                  // registers a cleanup that checks g
 | PRV20 | `Models` sorted by provider then id | | sorted |
 | PRV21 | `AcceptsImages` table | nil, `["text"]`, `["image"]`, `["text","image"]`, `["text","file"]` | false, false, true, true, false |
 | PRV22 | registered model keeps `InputModalities` | a model with text+image | `AcceptsImages` true after `GetModel` |
+| PRV23 | cache marker derives from the catalog | unknown model, implicit model, non-implicit model, id and slug disagree | nil, nil, `{"type":"ephemeral"}`, id wins |
+| PRV24 | `PromptCache` overrides the catalog | true on an implicit model; false on a non-implicit one; true on an unknown one | marker; nil; marker |
 | TKC01 | `FakeClock` does not read real time | `Now()` after `Advance(1h)` | start + 1h, instantly |
 | TKC02 | `Advance` fires timers in deadline order | timers at 3s, 1s, 2s | fire 1s, 2s, 3s |
 | TKC03 | `Sleep` returns on advance | | returns nil |

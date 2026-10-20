@@ -299,3 +299,20 @@ func TestOpencodego_OPG22_DefaultModel(t *testing.T) {
 		t.Fatalf("%s is not in the catalog", DefaultModel)
 	}
 }
+
+// TestOpencodego_OPG35_ImplicitCaching checks the flag the cache marker
+// derives from: the Messages-served Claude model needs an explicit marker, and
+// the models known to cache repeated prefixes on their own must not get one.
+// A discovered override must not lose the baseline's answer.
+func TestOpencodego_OPG35_ImplicitCaching(t *testing.T) {
+	for _, b := range baseline {
+		m, ok := provider.GetModel(b.id)
+		if !ok {
+			t.Fatalf("%s is not registered", b.id)
+		}
+		want := b.id != "opencode-go/claude-haiku-5-5"
+		if m.ImplicitCaching != want {
+			t.Errorf("%s ImplicitCaching = %v, want %v", b.id, m.ImplicitCaching, want)
+		}
+	}
+}

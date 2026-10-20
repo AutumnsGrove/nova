@@ -1,6 +1,7 @@
 package openrouter
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/AutumnsGrove/nova/provider"
@@ -49,5 +50,21 @@ func TestCatalog_ORT12_DefaultModelRegistered(t *testing.T) {
 	}
 	if m.Slug == "" {
 		t.Error("default model has no wire slug")
+	}
+}
+
+// TestCatalog_ORT13_ImplicitCachingMatchesProvider checks the cache flag the
+// agent relies on: Anthropic models cache only when Nova asks, so they must
+// not be marked implicit, and the models that cache repeated prefixes on their
+// own must be.
+func TestCatalog_ORT13_ImplicitCachingMatchesProvider(t *testing.T) {
+	for _, m := range Catalog {
+		wantImplicit := m.Provider != "anthropic"
+		if strings.Contains(m.ID, "anthropic/") {
+			wantImplicit = false
+		}
+		if m.ImplicitCaching != wantImplicit {
+			t.Errorf("%s ImplicitCaching = %v, want %v", m.ID, m.ImplicitCaching, wantImplicit)
+		}
 	}
 }

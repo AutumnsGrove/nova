@@ -9,6 +9,7 @@ func TestProvider_PRV13_UsageAddSumsAllFields(t *testing.T) {
 		ReasoningTokens:  3,
 		TotalTokens:      4,
 		CachedTokens:     5,
+		CacheWriteTokens: 6,
 		CostUSD:          0.25,
 	}
 	u.Add(Usage{
@@ -17,13 +18,14 @@ func TestProvider_PRV13_UsageAddSumsAllFields(t *testing.T) {
 		ReasoningTokens:  30,
 		TotalTokens:      40,
 		CachedTokens:     50,
+		CacheWriteTokens: 60,
 		CostUSD:          0.75,
 	})
 	if u.PromptTokens != 11 || u.CompletionTokens != 22 || u.ReasoningTokens != 33 {
 		t.Errorf("tokens = %+v, want prompt 11 completion 22 reasoning 33", u)
 	}
-	if u.TotalTokens != 44 || u.CachedTokens != 55 || u.CostUSD != 1.0 {
-		t.Errorf("totals = %+v, want total 44 cached 55 cost 1.0", u)
+	if u.TotalTokens != 44 || u.CachedTokens != 55 || u.CacheWriteTokens != 66 || u.CostUSD != 1.0 {
+		t.Errorf("totals = %+v, want total 44 cached 55 cache write 66 cost 1.0", u)
 	}
 }
 

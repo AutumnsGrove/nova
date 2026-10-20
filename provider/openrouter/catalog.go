@@ -20,13 +20,14 @@ var textAndImage = []string{"text", "image"}
 // 2026-10-09. Prices are in US dollars per million tokens.
 var Catalog = []provider.Model{
 	{
-		ID:            DefaultModel,
-		Name:          "DeepSeek V4.1 Flash",
-		Provider:      ProviderName,
-		Slug:          "deepseek/deepseek-v4.1-flash",
-		ContextWindow: 1_048_576,
-		InPerM:        0.3,
-		OutPerM:       1.2,
+		ID:              DefaultModel,
+		Name:            "DeepSeek V4.1 Flash",
+		Provider:        ProviderName,
+		Slug:            "deepseek/deepseek-v4.1-flash",
+		ContextWindow:   1_048_576,
+		InPerM:          0.3,
+		OutPerM:         1.2,
+		ImplicitCaching: true,
 	},
 	{
 		ID:              "anthropic/claude-opus-5.5",
@@ -57,6 +58,7 @@ var Catalog = []provider.Model{
 		InPerM:          2,
 		OutPerM:         10,
 		InputModalities: textAndImage,
+		ImplicitCaching: true,
 	},
 	{
 		ID:              "openai/gpt-6-luna",
@@ -67,6 +69,7 @@ var Catalog = []provider.Model{
 		InPerM:          0.1,
 		OutPerM:         0.5,
 		InputModalities: textAndImage,
+		ImplicitCaching: true,
 	},
 }
 

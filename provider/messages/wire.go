@@ -8,16 +8,19 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 )
 
-// request is the Anthropic Messages request body.
+// request is the Anthropic Messages request body. CacheControl is the
+// automatic-caching marker: a top-level marker asks the API to place the
+// breakpoint at the end of the prompt, so each turn reuses the last prefix.
 type request struct {
-	Model       string        `json:"model"`
-	System      string        `json:"system,omitempty"`
-	Messages    []wireMessage `json:"messages"`
-	Stream      bool          `json:"stream"`
-	MaxTokens   int           `json:"max_tokens"`
-	Tools       []toolDef     `json:"tools,omitempty"`
-	ToolChoice  any           `json:"tool_choice,omitempty"`
-	Temperature *float64      `json:"temperature,omitempty"`
+	Model        string                 `json:"model"`
+	System       string                 `json:"system,omitempty"`
+	Messages     []wireMessage          `json:"messages"`
+	Stream       bool                   `json:"stream"`
+	MaxTokens    int                    `json:"max_tokens"`
+	Tools        []toolDef              `json:"tools,omitempty"`
+	ToolChoice   any                    `json:"tool_choice,omitempty"`
+	Temperature  *float64               `json:"temperature,omitempty"`
+	CacheControl *provider.CacheControl `json:"cache_control,omitempty"`
 }
 
 // wireMessage is one user or assistant turn.
@@ -99,8 +102,9 @@ type event struct {
 	} `json:"delta"`
 	Message struct {
 		Usage struct {
-			InputTokens          int `json:"input_tokens"`
-			CacheReadInputTokens int `json:"cache_read_input_tokens"`
+			InputTokens              int `json:"input_tokens"`
+			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
 	} `json:"message"`
 	Usage struct {

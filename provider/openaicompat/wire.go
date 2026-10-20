@@ -52,18 +52,20 @@ func wireContent(m message.Message) any {
 // chatRequest is the request body. MaxTokens is a pointer so "unset" and "zero"
 // are distinguishable; the API rejects zero as much as it rejects a missing
 // field, but the matrix requires the key to be absent when the caller left it
-// zero.
+// zero. CacheControl is the automatic-caching marker: it sits at the top level
+// so the provider advances the breakpoint as the prompt grows.
 type chatRequest struct {
-	Model           string             `json:"model"`
-	Messages        []wireMessage      `json:"messages"`
-	Tools           []provider.ToolDef `json:"tools,omitempty"`
-	ToolChoice      any                `json:"tool_choice,omitempty"`
-	Temperature     *float64           `json:"temperature,omitempty"`
-	MaxTokens       *int               `json:"max_tokens,omitempty"`
-	Stop            []string           `json:"stop,omitempty"`
-	ReasoningEffort string             `json:"reasoning_effort,omitempty"`
-	Stream          bool               `json:"stream"`
-	StreamOptions   map[string]bool    `json:"stream_options,omitempty"`
+	Model           string                 `json:"model"`
+	Messages        []wireMessage          `json:"messages"`
+	Tools           []provider.ToolDef     `json:"tools,omitempty"`
+	ToolChoice      any                    `json:"tool_choice,omitempty"`
+	Temperature     *float64               `json:"temperature,omitempty"`
+	MaxTokens       *int                   `json:"max_tokens,omitempty"`
+	Stop            []string               `json:"stop,omitempty"`
+	ReasoningEffort string                 `json:"reasoning_effort,omitempty"`
+	Stream          bool                   `json:"stream"`
+	StreamOptions   map[string]bool        `json:"stream_options,omitempty"`
+	CacheControl    *provider.CacheControl `json:"cache_control,omitempty"`
 }
 
 // toolCallDelta is one fragment of a streamed tool call. Index is a pointer
@@ -111,8 +113,9 @@ type chunkChoice struct {
 // tokenDetails is shared by prompt_tokens_details and
 // completion_tokens_details; each parse simply ignores the other's field.
 type tokenDetails struct {
-	CachedTokens    int `json:"cached_tokens"`
-	ReasoningTokens int `json:"reasoning_tokens"`
+	CachedTokens     int `json:"cached_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"`
+	ReasoningTokens  int `json:"reasoning_tokens"`
 }
 
 // rawUsage is the wire usage object. Cost is a pointer so an absent cost can be
@@ -153,6 +156,7 @@ func usageFromRaw(u *rawUsage) provider.Usage {
 	}
 	if u.PromptTokensDetails != nil {
 		out.CachedTokens = u.PromptTokensDetails.CachedTokens
+		out.CacheWriteTokens = u.PromptTokensDetails.CacheWriteTokens
 	}
 	if u.CompletionTokensDetails != nil {
 		out.ReasoningTokens = u.CompletionTokensDetails.ReasoningTokens

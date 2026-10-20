@@ -367,6 +367,8 @@ type OpenCodeGoConfig struct {
 | RSP19 | idle timeout | text delta, then silence; `IdleTimeout` 50 ms | retryable; text kept |
 | RSP20 | image message sends a content array | a user message with text and a PNG part | `content` is `[input_text, input_image]` with a `data:` URL |
 | RSP21 | text-only content stays a string | `User("hi")` | `content` is the string `"hi"` |
+| RSP22 | cache marker per catalog | non-implicit, implicit, unknown model | top-level `cache_control` present, absent, absent |
+| RSP23 | cache-write tokens mapped | `input_tokens_details.cache_write_tokens` 7 | `Usage.CacheWriteTokens` 7, reads kept |
 | MSG01 | plain text turn | `message_start`, text block, `message_delta(end_turn)`, `message_stop` | one text delta; content; finish `stop` |
 | MSG02 | request body shape | any turn | `model`, `system`, `messages`, `tools.input_schema`, `max_tokens`, `stream:true` |
 | MSG03 | headers | any request | `x-api-key` and `anthropic-version: 2023-06-01` |
@@ -376,7 +378,7 @@ type OpenCodeGoConfig struct {
 | MSG07 | two tool blocks | blocks 0 and 1 | two calls in index order |
 | MSG08 | tool result round-trip | assistant `tool_use` and a user `tool_result` | `tool_result` content block |
 | MSG09 | `tool_choice` mapping | auto and a named tool | `{type:"auto"}` / `{type:"tool", name}` |
-| MSG10 | usage across events | `message_start` input, two `message_delta` outputs | input and summed output |
+| MSG10 | usage across events | `message_start` input 10 + read 2, two `message_delta` outputs | prompt 12 (input + cache counts), read 2, output 7 |
 | MSG11 | stop reason mapping | `end_turn`, `tool_use`, `max_tokens`, `stop_sequence` | `stop`, `tool_calls`, `length`, `stop` |
 | MSG12 | `ping` ignored | ping between events | no event, no error |
 | MSG13 | `error` event | error block | non-retryable `*provider.Error` |
@@ -386,6 +388,9 @@ type OpenCodeGoConfig struct {
 | MSG17 | idle timeout | text block, then silence; `IdleTimeout` 50 ms | retryable; text kept |
 | MSG18 | image message block | a user message with text and a PNG part | `content` is `[text, image]` with a base64 source |
 | MSG19 | text-only message block | `User("hi")` | `content` is one text block, no image |
+| MSG20 | cache marker per catalog | non-implicit, implicit, unknown model; explicit opt-out | top-level `cache_control` present, absent, absent, absent |
+| MSG21 | cache-creation tokens mapped | `cache_creation_input_tokens` 7 | `Usage.CacheWriteTokens` 7, reads kept |
+| MSG22 | prompt tokens include the cache | warm (read 19700) and cold (written 19700) records with input 100 | `PromptTokens` 19800 both times; read/write fields kept |
 | OPG01 | `New` names the provider | any config | `Name()` is `opencodego` |
 | OPG02 | chat model routes to chat | `APIFor("opencode-go/glm-5.3")` | `DialectChat` |
 | OPG03 | responses model routes to Responses | `APIFor("opencode-go/grok-4.7")` | `DialectResponses` |
@@ -446,14 +451,14 @@ type OpenCodeGoConfig struct {
 | OPG32 | sign-in failure names the right provider | OpenCode Go model, no OpenCode Go key | `provider_error` naming OpenCode Go, `nova login opencode-go`, and its env var |
 | OPG33 | the router uses the stable model id | `Model` is the wire slug, `ModelID` the catalog id | the request goes to OpenCode Go, not OpenRouter |
 | OPG34 | an unknown model id falls back | `ModelID` not in the catalog | the request goes to OpenRouter |
-| RSP22 | event that is not JSON | a truncated delta payload after good text | non-retryable invalid-JSON error; earlier text kept |
-| RSP23 | top-level `error` event | `code` and `message` at the top level | `Code` and `Message` read from them |
+| RSP27 | event that is not JSON | a truncated delta payload after good text | non-retryable invalid-JSON error; earlier text kept |
+| RSP28 | top-level `error` event | `code` and `message` at the top level | `Code` and `Message` read from them |
 | RSP24 | incomplete reasons | `max_output_tokens`, `content_filter`, an unknown reason | `length`, `content_filter`, `stop` |
 | RSP25 | stream cut mid-call | added and an argument fragment, then close | retryable; no tool call returned or delivered |
 | RSP26 | call with no `call_id` | a function call without one | a generated id |
-| MSG20 | event that is not JSON | a truncated delta payload after good text | non-retryable invalid-JSON error; earlier text kept |
-| MSG21 | total tokens | input in `message_start`, output in `message_delta` | `TotalTokens` is the sum; the last usage event equals the response usage |
-| MSG22 | unusable arguments in the transcript | a prior `tool_use` with cut-off, empty or non-object arguments | the request encodes; `input` is `{}` |
+| MSG27 | event that is not JSON | a truncated delta payload after good text | non-retryable invalid-JSON error; earlier text kept |
+| MSG28 | total tokens | input in `message_start`, output in `message_delta` | `TotalTokens` is the sum; the last usage event equals the response usage |
+| MSG29 | unusable arguments in the transcript | a prior `tool_use` with cut-off, empty or non-object arguments | the request encodes; `input` is `{}` |
 | MSG23 | `tool_choice` required | `"required"` | `{type:"any"}` |
 | MSG24 | `tool_use` with no id | a block without one | a generated id |
 | MSG25 | error event type | `invalid_request_error` | kept as `Code` |
@@ -467,6 +472,7 @@ type OpenCodeGoConfig struct {
 | TMO24 | `Target` key error and preflight | failing key func; cancelled context, no model, no URL | provider error; the matching error before any request |
 | DSC02 | refresh while routing | `Refresh` in a loop while `APIFor` runs | no race (under `-race`) |
 | DSC03 | empty or unusable models reply | `{"data":[]}`, an error object, HTML, rows without ids | `Refresh` errors; overlay kept; cache not stamped fresh |
+| OPG35 | catalog says which models cache implicitly | every baseline entry | Claude false; the rest true, and a discovered override keeps the baseline flag |
 
 | USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |
 | USG02 | percent clamped | used over limit | percent 100 |

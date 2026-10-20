@@ -445,3 +445,68 @@ func TestResponses_RSP21_TextOnlyContentStaysString(t *testing.T) {
 		t.Errorf("content = %T %v, want the string \"hi\"", got, got)
 	}
 }
+
+// --- prompt caching: RSP22 -------------------------------------------------
+
+// cacheModel registers a catalog entry for the marker decision and returns its
+// id. The catalog is process-wide, so every test uses its own id.
+func cacheModel(t *testing.T, id string, implicit bool) string {
+	t.Helper()
+	provider.RegisterModel(provider.Model{ID: id, Provider: "test", Slug: id, ImplicitCaching: implicit})
+	return id
+}
+
+// cacheMarkerOf returns the request body's top-level cache_control, or nil.
+func cacheMarkerOf(t *testing.T, srv *testkit.Server) map[string]any {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal(srv.Requests()[0].Body, &body); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	marker, _ := body["cache_control"].(map[string]any)
+	return marker
+}
+
+func TestResponses_RSP22_CacheMarkerPerCatalog(t *testing.T) {
+	implicit := cacheModel(t, "rsp22-implicit", true)
+	explicit := cacheModel(t, "rsp22-explicit", false)
+	cases := []struct {
+		name  string
+		model string
+		want  bool
+	}{
+		{"non-implicit model", explicit, true},
+		{"implicit model", implicit, false},
+		{"unknown model", "rsp22-unknown", false},
+	}
+	for _, tc := range cases {
+		p, srv := newProvider(t, Config{}, sse("response.completed", `{"type":"response.completed","response":{"usage":{}}}`))
+		req := provider.Request{Model: tc.model, Messages: []message.Message{message.User("hi")}}
+		if _, _, err := run(t, p, req); err != nil {
+			t.Fatalf("%s: Stream: %v", tc.name, err)
+		}
+		marker := cacheMarkerOf(t, srv)
+		if (marker != nil) != tc.want {
+			t.Errorf("%s: cache_control = %v, want marker %v", tc.name, marker, tc.want)
+			continue
+		}
+		if marker != nil && marker["type"] != "ephemeral" {
+			t.Errorf("%s: marker type = %v, want ephemeral", tc.name, marker["type"])
+		}
+	}
+}
+
+// TestResponses_RSP23_CacheWriteTokensMapped checks the write half of the
+// cache accounting on the Responses dialect.
+func TestResponses_RSP23_CacheWriteTokensMapped(t *testing.T) {
+	p, _ := newProvider(t, Config{},
+		sse("response.completed", `{"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12,"input_tokens_details":{"cached_tokens":3,"cache_write_tokens":7}}}}`),
+	)
+	resp, _, err := run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Usage.CachedTokens != 3 || resp.Usage.CacheWriteTokens != 7 {
+		t.Fatalf("usage = %+v, want 3 read and 7 written", resp.Usage)
+	}
+}

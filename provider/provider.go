@@ -44,15 +44,22 @@ type Request struct {
 	ReasoningEffort string         // "", "low", "medium", or "high"
 	ProviderOptions map[string]any // merged into the wire body by the provider
 	ExtraHeaders    map[string]string
+	// PromptCache overrides whether the request carries an explicit prompt
+	// cache marker. Nil means decide from the catalog; see
+	// RequestCacheControl. A pointer, so true and false are both meaningful.
+	PromptCache *bool
 }
 
 // Usage reports token and cost accounting for one provider call.
 type Usage struct {
-	PromptTokens     int     `json:"prompt_tokens"`
-	CompletionTokens int     `json:"completion_tokens"`
-	ReasoningTokens  int     `json:"reasoning_tokens,omitempty"`
-	TotalTokens      int     `json:"total_tokens"`
-	CachedTokens     int     `json:"cached_tokens,omitempty"`
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	ReasoningTokens  int `json:"reasoning_tokens,omitempty"`
+	TotalTokens      int `json:"total_tokens"`
+	CachedTokens     int `json:"cached_tokens,omitempty"`
+	// CacheWriteTokens counts tokens written into a prompt cache this call.
+	// A cold cache pays the write rate for the prefix it stores.
+	CacheWriteTokens int     `json:"cache_write_tokens,omitempty"`
 	CostUSD          float64 `json:"cost_usd,omitempty"`
 	CostSource       string  `json:"cost_source,omitempty"` // "provider", "catalog", or ""
 }
@@ -64,6 +71,7 @@ func (u *Usage) Add(o Usage) {
 	u.ReasoningTokens += o.ReasoningTokens
 	u.TotalTokens += o.TotalTokens
 	u.CachedTokens += o.CachedTokens
+	u.CacheWriteTokens += o.CacheWriteTokens
 	u.CostUSD += o.CostUSD
 	u.CostSource = combineCostSource(u.CostSource, o.CostSource)
 }

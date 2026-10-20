@@ -182,7 +182,7 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 | OAI46 | finish `stop` but tool calls present | | finish `tool_calls` |
 | OAI47 | finish reason aliases | `end_turn`, `tool_use`, `max_tokens` | normalised |
 | OAI48 | finish reason missing everywhere | | finish `""`; accepted if `[DONE]` seen |
-| OAI49 | usage mapping | all fields incl. cached and reasoning tokens and `cost` | every field mapped; `CostSource` `provider` |
+| OAI49 | usage mapping | all fields incl. cached, cache-write, and reasoning tokens and `cost` | every field mapped; `CostSource` `provider` |
 | OAI50 | usage absent | | zero usage; no error |
 | OAI51 | `Response.Model` from stream | | stream's model name |
 | OAI52 | `onEvent` nil | | no panic |
@@ -199,8 +199,12 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 | OAI63 | image message sends a content array | a user message with text and a PNG part | `content` is `[text, image_url]` with a `data:` URL |
 | OAI64 | image-only message sends a content array | a user message with one image and no text | `content` is one `image_url` block |
 | OAI65 | text-only content stays a string | `User("hi")` | `content` is the string `"hi"`, not an array |
-| OAI66 | error object after output has started | a chunk with `error` and `finish_reason` `error` after a text delta | non-retryable `*provider.Error` with the code; the delivered text is kept |
-| OAI67 | `finish_reason` `error` with no error object | text, then a chunk finishing with `error` | non-retryable `*provider.Error`; the delivered text is kept |
+| OAI66 | cache marker for a non-implicit model | a catalog model with `ImplicitCaching` false | top-level `cache_control` is `{"type":"ephemeral"}` |
+| OAI67 | no marker for an implicit, unknown, or opted-out model | catalog true; no catalog entry; `PromptCache` false | no `cache_control` key |
+| OAI68 | an explicit `ProviderOptions` marker wins | model that gets no marker, option sets one | the option's `cache_control` is sent |
+| OAI69 | cache-write tokens mapped | `prompt_tokens_details.cache_write_tokens` 7 | `Usage.CacheWriteTokens` 7, reads kept |
+| OAI70 | error object after output has started | a chunk with `error` and `finish_reason` `error` after a text delta | non-retryable `*provider.Error` with the code; the delivered text is kept |
+| OAI71 | `finish_reason` `error` with no error object | text, then a chunk finishing with `error` | non-retryable `*provider.Error`; the delivered text is kept |
 
 ## Fuzz and property tests
 

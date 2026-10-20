@@ -98,14 +98,15 @@ func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 		msgs = []wireMessage{}
 	}
 	data, err := json.Marshal(request{
-		Model:       req.Model,
-		System:      system,
-		Messages:    msgs,
-		Stream:      true,
-		MaxTokens:   cmp.Or(max(req.MaxTokens, 0), p.cfg.MaxTokens),
-		Tools:       provider.MapTools(req.Tools, flattenTool),
-		ToolChoice:  mapToolChoice(req.ToolChoice),
-		Temperature: req.Temperature,
+		Model:        req.Model,
+		System:       system,
+		Messages:     msgs,
+		Stream:       true,
+		MaxTokens:    cmp.Or(max(req.MaxTokens, 0), p.cfg.MaxTokens),
+		Tools:        provider.MapTools(req.Tools, flattenTool),
+		ToolChoice:   mapToolChoice(req.ToolChoice),
+		Temperature:  req.Temperature,
+		CacheControl: provider.RequestCacheControl(req),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("messages: encode request: %w", err)
@@ -135,8 +136,13 @@ func consume(s *ssestream.Stream, model string, onEvent func(provider.StreamEven
 		ev.Type = cmp.Or(ev.Type, raw.Name)
 		switch ev.Type {
 		case "message_start":
-			usage.PromptTokens = ev.Message.Usage.InputTokens
-			usage.CachedTokens = ev.Message.Usage.CacheReadInputTokens
+			// Anthropic's input_tokens is the uncached remainder; the cache
+			// counts are separate. Usage.PromptTokens means the whole prompt
+			// on every dialect, so sum all three here.
+			u := ev.Message.Usage
+			usage.PromptTokens = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+			usage.CachedTokens = u.CacheReadInputTokens
+			usage.CacheWriteTokens = u.CacheCreationInputTokens
 			report()
 		case "content_block_start":
 			if ev.ContentBlock.Type == "tool_use" {

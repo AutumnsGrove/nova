@@ -157,6 +157,7 @@ func Resolve(cfgKey string, env func(string) string, store Store) (key, source s
 | ORT10 | routing options reach the wire | server records body | `provider` object present |
 | ORT11 | catalog entries valid | every entry | non-empty fields, positive window |
 | ORT12 | catalog has the default model | | registered under its stable ID |
+| ORT13 | catalog says which models cache implicitly | every entry | Anthropic false; DeepSeek and OpenAI true |
 | PKC01 | verifier length and alphabet | 1,000 verifiers | 43–128 chars, only unreserved characters |
 | PKC02 | verifiers are unique | 1,000 verifiers | no duplicates |
 | PKC03 | challenge for a known vector | RFC 7636 appendix B vector | matches the published challenge |

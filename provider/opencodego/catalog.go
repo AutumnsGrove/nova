@@ -19,6 +19,11 @@ type baselineModel struct {
 	inPerM     float64
 	outPerM    float64
 	multimodal bool
+	// implicitCaching is true when the upstream caches a repeated prefix on its
+	// own, so Nova must not send a cache marker. Claude needs one; the rest
+	// cache automatically, and an unknown gateway is safer without a parameter
+	// it might reject.
+	implicitCaching bool
 }
 
 // baseline is the code-defined catalog. It is the offline fallback and the
@@ -29,13 +34,13 @@ type baselineModel struct {
 // Context windows are a conservative 200,000 tokens until discovery reads the
 // live metadata, because the Go page does not list them.
 var baseline = []baselineModel{
-	{idPrefix + "deepseek-v4.1-flash", "DeepSeek V4.1 Flash", DialectChat, 200_000, 0.15, 0.60, false},
-	{idPrefix + "glm-5.3", "GLM-5.3", DialectChat, 200_000, 1.40, 4.40, false},
-	{idPrefix + "glm-5.3-flash", "GLM-5.3-Flash", DialectChat, 200_000, 0.15, 0.50, false},
-	{idPrefix + "kimi-k3", "Kimi K3", DialectChat, 200_000, 3.00, 15.00, false},
-	{idPrefix + "grok-4.7", "Grok 4.7", DialectResponses, 200_000, 2.00, 6.00, true},
-	{idPrefix + "claude-haiku-5-5", "Claude Haiku 5.5", DialectMessages, 200_000, 0.10, 0.50, true},
-	{idPrefix + "minimax-m3", "MiniMax M3", DialectMessages, 200_000, 0.30, 1.20, false},
+	{idPrefix + "deepseek-v4.1-flash", "DeepSeek V4.1 Flash", DialectChat, 200_000, 0.15, 0.60, false, true},
+	{idPrefix + "glm-5.3", "GLM-5.3", DialectChat, 200_000, 1.40, 4.40, false, true},
+	{idPrefix + "glm-5.3-flash", "GLM-5.3-Flash", DialectChat, 200_000, 0.15, 0.50, false, true},
+	{idPrefix + "kimi-k3", "Kimi K3", DialectChat, 200_000, 3.00, 15.00, false, true},
+	{idPrefix + "grok-4.7", "Grok 4.7", DialectResponses, 200_000, 2.00, 6.00, true, true},
+	{idPrefix + "claude-haiku-5-5", "Claude Haiku 5.5", DialectMessages, 200_000, 0.10, 0.50, true, false},
+	{idPrefix + "minimax-m3", "MiniMax M3", DialectMessages, 200_000, 0.30, 1.20, false, true},
 }
 
 // baselineFor returns the baseline entry for a catalog id.
@@ -74,20 +79,21 @@ func RegisterModels() {
 	catalog := make([]provider.Model, 0, len(baseline)+len(overlay))
 	table := make(map[string]Dialect, len(baseline)+len(overlay))
 	add := func(m provider.Model, d Dialect) {
-		m = withBaselineModalities(m)
+		m = withBaselineFlags(m)
 		provider.RegisterModel(m)
 		catalog = append(catalog, m)
 		table[m.ID] = d
 	}
 	for _, b := range baseline {
 		add(provider.Model{
-			ID:            b.id,
-			Name:          b.name,
-			Provider:      ProviderName,
-			Slug:          stripPrefix(b.id),
-			ContextWindow: b.context,
-			InPerM:        b.inPerM,
-			OutPerM:       b.outPerM,
+			ID:              b.id,
+			Name:            b.name,
+			Provider:        ProviderName,
+			Slug:            stripPrefix(b.id),
+			ContextWindow:   b.context,
+			InPerM:          b.inPerM,
+			OutPerM:         b.outPerM,
+			ImplicitCaching: b.implicitCaching,
 		}, b.dialect)
 	}
 	for _, d := range overlay {
@@ -99,13 +105,19 @@ func RegisterModels() {
 	mu.Unlock()
 }
 
-// withBaselineModalities restores the image flag on a model the baseline lists
-// as multimodal. Discovery does not report input modalities, so without this a
-// live entry would replace the baseline one and lose the flag; anything else
-// stays text only.
-func withBaselineModalities(m provider.Model) provider.Model {
-	if b, ok := baselineFor(m.ID); ok && b.multimodal && len(m.InputModalities) == 0 {
-		m.InputModalities = []string{"text", "image"}
+// withBaselineFlags restores what discovery does not report on a model the
+// baseline lists: image input, and whether the upstream caches a prefix by
+// itself. Without this a live entry would replace the baseline one and lose
+// both; anything else defaults to text only and to needing an explicit cache
+// marker.
+func withBaselineFlags(m provider.Model) provider.Model {
+	if b, ok := baselineFor(m.ID); ok {
+		if b.multimodal && len(m.InputModalities) == 0 {
+			m.InputModalities = []string{"text", "image"}
+		}
+		if b.implicitCaching {
+			m.ImplicitCaching = true
+		}
 	}
 	return m
 }

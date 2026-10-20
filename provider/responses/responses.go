@@ -100,6 +100,7 @@ func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 		Stream:          true,
 		Tools:           provider.MapTools(req.Tools, flattenTool),
 		ToolChoice:      req.ToolChoice,
+		CacheControl:    provider.RequestCacheControl(req),
 		Temperature:     req.Temperature,
 		MaxOutputTokens: cmp.Or(max(req.MaxTokens, 0), p.cfg.MaxOutputTokens),
 	}
@@ -168,6 +169,7 @@ func usageOf(ev event) provider.Usage {
 		CompletionTokens: u.OutputTokens,
 		ReasoningTokens:  u.OutputDetails.ReasoningTokens,
 		CachedTokens:     u.InputDetails.CachedTokens,
+		CacheWriteTokens: u.InputDetails.CacheWriteTokens,
 		TotalTokens:      u.TotalTokens,
 	}
 }

@@ -238,7 +238,9 @@ func TestMessages_MSG10_UsageAcrossEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.Usage.PromptTokens != 10 || resp.Usage.CachedTokens != 2 || resp.Usage.CompletionTokens != 7 {
+	// Anthropic reports input_tokens without the cached part, so the total
+	// prompt is the sum of the three fields (MSG10, #34).
+	if resp.Usage.PromptTokens != 12 || resp.Usage.CachedTokens != 2 || resp.Usage.CompletionTokens != 7 {
 		t.Fatalf("usage = %+v", resp.Usage)
 	}
 }
@@ -407,5 +409,104 @@ func TestMessages_MSG19_TextOnlyStaysTextBlock(t *testing.T) {
 	content, _ := body["messages"].([]any)[0].(map[string]any)["content"].([]any)
 	if len(content) != 1 || content[0].(map[string]any)["type"] != "text" {
 		t.Errorf("content = %v, want one text block", content)
+	}
+}
+
+// --- prompt caching: MSG20 -------------------------------------------------
+
+// cacheModel registers a catalog entry for the marker decision and returns its
+// id. The catalog is process-wide, so every test uses its own id.
+func cacheModel(t *testing.T, id string, implicit bool) string {
+	t.Helper()
+	provider.RegisterModel(provider.Model{ID: id, Provider: "test", Slug: id, ImplicitCaching: implicit})
+	return id
+}
+
+// cacheMarkerOf returns the request body's top-level cache_control, or nil.
+func cacheMarkerOf(t *testing.T, srv *testkit.Server) map[string]any {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal(srv.Requests()[0].Body, &body); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	marker, _ := body["cache_control"].(map[string]any)
+	return marker
+}
+
+func TestMessages_MSG20_CacheMarkerPerCatalog(t *testing.T) {
+	implicit := cacheModel(t, "msg20-implicit", true)
+	explicit := cacheModel(t, "msg20-explicit", false)
+	off := false
+	cases := []struct {
+		name  string
+		model string
+		opt   *bool
+		want  bool
+	}{
+		{"non-implicit model", explicit, nil, true},
+		{"implicit model", implicit, nil, false},
+		{"unknown model", "msg20-unknown", nil, false},
+		{"explicit opt-out", explicit, &off, false},
+	}
+	for _, tc := range cases {
+		p, srv := newProvider(t, Config{}, sse("message_stop", `{"type":"message_stop"}`))
+		req := provider.Request{Model: tc.model, PromptCache: tc.opt, Messages: []message.Message{message.User("hi")}}
+		if _, _, err := run(t, p, req); err != nil {
+			t.Fatalf("%s: Stream: %v", tc.name, err)
+		}
+		marker := cacheMarkerOf(t, srv)
+		if (marker != nil) != tc.want {
+			t.Errorf("%s: cache_control = %v, want marker %v", tc.name, marker, tc.want)
+			continue
+		}
+		if marker != nil && marker["type"] != "ephemeral" {
+			t.Errorf("%s: marker type = %v, want ephemeral", tc.name, marker["type"])
+		}
+	}
+}
+
+// TestMessages_MSG21_CacheWriteTokensMapped checks cache creation tokens from
+// message_start land in the write field.
+func TestMessages_MSG21_CacheWriteTokensMapped(t *testing.T) {
+	p, _ := newProvider(t, Config{},
+		sse("message_start", `{"type":"message_start","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":2,"cache_creation_input_tokens":7}}}`),
+		sse("message_stop", `{"type":"message_stop"}`),
+	)
+	resp, _, err := run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Usage.CachedTokens != 2 || resp.Usage.CacheWriteTokens != 7 {
+		t.Fatalf("usage = %+v, want 2 read and 7 written", resp.Usage)
+	}
+}
+
+// TestMessages_MSG22_PromptTokensIncludeCache checks that PromptTokens is the
+// whole prompt on this dialect too. Anthropic's input_tokens is the uncached
+// remainder, so reads and writes are added back (#34).
+func TestMessages_MSG22_PromptTokensIncludeCache(t *testing.T) {
+	cases := []struct {
+		name    string
+		usage   string
+		prompt  int
+		read    int
+		written int
+	}{
+		{"warm cache", `{"input_tokens":100,"cache_read_input_tokens":19700}`, 19800, 19700, 0},
+		{"cold cache", `{"input_tokens":100,"cache_creation_input_tokens":19700}`, 19800, 0, 19700},
+	}
+	for _, tc := range cases {
+		p, _ := newProvider(t, Config{},
+			sse("message_start", `{"type":"message_start","message":{"usage":`+tc.usage+`}}`),
+			sse("message_stop", `{"type":"message_stop"}`),
+		)
+		resp, _, err := run(t, p, provider.Request{Model: "m"})
+		if err != nil {
+			t.Fatalf("%s: Stream: %v", tc.name, err)
+		}
+		u := resp.Usage
+		if u.PromptTokens != tc.prompt || u.CachedTokens != tc.read || u.CacheWriteTokens != tc.written {
+			t.Errorf("%s: usage = %+v, want prompt %d read %d written %d", tc.name, u, tc.prompt, tc.read, tc.written)
+		}
 	}
 }

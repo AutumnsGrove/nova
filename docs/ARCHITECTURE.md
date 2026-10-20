@@ -272,6 +272,25 @@ triggers when estimated context exceeds `context_limit - reserve`.
 If summarisation fails, the run continues without compaction and an event reports
 it. A failed compaction never loses entries.
 
+### What stays stable for the prompt cache
+
+A request to a model that does not cache implicitly carries a top-level
+`cache_control` marker (`provider.RequestCacheControl`), so the provider places the
+breakpoint at the end of the prompt. That only pays off if the prefix does not
+change between turns:
+
+- The agent's turn request is append-only: each request starts with the previous
+  request's messages unchanged (`LPW02` is the guard). Compaction is the one
+  deliberate rewrite; it is rare, and it invalidates the cache once by design.
+- Pruning stale tool output rewrites tool results, so it costs a cache miss for
+  the span it touches. It stays worth it, because it is triggered by the context
+  limit, not every turn.
+- A `transform_context` hook or a `before_provider_request` hook that rewrites the
+  history chooses its own cache cost. Place a prompt-injection guard or a
+  plan-mode note at the end (as `bundled/plan` does), not in the middle.
+- Never re-marshal a prefix with different key order or whitespace: the marker
+  caches bytes, not meaning.
+
 ## 7. Permissions
 
 A declarative policy decides what happens to each tool call before it runs.

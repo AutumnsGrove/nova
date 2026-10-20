@@ -10,7 +10,7 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 )
 
-func TestMessages_MSG20_MalformedEventFailsTheTurn(t *testing.T) {
+func TestMessages_MSG27_MalformedEventFailsTheTurn(t *testing.T) {
 	p, _ := newProvider(t, Config{},
 		sse("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"kept"}}`),
 		sse("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo`),
@@ -28,7 +28,7 @@ func TestMessages_MSG20_MalformedEventFailsTheTurn(t *testing.T) {
 
 // The API reports input and output tokens in different events and no total;
 // the usage line and the ledger read the total.
-func TestMessages_MSG21_TotalTokens(t *testing.T) {
+func TestMessages_MSG28_TotalTokens(t *testing.T) {
 	p, _ := newProvider(t, Config{},
 		sse("message_start", `{"type":"message_start","message":{"usage":{"input_tokens":10}}}`),
 		sse("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}`),
@@ -49,7 +49,7 @@ func TestMessages_MSG21_TotalTokens(t *testing.T) {
 	}
 }
 
-func TestMessages_MSG22_AssistantHistoryWithUnusableArguments(t *testing.T) {
+func TestMessages_MSG29_AssistantHistoryWithUnusableArguments(t *testing.T) {
 	// A model that is cut off mid-call leaves arguments that are not JSON. The
 	// transcript keeps them, and the next request must still encode.
 	for name, args := range map[string]string{"cut off": `{"path":"a`, "empty": ``, "not an object": `null`} {

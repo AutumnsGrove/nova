@@ -161,6 +161,8 @@ func setNestedNode(doc *yaml.Node, parts []string, value any) error {
 				mapping.Content = append(mapping.Content,
 					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: part}, vn)
 			} else {
+				old := mapping.Content[valAt]
+				vn.HeadComment, vn.LineComment, vn.FootComment = old.HeadComment, old.LineComment, old.FootComment
 				mapping.Content[valAt] = vn
 			}
 			return nil

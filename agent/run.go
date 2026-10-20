@@ -312,7 +312,7 @@ func (r *run) finish(res *Result, err error) (*Result, error) {
 		r.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: code, Message: err.Error()}})
 	}
 	if r.cfg.Hooks.AgentEnd != nil {
-		runHookUnder(r, context.WithoutCancel(r.ctx), "agent_end", func(ctx context.Context) struct{} {
+		runHookUnder(context.WithoutCancel(r.ctx), r, "agent_end", func(ctx context.Context) struct{} {
 			r.cfg.Hooks.AgentEnd(ctx, res)
 			return struct{}{}
 		})

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -211,6 +212,82 @@ func TestOpencodego_DSC01_DiscoveryRefresh(t *testing.T) {
 	}
 	if err := LoadCache(cache); err != nil {
 		t.Fatalf("LoadCache: %v", err)
+	}
+}
+
+// A reply with no model ids is a failed refresh. Accepting it would replace the
+// overlay with nothing and mark the cache fresh, hiding every live model for
+// the cache's lifetime.
+func TestOpencodego_DSC03_EmptyListKeepsTheOverlay(t *testing.T) {
+	for name, reply := range map[string]string{
+		"empty data":      `{"data":[]}`,
+		"error object":    `{"error":"overloaded"}`,
+		"not json":        `<html>gateway</html>`,
+		"rows without id": `{"data":[{"name":"x"},""]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			setOverlay([]Discovered{{ID: "opencode-go/kept-model", Name: "Kept", Slug: "kept-model", ContextWindow: 1}})
+			t.Cleanup(func() { setOverlay(nil) })
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(reply))
+			}))
+			t.Cleanup(srv.Close)
+			cache := filepath.Join(t.TempDir(), "cache.json")
+
+			if err := Refresh(context.Background(), DiscoveryConfig{BaseURL: srv.URL, ModelsDevURL: srv.URL, CachePath: cache}); err == nil {
+				t.Fatal("Refresh succeeded on a reply with no models")
+			}
+			mu.RLock()
+			kept := slices.ContainsFunc(Catalog, func(m provider.Model) bool { return m.ID == "opencode-go/kept-model" })
+			mu.RUnlock()
+			if !kept {
+				t.Error("the previous overlay was dropped")
+			}
+			if CacheFresh(cache, time.Hour) {
+				t.Error("a failed refresh stamped the cache fresh")
+			}
+		})
+	}
+}
+
+// Discovery runs in a goroutine at startup while the first turn is already
+// routing, so a refresh must not race the readers of the endpoint table. Run
+// under -race this fails on the unsynchronised map and overlay.
+func TestOpencodego_DSC02_RefreshIsSafeWhileRouting(t *testing.T) {
+	modelsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"claude-new"},{"id":"other-new"}]}`))
+	}))
+	t.Cleanup(modelsSrv.Close)
+	devSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(devSrv.Close)
+
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	for range 4 {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					APIFor("opencode-go/claude-new")
+				}
+			}
+		}()
+	}
+	for range 20 {
+		if err := Refresh(context.Background(), DiscoveryConfig{BaseURL: modelsSrv.URL, ModelsDevURL: devSrv.URL}); err != nil {
+			t.Errorf("Refresh: %v", err)
+		}
+	}
+	close(stop)
+	readers.Wait()
+	if APIFor("opencode-go/claude-new") != DialectMessages {
+		t.Errorf("claude-new routed to %q after the refreshes", APIFor("opencode-go/claude-new"))
 	}
 }
 

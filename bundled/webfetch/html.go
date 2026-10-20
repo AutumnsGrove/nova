@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/net/html"
 )
@@ -26,7 +28,7 @@ func htmlToMarkdown(body []byte, base *url.URL) string {
 	}
 	c := &converter{base: base, hasMain: hasElement(doc, "main", "article")}
 	c.walk(doc, 0, 0)
-	return collapseBlank(normalize(c.b.String()))
+	return tidy(c.b.String())
 }
 
 // hasElement reports whether the tree contains any of the named elements.
@@ -51,6 +53,15 @@ type converter struct {
 	b       strings.Builder
 	base    *url.URL
 	hasMain bool
+	// pre is set inside a <pre> block, where whitespace is content and inline
+	// markup is not rendered.
+	pre bool
+}
+
+// fresh returns an empty converter with the same page context, for rendering a
+// fragment that is post-processed before it joins the output.
+func (c *converter) fresh() *converter {
+	return &converter{base: c.base, hasMain: c.hasMain}
 }
 
 // walk renders one node. listDepth is the current list nesting, quoteDepth the
@@ -71,6 +82,9 @@ func (c *converter) walk(n *html.Node, listDepth, quoteDepth int) {
 	case dropElements[n.Data]:
 		return
 	case c.hasMain && blockBoilerplate[n.Data]:
+		return
+	case c.pre && n.Data != "br":
+		c.children(n, listDepth, quoteDepth)
 		return
 	}
 	switch n.Data {
@@ -102,17 +116,15 @@ func (c *converter) walk(n *html.Node, listDepth, quoteDepth int) {
 	case "img":
 		c.image(n)
 	case "code":
-		if n.Parent != nil && n.Parent.Data == "pre" {
-			c.children(n, listDepth, quoteDepth)
-			return
-		}
 		c.b.WriteString("`")
 		c.children(n, listDepth, quoteDepth)
 		c.b.WriteString("`")
 	case "pre":
 		c.block()
 		c.b.WriteString("```\n")
+		c.pre = true
 		c.children(n, listDepth, quoteDepth)
+		c.pre = false
 		if !strings.HasSuffix(c.b.String(), "\n") {
 			c.b.WriteString("\n")
 		}
@@ -146,29 +158,40 @@ func (c *converter) children(n *html.Node, listDepth, quoteDepth int) {
 
 // subtree renders a node's children into a fresh converter and returns it.
 func (c *converter) subtree(n *html.Node, listDepth, quoteDepth int) string {
-	inner := &converter{base: c.base, hasMain: c.hasMain}
+	inner := c.fresh()
 	inner.children(n, listDepth, quoteDepth)
 	return inner.b.String()
 }
 
 // link renders an anchor, resolving a relative href.
 func (c *converter) link(n *html.Node, listDepth, quoteDepth int) {
-	href := attr(n, "href")
+	href := strings.TrimSpace(attr(n, "href"))
 	text := strings.TrimSpace(c.subtree(n, listDepth, quoteDepth))
-	if href == "" || strings.HasPrefix(href, "#") || strings.HasPrefix(href, "javascript:") {
+	if href == "" || strings.HasPrefix(href, "#") || inertTarget(href) {
 		c.b.WriteString(text)
 		return
 	}
 	c.b.WriteString("[" + text + "](" + c.resolve(href) + ")")
 }
 
-// image renders an image, resolving a relative src.
+// inertTarget reports whether a link or image target is script or an inline
+// payload. Neither is useful to read, and a data: URI can be megabytes.
+func inertTarget(ref string) bool {
+	ref = strings.ToLower(ref)
+	return strings.HasPrefix(ref, "javascript:") || strings.HasPrefix(ref, "vbscript:") || strings.HasPrefix(ref, "data:")
+}
+
+// image renders an image, resolving a relative src. An image with no usable
+// source is reduced to its alt text.
 func (c *converter) image(n *html.Node) {
-	src := attr(n, "src")
-	if src == "" {
-		return
+	src, alt := strings.TrimSpace(attr(n, "src")), attr(n, "alt")
+	switch {
+	case src == "":
+	case inertTarget(src):
+		c.b.WriteString(alt)
+	default:
+		c.b.WriteString("![" + alt + "](" + c.resolve(src) + ")")
 	}
-	c.b.WriteString("![" + attr(n, "alt") + "](" + c.resolve(src) + ")")
 }
 
 // resolve turns a relative URL into an absolute one against the base.
@@ -198,7 +221,7 @@ func (c *converter) list(n *html.Node, depth int, ordered bool) {
 			c.b.WriteString("- ")
 		}
 		// Render the item, then nested lists on following lines.
-		inner := &converter{base: c.base, hasMain: c.hasMain}
+		inner := c.fresh()
 		inner.children(li, depth+1, 0)
 		c.b.WriteString(strings.TrimSpace(inner.b.String()))
 		c.b.WriteString("\n")
@@ -280,22 +303,35 @@ func textOf(n *html.Node) string {
 
 // text writes collapsed text: runs of whitespace become one space, and a
 // leading or trailing space in the source is preserved so inline runs do not
-// run together.
+// run together. Inside <pre> the text is written as it is.
 func (c *converter) text(s string) {
-	if strings.TrimSpace(s) == "" {
-		c.b.WriteString(" ")
+	if c.pre {
+		c.b.WriteString(s)
 		return
 	}
-	lead := strings.TrimLeft(s, " \t\r\n") != s
-	trail := strings.TrimRight(s, " \t\r\n") != s
 	collapsed := strings.Join(strings.Fields(s), " ")
-	if lead {
-		c.b.WriteString(" ")
+	if collapsed == "" {
+		c.space()
+		return
+	}
+	if first, _ := utf8.DecodeRuneInString(s); unicode.IsSpace(first) {
+		c.space()
 	}
 	c.b.WriteString(collapsed)
-	if trail {
-		c.b.WriteString(" ")
+	if last, _ := utf8.DecodeLastRuneInString(s); unicode.IsSpace(last) {
+		c.space()
 	}
+}
+
+// space writes one separating space, unless the output is empty or already ends
+// in whitespace. Without that, blank text between block elements piles up as
+// leading spaces that markdown reads as an indented code block.
+func (c *converter) space() {
+	cur := c.b.String()
+	if cur == "" || cur[len(cur)-1] == ' ' || cur[len(cur)-1] == '\n' {
+		return
+	}
+	c.b.WriteByte(' ')
 }
 
 // block ensures a blank line separates block elements.
@@ -324,23 +360,20 @@ func attr(n *html.Node, key string) string {
 	return ""
 }
 
-// collapseBlank removes trailing spaces on each line and leading/trailing blank
-// lines.
-func collapseBlank(s string) string {
+// manyNewlines matches the runs of blank lines that tidy shortens.
+var manyNewlines = regexp.MustCompile(`\n{3,}`)
+
+// tidy removes trailing spaces on each line, which can leave a "blank" line
+// holding only spaces, then collapses runs of blank lines to one and trims the
+// document. The order matters: blank lines are only countable after the spaces
+// are gone.
+func tidy(s string) string {
 	lines := strings.Split(s, "\n")
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
-	out := strings.Join(lines, "\n")
-	return strings.TrimSpace(out + "\n")
-}
-
-// multipleSpaces collapses runs of three or more newlines to two.
-var multipleSpaces = regexp.MustCompile(`\n{3,}`)
-
-// normalize softens excessive blank lines.
-func normalize(s string) string {
-	return multipleSpaces.ReplaceAllString(s, "\n\n")
+	out := manyNewlines.ReplaceAllString(strings.Join(lines, "\n"), "\n\n")
+	return strings.TrimSpace(out)
 }
 
 // windows1252 maps the C1 range to the glyphs Windows-1252 uses there.

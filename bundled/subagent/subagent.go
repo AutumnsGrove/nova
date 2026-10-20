@@ -5,10 +5,12 @@ package subagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/ext"
@@ -23,6 +25,7 @@ import (
 // Defaults and limits.
 const (
 	maxDepthCap   = 3
+	defaultSlots  = 4
 	resultCap     = 20000
 	defaultSystem = "You are a sub-agent. Finish the task you are given and report the result concisely."
 	defaultTools  = "read,list,glob,grep,web_fetch"
@@ -52,11 +55,26 @@ type Extension struct {
 	env      *ext.Env
 	registry toolRegistry
 	maxDepth int
-	sem      chan struct{}
+	// slots bounds concurrent sub-agents, with one semaphore per depth. A
+	// sub-agent holds its slot for as long as it runs, so a single shared
+	// semaphore would let parents fill it and then deadlock waiting for the
+	// slots their own children need.
+	slots [maxDepthCap]chan struct{}
 }
 
 // New returns a fresh subagent extension with the default concurrency cap.
-func New() *Extension { return &Extension{sem: make(chan struct{}, 4)} }
+func New() *Extension {
+	e := &Extension{}
+	e.setSlots(defaultSlots)
+	return e
+}
+
+// setSlots gives every depth a fresh semaphore of n slots.
+func (e *Extension) setSlots(n int) {
+	for i := range e.slots {
+		e.slots[i] = make(chan struct{}, n)
+	}
+}
 
 // Name is the extension name.
 func (e *Extension) Name() string { return toolName }
@@ -70,7 +88,7 @@ func (e *Extension) Init(env *ext.Env) error {
 			e.maxDepth = d
 		}
 		if n := env.Config.Subagent.MaxConcurrent; n > 0 {
-			e.sem = make(chan struct{}, n)
+			e.setSlots(n)
 		}
 	}
 	if e.maxDepth > maxDepthCap {
@@ -125,12 +143,13 @@ func (e *Extension) run(ctx context.Context, args json.RawMessage, tctx *tool.Co
 	}
 	// max_turns is optional: no default and no cap. A caller that wants a bound
 	// passes one, and 0 means the child runs until it finishes.
+	sem := e.slots[min(depth, len(e.slots)-1)]
 	select {
-	case e.sem <- struct{}{}:
+	case sem <- struct{}{}:
 	case <-ctx.Done():
 		return tool.Errorf("cancelled"), nil
 	}
-	defer func() { <-e.sem }()
+	defer func() { <-sem }()
 
 	started := time.Now()
 	res, err := e.env.Spawn(ctx, ext.SpawnRequest{
@@ -140,18 +159,18 @@ func (e *Extension) run(ctx context.Context, args json.RawMessage, tctx *tool.Co
 		Model:    in.Model,
 		MaxTurns: in.MaxTurns,
 		Depth:    depth,
+		// Only tool_call names the tool; tool_start carries just the call id.
 		OnEvent: func(ev proto.Event) {
-			if ev.Type == proto.EventToolStart || ev.Type == proto.EventToolCall {
-				name := ""
-				if ev.Call != nil {
-					name = ev.Call.Name
-				}
-				if tctx != nil {
-					tctx.Progress("▸ " + name)
-				}
+			if ev.Type == proto.EventToolCall && ev.Call != nil {
+				tctx.Progress("▸ " + ev.Call.Name)
 			}
 		},
 	})
+	// A child that failed or was aborted still spent tokens, so the run is
+	// charged for them before the failure is reported.
+	if res != nil && tctx != nil && tctx.AddUsage != nil {
+		tctx.AddUsage(res.Usage)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return tool.Errorf("cancelled"), nil
@@ -161,15 +180,8 @@ func (e *Extension) run(ctx context.Context, args json.RawMessage, tctx *tool.Co
 	if res == nil {
 		return tool.Errorf("sub-agent returned no result"), nil
 	}
-	if tctx != nil {
-		tctx.Progress(fmt.Sprintf("done after %d turn(s)", res.Turns))
-	}
-	content := res.Answer
-	truncated := false
-	if len(content) > resultCap {
-		content = content[:resultCap]
-		truncated = true
-	}
+	tctx.Progress(fmt.Sprintf("done after %d turn(s)", res.Turns))
+	content, truncated := cutAnswer(res.Answer)
 	if res.Reason == "exhausted" {
 		content += "\n(sub-agent exhausted its turn budget)"
 	}
@@ -182,6 +194,18 @@ func (e *Extension) run(ctx context.Context, args json.RawMessage, tctx *tool.Co
 		"nested_usage": res.Usage,
 	})
 	return tool.Result{Content: content, Truncated: truncated, Details: details}, nil
+}
+
+// cutAnswer cuts an answer to resultCap bytes without splitting a character.
+func cutAnswer(s string) (string, bool) {
+	if len(s) <= resultCap {
+		return s, false
+	}
+	n := resultCap
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n], true
 }
 
 // resolveTools validates the requested tools. An empty request uses the
@@ -209,7 +233,7 @@ func (e *Extension) resolveTools(requested []string, depth int) ([]string, error
 		}
 		if name == toolName {
 			if !allowSub {
-				return nil, fmt.Errorf("subagent is not available at this depth")
+				return nil, errors.New("subagent is not available at this depth")
 			}
 			out = append(out, name)
 			continue
@@ -247,12 +271,9 @@ type Spawner struct {
 // Spawn runs one child loop and returns its result.
 func (s *Spawner) Spawn(ctx context.Context, req ext.SpawnRequest) (*ext.SpawnResult, error) {
 	if s.Provider == nil {
-		return nil, fmt.Errorf("subagent: no provider")
+		return nil, errors.New("subagent: no provider")
 	}
-	maxDepth := s.MaxDepth
-	if maxDepth <= 0 {
-		maxDepth = 1
-	}
+	maxDepth := min(max(s.MaxDepth, 1), maxDepthCap)
 	if req.Depth >= maxDepth {
 		return nil, fmt.Errorf("subagent: depth limit of %d reached", maxDepth)
 	}
@@ -304,10 +325,7 @@ func (s *Spawner) Spawn(ctx context.Context, req ext.SpawnRequest) (*ext.SpawnRe
 		Emit:      s.emit(req.OnEvent),
 	})
 	res, err := ag.Run(ctx, nil, message.User(req.Task))
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
+	if res == nil {
 		return nil, err
 	}
 	if s.Ledger != nil {
@@ -316,7 +334,8 @@ func (s *Spawner) Spawn(ctx context.Context, req ext.SpawnRequest) (*ext.SpawnRe
 	mu.Lock()
 	tools := append([]string(nil), used...)
 	mu.Unlock()
-	return &ext.SpawnResult{Answer: res.Answer, Turns: res.Turns, Usage: res.Usage, Reason: res.Reason, Tools: tools}, nil
+	// A failed run still returns what it spent, so the caller can account for it.
+	return &ext.SpawnResult{Answer: res.Answer, Turns: res.Turns, Usage: res.Usage, Reason: res.Reason, Tools: tools}, err
 }
 
 // prefixedAsk marks a child's permission question as coming from a sub-agent.
@@ -330,7 +349,16 @@ func (s *Spawner) prefixedAsk() func(context.Context, agent.Question) (bool, err
 	}
 }
 
-// emit forwards every child event to the caller's observer and the host's.
+// hostVisible reports whether a child event may join the host's event stream.
+// A child's run, turn, message, and usage events carry run ids that collide with
+// the parent's, and a subscriber ends the whole request at the first run_end, so
+// only events that stand on their own are passed on.
+func hostVisible(typ string) bool {
+	return typ == proto.EventPermission || typ == proto.EventExtensionError
+}
+
+// emit forwards every child event to the caller's observer, and the events that
+// make sense on their own to the host's stream.
 func (s *Spawner) emit(onEvent func(proto.Event)) func(proto.Event) {
 	if onEvent == nil && s.Emit == nil {
 		return nil
@@ -339,7 +367,7 @@ func (s *Spawner) emit(onEvent func(proto.Event)) func(proto.Event) {
 		if onEvent != nil {
 			onEvent(ev)
 		}
-		if s.Emit != nil {
+		if s.Emit != nil && hostVisible(ev.Type) {
 			s.Emit(ev)
 		}
 	}

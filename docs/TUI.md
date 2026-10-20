@@ -121,17 +121,23 @@ child's tool activity as progress lines inside the same panel. Under `mono` or
 
 ## Input
 
-- Multi-line editor (`bubbles/v2/textarea`). `enter` sends, `shift+enter` or `alt+enter`
-  newline, `ctrl+g` opens `$EDITOR`. It grows to 10 visual rows (soft wraps count too) and
+- Multi-line editor (`bubbles/v2/textarea`). `enter` sends, `shift+enter`
+  inserts a newline, `alt+enter` queues a follow-up, `ctrl+g` opens `$EDITOR` (which may carry
+  arguments, such as `code --wait`). It grows to 10 visual rows (soft wraps count too) and
   follows the cursor past that. Its prompt, text, placeholder, and cursor use the active theme.
 - `/` opens command completion: built-ins, prompt templates, and extension commands.
 - `@` completes file paths.
-- `!cmd` runs a shell command and shows the output; `!!cmd` runs it without adding it
-  to the model's context.
-- Pasted text over a size limit is attached as a block, not inserted raw.
+- `!cmd` runs a shell command and shows its output in an overlay (escape sequences stripped, at
+  most 500 lines); `!!cmd` runs it without adding it to the model's context.
+- Pasted text over 8,000 characters is attached as a block (`[pasted N chars]`), not inserted raw;
+  the full text is sent.
+- Messages a run queued but never consumed come back into the editor, steering first, after any
+  draft: from the `abort` response and from `run_end.dropped_queue`.
+- Messages from the UI itself (an unknown command, a failed sign-in, a refused action) appear as
+  short toasts above the status region.
 - Input history on `up` and `down`.
 
-### Keys (defaults, all rebindable in config)
+### Keys (defaults; the keymap is fixed, the `keybindings` config key is not read yet)
 
 | Key | Action |
 |---|---|
@@ -147,6 +153,9 @@ child's tool activity as progress lines inside the same panel. Under `mono` or
 | `pgup` / `pgdn` | scroll the transcript |
 | `home` / `end` | jump to the top / bottom of the transcript |
 | `tab` | complete |
+| `ctrl+g` | edit the prompt in `$EDITOR` |
+| `ctrl+v` | attach an image from the clipboard |
+| `?` | key and command help (empty editor) |
 
 Mouse wheel and trackpad scroll the transcript. Over a multi-line editor that
 overflows its rows, the wheel scrolls the editor window instead, without moving

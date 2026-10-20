@@ -10,6 +10,5 @@ import (
 // prompt, so history is the whole model-facing transcript. Code that has a
 // prompt should use Agent.Run, which also takes it.
 func Run(ctx context.Context, cfg Config, history []message.Message) (*Result, error) {
-	a := New(cfg)
-	return a.run(ctx, history, nil)
+	return New(cfg).run(ctx, history, nil)
 }

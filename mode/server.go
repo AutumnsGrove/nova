@@ -137,6 +137,9 @@ type Server struct {
 	logins  map[string]*loginFlow
 	loginWG sync.WaitGroup
 
+	// extStarted closes when the background extension start has finished.
+	extStarted chan struct{}
+
 	// life ends when the server closes. notifyCh feeds the one goroutine that
 	// delivers fire-and-forget UI requests in order; notifying (guarded by mu)
 	// records that it has started.
@@ -189,7 +192,9 @@ func New(opt Options) (*Server, error) {
 		uiPending: map[string]chan proto.UIResponse{},
 		ledger:    usage.NewLedger(provider.GetModel),
 		logins:    map[string]*loginFlow{},
-		notifyCh:  make(chan proto.UIRequest, notifyQueueSize),
+
+		extStarted: make(chan struct{}),
+		notifyCh:   make(chan proto.UIRequest, notifyQueueSize),
 	}
 	s.life, s.stopLife = context.WithCancel(context.Background())
 	s.fallbackConv = newConversationID()
@@ -247,7 +252,9 @@ func New(opt Options) (*Server, error) {
 	if !opt.NoTools {
 		for _, b := range bundled.Enabled(cfg) {
 			if err := s.ext.AddBundled(b); err != nil {
-				_ = s.Close()
+				if s.store != nil {
+					_ = s.store.Close()
+				}
 				return nil, fmt.Errorf("mode: add bundled extension: %w", err)
 			}
 		}
@@ -538,6 +545,7 @@ func (s *Server) Close() error {
 	if store != nil {
 		storeErr = store.Close()
 	}
+	<-s.extStarted
 	ctx, cancel := context.WithTimeout(context.Background(), extShutdownTimeout)
 	defer cancel()
 	return errors.Join(storeErr, s.ext.Shutdown(ctx))

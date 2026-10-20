@@ -125,18 +125,11 @@ func TestHandlers_SVA04_GetExtensions(t *testing.T) {
 	}
 
 	withExt := newExtServer(t, []string{writeDeclExt(t, "decl_tool_sva04")})
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		rows := decodeArray(t, withExt.Handle(context.Background(), proto.Command{Type: proto.CmdGetExtensions}))
-		if len(rows) > 0 {
-			if rows[0]["name"] != "decl" {
-				t.Fatalf("extension status = %v", rows[0])
-			}
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
+	waitExtStarted(t, withExt)
+	rows := decodeArray(t, withExt.Handle(context.Background(), proto.Command{Type: proto.CmdGetExtensions}))
+	if len(rows) == 0 || rows[0]["name"] != "decl" {
+		t.Fatalf("get_extensions after start = %v, want the loaded extension", rows)
 	}
-	t.Fatal("get_extensions never listed the loaded extension")
 }
 
 func TestSession_SVA05_RememberSessionAddsAllow(t *testing.T) {

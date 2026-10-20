@@ -36,14 +36,20 @@ func newExtServer(t *testing.T, dirs []string) *Server {
 
 func TestModeExt_LoadsDeclarativeTool(t *testing.T) {
 	s := newExtServer(t, []string{writeDeclExt(t, "hello")})
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, ok := s.tools.Get("hello"); ok {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
+	waitExtStarted(t, s)
+	if _, ok := s.tools.Get("hello"); !ok {
+		t.Fatalf("declarative extension tool never registered: %v", s.tools.Names())
 	}
-	t.Fatalf("declarative extension tool never registered: %v", s.tools.Names())
+}
+
+// waitExtStarted blocks until the server's background extension start is done.
+func waitExtStarted(t *testing.T, s *Server) {
+	t.Helper()
+	select {
+	case <-s.extStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("extensions never finished starting")
+	}
 }
 
 func TestModeExt_Disabled(t *testing.T) {
@@ -56,7 +62,7 @@ func TestModeExt_Disabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	time.Sleep(100 * time.Millisecond)
+	waitExtStarted(t, s)
 	if _, ok := s.tools.Get("hello"); ok {
 		t.Fatal("disabled extension still loaded")
 	}

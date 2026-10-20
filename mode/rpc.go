@@ -40,13 +40,6 @@ func (c *rpcConn) write(v any) error {
 	return c.w.Write(v)
 }
 
-// close makes every later write fail.
-func (c *rpcConn) close() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.closed = true
-}
-
 // ServeRPC runs the stdio JSONL loop: a hello frame, then commands and events.
 // Events are written by their own goroutine, so a slow command (a reload that
 // waits for a run, a long bash) never stalls them and never gets the
@@ -125,7 +118,9 @@ func ServeRPC(ctx context.Context, s *Server, in io.Reader, out io.Writer) error
 	unsubscribe()
 	_ = s.Close()
 	wg.Wait()
-	c.close()
+	c.mu.Lock() // from here every write fails
+	c.closed = true
+	c.mu.Unlock()
 	return nil
 }
 

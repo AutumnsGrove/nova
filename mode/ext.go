@@ -79,8 +79,10 @@ func (s *Server) spawn(ctx context.Context, r ext.SpawnRequest) (*ext.SpawnResul
 }
 
 // startExtensions starts the host in the background and reports a per-extension
-// failure as an extension_error event.
+// failure as an extension_error event. extStarted closes when it is done, so
+// Close never shuts the host down while it is still starting processes.
 func (s *Server) startExtensions() {
+	defer close(s.extStarted)
 	for _, err := range s.ext.Start(context.Background()) {
 		s.emitExtensionError(err)
 	}

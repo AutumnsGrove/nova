@@ -2,6 +2,7 @@ package mode
 
 import (
 	"context"
+	"slices"
 
 	"github.com/AutumnsGrove/nova/proto"
 )
@@ -67,11 +68,7 @@ func (c *Client) serveUI(ctx context.Context, req proto.UIRequest) (proto.UIResp
 
 // fireAndForgetMethod reports a UI method that needs no answer.
 func fireAndForgetMethod(method string) bool {
-	switch method {
-	case "notify", "status", "widget", "title", "set_editor_text":
-		return true
-	}
-	return false
+	return slices.Contains([]string{"notify", "status", "widget", "title", "set_editor_text"}, method)
 }
 
 // Events is the client's event stream.

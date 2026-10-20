@@ -7,18 +7,21 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 )
 
-// request is the Responses API request body.
+// request is the Responses API request body. CacheControl is the
+// automatic-caching marker; only a gateway that forwards to Anthropic uses it,
+// and RequestCacheControl keeps it off a model that caches by itself.
 type request struct {
-	Model           string         `json:"model"`
-	Instructions    string         `json:"instructions,omitempty"`
-	Input           []inputItem    `json:"input"`
-	Stream          bool           `json:"stream"`
-	Tools           []toolDef      `json:"tools,omitempty"`
-	ToolChoice      any            `json:"tool_choice,omitempty"`
-	Temperature     *float64       `json:"temperature,omitempty"`
-	MaxOutputTokens *int           `json:"max_output_tokens,omitempty"`
-	Reasoning       *reasoning     `json:"reasoning,omitempty"`
-	Extra           map[string]any `json:"-"`
+	Model           string                 `json:"model"`
+	Instructions    string                 `json:"instructions,omitempty"`
+	Input           []inputItem            `json:"input"`
+	Stream          bool                   `json:"stream"`
+	Tools           []toolDef              `json:"tools,omitempty"`
+	ToolChoice      any                    `json:"tool_choice,omitempty"`
+	Temperature     *float64               `json:"temperature,omitempty"`
+	MaxOutputTokens *int                   `json:"max_output_tokens,omitempty"`
+	Reasoning       *reasoning             `json:"reasoning,omitempty"`
+	CacheControl    *provider.CacheControl `json:"cache_control,omitempty"`
+	Extra           map[string]any         `json:"-"`
 }
 
 // inputItem is one input entry: a role message, a function call, or a function

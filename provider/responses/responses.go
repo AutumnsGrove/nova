@@ -117,6 +117,7 @@ func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 		Stream:       true,
 		Tools:        flattenTools(req.Tools),
 		ToolChoice:   req.ToolChoice,
+		CacheControl: provider.RequestCacheControl(req),
 	}
 	if req.Temperature != nil {
 		r.Temperature = req.Temperature

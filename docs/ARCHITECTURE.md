@@ -206,14 +206,15 @@ Rules the loop must keep, each of which has tests in [`TESTING.md`](TESTING.md):
 - **Cancellation.** `ctx` cancel aborts the provider call and is passed to every tool.
   A cancelled run returns the partial transcript and `ctx.Err()`.
 - **Panics.** A panic in a tool becomes an error result, in sequential mode as well
-  as parallel. (The prototype recovers only in parallel mode. That is a known bug.)
+  as parallel.
 - **Order.** Results are appended in call order regardless of completion order.
 - **Spend is never lost.** If the provider fails, the usage already accrued is
   returned with the error.
 - **Steering and follow-up.** Two queues, as in Pi. A *steering* message is injected
   after the current assistant turn finishes its tool calls. A *follow-up* message is
   run after the agent has finished all pending work. Abort returns queued messages
-  to the caller.
+  to the caller. Once the loop has made its last decision to end, a new message is
+  refused with `ErrNotRunning` rather than accepted and lost.
 - **Retry.** A transient provider failure retries with exponential backoff, up to a
   configured count, and emits `retry` events. This includes a network timeout: a
   connect or idle timeout is a retryable error on every provider dialect, and the

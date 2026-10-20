@@ -246,6 +246,8 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV51 | concurrent session commands | `session.new` beside `get_messages`, `get_state`, `session.tree`, `set_model` | race-free under `-race` |
 | SRV52 | `set_tools` with an unknown or repeated name | `["bash","nope"]`, `["read","read"]` | `bad_request`; the registry is unchanged |
 | SRV53 | `session.list` when the directory cannot be read | a file where the directory tree should be | `internal`; a missing directory is still an empty list |
+| SRV54 | fire-and-forget UI requests keep their order | several `Notify` calls to a pipe client | every request arrives, in order |
+| SRV55 | a client that never reads | more `Notify` calls than the queue holds | `Notify` never blocks |
 | PRI01 | print mode answer | scripted "42" | stdout is `42\n`; exit 0 |
 | PRI02 | stdout has only the answer | tool calls in the run | tool progress only on stderr |
 | PRI03 | `-p -` reads stdin | | prompt from stdin |

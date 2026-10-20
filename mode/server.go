@@ -137,6 +137,14 @@ type Server struct {
 	logins  map[string]*loginFlow
 	loginWG sync.WaitGroup
 
+	// life ends when the server closes. notifyCh feeds the one goroutine that
+	// delivers fire-and-forget UI requests in order; notifying (guarded by mu)
+	// records that it has started.
+	life      context.Context
+	stopLife  context.CancelFunc
+	notifyCh  chan proto.UIRequest
+	notifying bool
+
 	// fallbackConv identifies the conversation when no session store is open
 	// (print mode with no session), so a provider still sees one stable id.
 	fallbackConv string
@@ -180,7 +188,9 @@ func New(opt Options) (*Server, error) {
 		limit:     cfg.ContextLimit,
 		uiPending: map[string]chan proto.UIResponse{},
 		ledger:    usage.NewLedger(provider.GetModel),
+		notifyCh:  make(chan proto.UIRequest, notifyQueueSize),
 	}
+	s.life, s.stopLife = context.WithCancel(context.Background())
 	s.fallbackConv = newConversationID()
 	s.prov = opt.Provider
 	if s.prov == nil {
@@ -521,6 +531,7 @@ func (s *Server) Close() error {
 	s.closed = true
 	store := s.store
 	s.mu.Unlock()
+	s.stopLife()
 	s.closeLogins()
 	var storeErr error
 	if store != nil {

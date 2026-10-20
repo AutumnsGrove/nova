@@ -160,19 +160,66 @@ func (b uiBridge) Request(ctx context.Context, req proto.UIRequest) (proto.UIRes
 	return b.s.callUI(ctx, req)
 }
 
+// Notify queues a fire-and-forget request for the client. It never blocks the
+// calling extension: when the client is so far behind that the queue is full,
+// the request is dropped, as a lagging event subscriber is.
 func (b uiBridge) Notify(req proto.UIRequest) {
 	if !b.s.supportsUI("ui." + req.Method) {
 		return
 	}
-	b.s.uiMu.Lock()
-	h := b.s.uiHandler
-	b.s.uiMu.Unlock()
+	b.s.startNotifier()
+	select {
+	case b.s.notifyCh <- req:
+	default:
+	}
+}
+
+// notifyQueueSize bounds the fire-and-forget requests waiting for the client,
+// and notifyTimeout bounds how long the client gets to take one.
+const (
+	notifyQueueSize = 64
+	notifyTimeout   = time.Second
+)
+
+// startNotifier starts the single goroutine that delivers fire-and-forget
+// requests, once, unless the server is closed. One goroutine keeps updates to
+// the same status or widget key in the order the extension sent them.
+func (s *Server) startNotifier() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.notifying {
+		return
+	}
+	s.notifying = true
+	go s.notifyLoop()
+}
+
+// notifyLoop delivers queued requests until the server closes. Close does not
+// wait for it: a handler stuck writing to a dead client must not hang Close.
+func (s *Server) notifyLoop() {
+	for {
+		select {
+		case <-s.life.Done():
+			return
+		case req := <-s.notifyCh:
+			s.deliverNotify(req)
+		}
+	}
+}
+
+// deliverNotify hands one request to the current UI handler. A panicking
+// handler loses that request, not the loop.
+func (s *Server) deliverNotify(req proto.UIRequest) {
+	defer diag.Catch("ui notify")
+	s.uiMu.Lock()
+	h := s.uiHandler
+	s.uiMu.Unlock()
 	if h == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(s.life, notifyTimeout)
 	defer cancel()
-	go func() { defer diag.Catch("ui notify"); _, _ = h(ctx, req) }()
+	_, _ = h(ctx, req)
 }
 
 // errUnsupportedUI reports a UI method the attached client cannot answer.

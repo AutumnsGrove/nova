@@ -17,8 +17,8 @@ import (
 	"github.com/AutumnsGrove/nova/tui/splash"
 )
 
-// pasteLimit is the character count above which a paste is attached as a
-// block instead of inserted into the editor.
+// pasteLimit is the character (not byte) count above which a paste is attached
+// as a block instead of inserted into the editor.
 const pasteLimit = 8000
 
 // errNoEditor is returned when ctrl+g is pressed without $EDITOR.
@@ -33,11 +33,17 @@ func (m *Model) setEditorText(s string) {
 }
 
 // expandPasted replaces paste markers with their full content before sending.
+// One replacer pass keeps the result independent of map order and never
+// re-expands a marker that appears inside pasted text.
 func (m *Model) expandPasted(text string) string {
-	for marker, full := range m.pasted {
-		text = strings.ReplaceAll(text, marker, full)
+	if len(m.pasted) == 0 {
+		return text
 	}
-	return text
+	pairs := make([]string, 0, 2*len(m.pasted))
+	for marker, full := range m.pasted {
+		pairs = append(pairs, marker, full)
+	}
+	return strings.NewReplacer(pairs...).Replace(text)
 }
 
 // afterEditorChange recomputes completion from the current editor text and
@@ -68,7 +74,7 @@ func (m *Model) submit(action string) tea.Cmd {
 	text := m.expandPasted(raw)
 	switch {
 	case strings.HasPrefix(raw, "/"):
-		name, args := splitCommand(raw)
+		name, args := splitCommand(text)
 		if cmd, handled := m.localCommand(name, args); handled {
 			m.setEditorText("")
 			return cmd

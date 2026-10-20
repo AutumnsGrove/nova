@@ -6,7 +6,13 @@ import (
 	"errors"
 	"os"
 	"slices"
+	"strings"
 	"testing"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/AutumnsGrove/nova/proto"
 )
 
 // prepared runs ctrl+g's first command and returns the editor start message.
@@ -20,6 +26,48 @@ func prepared(t *testing.T, m *Model) editorStartMsg {
 		t.Cleanup(func() { _ = os.Remove(msg.path) })
 	}
 	return msg
+}
+
+func TestUI_EDI31_EqualLengthPastesStaySeparate(t *testing.T) {
+	m, f, _ := newModel(t)
+	a, b := strings.Repeat("a", 9000), strings.Repeat("b", 9000)
+	update(m, tea.PasteMsg{Content: a})
+	update(m, tea.PasteMsg{Content: b})
+	do(update(m, enterKey))
+	if len(f.sends) != 1 || f.sends[0].Text != a+b {
+		t.Fatalf("two pastes of equal length were merged: sent %d bytes, a=%d b=%d",
+			len(f.sends[0].Text), strings.Count(f.sends[0].Text, "a"), strings.Count(f.sends[0].Text, "b"))
+	}
+}
+
+func TestUI_EDI32_PasteLimitCountsCharacters(t *testing.T) {
+	m, _, _ := newModel(t)
+	text := strings.Repeat("字", pasteLimit) // 3 bytes each, exactly the limit in characters
+	update(m, tea.PasteMsg{Content: text})
+	if got := m.editor.Value(); got != text {
+		t.Fatalf("a paste of %d characters was collapsed: %.40q", pasteLimit, got)
+	}
+}
+
+func TestUI_EDI33_PasteCountsAsTyping(t *testing.T) {
+	m, _, clk := newModel(t)
+	update(m, tea.PasteMsg{Content: "pasted draft"})
+	clk.now = clk.now.Add(time.Second)
+	m.applyEditorText("from an extension")
+	if got := m.editor.Value(); got != "pasted draft" {
+		t.Fatalf("an extension overwrote a fresh paste: %q", got)
+	}
+}
+
+func TestUI_EDI34_PastedCommandArguments(t *testing.T) {
+	m, f, _ := newModel(t)
+	big := strings.Repeat("y", 9000)
+	m.setEditorText("/note ")
+	update(m, tea.PasteMsg{Content: big})
+	do(update(m, enterKey))
+	if len(f.sends) != 1 || f.sends[0].Type != proto.CmdRunCommand || f.sends[0].Args != big {
+		t.Fatalf("the command received the paste marker instead of the text: %+v", f.sends)
+	}
 }
 
 func TestUI_EDI21_EditorWithArguments(t *testing.T) {

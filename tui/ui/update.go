@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -295,17 +296,31 @@ func (m *Model) decodeStateEvent(raw json.RawMessage) {
 }
 
 // handlePaste attaches a large paste as a block instead of inserting it raw.
+// A paste counts as typing, so an extension's set_editor_text does not wipe it.
 func (m *Model) handlePaste(content string) tea.Cmd {
-	if len(content) > pasteLimit {
-		marker := fmt.Sprintf("[pasted %d chars]", len([]rune(content)))
+	m.lastInput = m.clock.Now()
+	if n := utf8.RuneCountInString(content); n > pasteLimit {
+		marker := m.pasteMarker(n)
 		m.pasted[marker] = content
-		m.editor.InsertString(marker)
-		return nil
+		content = marker
 	}
 	m.editorScrollFree = false
 	m.editor.InsertString(content)
 	m.recompute()
 	return m.afterEditorChange()
+}
+
+// pasteMarker names a collapsed paste of n characters. Two pastes of the same
+// length must not share a marker, or the later one would replace the earlier
+// one's text when the prompt is sent, so a repeat gets a number.
+func (m *Model) pasteMarker(n int) string {
+	marker := fmt.Sprintf("[pasted %d chars]", n)
+	for i := 2; ; i++ {
+		if _, taken := m.pasted[marker]; !taken {
+			return marker
+		}
+		marker = fmt.Sprintf("[pasted %d chars #%d]", n, i)
+	}
 }
 
 // pendingSend remembers an in-flight prompt so an error can restore it.

@@ -234,3 +234,16 @@ func (realClock) Sleep(ctx context.Context, d time.Duration) error {
 		return nil
 	}
 }
+
+// Reconfigure changes the agent's configuration between runs. A run works from
+// the copy it took when it began, so it is refused with ErrBusy while one is
+// active.
+func (a *Agent) Reconfigure(fn func(*Config)) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.running {
+		return ErrBusy
+	}
+	fn(&a.cfg)
+	return nil
+}

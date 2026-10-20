@@ -2,7 +2,7 @@
 chunk: C09
 title: "The agent loop"
 packages: [./agent]
-budgets: { ./agent: 1150 }
+budgets: { ./agent: 1160 }
 depends: [C01, C04, C08]
 ---
 
@@ -396,6 +396,8 @@ history as given, as before.
 | LPR10 | jitter bounds | many runs | delay within `[d, d*(1+Jitter)]` |
 | LPR11 | error on a later turn after tools ran | | transcript valid (ends with tool results); earlier usage kept |
 | LPR12 | `Jitter` zero is the default, negative is none | `RetryPolicy{Base: 1s}` and `Jitter: -1` | zero gives delays in [1s, 1.2s] with some jitter; negative gives exactly 1s |
+| LPX01 | reconfigure applies to the next run | `MaxTurns` 1, run, `Reconfigure` to 3, run again | the second run takes 3 turns |
+| LPX02 | reconfigure is refused during a run | `Reconfigure` while a tool is running | `ErrBusy`, and the callback never runs |
 | LPC01 | cancel before the first request | | only run_start and run_end; reason aborted; `context.Canceled` |
 | LPC02 | cancel during streaming | `Hang` turn | partial message discarded; reason aborted |
 | LPC03 | cancel during a tool | slow tool honouring ctx | results for **all** calls appended (`error: cancelled` for the unfinished); transcript valid; reason aborted |

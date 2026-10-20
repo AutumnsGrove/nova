@@ -191,7 +191,7 @@ func TestWalk_WLK12_RootsContainment(t *testing.T) {
 			t.Fatalf("mkdir: %v", err)
 		}
 	}
-	if _, err := resolve(&tool.Context{WorkDir: dir, Roots: []string{root}}, "outside"); err == nil {
+	if _, err := tool.ResolvePath(&tool.Context{WorkDir: dir, Roots: []string{root}}, "outside"); err == nil {
 		t.Fatal("a path outside the roots should be rejected")
 	}
 }

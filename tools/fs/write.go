@@ -21,8 +21,8 @@ func Write() tool.Tool {
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path":    stringProp("File path (relative to the working directory, or absolute)"),
-				"content": stringProp("Full content to write"),
+				"path":    tool.StringProp("File path (relative to the working directory, or absolute)"),
+				"content": tool.StringProp("Full content to write"),
 			},
 			"required": []string{"path", "content"},
 		},
@@ -37,7 +37,7 @@ func Write() tool.Tool {
 		if len(in.Content) > maxFileBytes {
 			return tool.Errorf("content is %d bytes, over the %d byte limit", len(in.Content), maxFileBytes), nil
 		}
-		abs, err := resolve(tctx, in.Path)
+		abs, err := tool.ResolvePath(tctx, in.Path)
 		if err != nil {
 			return tool.Errorf("%v", err), nil
 		}

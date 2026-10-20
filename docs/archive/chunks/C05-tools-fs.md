@@ -178,6 +178,8 @@ diffMaxLines   = 5000
 | PTH11 | `Roots` set, new file under a symlinked parent that leaves the root | | refused |
 | PTH12 | WorkDir empty | | uses the process directory |
 | PTH13 | spaces and Unicode in path | `dir é/ファイル.txt` | works end to end |
+| PTH14 | `Roots` is the filesystem root `/` | | everything is allowed |
+| PTH15 | `Roots` set, sibling directory sharing the root name as a prefix | `/w/work-secrets` vs root `/w/work` | refused; `..foo` inside the root is allowed |
 | RDF01 | read a normal file | 3 lines | `1\ta`, `2\tb`, `3\tc`; no trailer |
 | RDF02 | trailing newline creates no extra line | `"a\nb\n"` | 2 lines |
 | RDF03 | no trailing newline | `"a\nb"` | 2 lines |

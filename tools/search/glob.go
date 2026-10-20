@@ -1,3 +1,8 @@
+// Package search provides the read-only search tools: glob and grep.
+//
+// Both walk a directory tree with the same rules (deterministic order,
+// .gitignore, hidden files, symlink safety) and cap their output so one call can
+// never flood the model's context.
 package search
 
 import (
@@ -33,10 +38,10 @@ func Glob() tool.Tool {
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"pattern":   stringProp("Glob pattern; `**` matches across directories, `*` and `?` do not. A trailing `/` matches directories only."),
-				"path":      stringProp("Directory to search (default \".\")"),
-				"hidden":    boolProp("Include dot-files and dot-directories"),
-				"no_ignore": boolProp("Ignore .gitignore files"),
+				"pattern":   tool.StringProp("Glob pattern; `**` matches across directories, `*` and `?` do not. A trailing `/` matches directories only."),
+				"path":      tool.StringProp("Directory to search (default \".\")"),
+				"hidden":    tool.BoolProp("Include dot-files and dot-directories"),
+				"no_ignore": tool.BoolProp("Ignore .gitignore files"),
 			},
 			"required": []string{"pattern"},
 		},
@@ -61,7 +66,7 @@ func Glob() tool.Tool {
 		if in.Path == "" {
 			in.Path = "."
 		}
-		root, err := resolve(tctx, in.Path)
+		root, err := tool.ResolvePath(tctx, in.Path)
 		if err != nil {
 			return tool.Errorf("%v", err), nil
 		}

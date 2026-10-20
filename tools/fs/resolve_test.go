@@ -13,7 +13,7 @@ import (
 // TestResolve_PTH01_Relative checks a relative path resolves against WorkDir.
 func TestResolve_PTH01_Relative(t *testing.T) {
 	dir := t.TempDir()
-	got, err := resolve(&tool.Context{WorkDir: dir}, "a.txt")
+	got, err := tool.ResolvePath(&tool.Context{WorkDir: dir}, "a.txt")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestResolve_PTH01_Relative(t *testing.T) {
 func TestResolve_PTH02_Absolute(t *testing.T) {
 	dir := t.TempDir()
 	want := filepath.Join(dir, "y")
-	got, err := resolve(nil, filepath.Join(dir, "x", "..", "y"))
+	got, err := tool.ResolvePath(nil, filepath.Join(dir, "x", "..", "y"))
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -37,22 +37,22 @@ func TestResolve_PTH02_Absolute(t *testing.T) {
 
 // TestResolve_PTH03_Empty checks an empty path is refused.
 func TestResolve_PTH03_Empty(t *testing.T) {
-	if _, err := resolve(nil, ""); err == nil || !strings.Contains(err.Error(), "path is required") {
+	if _, err := tool.ResolvePath(nil, ""); err == nil || !strings.Contains(err.Error(), "path is required") {
 		t.Fatalf("resolve error = %v, want path is required", err)
 	}
 }
 
 // TestResolve_PTH04_NUL checks a NUL byte is refused.
 func TestResolve_PTH04_NUL(t *testing.T) {
-	if _, err := resolve(nil, "a\x00b"); err == nil || !strings.Contains(err.Error(), "invalid path") {
+	if _, err := tool.ResolvePath(nil, "a\x00b"); err == nil || !strings.Contains(err.Error(), "invalid path") {
 		t.Fatalf("resolve error = %v, want invalid path", err)
 	}
 }
 
 // TestResolve_PTH05_TooLong checks a path over the cap is refused.
 func TestResolve_PTH05_TooLong(t *testing.T) {
-	long := strings.Repeat("a", maxPathBytes+1)
-	if _, err := resolve(nil, long); err == nil || !strings.Contains(err.Error(), "path too long") {
+	long := strings.Repeat("a", 4097)
+	if _, err := tool.ResolvePath(nil, long); err == nil || !strings.Contains(err.Error(), "path too long") {
 		t.Fatalf("resolve error = %v, want path too long", err)
 	}
 }
@@ -60,7 +60,7 @@ func TestResolve_PTH05_TooLong(t *testing.T) {
 // TestResolve_PTH06_Cleans checks .. segments are cleaned.
 func TestResolve_PTH06_Cleans(t *testing.T) {
 	dir := t.TempDir()
-	got, err := resolve(&tool.Context{WorkDir: dir}, "a/../b")
+	got, err := tool.ResolvePath(&tool.Context{WorkDir: dir}, "a/../b")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestResolve_PTH06_Cleans(t *testing.T) {
 // TestResolve_PTH07_InsideRoot checks a path inside a root is allowed.
 func TestResolve_PTH07_InsideRoot(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := resolve(&tool.Context{WorkDir: dir, Roots: []string{dir}}, "a.txt"); err != nil {
+	if _, err := tool.ResolvePath(&tool.Context{WorkDir: dir, Roots: []string{dir}}, "a.txt"); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 }
@@ -81,7 +81,7 @@ func TestResolve_PTH07_InsideRoot(t *testing.T) {
 func TestResolve_PTH08_OutsideRoot(t *testing.T) {
 	dir := t.TempDir()
 	ctx := &tool.Context{WorkDir: dir, Roots: []string{dir}}
-	if _, err := resolve(ctx, "../x"); err == nil || !strings.Contains(err.Error(), "outside the allowed directories") {
+	if _, err := tool.ResolvePath(ctx, "../x"); err == nil || !strings.Contains(err.Error(), "outside the allowed directories") {
 		t.Fatalf("resolve error = %v, want outside the allowed directories", err)
 	}
 }
@@ -97,7 +97,7 @@ func TestResolve_PTH09_SymlinkOut(t *testing.T) {
 	secret := testkit.TempTree(t, map[string]string{"secret.txt": "x"})
 	testkit.Symlink(t, root, "link", secret)
 	ctx := &tool.Context{WorkDir: root, Roots: []string{root}}
-	if _, err := resolve(ctx, "link"); err == nil || !strings.Contains(err.Error(), "outside the allowed directories") {
+	if _, err := tool.ResolvePath(ctx, "link"); err == nil || !strings.Contains(err.Error(), "outside the allowed directories") {
 		t.Fatalf("resolve error = %v, want outside the allowed directories", err)
 	}
 }
@@ -107,7 +107,7 @@ func TestResolve_PTH09_SymlinkOut(t *testing.T) {
 func TestResolve_PTH10_NewFileInRoot(t *testing.T) {
 	root := t.TempDir()
 	ctx := &tool.Context{WorkDir: root, Roots: []string{root}}
-	if _, err := resolve(ctx, "a/b/c.txt"); err != nil {
+	if _, err := tool.ResolvePath(ctx, "a/b/c.txt"); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 }
@@ -126,7 +126,7 @@ func TestResolve_PTH11_SymlinkedParent(t *testing.T) {
 	}
 	testkit.Symlink(t, root, "link", outside)
 	ctx := &tool.Context{WorkDir: root, Roots: []string{root}}
-	if _, err := resolve(ctx, "link/new.txt"); err == nil || !strings.Contains(err.Error(), "outside the allowed directories") {
+	if _, err := tool.ResolvePath(ctx, "link/new.txt"); err == nil || !strings.Contains(err.Error(), "outside the allowed directories") {
 		t.Fatalf("resolve error = %v, want outside the allowed directories", err)
 	}
 }
@@ -138,7 +138,7 @@ func TestResolve_PTH12_EmptyWorkDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
-	got, err := resolve(&tool.Context{}, "a.txt")
+	got, err := tool.ResolvePath(&tool.Context{}, "a.txt")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -150,12 +150,42 @@ func TestResolve_PTH12_EmptyWorkDir(t *testing.T) {
 // TestResolve_PTH13_Unicode checks spaces and Unicode in a path.
 func TestResolve_PTH13_Unicode(t *testing.T) {
 	dir := t.TempDir()
-	got, err := resolve(&tool.Context{WorkDir: dir}, "dir é/ファイル.txt")
+	got, err := tool.ResolvePath(&tool.Context{WorkDir: dir}, "dir é/ファイル.txt")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	if !strings.HasPrefix(got, dir) {
 		t.Fatalf("resolve = %q, want a path under %q", got, dir)
+	}
+}
+
+// TestResolve_PTH14_FilesystemRoot checks a root of "/" contains every path.
+func TestResolve_PTH14_FilesystemRoot(t *testing.T) {
+	dir := t.TempDir()
+	ctx := &tool.Context{WorkDir: dir, Roots: []string{string(filepath.Separator)}}
+	if _, err := tool.ResolvePath(ctx, "a.txt"); err != nil {
+		t.Fatalf("ResolvePath under the filesystem root: %v", err)
+	}
+}
+
+// TestResolve_PTH15_SiblingPrefix checks a directory whose name starts with a
+// root's name is not inside that root, while a name that merely starts with
+// dots is.
+func TestResolve_PTH15_SiblingPrefix(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "work")
+	sibling := filepath.Join(base, "work-secrets")
+	for _, d := range []string{root, sibling} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+	}
+	ctx := &tool.Context{WorkDir: root, Roots: []string{root}}
+	if _, err := tool.ResolvePath(ctx, filepath.Join(sibling, "key")); err == nil {
+		t.Fatal("a sibling directory sharing the root's name prefix must be refused")
+	}
+	if _, err := tool.ResolvePath(ctx, "..foo/bar"); err != nil {
+		t.Fatalf("a name that merely starts with dots is inside the root: %v", err)
 	}
 }
 
@@ -167,12 +197,12 @@ func FuzzResolve(f *testing.F) {
 	f.Add("a\x00b")
 	f.Add("")
 	f.Fuzz(func(t *testing.T, path string) {
-		got, err := resolve(&tool.Context{WorkDir: t.TempDir()}, path)
+		got, err := tool.ResolvePath(&tool.Context{WorkDir: t.TempDir()}, path)
 		if err != nil {
 			return
 		}
 		if !filepath.IsAbs(got) || got != filepath.Clean(got) {
-			t.Fatalf("resolve(%q) = %q, want an absolute clean path", path, got)
+			t.Fatalf("tool.ResolvePath(%q) = %q, want an absolute clean path", path, got)
 		}
 	})
 }

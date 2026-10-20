@@ -82,9 +82,9 @@ func Read() tool.Tool {
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path":   stringProp("File path (relative to the working directory, or absolute)"),
-				"offset": intProp("1-indexed line to start from (default 1)"),
-				"limit":  intProp("Maximum number of lines to read (default 2000, max 2000)"),
+				"path":   tool.StringProp("File path (relative to the working directory, or absolute)"),
+				"offset": tool.IntProp("1-indexed line to start from (default 1)"),
+				"limit":  tool.IntProp("Maximum number of lines to read (default 2000, max 2000)"),
 			},
 			"required": []string{"path"},
 		},
@@ -97,7 +97,7 @@ func Read() tool.Tool {
 		if err := json.Unmarshal(args, &in); err != nil {
 			return tool.Result{}, fmt.Errorf("invalid arguments: %w", err)
 		}
-		abs, err := resolve(tctx, in.Path)
+		abs, err := tool.ResolvePath(tctx, in.Path)
 		if err != nil {
 			return tool.Errorf("%v", err), nil
 		}

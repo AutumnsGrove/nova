@@ -40,15 +40,15 @@ func Edit() tool.Tool {
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path": stringProp("File path (relative to the working directory, or absolute)"),
+				"path": tool.StringProp("File path (relative to the working directory, or absolute)"),
 				"edits": map[string]any{
 					"type":        "array",
 					"description": "List of exact-text replacements, matched against the original file.",
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"oldText": stringProp("Exact text to find; must be unique in the original file"),
-							"newText": stringProp("Replacement text"),
+							"oldText": tool.StringProp("Exact text to find; must be unique in the original file"),
+							"newText": tool.StringProp("Replacement text"),
 						},
 						"required": []string{"oldText", "newText"},
 					},
@@ -67,7 +67,7 @@ func Edit() tool.Tool {
 		if len(in.Edits) == 0 {
 			return tool.Errorf("edits must contain at least one replacement"), nil
 		}
-		abs, err := resolve(tctx, in.Path)
+		abs, err := tool.ResolvePath(tctx, in.Path)
 		if err != nil {
 			return tool.Errorf("%v", err), nil
 		}

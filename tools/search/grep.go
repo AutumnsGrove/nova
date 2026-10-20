@@ -47,15 +47,15 @@ func Grep() tool.Tool {
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"pattern":          stringProp("RE2 regular expression"),
-				"path":             stringProp("File or directory to search (default \".\")"),
-				"glob":             stringProp("Only search files whose path matches this glob"),
-				"case_insensitive": boolProp("Case-insensitive matching"),
-				"fixed_strings":    boolProp("Treat pattern as a literal string"),
-				"context":          intProp("Context lines before and after each match (0-10)"),
-				"max_results":      intProp("Maximum matching lines (default 200, max 1000)"),
-				"hidden":           boolProp("Include dot-files and dot-directories"),
-				"no_ignore":        boolProp("Ignore .gitignore files"),
+				"pattern":          tool.StringProp("RE2 regular expression"),
+				"path":             tool.StringProp("File or directory to search (default \".\")"),
+				"glob":             tool.StringProp("Only search files whose path matches this glob"),
+				"case_insensitive": tool.BoolProp("Case-insensitive matching"),
+				"fixed_strings":    tool.BoolProp("Treat pattern as a literal string"),
+				"context":          tool.IntProp("Context lines before and after each match (0-10)"),
+				"max_results":      tool.IntProp("Maximum matching lines (default 200, max 1000)"),
+				"hidden":           tool.BoolProp("Include dot-files and dot-directories"),
+				"no_ignore":        tool.BoolProp("Ignore .gitignore files"),
 			},
 			"required": []string{"pattern"},
 		},
@@ -109,7 +109,7 @@ func Grep() tool.Tool {
 		if in.Path == "" {
 			in.Path = "."
 		}
-		root, err := resolve(tctx, in.Path)
+		root, err := tool.ResolvePath(tctx, in.Path)
 		if err != nil {
 			return tool.Errorf("%v", err), nil
 		}

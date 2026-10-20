@@ -23,8 +23,8 @@ func List() tool.Tool {
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path":    stringProp("Directory path (default \".\")"),
-				"pattern": stringProp("Optional glob pattern matched against entry names"),
+				"path":    tool.StringProp("Directory path (default \".\")"),
+				"pattern": tool.StringProp("Optional glob pattern matched against entry names"),
 			},
 		},
 	}, func(ctx context.Context, args json.RawMessage, tctx *tool.Context) (tool.Result, error) {
@@ -38,7 +38,7 @@ func List() tool.Tool {
 		if in.Path == "" {
 			in.Path = "."
 		}
-		abs, err := resolve(tctx, in.Path)
+		abs, err := tool.ResolvePath(tctx, in.Path)
 		if err != nil {
 			return tool.Errorf("%v", err), nil
 		}

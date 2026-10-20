@@ -77,12 +77,12 @@ func (r *run) turnRequest() (message.Message, provider.Usage, error) {
 // callProvider performs the request and retries a retryable provider error,
 // emitting a retry event before each wait. Cancellation is never retried.
 func (r *run) callProvider(req provider.Request) (message.Message, provider.Usage, error) {
-	max := r.cfg.Retry.Max
+	maxRetries := r.cfg.Retry.Max
 	switch {
-	case max < 0:
-		max = 0
-	case max == 0:
-		max = defaultRetryMax
+	case maxRetries < 0:
+		maxRetries = 0
+	case maxRetries == 0:
+		maxRetries = defaultRetryMax
 	}
 	for attempt := 0; ; attempt++ {
 		msg, usage, err := r.streamOnce(req)
@@ -93,11 +93,11 @@ func (r *run) callProvider(req provider.Request) (message.Message, provider.Usag
 			return message.Message{}, provider.Usage{}, r.ctx.Err()
 		}
 		var pe *provider.Error
-		if attempt >= max || !errors.As(err, &pe) || !pe.Retryable {
+		if attempt >= maxRetries || !errors.As(err, &pe) || !pe.Retryable {
 			return message.Message{}, provider.Usage{}, err
 		}
 		delay := retryDelay(r.cfg.Retry, pe, attempt)
-		r.emit(proto.Event{Type: proto.EventRetry, Attempt: attempt + 1, Max: max, DelayMS: int(delay.Milliseconds()), Error: &proto.Error{Code: proto.CodeProviderError, Message: err.Error()}})
+		r.emit(proto.Event{Type: proto.EventRetry, Attempt: attempt + 1, Max: maxRetries, DelayMS: int(delay.Milliseconds()), Error: &proto.Error{Code: proto.CodeProviderError, Message: err.Error()}})
 		if serr := r.a.clock.Sleep(r.ctx, delay); serr != nil {
 			return message.Message{}, provider.Usage{}, serr
 		}

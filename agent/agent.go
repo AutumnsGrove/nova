@@ -186,8 +186,11 @@ type Agent struct {
 	cfg   Config
 	clock Clock
 
-	mu       sync.Mutex
-	running  bool
+	mu      sync.Mutex
+	running bool
+	// closing is set once the run has made its last decision, so a message
+	// queued after that is refused instead of being accepted and then lost.
+	closing  bool
 	cancel   context.CancelFunc
 	runCount int
 	runID    string

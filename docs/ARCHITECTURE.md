@@ -53,7 +53,7 @@ nova/
                   bash                                          ≤ 400
   permission/     allow/ask/deny policy                         ≤ 340
   proto/          wire types and JSONL framing                  ≤ 600
-  agent/          the loop, hooks, queues, retry                ≤ 1080
+  agent/          the loop, hooks, queues, retry                ≤ 1130
   session/        JSONL tree store, branches, custom entries    ≤ 900
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200

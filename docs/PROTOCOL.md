@@ -106,7 +106,7 @@ turn_end         { run, turn, usage }
 usage            { run, usage, total }              // running totals
 retry            { run, attempt, max, delay_ms, error }      // discard the in-progress message of the current turn
 compaction       { entry, replaced, tokens_before, tokens_after }
-queue_update     { steering, follow_up }
+queue_update     { run, steering, follow_up }       // sizes now; sent on queueing and when the loop takes a message off
 run_end          { run, reason, turns, usage }      // reason: done | exhausted | aborted | error; exhausted only when a bound was set
 error            { run?, code, message }
 extension_error  { extension, hook?, message }

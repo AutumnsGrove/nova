@@ -2,7 +2,6 @@ package agent
 
 import (
 	"github.com/AutumnsGrove/nova/message"
-	"github.com/AutumnsGrove/nova/proto"
 )
 
 // Steer queues a message injected after the current turn's tool results, and
@@ -17,19 +16,18 @@ func (a *Agent) FollowUp(m message.Message) error {
 	return a.enqueue(&a.followUp, m)
 }
 
-// enqueue appends to one queue and emits a queue_update.
+// enqueue appends to one queue and emits a queue_update. A run that has made
+// its final decision refuses the message: nothing would ever consume it.
 func (a *Agent) enqueue(list *[]message.Message, m message.Message) error {
 	a.mu.Lock()
-	if !a.running {
+	if !a.running || a.closing {
 		a.mu.Unlock()
 		return ErrNotRunning
 	}
 	*list = append(*list, m)
-	steering := len(a.steering)
-	followUp := len(a.followUp)
 	run := a.runID
 	a.mu.Unlock()
-	a.emit(proto.Event{Type: proto.EventQueueUpdate, Run: run, Steering: &steering, FollowUp: &followUp})
+	a.emitQueueUpdate(run)
 	return nil
 }
 
@@ -73,13 +71,17 @@ func contents(msgs []message.Message) []string {
 	return out
 }
 
-// drainSteering removes and appends every queued steering message, in order.
+// drainSteering removes and appends every queued steering message, in order,
+// and tells clients the queue shrank so they stop showing them as waiting.
 func (r *run) drainSteering() (int, error) {
 	a := r.a
 	a.mu.Lock()
 	items := a.steering
 	a.steering = nil
 	a.mu.Unlock()
+	if len(items) > 0 {
+		a.emitQueueUpdate(r.id)
+	}
 
 	for _, m := range items {
 		if err := r.record(m, nil); err != nil {
@@ -93,11 +95,26 @@ func (r *run) drainSteering() (int, error) {
 func (r *run) popFollowUp() (message.Message, bool) {
 	a := r.a
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if len(a.followUp) == 0 {
+		a.mu.Unlock()
 		return message.Message{}, false
 	}
 	m := a.followUp[0]
 	a.followUp = a.followUp[1:]
+	a.mu.Unlock()
+	a.emitQueueUpdate(r.id)
 	return m, true
+}
+
+// closeQueues stops the agent accepting messages, unless one arrived since the
+// last drain. The emptiness check and the close are one step under the lock,
+// so a Steer racing the end of the run is either seen here or refused.
+func (a *Agent) closeQueues() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if len(a.steering) > 0 || len(a.followUp) > 0 {
+		return false
+	}
+	a.closing = true
+	return true
 }

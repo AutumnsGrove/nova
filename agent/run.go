@@ -79,6 +79,7 @@ func (a *Agent) begin(ctx context.Context) (*run, func(), error) {
 		return nil, nil, ErrBusy
 	}
 	a.running = true
+	a.closing = false
 	a.runCount++
 	a.runID = fmt.Sprintf("r_%d", a.runCount)
 	runCtx, cancel := context.WithCancel(ctx)
@@ -202,13 +203,33 @@ func (r *run) loop() (*Result, error) {
 			if steered > 0 || continueTurn || injected > 0 {
 				continue
 			}
-			if m, ok := r.popFollowUp(); ok {
-				if err := r.record(m, nil); err != nil {
-					return r.finish(r.result("error"), err)
-				}
+			more, err := r.takeQueued()
+			if err != nil {
+				return r.finish(r.result("error"), err)
+			}
+			if more {
 				continue
 			}
 			return r.finish(r.result("done"), nil)
+		}
+	}
+}
+
+// takeQueued appends the next queued work, steering before follow-ups, and
+// reports whether there was any. It is the run's last word on ending: when it
+// reports false the agent has stopped accepting messages, so nothing queued
+// before that point is left behind.
+func (r *run) takeQueued() (bool, error) {
+	for {
+		n, err := r.drainSteering()
+		if err != nil || n > 0 {
+			return n > 0, err
+		}
+		if m, ok := r.popFollowUp(); ok {
+			return true, r.record(m, nil)
+		}
+		if r.a.closeQueues() {
+			return false, nil
 		}
 	}
 }
@@ -228,11 +249,7 @@ func (r *run) dispatchTools(assistant message.Message) ([]tool.Result, error) {
 	for i, call := range assistant.ToolCalls {
 		results[i] = outcomes[i].result
 		toolUsage.Add(outcomes[i].usage)
-		content := outcomes[i].result.Content
-		if content == "" {
-			content = "(empty result)"
-		}
-		if err := r.record(message.ToolResult(call.ID, content), nil); err != nil {
+		if err := r.record(message.ToolResult(call.ID, outcomes[i].result.Content), nil); err != nil {
 			return results, err
 		}
 	}
@@ -282,6 +299,10 @@ func (r *run) result(reason string) *Result {
 // finish emits the closing events, runs AgentEnd (even after an abort), and
 // returns the result.
 func (r *run) finish(res *Result, err error) (*Result, error) {
+	// AgentEnd can take seconds; a message queued meanwhile would never run.
+	r.a.mu.Lock()
+	r.a.closing = true
+	r.a.mu.Unlock()
 	if err != nil && res.Reason == "error" {
 		code := proto.CodeInternal
 		var pe *provider.Error

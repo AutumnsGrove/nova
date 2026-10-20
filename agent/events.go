@@ -14,6 +14,24 @@ import (
 func (a *Agent) emit(ev proto.Event) {
 	a.emitMu.Lock()
 	defer a.emitMu.Unlock()
+	a.emitLocked(ev)
+}
+
+// emitQueueUpdate reports the queue sizes as they are when the event is
+// sequenced. Reading the counts under the emit lock keeps concurrent callers
+// from emitting them out of order, which would leave a client showing a stale
+// count after the last event.
+func (a *Agent) emitQueueUpdate(runID string) {
+	a.emitMu.Lock()
+	defer a.emitMu.Unlock()
+	a.mu.Lock()
+	steering, followUp := len(a.steering), len(a.followUp)
+	a.mu.Unlock()
+	a.emitLocked(proto.Event{Type: proto.EventQueueUpdate, Run: runID, Steering: &steering, FollowUp: &followUp})
+}
+
+// emitLocked is emit for a caller that already holds emitMu.
+func (a *Agent) emitLocked(ev proto.Event) {
 	a.seq++
 	ev.Seq = a.seq
 	if ev.TS.IsZero() {

@@ -2,7 +2,7 @@
 chunk: C09
 title: "The agent loop"
 packages: [./agent]
-budgets: { ./agent: 1080 }
+budgets: { ./agent: 1130 }
 depends: [C01, C04, C08]
 ---
 
@@ -237,7 +237,9 @@ history as given, as before.
     run (no tool calls, no steering). It is then appended and the run continues. Follow-ups are
     appended **one at a time**: each runs to completion before the next is appended.
 23. Both return `ErrNotRunning` when idle. Both are safe from any goroutine. Each emits
-    `queue_update`.
+    `queue_update`, as does each message the loop takes off a queue. After the run has made its last
+    decision to end, both return `ErrNotRunning` too, so nothing is accepted and then lost. `Abort` emits no
+    event (its response carries the queues), because the run may already have ended.
 24. `Abort` cancels the run's context and returns the unconsumed steering and follow-up
     messages, emptying the queues. Calling it when idle returns two empty slices. Calling it
     twice is harmless.
@@ -314,6 +316,8 @@ history as given, as before.
 | LPT18 | tool progress | tool emits 3 updates | 3 `tool_update` events in order |
 | LPT19 | slow consumer of progress | `Emit` blocks | tool is not blocked; some updates may drop; final result correct |
 | LPT20 | transcript validity after every case in this group | | `message.Validate` passes |
+| LPT21 | progress after the tool returned | a tool keeps `Context.Emit` and calls it after the run | dropped; no panic |
+| LPT22 | `ToolResult` hook blanks a result | hook returns an empty result | `tool_end` and the transcript both say `(empty result)` |
 | LPH01 | `ToolCall` hook blocks | | `error: blocked: <reason>`; tool not run |
 | LPH02 | `ToolCall` hook rewrites arguments | | tool receives the new arguments |
 | LPH03 | `ToolCall` hook returns nil | | normal |
@@ -344,6 +348,7 @@ history as given, as before.
 | LPP08 | `permission` event for every decision | | emitted with the decision and reason |
 | LPP09 | `Ask` honours cancellation | cancel while waiting | returns; run aborts |
 | LPP10 | concurrent asks for parallel calls | 3 calls need approval | each asked; no deadlock |
+| LPP11 | unknown policy action fails closed | `Policy{Default: "alow"}` | `error: blocked by policy: ...`; tool not run |
 | LPQ01 | steer during a tool call | | injected after the turn's results, before the next request |
 | LPQ02 | steer during streaming | | same |
 | LPQ03 | several steering messages | | all appended in order |
@@ -356,6 +361,10 @@ history as given, as before.
 | LPQ10 | `Abort` returns queued messages | | both slices, in order; queues empty |
 | LPQ11 | `Abort` when idle; `Abort` twice | | empty slices; no panic |
 | LPQ12 | concurrent `Steer` and `FollowUp` calls | `-race` | no race; none lost |
+| LPQ13 | `queue_update` when steering is consumed | steer during a tool call | a second event with `steering` 0 follows the injection |
+| LPQ14 | `queue_update` when a follow-up is consumed | follow-up during a turn | a second event with `follow_up` 0 follows the pop |
+| LPQ15 | `queue_update` order under concurrency | 50 concurrent `Steer` calls | the last event reports 50 |
+| LPQ16 | no message accepted once the run is ending | `Steer` and `FollowUp` from `AgentEnd` | `ErrNotRunning`; queues empty |
 | LPR01 | retryable error then success | 500 then ok | success; one `retry` event |
 | LPR02 | retries exhausted | always 500, `Max` 2 | 3 attempts; reason error; error returned |
 | LPR03 | non-retryable error | 401 | one attempt; reason error |

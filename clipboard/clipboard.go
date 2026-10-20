@@ -12,10 +12,14 @@ import (
 // ErrNoImage means the clipboard holds no image.
 var ErrNoImage = errors.New("clipboard: no image on the clipboard")
 
+// ErrTooLarge means the clipboard image is bigger than the reader will hold.
+var ErrTooLarge = errors.New("clipboard: image is too large")
+
 // ErrUnavailable means this host has no clipboard reader at all.
 var ErrUnavailable = errors.New("clipboard: no clipboard available")
 
-// Image is one clipboard image: normalized PNG bytes with a display name.
+// Image is one clipboard image: PNG bytes with a display name. The bytes are
+// as the OS tool produced them; media.Normalize is what makes them safe to send.
 type Image struct {
 	Data     []byte
 	MimeType string

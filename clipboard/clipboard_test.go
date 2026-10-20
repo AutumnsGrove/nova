@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"os/exec"
 	"testing"
 	"time"
 )
@@ -55,5 +56,57 @@ func TestClipboard_CLB04_ReadTimesOut(t *testing.T) {
 	// sleep runs longer than the timeout and would hang the TUI without it.
 	if _, err := (commandReader{name: "sleep", args: []string{"5"}, parse: parseRawPNG}).Read(context.Background()); !errors.Is(err, ErrNoImage) {
 		t.Fatalf("timeout err = %v, want ErrNoImage", err)
+	}
+}
+
+func skipWithout(t *testing.T, tool string) {
+	t.Helper()
+	if _, err := exec.LookPath(tool); err != nil {
+		t.Skipf("%s is not installed", tool)
+	}
+}
+
+// A clipboard can hold an image of any size. The reader stops at a cap and says
+// so, instead of buffering whatever a tool prints.
+func TestClipboard_CLB05_OutputCapped(t *testing.T) {
+	skipWithout(t, "head")
+	old := maxOutput
+	maxOutput = 100
+	defer func() { maxOutput = old }()
+	r := commandReader{name: "head", args: []string{"-c", "1000", "/dev/zero"}, parse: parseRawPNG}
+	if _, err := r.Read(context.Background()); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("err = %v, want ErrTooLarge", err)
+	}
+	r.args = []string{"-c", "100", "/dev/zero"}
+	if img, err := r.Read(context.Background()); err != nil || len(img.Data) != 100 {
+		t.Fatalf("at the cap: %d bytes, err %v, want 100 bytes", len(img.Data), err)
+	}
+}
+
+// A caller that gave up gets its own error, not "no image".
+func TestClipboard_CLB06_CallerCancel(t *testing.T) {
+	skipWithout(t, "sleep")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := (commandReader{name: "sleep", args: []string{"5"}, parse: parseRawPNG}).Read(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
+// A tool that forks a helper keeps the output pipe open after it is killed.
+// The read must still return at the timeout.
+func TestClipboard_CLB07_HelperHoldingPipe(t *testing.T) {
+	skipWithout(t, "sh")
+	old := readTimeout
+	readTimeout = 50 * time.Millisecond
+	defer func() { readTimeout = old }()
+	start := time.Now()
+	r := commandReader{name: "sh", args: []string{"-c", "sleep 3 & sleep 3"}, parse: parseRawPNG}
+	if _, err := r.Read(context.Background()); !errors.Is(err, ErrNoImage) {
+		t.Fatalf("err = %v, want ErrNoImage", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("Read took %v, want it bounded by the timeout", elapsed)
 	}
 }

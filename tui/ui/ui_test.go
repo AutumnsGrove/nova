@@ -1153,15 +1153,21 @@ func TestUI_PST02_NoImageNotice(t *testing.T) {
 	}
 }
 
-func TestUI_PST03_PathAutoAttaches(t *testing.T) {
-	m, f, _ := newModel(t)
+// writePNG writes a tiny valid PNG named name into dir.
+func writePNG(t *testing.T, dir, name string) {
+	t.Helper()
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(m.cwd, "shot.png"), buf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name), buf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestUI_PST03_PathAutoAttaches(t *testing.T) {
+	m, f, _ := newModel(t)
+	writePNG(t, m.cwd, "shot.png")
 	m.setEditorText("describe shot.png")
 	execAll(update(m, enterKey))
 	if len(f.sends) != 1 || len(f.sends[0].Attachments) != 1 {
@@ -1177,13 +1183,7 @@ func TestUI_PST03_PathAutoAttaches(t *testing.T) {
 
 func TestUI_PST04_AtPathAttaches(t *testing.T) {
 	m, f, _ := newModel(t)
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(m.cwd, "shot.png"), buf.Bytes(), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writePNG(t, m.cwd, "shot.png")
 	// Path completion inserts an @ before the path, so submit must strip it
 	// before resolving the file.
 	m.setEditorText("look at @shot.png")

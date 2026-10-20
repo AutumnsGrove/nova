@@ -2,7 +2,7 @@
 chunk: C14
 title: "The serve mode and the GitHub Action"
 packages: [./mode/serve, ./mode/action]
-budgets: { ./mode/serve: 430, ./mode/action: 750 }
+budgets: { ./mode/serve: 440, ./mode/action: 750 }
 depends: [C12]
 ---
 
@@ -238,6 +238,7 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | ATH18 | `*` rejected | | configuration error |
 | ATH19 | preflight | | correct headers |
 | ATH20 | `POST /v1/attachments` stores an image | a PNG body; a non-image body | `{id, mime_type, size_bytes}`; `bad_request` |
+| ATH21 | upload read failure is not "too large" | an upload whose body fails to read; one over `MaxBody` | 400 for the failure, 413 for the oversize body |
 | HTP01 | command round trip | `get_state` | JSON response frame |
 | HTP02 | protocol error is HTTP 200 | unknown command | `{ok:false}` with 200 |
 | HTP03 | wrong content type | `text/plain` | 415 |
@@ -254,6 +255,8 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | HTP14 | graceful shutdown | cancel the context | streams closed with a final comment; returns within 5 s |
 | HTP15 | write deadline on request routes | any route but the event stream | a 30 s write deadline is set, before auth |
 | HTP16 | no write deadline on events | `GET /v1/events` | no deadline; the stream stays open |
+| HTP17 | read deadline on request routes | any route but the event stream | a 2 minute read deadline; none on the event stream, so a body sent a byte at a time cannot hold a handler |
+| HTP18 | an expired UI request is forgotten | `forwardUI`, then `ui_expired` for its id | the id is no longer live, and answering it is a 404 |
 | SSE01 | events stream in order | one run | `id`s increasing; payloads decode |
 | SSE02 | heartbeat | fake clock or short interval | `: ping` lines arrive |
 | SSE03 | headers | | `text/event-stream`, `no-store`, `X-Accel-Buffering: no` |

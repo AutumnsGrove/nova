@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/AutumnsGrove/nova/config"
@@ -517,8 +518,15 @@ func TestServe_HTP14_GracefulShutdown(t *testing.T) {
 // net/http's real response writer accepts one through http.ResponseController.
 type deadlineRecorder struct {
 	*httptest.ResponseRecorder
-	deadline time.Time
-	set      bool
+	deadline     time.Time
+	set          bool
+	readDeadline time.Time
+	readSet      bool
+}
+
+func (d *deadlineRecorder) SetReadDeadline(t time.Time) error {
+	d.readDeadline, d.readSet = t, true
+	return nil
 }
 
 func (d *deadlineRecorder) SetWriteDeadline(t time.Time) error {
@@ -603,5 +611,85 @@ func TestServe_ATH20_AttachmentUpload(t *testing.T) {
 	bad.Body.Close()
 	if bad.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bad upload status = %d, want 400", bad.StatusCode)
+	}
+}
+
+// A client that sends its body a byte at a time would otherwise hold a handler
+// for as long as it likes: the header timeout covers only the headers.
+func TestServe_HTP17_ReadDeadlineOnRequestRoutes(t *testing.T) {
+	s, _ := newModeServer(t, baseConfig())
+	srv, err := newServer(s, Options{})
+	if err != nil {
+		t.Fatalf("newServer: %v", err)
+	}
+	t.Cleanup(srv.close)
+	for _, route := range []struct{ method, path string }{{"POST", "/v1/commands"}, {"POST", "/v1/attachments"}, {"POST", "/v1/ui_response"}} {
+		rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+		before := time.Now()
+		srv.ServeHTTP(rec, httptest.NewRequest(route.method, route.path, strings.NewReader("{}")))
+		if got := rec.readDeadline.Sub(before); !rec.readSet || got < time.Minute || got > 3*time.Minute {
+			t.Errorf("%s %s: read deadline %v from now (set %v), want about 2 minutes", route.method, route.path, got, rec.readSet)
+		}
+	}
+	rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/events", nil).WithContext(ctx))
+	if rec.readSet {
+		t.Error("the event stream got a read deadline")
+	}
+}
+
+// A UI request nobody answers expires inside the mode server. The transport must
+// forget its id then, or the table of live ids only ever grows.
+func TestServe_HTP18_ExpiredUIRequestIsForgotten(t *testing.T) {
+	s, _ := newModeServer(t, baseConfig())
+	srv, err := newServer(s, Options{})
+	if err != nil {
+		t.Fatalf("newServer: %v", err)
+	}
+	t.Cleanup(srv.close)
+	if _, err := srv.forwardUI(context.Background(), proto.UIRequest{ID: "u1"}); err != nil {
+		t.Fatalf("forwardUI: %v", err)
+	}
+	srv.onEvent(proto.Event{Type: proto.EventUIExpired, ID: "u1"})
+	srv.mu.Lock()
+	left := len(srv.pending)
+	srv.mu.Unlock()
+	if left != 0 {
+		t.Fatalf("%d live ui ids after the request expired, want 0", left)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/v1/ui_response", strings.NewReader(`{"type":"ui_response","id":"u1"}`))
+	req.Host = "localhost"
+	req.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("answering an expired request = %d, want 404", rec.Code)
+	}
+}
+
+// Only a body over the limit is "too large"; a body that fails some other way
+// is a bad request, and the message must not claim otherwise.
+func TestServe_ATH21_AttachmentReadFailureIsNotTooLarge(t *testing.T) {
+	s, _ := newModeServer(t, baseConfig())
+	srv, err := newServer(s, Options{MaxBody: 1 << 10})
+	if err != nil {
+		t.Fatalf("newServer: %v", err)
+	}
+	t.Cleanup(srv.close)
+	broken := httptest.NewRequest("POST", "/v1/attachments", iotest.ErrReader(io.ErrUnexpectedEOF))
+	broken.Host = "localhost"
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, broken)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("a failed read = %d, want 400", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	big := httptest.NewRequest("POST", "/v1/attachments", strings.NewReader(strings.Repeat("x", 4<<10)))
+	big.Host = "localhost"
+	srv.ServeHTTP(rec, big)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("an oversize body = %d, want 413", rec.Code)
 	}
 }

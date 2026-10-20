@@ -60,7 +60,7 @@ nova/
   config/         YAML config, trust, context files, skills     ≤ 1460
   mode/           server core, print, json, rpc                 ≤ 2470
     attach/       protocol attachments to content parts         ≤ 160
-    serve/        the protocol over HTTP and SSE                ≤ 430
+    serve/        the protocol over HTTP and SSE                ≤ 440
     action/       the GitHub review action                      ≤ 750
     providers/    build both providers, route by model          ≤ 320
   ext/            extension host, manifest, check, reload,

@@ -1,6 +1,7 @@
 package action
 
 import (
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -112,7 +113,7 @@ func (st *State) runComment(_ context.Context, args json.RawMessage, _ *tool.Con
 	case !severities[c.Severity]:
 		return tool.Errorf("severity must be nit, suggestion, issue, or blocker"), nil
 	}
-	side := def(strings.ToUpper(strings.TrimSpace(c.Side)), "RIGHT")
+	side := cmp.Or(strings.ToUpper(strings.TrimSpace(c.Side)), "RIGHT")
 	if side != "LEFT" && side != "RIGHT" {
 		return tool.Errorf("side must be LEFT or RIGHT"), nil
 	}

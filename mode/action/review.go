@@ -1,6 +1,7 @@
 package action
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -212,10 +213,10 @@ func post(ctx context.Context, gh *GitHub, opt Options, report *Report, omitted 
 
 // resolve fills defaults from the environment and validates the invocation.
 func (o *Options) resolve() error {
-	o.Repo = def(o.Repo, os.Getenv("GITHUB_REPOSITORY"))
-	o.Token = def(o.Token, os.Getenv("GITHUB_TOKEN"))
-	o.APIURL = def(o.APIURL, "https://api.github.com")
-	o.Model = def(o.Model, "openrouter/auto")
+	o.Repo = cmp.Or(o.Repo, os.Getenv("GITHUB_REPOSITORY"))
+	o.Token = cmp.Or(o.Token, os.Getenv("GITHUB_TOKEN"))
+	o.APIURL = cmp.Or(o.APIURL, "https://api.github.com")
+	o.Model = cmp.Or(o.Model, "openrouter/auto")
 	if o.PR == 0 {
 		pr, err := prFromEvent(os.Getenv("GITHUB_EVENT_PATH"))
 		if err != nil {
@@ -233,15 +234,6 @@ func (o *Options) resolve() error {
 		o.DiffMaxBytes = 200 << 10
 	}
 	return nil
-}
-
-// def returns v, or d when v is the zero value.
-func def[T comparable](v, d T) T {
-	var zero T
-	if v == zero {
-		return d
-	}
-	return v
 }
 
 // prFromEvent reads the pull request number from a GitHub event payload.
@@ -304,7 +296,7 @@ func renderComment(c Comment) string { return fmt.Sprintf("**[%s]** %s", c.Sever
 
 // Run is the command entry point: it maps Review's outcome to an exit code.
 func Run(ctx context.Context, s *mode.Server, opt Options) int {
-	opt.Out = def(opt.Out, io.Writer(os.Stdout))
+	opt.Out = cmp.Or(opt.Out, io.Writer(os.Stdout))
 	if !opt.HasKey {
 		fmt.Fprintln(opt.Out, "::notice::Nova review skipped: no model API key is available")
 		return 0
@@ -317,7 +309,7 @@ func Run(ctx context.Context, s *mode.Server, opt Options) int {
 		}
 		return 1
 	}
-	if path := def(opt.StepSummary, os.Getenv("GITHUB_STEP_SUMMARY")); path != "" {
+	if path := cmp.Or(opt.StepSummary, os.Getenv("GITHUB_STEP_SUMMARY")); path != "" {
 		writeSummaryFile(path, report)
 	}
 	if opt.JSON {

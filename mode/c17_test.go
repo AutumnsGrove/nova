@@ -203,7 +203,9 @@ func TestSession_SVA08_RememberIgnoredElsewhere(t *testing.T) {
 	s, _ := testServer(t)
 	c := NewPipe(s, "ui.select")
 	defer c.Close()
+	answered := make(chan struct{})
 	go func() {
+		defer close(answered)
 		_, _ = s.callUI(context.Background(), proto.UIRequest{Type: proto.FrameUIRequest, ID: "u", Method: "select"})
 	}()
 	req := <-c.Requests()
@@ -211,9 +213,11 @@ func TestSession_SVA08_RememberIgnoredElsewhere(t *testing.T) {
 		t.Fatalf("method = %q", req.Method)
 	}
 	c.Answer(proto.UIResponse{Type: proto.FrameUIResponse, ID: req.ID, OK: true, IDs: []string{"a"}, Remember: "session"})
-	time.Sleep(20 * time.Millisecond)
-	if len(s.sessionAllow) != 0 {
-		t.Fatalf("remember on a select added rules: %v", s.sessionAllow)
+	<-answered
+	rules := 0
+	s.sessionAllow.Range(func(_, _ any) bool { rules++; return true })
+	if rules != 0 {
+		t.Fatalf("remember on a select added %d rules", rules)
 	}
 }
 

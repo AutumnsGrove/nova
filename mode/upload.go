@@ -1,8 +1,10 @@
 package mode
 
 import (
+	"cmp"
 	"encoding/base64"
 	"fmt"
+	"slices"
 
 	"github.com/AutumnsGrove/nova/media"
 	"github.com/AutumnsGrove/nova/mode/attach"
@@ -35,12 +37,11 @@ func (s *Server) StoreAttachment(name, _ string, data []byte) (string, error) {
 	return id, nil
 }
 
-// resolveAttachments replaces an attachment that names a stored id with the
-// stored bytes, returning a copy when anything changes. An unknown id is an
-// error, so a prompt never silently loses an upload.
+// resolveAttachments returns a copy of atts in which an attachment that names a
+// stored id is replaced by the stored bytes. An unknown id is an error, so a
+// prompt never silently loses an upload.
 func (s *Server) resolveAttachments(atts []proto.Attachment) ([]proto.Attachment, error) {
-	out := atts
-	changed := false
+	out := slices.Clone(atts)
 	for i, a := range atts {
 		if a.ID == "" {
 			continue
@@ -51,13 +52,7 @@ func (s *Server) resolveAttachments(atts []proto.Attachment) ([]proto.Attachment
 		if !ok {
 			return nil, fmt.Errorf("attachment %q is unknown or expired", a.ID)
 		}
-		if a.Name != "" {
-			stored.Name = a.Name
-		}
-		if !changed {
-			out = append([]proto.Attachment(nil), atts...)
-			changed = true
-		}
+		stored.Name = cmp.Or(a.Name, stored.Name)
 		out[i] = stored
 	}
 	return out, nil

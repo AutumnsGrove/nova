@@ -1,6 +1,7 @@
 package mode
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -38,7 +39,7 @@ func (s *Server) buildExtensionHost() *ext.Host {
 		Emit:        s.emit,
 		NovaVersion: s.opt.Version,
 		CWD:         s.cwd,
-		Mode:        modeName(s.opt.Mode),
+		Mode:        cmp.Or(s.opt.Mode, "rpc"), // "rpc" is the protocol default
 		Env:         os.Environ,
 		ScrubEnv:    s.cfg.Extensions.ScrubEnv,
 		PassEnv:     s.cfg.Extensions.PassEnv,
@@ -228,14 +229,6 @@ var errUnsupportedUI = errors.New("the UI client cannot answer this method")
 // hasExtensionCommand reports whether a running extension owns name.
 func (s *Server) hasExtensionCommand(name string) bool {
 	return slices.ContainsFunc(s.ext.Commands(), func(c ext.Command) bool { return c.Name == name })
-}
-
-// modeName maps an empty mode to "rpc", the protocol default.
-func modeName(mode string) string {
-	if mode == "" {
-		return "rpc"
-	}
-	return mode
 }
 
 // isExtensionDir reports whether dir holds an extension manifest.

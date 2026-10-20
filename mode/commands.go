@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/AutumnsGrove/nova/agent"
@@ -253,9 +254,7 @@ func (s *Server) handleSetModel(cmd proto.Command) proto.Response {
 
 // handleSetThinking switches the reasoning effort.
 func (s *Server) handleSetThinking(cmd proto.Command) proto.Response {
-	switch cmd.Level {
-	case "off", "low", "medium", "high":
-	default:
+	if !slices.Contains([]string{"off", "low", "medium", "high"}, cmd.Level) {
 		return failResponse(cmd, proto.CodeBadRequest, "set_thinking: level must be off, low, medium, or high")
 	}
 	s.mu.Lock()
@@ -268,11 +267,8 @@ func (s *Server) handleSetThinking(cmd proto.Command) proto.Response {
 
 // handleSetContextLimit changes the compaction trigger.
 func (s *Server) handleSetContextLimit(cmd proto.Command) proto.Response {
-	if cmd.Tokens == nil {
-		return failResponse(cmd, proto.CodeBadRequest, "set_context_limit: tokens is required")
-	}
-	if *cmd.Tokens < 0 {
-		return failResponse(cmd, proto.CodeBadRequest, "set_context_limit: tokens must not be negative")
+	if cmd.Tokens == nil || *cmd.Tokens < 0 {
+		return failResponse(cmd, proto.CodeBadRequest, "set_context_limit: tokens is required and must not be negative")
 	}
 	s.mu.Lock()
 	s.limit = *cmd.Tokens

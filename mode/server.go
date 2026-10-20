@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
@@ -125,12 +126,11 @@ type Server struct {
 	uiHandler func(context.Context, proto.UIRequest) (proto.UIResponse, error)
 	uiPending map[string]chan proto.UIResponse
 	uiCaps    map[string]bool
-	uiNext    int64
+	uiNext    atomic.Int64
 
-	// sessionMu guards sessionAllow, the per-server allow rules added by a
-	// "remember: session" permission answer. They are never persisted.
-	sessionMu    sync.Mutex
-	sessionAllow map[string]bool
+	// sessionAllow holds the per-server allow rules added by a "remember:
+	// session" permission answer, tool name to true. They are never persisted.
+	sessionAllow sync.Map
 
 	// logins holds the interactive sign-ins in progress, one per provider id,
 	// guarded by mu. loginWG counts their goroutines so Close can wait.
@@ -188,6 +188,7 @@ func New(opt Options) (*Server, error) {
 		limit:     cfg.ContextLimit,
 		uiPending: map[string]chan proto.UIResponse{},
 		ledger:    usage.NewLedger(provider.GetModel),
+		logins:    map[string]*loginFlow{},
 		notifyCh:  make(chan proto.UIRequest, notifyQueueSize),
 	}
 	s.life, s.stopLife = context.WithCancel(context.Background())

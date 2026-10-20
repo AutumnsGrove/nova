@@ -4,9 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/AutumnsGrove/nova/testkit"
 )
 
 // fakeOpener puts an xdg-open on PATH that writes its first argument to a named
@@ -18,9 +19,7 @@ func fakeOpener(t *testing.T) (fifo string) {
 	}
 	dir := t.TempDir()
 	fifo = filepath.Join(dir, "args")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
-	}
+	testkit.Mkfifo(t, fifo)
 	script := "#!/bin/sh\nprintf '%s' \"$1\" > '" + fifo + "'\n"
 	if err := os.WriteFile(filepath.Join(dir, "xdg-open"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)

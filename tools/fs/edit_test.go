@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
+	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -510,9 +510,7 @@ func TestEdit_EDT35_ThroughSymlink(t *testing.T) {
 // file instead of blocking on it.
 func TestEdit_EDT36_NotRegular(t *testing.T) {
 	dir := t.TempDir()
-	if err := syscall.Mkfifo(filepath.Join(dir, "pipe"), 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
-	}
+	testkit.Mkfifo(t, filepath.Join(dir, "pipe"))
 	done := make(chan tool.Result, 1)
 	go func() { done <- edit(t, dir, "pipe", [2]string{"a", "b"}) }()
 	select {

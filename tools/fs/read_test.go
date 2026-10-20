@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -405,9 +406,7 @@ func TestRead_RDF29_NamedPipeIsRefused(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"pipe", "pic.png"} {
 		fifo := filepath.Join(dir, name)
-		if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-			t.Skipf("mkfifo: %v", err)
-		}
+		testkit.Mkfifo(t, fifo)
 		// A writer waits for a reader, so an unfixed read finds data instead of
 		// hanging. Opening the pipe for reading afterwards releases it.
 		go func() {

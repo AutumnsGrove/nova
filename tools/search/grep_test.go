@@ -5,10 +5,10 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
+	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -401,9 +401,7 @@ func TestGrep_GRP32_RootsContainment(t *testing.T) {
 // counted rather than opened, because opening one with no writer blocks forever.
 func TestGrep_GRP33_SkipsNamedPipe(t *testing.T) {
 	dir := tree(t, map[string]string{"a.txt": "needle\n"})
-	if err := syscall.Mkfifo(filepath.Join(dir, "pipe"), 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
-	}
+	testkit.Mkfifo(t, filepath.Join(dir, "pipe"))
 	done := make(chan tool.Result, 1)
 	go func() { done <- grep(t, dir, map[string]any{"pattern": "needle"}) }()
 	select {

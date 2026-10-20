@@ -4,9 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/AutumnsGrove/nova/testkit"
 )
 
 // writeManifest writes extension.yaml into a fresh temp dir and returns it.
@@ -192,9 +193,7 @@ func TestManifest_MAN18_MalformedYAML(t *testing.T) {
 // refused, not waited on, and a device must not be read to the end.
 func TestManifest_MAN17b_NotARegularFile(t *testing.T) {
 	dir := t.TempDir()
-	if err := syscall.Mkfifo(filepath.Join(dir, "extension.yaml"), 0o644); err != nil {
-		t.Skipf("no named pipes here: %v", err)
-	}
+	testkit.Mkfifo(t, filepath.Join(dir, "extension.yaml"))
 	done := make(chan error, 1)
 	go func() {
 		_, err := LoadManifest(dir)

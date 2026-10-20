@@ -135,7 +135,6 @@ type Model struct {
 	commands    []commandInfo
 	completion  completion
 	state       stateData
-	pending     pendingSend
 	themes      []styles.Theme
 	display     chat.Display
 	status      config.StatusConfig

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/client"
 	"github.com/AutumnsGrove/nova/tui/splash"
 )
 
@@ -99,15 +101,37 @@ func (m *Model) submit(action string) tea.Cmd {
 	case m.runActive:
 		kind = "steer"
 	}
-	text = m.attachPaths(text)
-	atts := m.attachmentRefs()
-	names := m.attachmentNames()
+	clipped := m.pendingAtts
 	m.setEditorText("")
 	m.history.add(raw)
 	m.pendingAtts = nil
-	m.pending = pendingSend{kind: kind, text: text, atts: names}
 	m.dismissSplash()
-	return m.client.Send(proto.Command{Type: cmdFor(kind), Text: text, Attachments: atts})
+	return m.sendPrompt(kind, text, clipped)
+}
+
+// promptSentMsg is the server's answer to a prompt, steer, or follow-up,
+// together with what was sent. The text travels with the answer rather than
+// waiting in the model, so two sends in flight cannot swap their text.
+type promptSentMsg struct {
+	sent pendingSend
+	resp proto.Response
+}
+
+// sendPrompt resolves the image paths the text mentions, which reads files, and
+// then sends it, all in one command so that Update does no I/O. clipped are the
+// images already attached from the clipboard.
+func (m *Model) sendPrompt(kind, text string, clipped []pendingAttachment) tea.Cmd {
+	c, cwd := m.client, m.cwd
+	return func() tea.Msg {
+		text, found := attachPaths(cwd, text)
+		atts := slices.Concat(clipped, found)
+		sent := pendingSend{kind: kind, text: text, atts: attachmentNames(atts)}
+		msg := c.Send(proto.Command{Type: cmdFor(kind), Text: text, Attachments: attachmentRefs(atts)})()
+		if r, ok := msg.(client.ResponseMsg); ok {
+			return promptSentMsg{sent: sent, resp: r.Response}
+		}
+		return msg
+	}
 }
 
 // quietShellPrefix marks a shell command whose output stays out of the model's

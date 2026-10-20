@@ -269,14 +269,14 @@ func TestUI_UIM09_RunState(t *testing.T) {
 
 func TestUI_UIM10_PromptErrorRestores(t *testing.T) {
 	m, f, _ := newModel(t)
+	f.responses[proto.CmdPrompt] = proto.Response{
+		Command: proto.CmdPrompt, OK: false, Error: &proto.Error{Message: "busy"},
+	}
 	m.setEditorText("hi")
-	do(update(m, enterKey))
+	update(m, do(update(m, enterKey)))
 	if len(f.sends) != 1 || f.sends[0].Type != proto.CmdPrompt {
 		t.Fatalf("prompt not sent: %v", f.sends)
 	}
-	update(m, client.ResponseMsg{Response: proto.Response{
-		Command: proto.CmdPrompt, OK: false, Error: &proto.Error{Message: "busy"},
-	}})
 	if m.notice != "busy" {
 		t.Fatalf("notice = %q", m.notice)
 	}

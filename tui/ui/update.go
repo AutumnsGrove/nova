@@ -55,6 +55,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commands = msg.commands
 		return m, nil
 
+	case promptSentMsg:
+		m.finishSend(msg.sent, msg.resp)
+		return m, nil
+
 	case noticeMsg:
 		m.notice = msg.text
 		return m, nil
@@ -165,8 +169,6 @@ func (m *Model) handleResponse(resp proto.Response) tea.Cmd {
 		m.openUsage(resp)
 	case proto.CmdListProviders:
 		return m.onProviders(resp)
-	case proto.CmdPrompt, proto.CmdSteer, proto.CmdFollowUp:
-		m.finishSend(resp)
 	case proto.CmdAbort:
 		m.finishAbort(resp)
 	case proto.CmdBash:
@@ -203,9 +205,7 @@ func (m *Model) decodeCommands(resp proto.Response) {
 }
 
 // finishSend handles the response to a prompt, steer, or follow-up.
-func (m *Model) finishSend(resp proto.Response) {
-	p := m.pending
-	m.pending = pendingSend{}
+func (m *Model) finishSend(p pendingSend, resp proto.Response) {
 	if !resp.OK {
 		if resp.Error != nil {
 			m.notice = resp.Error.Message

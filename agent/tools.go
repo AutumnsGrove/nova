@@ -13,6 +13,10 @@ import (
 	"github.com/AutumnsGrove/nova/tool"
 )
 
+// emptyResult is recorded in place of an empty tool result, because providers
+// reject a tool message with no content.
+const emptyResult = "(empty result)"
+
 // defaultMaxParallel is the concurrency cap when Config.MaxParallel is unset.
 const defaultMaxParallel = 8
 
@@ -44,53 +48,49 @@ type callOutcome struct {
 
 // dispatch runs every call and returns the outcomes in call order, whatever the
 // completion order. Parallel-capable runs run in groups; a non-parallel call
-// runs alone as a barrier. Sequential mode runs one at a time.
+// runs alone as a barrier. Sequential mode runs one at a time. A call that
+// starts after the run was cancelled still gets a "cancelled" result from
+// runCall, so every call of the recorded assistant message is answered.
 func (r *run) dispatch(calls []message.ToolCall) []callOutcome {
 	outcomes := make([]callOutcome, len(calls))
-	done := make([]bool, len(calls))
-
 	if r.cfg.ToolExecution == Sequential || r.maxParallel() == 1 {
 		for i := range calls {
 			outcomes[i] = r.runCall(calls[i])
-			done[i] = true
 		}
-	} else {
-		for i := 0; i < len(calls); {
-			if !r.parallelCapable(calls[i]) {
-				outcomes[i] = r.runCall(calls[i])
-				done[i] = true
-				i++
-				continue
-			}
-			j := i
-			for j < len(calls) && r.parallelCapable(calls[j]) {
-				j++
-			}
-			sem := make(chan struct{}, r.maxParallel())
-			var wg sync.WaitGroup
-			for k := i; k < j; k++ {
-				wg.Add(1)
-				go func(k int) {
-					defer wg.Done()
-					sem <- struct{}{}
-					defer func() { <-sem }()
-					outcomes[k] = r.runCall(calls[k])
-					done[k] = true
-				}(k)
-			}
-			wg.Wait()
-			i = j
-		}
+		return outcomes
 	}
-
-	// A call that never ran because the run was cancelled still needs a
-	// result, or the recorded assistant message would be unanswerable.
-	for i := range calls {
-		if !done[i] {
-			outcomes[i] = callOutcome{result: tool.Errorf("cancelled")}
+	for i := 0; i < len(calls); {
+		if !r.parallelCapable(calls[i]) {
+			outcomes[i] = r.runCall(calls[i])
+			i++
+			continue
 		}
+		j := i
+		for j < len(calls) && r.parallelCapable(calls[j]) {
+			j++
+		}
+		r.runGroup(calls[i:j], outcomes[i:j])
+		i = j
 	}
 	return outcomes
+}
+
+// runGroup runs parallel-capable calls concurrently, at most maxParallel at a
+// time, and returns when all have finished. outcomes is the matching slice of
+// the caller's results; each goroutine writes only its own element.
+func (r *run) runGroup(calls []message.ToolCall, outcomes []callOutcome) {
+	sem := make(chan struct{}, r.maxParallel())
+	var wg sync.WaitGroup
+	for k := range calls {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			outcomes[k] = r.runCall(calls[k])
+		}()
+	}
+	wg.Wait()
 }
 
 // runCall runs one tool call: cancellation check, permission, the ToolCall
@@ -138,6 +138,8 @@ func (r *run) runCall(call message.ToolCall) (out callOutcome) {
 	r.emit(proto.Event{Type: proto.EventToolStart, CallID: call.ID})
 	diag.SetOp("tool " + call.Function.Name)
 	progress := newProgress(r, call.ID)
+	// Closed explicitly below so updates precede tool_end; this covers a panic.
+	defer progress.close()
 	tctx := r.toolContext()
 	tctx.Emit = progress.emit
 	tctx.Inject = func(m message.Message) { injected = append(injected, m) }
@@ -158,15 +160,17 @@ func (r *run) runCall(call message.ToolCall) (out callOutcome) {
 // finishCall applies the empty-result rule and the ToolResult hook, then emits
 // tool_end. It is the single place a call becomes a recorded result.
 func (r *run) finishCall(call message.ToolCall, res tool.Result) tool.Result {
-	if res.Content == "" {
-		res.Content = "(empty result)"
-	}
 	if h := r.cfg.Hooks.ToolResult; h != nil {
 		if out, ok := runHook(r, "tool_result", func(ctx context.Context) tool.Result {
 			return h(ctx, ToolCall{ID: call.ID, Name: call.Function.Name, Arguments: json.RawMessage(call.Function.Arguments)}, res)
 		}); ok {
 			res = out
 		}
+	}
+	// After the hook, so a hook that blanks the result is normalised too and
+	// tool_end shows what the transcript records.
+	if res.Content == "" {
+		res.Content = emptyResult
 	}
 	r.emitToolEnd(call, res)
 	return res
@@ -186,18 +190,22 @@ func (r *run) checkPermission(call message.ToolCall, args json.RawMessage) (bloc
 	d := r.cfg.Policy.Decide(permission.Call{Tool: call.Function.Name, Args: args, Info: info, WorkDir: r.cfg.WorkDir}, r.cfg.Ask != nil)
 	r.emit(proto.Event{Type: proto.EventPermission, CallID: call.ID, Decision: string(d.Action), Reason: d.Reason})
 	switch d.Action {
-	case permission.Deny:
-		return true, tool.Errorf("blocked by policy: %s", d.Reason)
+	case permission.Allow:
+		return false, tool.Result{}
 	case permission.Ask:
 		if r.cfg.Ask == nil {
 			return true, tool.Errorf("not approved: %s", d.Reason)
 		}
-		allow, err := r.cfg.Ask(r.ctx, Question{Tool: call.Function.Name, Reason: d.Reason, Args: args, Rule: d.Rule})
+		allow, err := r.cfg.Ask(r.ctx, Question{Tool: call.Function.Name, Reason: d.Reason, Args: wireArgs(args), Rule: d.Rule})
 		if err != nil || !allow {
 			return true, tool.Errorf("not approved: %s", d.Reason)
 		}
+		return false, tool.Result{}
+	default:
+		// Deny, and any action a hand-built policy mistyped: an unknown
+		// decision must never run the tool.
+		return true, tool.Errorf("blocked by policy: %s", d.Reason)
 	}
-	return false, tool.Result{}
 }
 
 // toolContext builds a fresh tool context per call so progress routes to the
@@ -207,12 +215,16 @@ func (r *run) toolContext() *tool.Context {
 }
 
 // progress forwards tool updates as tool_update events without ever blocking
-// the tool: a full buffer drops the update.
+// the tool: a full buffer drops the update. A tool that leaked a goroutine may
+// report after it returned, so emit and close share a lock and a late update is
+// dropped instead of being sent on a closed channel.
 type progress struct {
-	r    *run
-	id   string
-	ch   chan tool.Update
-	done chan struct{}
+	r      *run
+	id     string
+	ch     chan tool.Update
+	done   chan struct{}
+	mu     sync.Mutex
+	closed bool
 }
 
 func newProgress(r *run, callID string) *progress {
@@ -228,13 +240,26 @@ func newProgress(r *run, callID string) *progress {
 }
 
 func (p *progress) emit(u tool.Update) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return
+	}
 	select {
 	case p.ch <- u:
 	default:
 	}
 }
 
+// close stops accepting updates and waits until every accepted one has been
+// emitted, so tool_update events always precede the call's tool_end. It is
+// safe to call more than once.
 func (p *progress) close() {
-	close(p.ch)
+	p.mu.Lock()
+	if !p.closed {
+		p.closed = true
+		close(p.ch)
+	}
+	p.mu.Unlock()
 	<-p.done
 }

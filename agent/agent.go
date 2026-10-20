@@ -114,7 +114,8 @@ type Config struct {
 	// Policy decides each tool call before dispatch. Nil allows everything.
 	Policy *permission.Policy
 	// Ask resolves a permission "ask". Nil means there is no one to ask, so
-	// the policy's headless action applies.
+	// the policy's headless action applies. Parallel tool calls may ask at the
+	// same time, so Ask must be safe for concurrent use.
 	Ask func(ctx context.Context, q Question) (allow bool, err error)
 
 	// WorkDir is the directory relative tool paths resolve against.
@@ -186,8 +187,11 @@ type Agent struct {
 	cfg   Config
 	clock Clock
 
-	mu       sync.Mutex
-	running  bool
+	mu      sync.Mutex
+	running bool
+	// closing is set once the run has made its last decision, so a message
+	// queued after that is refused instead of being accepted and then lost.
+	closing  bool
 	cancel   context.CancelFunc
 	runCount int
 	runID    string

@@ -1,15 +1,19 @@
 package agent
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/AutumnsGrove/nova/provider"
 )
 
-// constants for retry defaults and the upper bound on a Retry-After delay.
+// Retry defaults, and the upper bound on any delay including a server's
+// Retry-After, so a hostile header cannot park a run for hours. The jitter
+// default applies only to a wholly zero policy, so a caller that sets any field
+// gets exactly the delays it asked for.
 const (
 	defaultRetryMax = 3
+	defaultJitter   = 0.2
 	maxRetryAfter   = 5 * time.Minute
 )
 
@@ -25,21 +29,16 @@ func retryDelay(policy RetryPolicy, pe *provider.Error, attempt int) time.Durati
 	if capd <= 0 {
 		capd = 30 * time.Second
 	}
+	// Doubling stops at the cap, so a large attempt count cannot overflow.
 	d := base
-	for i := 0; i < attempt; i++ {
+	for i := 0; i < attempt && d < capd; i++ {
 		d *= 2
-		if d >= capd {
-			d = capd
-			break
-		}
 	}
-	if d > capd {
-		d = capd
-	}
+	d = min(d, capd)
 
 	jitter := policy.Jitter
 	if policy == (RetryPolicy{}) {
-		jitter = 0.2
+		jitter = defaultJitter
 	}
 	if jitter > 0 {
 		d += time.Duration(jitter * float64(d) * rand.Float64())

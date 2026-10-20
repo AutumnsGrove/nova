@@ -77,12 +77,12 @@ func (r *run) turnRequest() (message.Message, provider.Usage, error) {
 // callProvider performs the request and retries a retryable provider error,
 // emitting a retry event before each wait. Cancellation is never retried.
 func (r *run) callProvider(req provider.Request) (message.Message, provider.Usage, error) {
-	max := r.cfg.Retry.Max
+	maxRetries := r.cfg.Retry.Max
 	switch {
-	case max < 0:
-		max = 0
-	case max == 0:
-		max = defaultRetryMax
+	case maxRetries < 0:
+		maxRetries = 0
+	case maxRetries == 0:
+		maxRetries = defaultRetryMax
 	}
 	for attempt := 0; ; attempt++ {
 		msg, usage, err := r.streamOnce(req)
@@ -93,11 +93,11 @@ func (r *run) callProvider(req provider.Request) (message.Message, provider.Usag
 			return message.Message{}, provider.Usage{}, r.ctx.Err()
 		}
 		var pe *provider.Error
-		if attempt >= max || !errors.As(err, &pe) || !pe.Retryable {
+		if attempt >= maxRetries || !errors.As(err, &pe) || !pe.Retryable {
 			return message.Message{}, provider.Usage{}, err
 		}
 		delay := retryDelay(r.cfg.Retry, pe, attempt)
-		r.emit(proto.Event{Type: proto.EventRetry, Attempt: attempt + 1, Max: max, DelayMS: int(delay.Milliseconds()), Error: &proto.Error{Code: proto.CodeProviderError, Message: err.Error()}})
+		r.emit(proto.Event{Type: proto.EventRetry, Attempt: attempt + 1, Max: maxRetries, DelayMS: int(delay.Milliseconds()), Error: &proto.Error{Code: proto.CodeProviderError, Message: err.Error()}})
 		if serr := r.a.clock.Sleep(r.ctx, delay); serr != nil {
 			return message.Message{}, provider.Usage{}, serr
 		}
@@ -107,51 +107,12 @@ func (r *run) callProvider(req provider.Request) (message.Message, provider.Usag
 // streamOnce performs one provider request and emits every per-attempt event:
 // message_start, thinking/text deltas, tool_call, message_end, and usage.
 func (r *run) streamOnce(req provider.Request) (message.Message, provider.Usage, error) {
-	var (
-		text      strings.Builder
-		reasoning strings.Builder
-		calls     []message.ToolCall
-		seen      = map[string]bool{}
-		thinkAt   time.Time
-		thinking  bool
-	)
-
+	st := &attempt{r: r, seen: map[string]bool{}}
 	r.emit(proto.Event{Type: proto.EventMessageStart, Turn: intp(r.turn), Role: string(message.RoleAssistant)})
-	endThinking := func() {
-		if !thinking {
-			return
-		}
-		thinking = false
-		ms := r.a.clock.Now().Sub(thinkAt).Milliseconds()
-		r.emit(proto.Event{Type: proto.EventThinkingEnd, Turn: intp(r.turn), Ms: ms})
-	}
 
 	diag.SetOp(fmt.Sprintf("provider request turn %d", r.turn))
-	resp, err := r.cfg.Provider.Stream(r.ctx, req, func(ev provider.StreamEvent) {
-		switch ev.Type {
-		case provider.StreamReasoningDelta:
-			if !thinking {
-				thinking = true
-				thinkAt = r.a.clock.Now()
-				r.emit(proto.Event{Type: proto.EventThinkingStart, Turn: intp(r.turn)})
-			}
-			reasoning.WriteString(ev.Text)
-			r.emit(proto.Event{Type: proto.EventThinkingDelta, Turn: intp(r.turn), Text: ev.Text})
-		case provider.StreamTextDelta:
-			endThinking()
-			text.WriteString(ev.Text)
-			r.emit(proto.Event{Type: proto.EventTextDelta, Turn: intp(r.turn), Text: ev.Text})
-		case provider.StreamToolCall:
-			endThinking()
-			if ev.ToolCall == nil {
-				break
-			}
-			c := r.normalizeCall(*ev.ToolCall, len(calls), seen)
-			calls = append(calls, c)
-			r.emitToolCall(c)
-		}
-	})
-	endThinking()
+	resp, err := r.cfg.Provider.Stream(r.ctx, req, st.onEvent)
+	st.endThinking()
 	if err != nil {
 		return message.Message{}, provider.Usage{}, err
 	}
@@ -159,25 +120,7 @@ func (r *run) streamOnce(req provider.Request) (message.Message, provider.Usage,
 		return message.Message{}, provider.Usage{}, errors.New("agent: provider returned no response")
 	}
 
-	m := resp.Message
-	m.Role = message.RoleAssistant
-	if m.Content == "" && text.Len() > 0 {
-		m.Content = text.String()
-	}
-	if m.Reasoning == "" && reasoning.Len() > 0 {
-		m.Reasoning = reasoning.String()
-	}
-	if len(calls) > 0 {
-		m.ToolCalls = calls
-	} else if len(m.ToolCalls) > 0 {
-		// A provider that assembles calls without streaming them still gets
-		// normalised ids and one tool_call event per call.
-		for i := range m.ToolCalls {
-			m.ToolCalls[i] = r.normalizeCall(m.ToolCalls[i], i, seen)
-			r.emitToolCall(m.ToolCalls[i])
-		}
-	}
-
+	m := st.message(resp.Message)
 	if h := r.cfg.Hooks.MessageEnd; h != nil {
 		if out, ok := runHook(r, "message_end", func(ctx context.Context) message.Message {
 			return h(ctx, m.Clone())
@@ -193,6 +136,81 @@ func (r *run) streamOnce(req provider.Request) (message.Message, provider.Usage,
 	total.Add(usage)
 	r.emit(proto.Event{Type: proto.EventUsage, Turn: intp(r.turn), Usage: &usage, Total: &total})
 	return m, usage, nil
+}
+
+// attempt collects one provider attempt's stream: it forwards each delta as an
+// event and keeps what the final message may need when the provider's response
+// carries less than was streamed.
+type attempt struct {
+	r         *run
+	text      strings.Builder
+	reasoning strings.Builder
+	calls     []message.ToolCall
+	seen      map[string]bool
+	thinkAt   time.Time
+	thinking  bool
+}
+
+// onEvent handles one stream event. Reasoning opens a thinking span; the first
+// text or tool call closes it.
+func (st *attempt) onEvent(ev provider.StreamEvent) {
+	r := st.r
+	switch ev.Type {
+	case provider.StreamReasoningDelta:
+		if !st.thinking {
+			st.thinking = true
+			st.thinkAt = r.a.clock.Now()
+			r.emit(proto.Event{Type: proto.EventThinkingStart, Turn: intp(r.turn)})
+		}
+		st.reasoning.WriteString(ev.Text)
+		r.emit(proto.Event{Type: proto.EventThinkingDelta, Turn: intp(r.turn), Text: ev.Text})
+	case provider.StreamTextDelta:
+		st.endThinking()
+		st.text.WriteString(ev.Text)
+		r.emit(proto.Event{Type: proto.EventTextDelta, Turn: intp(r.turn), Text: ev.Text})
+	case provider.StreamToolCall:
+		st.endThinking()
+		if ev.ToolCall == nil {
+			return
+		}
+		c := r.normalizeCall(*ev.ToolCall, len(st.calls), st.seen)
+		st.calls = append(st.calls, c)
+		r.emitToolCall(c)
+	}
+}
+
+// endThinking closes an open thinking span with its duration from the clock.
+func (st *attempt) endThinking() {
+	if !st.thinking {
+		return
+	}
+	st.thinking = false
+	ms := st.r.a.clock.Now().Sub(st.thinkAt).Milliseconds()
+	st.r.emit(proto.Event{Type: proto.EventThinkingEnd, Turn: intp(st.r.turn), Ms: ms})
+}
+
+// message builds the assistant message from the provider's response and what
+// streamed. Streamed text and reasoning fill in for empty fields, and the
+// streamed calls win because they already carry normalised ids.
+func (st *attempt) message(m message.Message) message.Message {
+	m.Role = message.RoleAssistant
+	if m.Content == "" && st.text.Len() > 0 {
+		m.Content = st.text.String()
+	}
+	if m.Reasoning == "" && st.reasoning.Len() > 0 {
+		m.Reasoning = st.reasoning.String()
+	}
+	if len(st.calls) > 0 {
+		m.ToolCalls = st.calls
+	} else {
+		// A provider that assembles calls without streaming them still gets
+		// normalised ids and one tool_call event per call.
+		for i := range m.ToolCalls {
+			m.ToolCalls[i] = st.r.normalizeCall(m.ToolCalls[i], i, st.seen)
+			st.r.emitToolCall(m.ToolCalls[i])
+		}
+	}
+	return m
 }
 
 // normalizeCall gives every call a unique id: an empty id becomes

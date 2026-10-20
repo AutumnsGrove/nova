@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"testing"
-	"time"
 
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
@@ -178,10 +178,14 @@ func Test_LPC07_ToolIgnoresCancellation(t *testing.T) {
 	go func() { done <- runAsyncCtx(a, ctx) }()
 	<-started
 	cancel()
+	// Give the loop every chance to return early without sleeping on real time.
+	for range 100 {
+		runtime.Gosched()
+	}
 	select {
 	case <-done:
 		t.Fatal("run returned before the ignoring tool finished")
-	case <-time.After(20 * time.Millisecond):
+	default:
 	}
 	close(release)
 	out := <-done

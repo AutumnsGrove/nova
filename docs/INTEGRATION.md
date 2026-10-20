@@ -39,10 +39,12 @@ cfg := agent.Config{
     Tools:    reg,
     WorkDir:  workDir,
     ToolData: myDeps,                     // the app's dependency bundle
-    OnEvent:  func(e agent.Event) { myEventBus.Publish(e) },
-    BeforeToolCall: func(c agent.ToolCall) *agent.Block { return myPermission(c) },
-    AfterToolCall:  func(c agent.ToolCall, r tool.Result) tool.Result { return myRedact(r) },
-    FinishTurn:     func(t agent.Turn) agent.TurnDecision { return myNudges(t) },
+    Emit:     func(e proto.Event) { myEventBus.Publish(e) },
+    Hooks: agent.Hooks{
+        ToolCall:   func(ctx context.Context, c agent.ToolCall) *agent.CallDecision { return myPermission(c) },
+        ToolResult: func(ctx context.Context, c agent.ToolCall, r tool.Result) tool.Result { return myRedact(r) },
+        TurnEnd:    func(ctx context.Context, t agent.Turn) agent.TurnDecision { return myNudges(t) },
+    },
 }
 
 res, err := agent.Run(ctx, cfg, history)
@@ -65,7 +67,7 @@ Ivy is the best first adopter: greenfield loop, three read-only tools, and a
   answer's citations are verified against that set (and optionally the DB).
 - **Withheld mail.** The tools apply the same visibility rules the rest of ivy
   uses, so withheld messages never reach the model.
-- **Trace.** `OnEvent` feeds the "quiet trace" of what was looked at.
+- **Trace.** `Emit` feeds the "quiet trace" of what was looked at.
 - **No action tools.** Nova's tool set for this loop is read-only by
   construction; a proposed action is returned as data for a UI button.
 
@@ -81,13 +83,13 @@ closest migration.
 - **Loop.** Map `EngineConfig` hooks onto Nova's:
   | her-go | Nova |
   |---|---|
-  | `OnLoopStart` / `OnLoopExit` / `OnDone` | `OnEvent` + `FinishTurn` |
-  | `PreTool` (dry-run, caps) | `BeforeToolCall` |
-  | `PostToolResult` (mutation) | `AfterToolCall` |
-  | `PostTool` (observe) | `OnEvent` (`EventToolResult`) |
-  | `ContinuationMsg` / windows | `FinishTurn` (or a future core continuation option) |
-  | `TraceCallback` | `OnEvent`, formatted from `tool.yaml` trace specs |
-  | `ActiveToolGuard` | `BeforeToolCall` + per-run tool filtering |
+  | `OnLoopStart` / `OnLoopExit` / `OnDone` | `Emit` + `Hooks.TurnEnd` / `Hooks.AgentEnd` |
+  | `PreTool` (dry-run, caps) | `Hooks.ToolCall` |
+  | `PostToolResult` (mutation) | `Hooks.ToolResult` |
+  | `PostTool` (observe) | `Emit` (`tool_end`) |
+  | `ContinuationMsg` / windows | `Hooks.TurnEnd` (or a future core continuation option) |
+  | `TraceCallback` | `Emit`, formatted from `tool.yaml` trace specs |
+  | `ActiveToolGuard` | `Hooks.ToolCall` + per-run tool filtering |
 - **Tools.** Reuse `tools/<name>/tool.yaml` directly with Nova's manifest loader.
   The large `tools.Context` becomes `tool.Context.Data`: handlers type-assert the
   bundle they need. This is the main mechanical change.
@@ -107,16 +109,16 @@ closest migration.
 
 Polaris has the largest bespoke loop; most of it becomes hooks.
 
-- **Loop.** Replace `agent.Run`'s loop with `agent.Run`. Keep `Result` and the
+- **Loop.** Replace the bespoke loop with `agent.Agent.Run`. Keep `Result` and the
   gateway contract.
 - **Research nudges.** `trackResearchCall` and `trackSearchQuery` move into
-  `FinishTurn`; they inject user-role messages and decide when to stop.
-- **Pseudo tool calls.** `parsePseudoToolCalls` runs in `AfterToolCall` /
-  `TransformContext`: a text-form tool call is dispatched and a corrective
+  `Hooks.TurnEnd`; they inject user-role messages and decide when to stop.
+- **Pseudo tool calls.** `parsePseudoToolCalls` runs in `Hooks.ToolResult` /
+  `Hooks.TransformContext`: a text-form tool call is dispatched and a corrective
   message injected.
 - **Concurrent dispatch.** Replace `dispatchToolCallsConcurrently` with Nova's
   parallel mode (it already preserves order and recovers panics). Keep the
-  code-exec serialization rule as a `BeforeToolCall`/dispatch policy.
+  code-exec serialization rule as a `Hooks.ToolCall`/dispatch policy.
 - **Tool gating.** Polaris gates tools by configured API keys (`catalog.go`'s
   `offered(ctx)`). Nova needs a per-run tool filter — add `Config.FilterTools` or
   let the app build a per-run registry view. (Tracked as an M1 item.)
@@ -129,8 +131,8 @@ Polaris has the largest bespoke loop; most of it becomes hooks.
 - **State.** `tools.Context`'s many closures become `ToolData`. Citations, cards,
   and charts are app state mutated by tools and read after the run.
 - **Streaming.** `ctx.Emit("token" | "reasoning" | "tool_call" | ...)` maps from
-  Nova's `OnEvent` and `OnTextDelta`/`OnReasoningDelta`.
-- **Wrap-up.** Polaris's forced wrap-up at `maxTurns` becomes a `FinishTurn`
+  Nova's `Emit` events (`text_delta`, `thinking_delta`, `tool_call`).
+- **Wrap-up.** Polaris's forced wrap-up at `maxTurns` becomes a `Hooks.TurnEnd`
   behavior or a core "final answer with no tools" option.
 
 ## Compatibility checklist

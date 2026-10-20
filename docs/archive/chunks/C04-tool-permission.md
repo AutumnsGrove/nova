@@ -2,7 +2,7 @@
 chunk: C04
 title: "Tool contract, registry, permission policy"
 packages: [./tool, ./permission]
-budgets: { ./tool: 550, ./permission: 300 }
+budgets: { ./tool: 550, ./permission: 340 }
 depends: [C01]
 ---
 
@@ -250,6 +250,7 @@ func MatchString(pattern, s string) bool    // "*" matches any run of characters
 | PRM26 | reason names the rule | | contains the rule index and tool |
 | PRM27 | `Validate`: empty tool, bad action, bad glob, `Headless: ask` | | each rejected |
 | PRM28 | `Validate`: a valid policy | | nil |
+| PRM31 | deny rule across a newline | `*rm -rf*` vs `echo hi\nrm -rf /` | deny |
 | PRM29 | empty path argument | `path: ""` | not matched against any `Paths` rule |
 | PRM30 | path with NUL byte | | not matched; no panic |
 | GLB01 | `*` does not cross `/` in `MatchPath` | `src/*.go` vs `src/a/b.go` | false |
@@ -266,6 +267,9 @@ func MatchString(pattern, s string) bool    // "*" matches any run of characters
 | GLB12 | empty pattern | | matches only the empty string |
 | GLB13 | pathological pattern | `*a*a*a*a*a*a*a*b` vs a long `aaaa…` | returns in under 100 ms (no exponential backtracking) |
 | GLB14 | Unicode | `é*` vs `éclair` | true |
+| GLB15 | `*`, `?` and `**` match a newline | `*rm -rf*` vs `echo hi\nrm -rf /` | true |
+| GLB16 | a negated class never matches `/` in `MatchPath` | `a[!b]c` vs `a/c` | false (`MatchString` still true) |
+| GLB17 | compiled-pattern cache | many distinct patterns, concurrent use | stays bounded; answers unchanged |
 
 ## Fuzz and property tests
 

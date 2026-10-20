@@ -11,7 +11,6 @@ var (
 	maxLineChars   = 2000     // runes of one displayed line before truncation
 	maxFileBytes   = 10 << 20 // write and edit refuse content larger than this
 	maxListEntries = 500      // list rows before it stops
-	binarySniff    = 8000     // bytes sniffed for a NUL when classifying a file
 	maxDiffLines   = 5000     // files larger than this get no diff in Details
 )
 

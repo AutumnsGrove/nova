@@ -22,7 +22,6 @@ const (
 	maxGrepFileBytes = 2 << 20 // files larger than this are skipped
 	maxGrepLineChars = 500     // displayed chars before a line is cut
 	maxGrepLineBytes = 1 << 20 // lines longer than this are not matched
-	binarySniff      = 8000    // bytes sniffed for a NUL
 )
 
 // errStopWalk stops the walk once the match cap is reached.
@@ -193,11 +192,7 @@ func loadGrepLines(path string) (text []string, long []bool, skipped int, ok boo
 	if err != nil || len(data) > maxGrepFileBytes {
 		return nil, nil, 0, false
 	}
-	sniff := data
-	if len(sniff) > binarySniff {
-		sniff = sniff[:binarySniff]
-	}
-	if bytes.IndexByte(sniff, 0) >= 0 {
+	if tool.LooksBinary(data) {
 		return nil, nil, 0, false
 	}
 	for len(data) > 0 {

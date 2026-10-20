@@ -1,6 +1,7 @@
 package tool
 
 import (
+	"bytes"
 	"path/filepath"
 	"testing"
 )
@@ -20,6 +21,27 @@ func TestProps_Shape(t *testing.T) {
 	for _, c := range cases {
 		if c.got["type"] != c.typ || c.got["description"] != "d" || len(c.got) != 2 {
 			t.Errorf("%s prop = %v, want type %q and description %q only", c.name, c.got, c.typ, "d")
+		}
+	}
+}
+
+// TestLooksBinary checks the sniff window: a NUL inside it is binary, a NUL past
+// it is not, and an empty file is text.
+func TestLooksBinary(t *testing.T) {
+	text := bytes.Repeat([]byte("a"), BinarySniffBytes+10)
+	late := append([]byte(nil), text...)
+	late[BinarySniffBytes] = 0
+	edge := append([]byte(nil), text...)
+	edge[BinarySniffBytes-1] = 0
+	for name, c := range map[string]struct {
+		data []byte
+		want bool
+	}{
+		"empty": {nil, false}, "text": {text, false}, "nul past the window": {late, false},
+		"nul at the window edge": {edge, true}, "short with nul": {[]byte("a\x00b"), true},
+	} {
+		if got := LooksBinary(c.data); got != c.want {
+			t.Errorf("%s: LooksBinary = %v, want %v", name, got, c.want)
 		}
 	}
 }

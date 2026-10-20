@@ -137,11 +137,11 @@ func renderRead(abs string, offset, limit int) tool.Result {
 	if info.IsDir() {
 		return tool.Errorf("%s is a directory; use list", abs)
 	}
-	prefix, err := io.ReadAll(io.LimitReader(f, int64(binarySniff)))
+	prefix, err := io.ReadAll(io.LimitReader(f, tool.BinarySniffBytes))
 	if err != nil {
 		return tool.Errorf("%v", err)
 	}
-	if bytes.IndexByte(prefix, 0) >= 0 {
+	if tool.LooksBinary(prefix) {
 		return tool.Errorf("%s looks like a binary file (%d bytes)", abs, info.Size())
 	}
 	bom := bytes.HasPrefix(prefix, utf8BOM)

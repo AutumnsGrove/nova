@@ -1,11 +1,23 @@
 package tool
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// BinarySniffBytes is how much of a file's start the file tools inspect to tell
+// text from binary. Looking at a bounded window keeps classification cheap on a
+// huge file, and the tools agree on one answer.
+const BinarySniffBytes = 8000
+
+// LooksBinary reports whether the start of a file holds a NUL byte within the
+// first BinarySniffBytes, which text in any encoding the tools accept never does.
+func LooksBinary(data []byte) bool {
+	return bytes.IndexByte(data[:min(len(data), BinarySniffBytes)], 0) >= 0
+}
 
 // maxPathBytes is the longest path a file tool accepts. It is the Linux PATH_MAX,
 // so a longer string cannot name a real file.

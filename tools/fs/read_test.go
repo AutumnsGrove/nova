@@ -268,8 +268,8 @@ func TestRead_RDF19_Binary(t *testing.T) {
 // TestRead_RDF20_NulAfterWindow checks a NUL past the sniff window is text.
 func TestRead_RDF20_NulAfterWindow(t *testing.T) {
 	dir := t.TempDir()
-	data := []byte(strings.Repeat("a", binarySniff+1000))
-	data[binarySniff+10] = 0
+	data := []byte(strings.Repeat("a", tool.BinarySniffBytes+1000))
+	data[tool.BinarySniffBytes+10] = 0
 	writeFile(t, filepath.Join(dir, "a.txt"), string(data))
 	res := run(t, Read(), &tool.Context{WorkDir: dir}, map[string]any{"path": "a.txt"})
 	if res.IsError {
@@ -372,7 +372,7 @@ func TestRead_RDF28_HugeStreaming(t *testing.T) {
 	// A text prefix longer than the sniff window, then a sparse hole so the
 	// file is large without writing it.
 	var prefix strings.Builder
-	for i := 0; i < binarySniff; i++ {
+	for i := 0; i < tool.BinarySniffBytes; i++ {
 		prefix.WriteString("x\n")
 	}
 	writeFile(t, path, prefix.String())

@@ -1,11 +1,12 @@
 package fs
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/AutumnsGrove/nova/tool"
@@ -77,43 +78,24 @@ func Edit() tool.Tool {
 	})
 }
 
-// applyEdits resolves and applies every edit to the file at abs.
+// applyEdits resolves and applies every edit to the file at abs. It writes
+// through a symlink so the link survives, like write does.
 func applyEdits(abs string, edits []editSpec) tool.Result {
 	original, info, err := readEditableFile(abs)
 	if err != nil {
 		return tool.Errorf("%v", err)
 	}
-	content := original
-	bom := strings.HasPrefix(content, string(utf8BOM))
-	if bom {
-		content = strings.TrimPrefix(content, string(utf8BOM))
-	}
-	crlf := strings.Contains(content, "\r\n")
-
-	reps := make([]replacement, 0, len(edits))
-	for i, e := range edits {
-		number := i + 1
-		if e.OldText == "" {
-			return tool.Errorf("edit %d: oldText must not be empty", number)
-		}
-		oldText, newText, ok := matchText(content, e, crlf)
-		if !ok {
-			return tool.Errorf("edit %d: oldText not found in %s", number, abs)
-		}
-		if count := strings.Count(content, oldText); count > 1 {
-			return tool.Errorf("edit %d: oldText appears %d times in %s; it must be unique", number, count, abs)
-		}
-		start := strings.Index(content, oldText)
-		reps = append(reps, replacement{index: number, start: start, end: start + len(oldText), newText: newText})
-	}
-	if err := checkOverlaps(reps); err != nil {
+	target, err := realTarget(abs)
+	if err != nil {
 		return tool.Errorf("%v", err)
 	}
-
-	updated := content
-	if newContent, changed := splice(content, reps); changed {
-		updated = newContent
-	} else {
+	content, bom := strings.CutPrefix(original, string(utf8BOM))
+	reps, err := resolveEdits(content, abs, edits)
+	if err != nil {
+		return tool.Errorf("%v", err)
+	}
+	updated, changed := splice(content, reps)
+	if !changed {
 		return tool.Errorf("no changes: every edit left the file unchanged")
 	}
 	if editWriteHook != nil {
@@ -122,18 +104,62 @@ func applyEdits(abs string, edits []editSpec) tool.Result {
 	if current, statErr := os.Stat(abs); statErr != nil || current.Size() != info.Size() || !current.ModTime().Equal(info.ModTime()) {
 		return tool.Errorf("file changed on disk since it was read; read %s again and reapply the edit", abs)
 	}
-	result := updated
 	if bom {
-		result = string(utf8BOM) + result
+		updated = string(utf8BOM) + updated
 	}
-	if err := writeAtomic(abs, []byte(result), info.Mode().Perm()); err != nil {
+	if err := writeAtomic(target, []byte(updated), info.Mode().Perm()); err != nil {
 		return tool.Errorf("%v", err)
 	}
-	return editResult(abs, original, result, len(edits))
+	return editResult(abs, original, updated, len(edits))
+}
+
+// resolveEdits matches every edit against content and returns the replacements
+// sorted by position. Any edit that is empty, missing, ambiguous, or overlapping
+// another fails the whole batch.
+func resolveEdits(content, abs string, edits []editSpec) ([]replacement, error) {
+	crlf := strings.Contains(content, "\r\n")
+	reps := make([]replacement, 0, len(edits))
+	for i, e := range edits {
+		number := i + 1
+		if e.OldText == "" {
+			return nil, fmt.Errorf("edit %d: oldText must not be empty", number)
+		}
+		oldText, newText, ok := matchText(content, e, crlf)
+		if !ok {
+			return nil, fmt.Errorf("edit %d: oldText not found in %s", number, abs)
+		}
+		start, count := locate(content, oldText)
+		if count > 1 {
+			return nil, fmt.Errorf("edit %d: oldText appears %d times in %s; it must be unique", number, count, abs)
+		}
+		reps = append(reps, replacement{index: number, start: start, end: start + len(oldText), newText: newText})
+	}
+	slices.SortFunc(reps, func(a, b replacement) int { return cmp.Compare(a.start, b.start) })
+	for i := 1; i < len(reps); i++ {
+		if reps[i].start < reps[i-1].end {
+			return nil, fmt.Errorf("edit %d overlaps edit %d", reps[i-1].index, reps[i].index)
+		}
+	}
+	return reps, nil
+}
+
+// locate returns where sub first occurs in s and how many times it occurs.
+// Overlapping matches count, so "aa" in "aaa" is ambiguous rather than unique.
+func locate(s, sub string) (first, count int) {
+	first = strings.Index(s, sub)
+	for at := first; at >= 0; count++ {
+		next := strings.Index(s[at+1:], sub)
+		if next < 0 {
+			return first, count + 1
+		}
+		at += 1 + next
+	}
+	return first, count
 }
 
 // readEditableFile reads a file that edit may modify: it must exist, be a
-// regular text file, and be within the size cap.
+// regular text file, and be within the size cap. A named pipe or device is
+// refused before it is opened, because opening one can block forever.
 func readEditableFile(abs string) (string, os.FileInfo, error) {
 	info, err := os.Stat(abs)
 	if err != nil {
@@ -141,6 +167,9 @@ func readEditableFile(abs string) (string, os.FileInfo, error) {
 	}
 	if info.IsDir() {
 		return "", nil, fmt.Errorf("%s is a directory", abs)
+	}
+	if !info.Mode().IsRegular() {
+		return "", nil, fmt.Errorf("%s is not a regular file", abs)
 	}
 	if info.Size() > int64(maxFileBytes) {
 		return "", nil, fmt.Errorf("%s is %d bytes, over the %d byte limit", abs, info.Size(), maxFileBytes)
@@ -152,10 +181,7 @@ func readEditableFile(abs string) (string, os.FileInfo, error) {
 	if len(data) > maxFileBytes {
 		return "", nil, fmt.Errorf("%s is over the %d byte limit", abs, maxFileBytes)
 	}
-	if len(data) > binarySniff {
-		data = data[:binarySniff]
-	}
-	if strings.IndexByte(string(data), 0) >= 0 {
+	if tool.LooksBinary(data) {
 		return "", nil, fmt.Errorf("%s looks like a binary file", abs)
 	}
 	return string(data), info, nil
@@ -177,43 +203,21 @@ func matchText(content string, e editSpec, crlf bool) (oldText, newText string, 
 	return "", "", false
 }
 
-// checkOverlaps rejects edits whose matched ranges overlap.
-func checkOverlaps(reps []replacement) error {
-	ordered := append([]replacement(nil), reps...)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].start < ordered[j].start })
-	for i := 1; i < len(ordered); i++ {
-		if ordered[i].start < ordered[i-1].end {
-			return fmt.Errorf("edit %d overlaps edit %d", ordered[i-1].index, ordered[i].index)
-		}
-	}
-	return nil
-}
-
-// splice applies the replacements to content. It reports whether anything
-// changed, which is false only when every new text equals the text it replaces.
+// splice applies position-sorted replacements to content. It reports whether
+// anything changed, which is false only when every new text equals the text it
+// replaces.
 func splice(content string, reps []replacement) (string, bool) {
+	var b strings.Builder
 	changed := false
-	for _, r := range reps {
-		if content[r.start:r.end] != r.newText {
-			changed = true
-			break
-		}
-	}
-	if !changed {
-		return content, false
-	}
-	ordered := append([]replacement(nil), reps...)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].start > ordered[j].start })
-	var b []byte
 	prev := 0
-	for i := len(ordered) - 1; i >= 0; i-- {
-		r := ordered[i]
-		b = append(b, content[prev:r.start]...)
-		b = append(b, r.newText...)
+	for _, r := range reps {
+		b.WriteString(content[prev:r.start])
+		b.WriteString(r.newText)
+		changed = changed || content[r.start:r.end] != r.newText
 		prev = r.end
 	}
-	b = append(b, content[prev:]...)
-	return string(b), true
+	b.WriteString(content[prev:])
+	return b.String(), changed
 }
 
 // editResult builds the success result, including the diff unless the file is

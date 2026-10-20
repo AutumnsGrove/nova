@@ -263,6 +263,9 @@ diffMaxLines   = 5000
 | EDT31 | unicode `oldText` | | works |
 | EDT32 | `oldText` at the very start and the very end of the file | | works |
 | EDT33 | property: apply then verify | random files and edits | result contains each `newText` once and every other byte unchanged |
+| EDT34 | `oldText` occurs twice with overlapping matches | `aa` in `aaa` | error naming 2 occurrences; file unchanged |
+| EDT35 | edit through a symlink | link to a file | the target is edited; the link stays a link |
+| EDT36 | edit a file that is not regular | a named pipe | error result; does not block |
 | LST01 | list a directory | | rows sorted by name |
 | LST02 | default path `.` | | WorkDir listing |
 | LST03 | pattern filter | `*.go` | matching names only |

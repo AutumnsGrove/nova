@@ -35,36 +35,18 @@ type contentImage struct {
 // wireContent renders a message's content as a plain string, or as a content
 // array when it carries image parts. A message with neither returns nil so the
 // field stays omitted, which is the shape some providers expect for an
-// assistant message that only requests tools. Text precedes the images, an
-// unknown part kind is skipped, and a part with no bytes or URL is dropped.
+// assistant message that only requests tools.
 func wireContent(m message.Message) any {
-	if len(m.Parts) == 0 {
-		if m.Content == "" {
-			return nil
-		}
-		return m.Content
+	parts := provider.ContentParts(m,
+		func(text string) contentPart { return contentPart{Type: "text", Text: text} },
+		func(url string) contentPart { return contentPart{Type: "image_url", ImageURL: &contentImage{URL: url}} })
+	if len(parts) > 0 {
+		return parts
 	}
-	parts := make([]contentPart, 0, len(m.Parts)+1)
-	if m.Content != "" {
-		parts = append(parts, contentPart{Type: "text", Text: m.Content})
+	if m.Content == "" {
+		return nil
 	}
-	for _, p := range m.Parts {
-		url := p.URL
-		if url == "" && p.Data != "" {
-			url = "data:" + p.MimeType + ";base64," + p.Data
-		}
-		if p.Type != message.PartImage || url == "" {
-			continue
-		}
-		parts = append(parts, contentPart{Type: "image_url", ImageURL: &contentImage{URL: url}})
-	}
-	if len(parts) == 0 {
-		if m.Content == "" {
-			return nil
-		}
-		return m.Content
-	}
-	return parts
+	return m.Content
 }
 
 // chatRequest is the request body. MaxTokens is a pointer so "unset" and "zero"
@@ -94,6 +76,15 @@ type toolCallDelta struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+}
+
+// indexOrZero is the call's index, or 0 when the provider left it out, as a
+// provider that streams a single call at a time often does.
+func (d toolCallDelta) indexOrZero() int {
+	if d.Index == nil {
+		return 0
+	}
+	return *d.Index
 }
 
 // reasoningDetail is one entry of the reasoning_details array some providers

@@ -1,7 +1,6 @@
 package ssestream
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -9,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -288,23 +286,13 @@ func TestSSEStream_TMO10_NoLeaks(t *testing.T) {
 	if _, err := s.Next(); err == nil {
 		t.Fatal("expected an idle timeout")
 	}
-	_ = s.Close()
+	s.Close()
 }
 
 // newTestStream builds a stream over arbitrary bytes for the fuzz target.
 func newTestStream(data []byte) *Stream {
-	idleFired := &atomic.Bool{}
-	return &Stream{
-		body:      io.NopCloser(bytes.NewReader(data)),
-		reader:    bufio.NewReaderSize(bytes.NewReader(data), defaultMaxLineBytes+2),
-		ctx:       context.Background(),
-		caller:    context.Background(),
-		cancel:    func() {},
-		max:       defaultMaxLineBytes,
-		idleGap:   time.Hour,
-		idleFired: idleFired,
-		idleTimer: time.AfterFunc(time.Hour, func() {}),
-	}
+	return newStream(io.NopCloser(bytes.NewReader(data)), context.Background(), func() {},
+		Config{IdleTimeout: time.Hour, MaxLineBytes: defaultMaxLineBytes})
 }
 
 func FuzzSSEStream(f *testing.F) {

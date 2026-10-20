@@ -48,7 +48,7 @@ type Config struct {
 // Provider is an OpenAI-compatible chat-completions provider.
 type Provider struct {
 	cfg    Config
-	client *http.Client
+	target ssestream.Target
 }
 
 // New builds a provider from cfg.
@@ -57,11 +57,22 @@ func New(cfg Config) *Provider {
 		cfg.Name = "openaicompat"
 	}
 	cfg.BaseURL = strings.TrimRight(cfg.BaseURL, "/")
-	client := cfg.HTTPClient
-	if client == nil {
-		client = &http.Client{}
+	target := ssestream.Target{
+		Config: ssestream.Config{
+			HTTPClient:     cfg.HTTPClient,
+			ConnectTimeout: cfg.ConnectTimeout,
+			IdleTimeout:    cfg.IdleTimeout,
+			MaxLineBytes:   cfg.MaxLineBytes,
+		},
+		Dialect:    "openaicompat",
+		Headers:    cfg.Headers,
+		APIKey:     cfg.APIKey,
+		APIKeyFunc: cfg.APIKeyFunc,
 	}
-	return &Provider{cfg: cfg, client: client}
+	if cfg.BaseURL != "" {
+		target.URL = cfg.BaseURL + "/chat/completions"
+	}
+	return &Provider{cfg: cfg, target: target}
 }
 
 // Name returns the provider id.
@@ -75,56 +86,19 @@ func (p *Provider) BaseURL() string { return p.cfg.BaseURL }
 // after the stream has started still returns the partial Response alongside
 // the error, so the caller can keep what the model already said.
 func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
-	if err := ctx.Err(); err != nil {
+	if err := p.target.Check(ctx, req.Model); err != nil {
 		return nil, err
 	}
-	if req.Model == "" {
-		return nil, fmt.Errorf("openaicompat: model is required")
-	}
-	if p.cfg.BaseURL == "" {
-		return nil, fmt.Errorf("openaicompat: base URL is required")
-	}
-
 	body, err := p.buildBody(req)
 	if err != nil {
 		return nil, err
 	}
-
-	key := p.cfg.APIKey
-	if p.cfg.APIKeyFunc != nil {
-		key, err = p.cfg.APIKeyFunc(ctx)
-		if err != nil {
-			return nil, &provider.Error{Message: "resolving API key", Retryable: false, Err: err}
-		}
-	}
-
-	// Header precedence: fixed first, then the config's, then the request's
-	// extras, then the bearer token last so a stray Authorization cannot shadow
-	// the key.
-	headers := http.Header{}
-	headers.Set("Content-Type", "application/json")
-	headers.Set("Accept", "text/event-stream")
-	for k, v := range p.cfg.Headers {
-		headers.Set(k, v)
-	}
-	for k, v := range req.ExtraHeaders {
-		headers.Set(k, v)
-	}
-	if key != "" {
-		headers.Set("Authorization", "Bearer "+key)
-	}
-
-	stream, err := ssestream.Open(ctx, ssestream.Config{
-		HTTPClient:     p.client,
-		ConnectTimeout: p.cfg.ConnectTimeout,
-		IdleTimeout:    p.cfg.IdleTimeout,
-		MaxLineBytes:   p.cfg.MaxLineBytes,
-	}, p.cfg.BaseURL+"/chat/completions", headers, body)
+	stream, err := p.target.Open(ctx, req.ExtraHeaders, body)
 	if err != nil {
 		return nil, err
 	}
 	defer stream.Close()
-	return p.consume(ctx, stream, req, onEvent)
+	return consume(stream, req.Model, onEvent)
 }
 
 // buildBody renders the request, drops reasoning unless asked to keep it, and
@@ -157,23 +131,11 @@ func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 		StreamOptions:   map[string]bool{"include_usage": true},
 	}
 	if req.MaxTokens > 0 {
-		maxTokens := req.MaxTokens
-		cr.MaxTokens = &maxTokens
+		cr.MaxTokens = &req.MaxTokens
 	}
 	raw, err := json.Marshal(cr)
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: encode request: %w", err)
 	}
-	if len(req.ProviderOptions) == 0 {
-		return raw, nil
-	}
-	var base map[string]any
-	if err := json.Unmarshal(raw, &base); err != nil {
-		return nil, fmt.Errorf("openaicompat: decode request for merge: %w", err)
-	}
-	merged, err := json.Marshal(provider.MergeOptions(base, req.ProviderOptions))
-	if err != nil {
-		return nil, fmt.Errorf("openaicompat: encode merged request: %w", err)
-	}
-	return merged, nil
+	return provider.MergeJSON(raw, req.ProviderOptions)
 }

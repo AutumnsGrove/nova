@@ -1275,23 +1275,18 @@ func FuzzToolCallAssembly(f *testing.F) {
 	f.Fuzz(func(t *testing.T, seed int64, a, b, c uint8) {
 		const arguments = `{"x":1}`
 		fragments := interleave(arguments, []int{int(a)%4 + 1, int(b)%4 + 1, int(c)%4 + 1})
-		asm := &assembler{calls: map[int]*callAcc{}}
+		col := provider.NewCollector("m", nil)
 		for n, frag := range fragments {
 			id := ""
 			name := ""
 			if n == 0 {
 				id, name = "c1", "read"
 			}
-			asm.add(toolCallDelta{
-				Index:    intPtr(0),
-				ID:       id,
-				Type:     "function",
-				Function: funcDelta(name, frag),
-			})
+			col.ToolCall(0, id, "function", name, frag)
 		}
-		calls, dropped := asm.assembled()
-		if dropped != 0 || len(calls) != 1 {
-			t.Fatalf("seed %d: calls=%v dropped=%d", seed, calls, dropped)
+		calls := col.Finish("tool_calls").Message.ToolCalls
+		if len(calls) != 1 {
+			t.Fatalf("seed %d: calls=%v", seed, calls)
 		}
 		if calls[0].ID != "c1" || calls[0].Function.Name != "read" {
 			t.Fatalf("seed %d: call = %+v", seed, calls[0])
@@ -1316,19 +1311,6 @@ func interleave(s string, sizes []int) []string {
 		i += size
 	}
 	return out
-}
-
-func intPtr(v int) *int { return &v }
-
-// funcDelta fills the anonymous function field of a tool-call delta.
-func funcDelta(name, args string) struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-} {
-	return struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	}{Name: name, Arguments: args}
 }
 
 func TestStream_OAI63_ImageMessageContentArray(t *testing.T) {

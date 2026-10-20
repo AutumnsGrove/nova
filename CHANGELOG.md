@@ -7,6 +7,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Prompt caching** for models that do not cache on their own. A request to those
+  models now carries an ephemeral cache marker, so an agent turn reuses the previous
+  turn's prefix instead of re-billing the whole history: about 10x cheaper on
+  Anthropic models. The catalog decides per model, and `agent.Config.PromptCache`
+  (or `provider.Request.PromptCache`) overrides it either way. Cache writes are now
+  counted (`Usage.CacheWriteTokens`, shown as `cache_write_tokens` on the wire) and
+  priced at 1.25x input by the cost fallback (#28).
+
 ### Changed
 
 - The one-line footer is now a multi-line **status region**: cwd and git branch/changes, token counts

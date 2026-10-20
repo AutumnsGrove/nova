@@ -116,7 +116,8 @@ state_changed    { ... }                            // model, thinking level, co
 login_end        { id, error? }                     // an interactive sign-in finished; id is the provider id
 ```
 
-`usage` is `{prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, cost_usd}`.
+`usage` is `{prompt_tokens, completion_tokens, reasoning_tokens, cached_tokens, cache_write_tokens, cost_usd}`;
+`cached_tokens` are cache reads and `cache_write_tokens` are tokens written into the cache on a cold prefix.
 `cost_usd` is the provider's number when it reports one, otherwise computed from the
 model catalog; `cost_source` says which.
 

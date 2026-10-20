@@ -446,6 +446,7 @@ type OpenCodeGoConfig struct {
 | OPG32 | sign-in failure names the right provider | OpenCode Go model, no OpenCode Go key | `provider_error` naming OpenCode Go, `nova login opencode-go`, and its env var |
 | OPG33 | the router uses the stable model id | `Model` is the wire slug, `ModelID` the catalog id | the request goes to OpenCode Go, not OpenRouter |
 | OPG34 | an unknown model id falls back | `ModelID` not in the catalog | the request goes to OpenRouter |
+| OPG35 | catalog says which models cache implicitly | every baseline entry | Claude false; the rest true, and a discovered override keeps the baseline flag |
 
 | USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |
 | USG02 | percent clamped | used over limit | percent 100 |

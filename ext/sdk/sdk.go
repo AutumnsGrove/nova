@@ -596,10 +596,10 @@ func refusal(raw json.RawMessage) error {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(raw, &f) != nil || f.Type != "error" {
-		return nil
+	if err := json.Unmarshal(raw, &f); err == nil && f.Type == "error" {
+		return fmt.Errorf("host refused the request: %s: %s", f.Error.Code, f.Error.Message)
 	}
-	return fmt.Errorf("host refused the request: %s: %s", f.Error.Code, f.Error.Message)
+	return nil
 }
 
 // deliver routes a response to the waiting request. A frame with no id, or one

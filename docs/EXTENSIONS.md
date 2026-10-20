@@ -112,6 +112,9 @@ tools:
 The command is run directly, **without a shell**, with arguments substituted from the
 parsed JSON. A value is never interpolated into a shell string. This is the safe
 default and the reason declarative tools are preferred for simple cases.
+The command itself (the first element of `exec`) is fixed when the manifest loads
+and may not contain a placeholder, so a model-supplied value can choose arguments
+but never the program.
 
 ### Command hooks
 
@@ -183,8 +186,8 @@ nova ext remove name
 nova ext check ./path/to/ext
 ```
 
-- **No registry server.** `install` takes a git URL (GitHub shorthand allowed) and an
-  optional tag, branch, or commit. It clones to `~/.config/nova/extensions/<name>/`.
+- **No registry server.** `install` takes a git URL (`https://` or ssh, never plain
+  `http://`; GitHub shorthand allowed) and an optional tag, branch, or commit. It clones to `~/.config/nova/extensions/<name>/`.
 - **A repository may hold several extensions.** Each subdirectory with an
   `extension.yaml` is one.
 - **Pinned.** The resolved commit SHA goes in `~/.config/nova/extensions.lock`.
@@ -223,7 +226,8 @@ installing any program. For stronger isolation, run Nova in a container.
 5. emits `state_changed` and re-lists commands and tools.
 
 A reload during a run waits for the run to end. A reload that fails for one
-extension leaves the others running and reports the failure.
+extension, including a failed rebuild, leaves the others running and reports the
+failure; a failed rebuild is tried again on the next reload.
 
 ## Letting Nova write its own extensions
 

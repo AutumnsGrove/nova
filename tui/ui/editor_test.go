@@ -50,6 +50,23 @@ func TestUI_RUN07_DroppedQueueKeepsTheDraft(t *testing.T) {
 	}
 }
 
+func TestUI_RUN09_DroppedQueueLeavesTheTranscript(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.transcript.QueueUser("s1", "steer")
+	m.transcript.QueueUser("f1", "follow_up")
+	before := len(m.transcript.Items())
+	runEndWith(m, &proto.DroppedQueue{Steering: []string{"s1"}, FollowUp: []string{"f1"}})
+	if got := m.editor.Value(); got != "s1\nf1" {
+		t.Fatalf("editor = %q, want the dropped text restored", got)
+	}
+	// run_end may add its own closing line, but never leaves the two queued
+	// messages behind: they now live in the editor, and showing them twice
+	// would make a resend look like a third copy.
+	if n := len(m.transcript.Items()); n > before-2+1 {
+		t.Fatalf("transcript has %d items, want the two restored messages gone (had %d)", n, before)
+	}
+}
+
 func TestUI_RUN08_NoDroppedQueueLeavesTheEditor(t *testing.T) {
 	m, _, _ := newModel(t)
 	m.setEditorText("draft")

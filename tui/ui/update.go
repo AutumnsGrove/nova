@@ -251,6 +251,10 @@ func (m *Model) restoreDropped(q *proto.DroppedQueue) {
 	if len(lines) == 0 {
 		return
 	}
+	// The restored text now lives in the editor, so its queued copies leave the
+	// transcript; otherwise a resend would show the message a second time.
+	m.transcript.DropQueued()
+	m.syncList()
 	text := strings.Join(lines, "\n")
 	if draft := m.editor.Value(); strings.TrimSpace(draft) != "" {
 		text = draft + "\n" + text

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"math/rand"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -413,6 +414,25 @@ func TestTranscript_TRN15_QueuedThenNormal(t *testing.T) {
 	tr.Apply(proto.Event{Type: proto.EventQueueUpdate, Steering: &steering})
 	if got := renderItem(tr.Items()[0], 80); strings.Contains(got, "queued") {
 		t.Fatalf("consumed message still marked queued: %q", got)
+	}
+}
+
+func TestTranscript_TRN21_DropQueuedRemovesOnlyQueuedItems(t *testing.T) {
+	tr := newTestTranscript(80)
+	tr.AddUser("settled", nil)
+	tr.QueueUser("steer this", "steer")
+	tr.QueueUser("later", "follow_up")
+
+	got := tr.DropQueued()
+
+	if want := []string{"steer this", "later"}; !slices.Equal(got, want) {
+		t.Fatalf("DropQueued = %q, want %q", got, want)
+	}
+	if len(tr.Items()) != 1 || !strings.Contains(renderItem(tr.Items()[0], 80), "settled") {
+		t.Fatalf("items after drop = %d, want only the settled message", len(tr.Items()))
+	}
+	if again := tr.DropQueued(); len(again) != 0 {
+		t.Fatalf("second DropQueued = %q, want none", again)
 	}
 }
 

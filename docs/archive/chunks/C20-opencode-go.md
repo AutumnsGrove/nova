@@ -386,6 +386,7 @@ type OpenCodeGoConfig struct {
 | MSG17 | idle timeout | text block, then silence; `IdleTimeout` 50 ms | retryable; text kept |
 | MSG18 | image message block | a user message with text and a PNG part | `content` is `[text, image]` with a base64 source |
 | MSG19 | text-only message block | `User("hi")` | `content` is one text block, no image |
+| MSG20 | cache marker per catalog | non-implicit, implicit, unknown model; explicit opt-out | top-level `cache_control` present, absent, absent, absent |
 | OPG01 | `New` names the provider | any config | `Name()` is `opencodego` |
 | OPG02 | chat model routes to chat | `APIFor("opencode-go/glm-5.3")` | `DialectChat` |
 | OPG03 | responses model routes to Responses | `APIFor("opencode-go/grok-4.7")` | `DialectResponses` |

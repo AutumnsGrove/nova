@@ -409,3 +409,56 @@ func TestMessages_MSG19_TextOnlyStaysTextBlock(t *testing.T) {
 		t.Errorf("content = %v, want one text block", content)
 	}
 }
+
+// --- prompt caching: MSG20 -------------------------------------------------
+
+// cacheModel registers a catalog entry for the marker decision and returns its
+// id. The catalog is process-wide, so every test uses its own id.
+func cacheModel(t *testing.T, id string, implicit bool) string {
+	t.Helper()
+	provider.RegisterModel(provider.Model{ID: id, Provider: "test", Slug: id, ImplicitCaching: implicit})
+	return id
+}
+
+// cacheMarkerOf returns the request body's top-level cache_control, or nil.
+func cacheMarkerOf(t *testing.T, srv *testkit.Server) map[string]any {
+	t.Helper()
+	var body map[string]any
+	if err := json.Unmarshal(srv.Requests()[0].Body, &body); err != nil {
+		t.Fatalf("request body is not JSON: %v", err)
+	}
+	marker, _ := body["cache_control"].(map[string]any)
+	return marker
+}
+
+func TestMessages_MSG20_CacheMarkerPerCatalog(t *testing.T) {
+	implicit := cacheModel(t, "msg20-implicit", true)
+	explicit := cacheModel(t, "msg20-explicit", false)
+	off := false
+	cases := []struct {
+		name  string
+		model string
+		opt   *bool
+		want  bool
+	}{
+		{"non-implicit model", explicit, nil, true},
+		{"implicit model", implicit, nil, false},
+		{"unknown model", "msg20-unknown", nil, false},
+		{"explicit opt-out", explicit, &off, false},
+	}
+	for _, tc := range cases {
+		p, srv := newProvider(t, Config{}, sse("message_stop", `{"type":"message_stop"}`))
+		req := provider.Request{Model: tc.model, PromptCache: tc.opt, Messages: []message.Message{message.User("hi")}}
+		if _, _, err := run(t, p, req); err != nil {
+			t.Fatalf("%s: Stream: %v", tc.name, err)
+		}
+		marker := cacheMarkerOf(t, srv)
+		if (marker != nil) != tc.want {
+			t.Errorf("%s: cache_control = %v, want marker %v", tc.name, marker, tc.want)
+			continue
+		}
+		if marker != nil && marker["type"] != "ephemeral" {
+			t.Errorf("%s: marker type = %v, want ephemeral", tc.name, marker["type"])
+		}
+	}
+}

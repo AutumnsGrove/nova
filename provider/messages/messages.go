@@ -117,13 +117,14 @@ func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 		max = p.cfg.MaxTokens
 	}
 	r := request{
-		Model:      req.Model,
-		System:     system,
-		Messages:   msgs,
-		Stream:     true,
-		MaxTokens:  max,
-		Tools:      flattenTools(req.Tools),
-		ToolChoice: mapToolChoice(req.ToolChoice),
+		Model:        req.Model,
+		System:       system,
+		Messages:     msgs,
+		Stream:       true,
+		MaxTokens:    max,
+		Tools:        flattenTools(req.Tools),
+		ToolChoice:   mapToolChoice(req.ToolChoice),
+		CacheControl: provider.RequestCacheControl(req),
 	}
 	if req.Temperature != nil {
 		r.Temperature = req.Temperature

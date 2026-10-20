@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -481,4 +484,62 @@ func containsPath(paths []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// The version names a path on the release server, so a value that is not a plain
+// tag is refused before anything is downloaded, whether it came from the
+// environment or from the release API.
+func TestInstall_ISH14_VersionMustBeAPlainTag(t *testing.T) {
+	for _, bad := range []string{"../../evil", "v1/x", "v1 2", "-v1", "v1?x=1", "v1;id"} {
+		fr := newFakeRelease(t, "v0.1.0")
+		installDir := t.TempDir()
+		out, code := runInstall(t, fr, installDir, t.TempDir(), "NOVA_VERSION="+bad)
+		if code == 0 || !strings.Contains(out, "version") {
+			t.Errorf("NOVA_VERSION=%q: exit %d out %q, want a version error", bad, code, out)
+		}
+		if containsPath(fr.paths(), "/releases/download/") {
+			t.Errorf("NOVA_VERSION=%q: a download was attempted: %v", bad, fr.paths())
+		}
+	}
+	fr := newFakeRelease(t, "../up")
+	if out, code := runInstall(t, fr, t.TempDir(), t.TempDir()); code == 0 || !strings.Contains(out, "version") {
+		t.Errorf("a bad tag from the API: exit %d out %q, want a version error", code, out)
+	}
+}
+
+// sha256sum -b writes "<hash> *<name>"; the Go updater accepts it, so must this.
+func TestInstall_ISH15_BinaryModeChecksumLine(t *testing.T) {
+	fr := newFakeRelease(t, "v0.1.0")
+	fr.setChecksums(strings.ReplaceAll(fr.checksums, "  nova_", " *nova_"))
+	out, code := runInstall(t, fr, t.TempDir(), t.TempDir())
+	if code != 0 {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+}
+
+// A link named nova in the archive is not the binary.
+func TestInstall_ISH16_SymlinkMemberIsRefused(t *testing.T) {
+	fr := newFakeRelease(t, "v0.1.0")
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	if err := tw.WriteHeader(&tar.Header{Name: "nova", Typeflag: tar.TypeSymlink, Linkname: "/bin/sh", Mode: 0o755}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fr.archive = buf.Bytes()
+	sum := hex.EncodeToString(sha256Sum(fr.archive))
+	fr.setChecksums(fmt.Sprintf("%s  nova_v0.1.0_%s_%s.tar.gz\n", sum, fr.os, fr.arch))
+	installDir := t.TempDir()
+	if out, code := runInstall(t, fr, installDir, t.TempDir()); code == 0 {
+		t.Fatalf("a symlink member was installed:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "nova")); err == nil {
+		t.Fatal("a binary was installed from a symlink member")
+	}
 }

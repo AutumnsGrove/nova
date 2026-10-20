@@ -272,6 +272,9 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | ISH11 | download failure | server returns 500 | error; nothing changed |
 | ISH12 | only the sanity check runs downloaded code | | `nova version` after install |
 | ISH13 | `sh` compatibility | run with `dash` | works |
+| ISH14 | the version must be a plain tag | `NOVA_VERSION` of `../../evil`, `v1/x`, a space, a leading dash, `?`, `;`; a bad tag from the release API | a version error and no download |
+| ISH15 | binary-mode checksum line | `checksums.txt` lines of the form `<hash> *<name>` | the install succeeds |
+| ISH16 | a symlink member is refused | an archive whose `nova` is a symlink | the install fails and no binary is written |
 
 ## Fuzz and property tests
 

@@ -223,7 +223,8 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
     capped at 200,000.
 29. **Network safety (SSRF).** The destination host is resolved **at dial time** and every resolved address is checked: loopback,
     private (RFC 1918 and unique-local), link-local (including `169.254.169.254` cloud metadata), unspecified, multicast, CGNAT
-    (100.64.0.0/10), and IPv4-mapped forms of these are refused with an error result `blocked address`. The connection is made to
+    (100.64.0.0/10), the other reserved, documentation, and benchmarking ranges, and IPv4-mapped, NAT64, and 6to4 forms of
+    these (judged by the IPv4 address inside) are refused with an error result `blocked address`. The connection is made to
     the checked IP, so DNS rebinding between check and connect cannot change the target. The same check applies to **every redirect**.
     A URL with an IP literal is checked the same way. `Config` may allow specific hosts (`webfetch.allow_hosts`) or all private
     addresses (`webfetch.allow_private: true`); both default off.
@@ -235,7 +236,8 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
     decoded size (so a zip-bomb cannot expand past it).
 32. **Content handling.** HTML is converted to markdown by an in-package converter over `golang.org/x/net/html`: script, style, nav-like
     boilerplate (`nav`, `footer`, `aside` when a `main` or `article` exists), and comments are dropped; headings, paragraphs, lists
-    (nested), links (`[text](url)` with relative URLs resolved), emphasis, inline and fenced code, block quotes, and simple tables are kept.
+    (nested), links (`[text](url)` with relative URLs resolved; `javascript:` and `data:` targets are reduced to their text), emphasis, inline
+    and fenced code (line breaks and indentation inside `pre` are kept), block quotes, and simple tables are kept.
     `text/plain`, `text/markdown`, and `application/json` (pretty-printed) are returned as text. Other content types return an error
     (`unsupported content type: image/png`). `raw: true` returns the body text unconverted (for text types).
 33. Charset: from the header or a `meta` tag; UTF-8, and Latin-1 and Windows-1252 as fallbacks; invalid sequences become U+FFFD.
@@ -384,6 +386,16 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 | WFT36 | concurrent fetches | 20, `-race` | independent results |
 | WFT37 | URL with spaces, Unicode, fragment, port | | handled |
 | WFT38 | empty URL, relative URL, huge URL | | errors |
+| WFT39 | `pre` blocks keep their lines | code with tabs and newlines | fenced block identical to the source |
+| WFT40 | blank elements between blocks | six empty `div`s | no leading spaces on the next block |
+| WFT41 | blank lines made of spaces | `br` separated by spaces | at most one blank line |
+| WFT42 | inert link targets | `JavaScript:`, `vbscript:`, `data:` | text and alt kept, target dropped |
+| WFT43 | cuts count characters | multi-byte text, odd limits | valid UTF-8; character counts exact |
+| WFT44 | connection closed after a fetch | kept-alive server | the connection is closed |
+| WFT45 | caller cancel is not a timeout | cancel mid-request | `cancelled`, not `timed out` |
+| WFT46 | redirect target validated like the URL | redirect to `http://u:p@host/` | credentials refused; not echoed |
+| WFT47 | other reserved ranges | `0/8`, `240/4`, documentation, NAT64, 6to4, Teredo | blocked; tunnelled forms follow the inner address |
+| WFT48 | allow-list matching | trailing dots, leading-dot suffix | normalised; dot boundary only |
 
 ## Fuzz and property tests
 

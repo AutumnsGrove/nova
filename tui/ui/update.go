@@ -236,10 +236,26 @@ func (m *Model) finishAbort(resp proto.Response) {
 	if json.Unmarshal(resp.Data, &out) != nil {
 		return
 	}
-	lines := slices.Concat(out.Steering, out.FollowUp)
-	if len(lines) > 0 {
-		m.setEditorText(strings.Join(lines, "\n"))
+	m.restoreDropped(&proto.DroppedQueue{Steering: out.Steering, FollowUp: out.FollowUp})
+}
+
+// restoreDropped puts queued messages a run never consumed back in the editor,
+// steering first, one per line, after whatever the user has already typed so a
+// draft is never lost. Abort and run_end both report a queue but never the
+// same one, so a message is restored once.
+func (m *Model) restoreDropped(q *proto.DroppedQueue) {
+	if q == nil {
+		return
 	}
+	lines := slices.Concat(q.Steering, q.FollowUp)
+	if len(lines) == 0 {
+		return
+	}
+	text := strings.Join(lines, "\n")
+	if draft := m.editor.Value(); strings.TrimSpace(draft) != "" {
+		text = draft + "\n" + text
+	}
+	m.setEditorText(text)
 }
 
 // handleEvent folds an event into the transcript and UI state. It returns an
@@ -252,6 +268,7 @@ func (m *Model) handleEvent(e proto.Event) tea.Cmd {
 		m.setRunning(true)
 	case proto.EventRunEnd:
 		m.setRunning(false)
+		m.restoreDropped(e.DroppedQueue)
 	case proto.EventUsage:
 		if e.Total != nil {
 			m.state.Usage.TotalTokens = e.Total.TotalTokens

@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/client"
 )
 
 // prepared runs ctrl+g's first command and returns the editor start message.
@@ -26,6 +27,37 @@ func prepared(t *testing.T, m *Model) editorStartMsg {
 		t.Cleanup(func() { _ = os.Remove(msg.path) })
 	}
 	return msg
+}
+
+func runEndWith(m *Model, dropped *proto.DroppedQueue) {
+	update(m, client.EventMsg{Event: proto.Event{Type: proto.EventRunEnd, Reason: "aborted", DroppedQueue: dropped}})
+}
+
+func TestUI_RUN06_DroppedQueueReturnsToTheEditor(t *testing.T) {
+	m, _, _ := newModel(t)
+	runEndWith(m, &proto.DroppedQueue{Steering: []string{"s1", "s2"}, FollowUp: []string{"f1"}})
+	if got := m.editor.Value(); got != "s1\ns2\nf1" {
+		t.Fatalf("editor = %q, want steering then follow-up", got)
+	}
+}
+
+func TestUI_RUN07_DroppedQueueKeepsTheDraft(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.setEditorText("my draft")
+	runEndWith(m, &proto.DroppedQueue{FollowUp: []string{"f1"}})
+	if got := m.editor.Value(); got != "my draft\nf1" {
+		t.Fatalf("editor = %q, want the draft kept and the dropped text after it", got)
+	}
+}
+
+func TestUI_RUN08_NoDroppedQueueLeavesTheEditor(t *testing.T) {
+	m, _, _ := newModel(t)
+	m.setEditorText("draft")
+	runEndWith(m, nil)
+	runEndWith(m, &proto.DroppedQueue{})
+	if got := m.editor.Value(); got != "draft" {
+		t.Fatalf("editor = %q, want it untouched", got)
+	}
 }
 
 func TestUI_EDI31_EqualLengthPastesStaySeparate(t *testing.T) {

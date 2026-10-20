@@ -48,25 +48,6 @@ func (c *collector) count(typ string) int {
 	return n
 }
 
-func (c *collector) filter(typ string) []proto.Event {
-	var out []proto.Event
-	for _, e := range c.all() {
-		if e.Type == typ {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-func (c *collector) find(typ string) (proto.Event, bool) {
-	for _, e := range c.all() {
-		if e.Type == typ {
-			return e, true
-		}
-	}
-	return proto.Event{}, false
-}
-
 // eventTypes maps events to their type strings, for order assertions.
 func eventTypes(events []proto.Event) []string {
 	out := make([]string, len(events))

@@ -68,6 +68,7 @@ func Test_LPQ14_QueueUpdateWhenFollowUpIsConsumed(t *testing.T) {
 }
 
 func Test_LPQ15_ConcurrentQueueUpdatesEndAtTheTrueCount(t *testing.T) {
+	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	started := make(chan struct{}, 1)
 	p := testkit.NewProvider(clock, namedToolTurn("hang"))
@@ -98,6 +99,7 @@ func Test_LPQ15_ConcurrentQueueUpdatesEndAtTheTrueCount(t *testing.T) {
 }
 
 func Test_LPQ16_NothingIsAcceptedOnceTheRunIsEnding(t *testing.T) {
+	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	var a *Agent
 	var steerErr, followErr error
@@ -119,6 +121,7 @@ func Test_LPQ16_NothingIsAcceptedOnceTheRunIsEnding(t *testing.T) {
 }
 
 func Test_LPT21_ProgressAfterToolReturnsIsHarmless(t *testing.T) {
+	testkit.NoLeaks(t)
 	clock := testkit.NewFakeClock(baseTime)
 	var late func(tool.Update)
 	tl := toolOf("late", false, func(_ context.Context, _ json.RawMessage, tctx *tool.Context) (tool.Result, error) {

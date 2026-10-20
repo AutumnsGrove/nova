@@ -69,7 +69,7 @@ nova/
     sdk/          the Go SDK for extensions                     ≤ 700
   testkit/        fake provider and server, clock, golden       ≤ 1200
   bundled/        in-tree extensions: tasks, ask, plan,
-                  subagent, webfetch                            ≤ 2500 total
+                  subagent, webfetch                            ≤ 2560 total
   tui/            the terminal UI                               ≤ 9850
     ui/           the Bubble Tea model and its views           ≤ 3050
     status/       the multi-line status region                 ≤ 320

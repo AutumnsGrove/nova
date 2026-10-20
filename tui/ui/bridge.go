@@ -4,6 +4,7 @@ package ui
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 
@@ -274,21 +275,23 @@ func (m *Model) cancelAllDialogs() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// expireDialog closes a dialog whose request timed out.
+// expireDialog closes a dialog whose request timed out, or drops it from the
+// queue, and lets the next queued request take its place. Local dialogs have an
+// empty id and must never match.
 func (m *Model) expireDialog(id string) {
+	if id == "" {
+		return
+	}
 	if top := m.overlay.Top(); top != nil && top.ID() == id {
 		m.overlay.Pop()
 		m.popIntent()
-		m.notice = "the request timed out"
+		m.showNextQueued()
+	} else if i := slices.IndexFunc(m.queuedReqs, func(r proto.UIRequest) bool { return r.ID == id }); i >= 0 {
+		m.queuedReqs = slices.Delete(m.queuedReqs, i, i+1)
+	} else {
 		return
 	}
-	for i, req := range m.queuedReqs {
-		if req.ID == id {
-			m.queuedReqs = append(m.queuedReqs[:i], m.queuedReqs[i+1:]...)
-			m.notice = "the request timed out"
-			return
-		}
-	}
+	m.notice = "the request timed out"
 }
 
 // applyWidget sets or clears a named widget.

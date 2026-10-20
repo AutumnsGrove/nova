@@ -381,7 +381,7 @@ type OpenCodeGoConfig struct {
 | MSG10 | usage across events | `message_start` input 10 + read 2, two `message_delta` outputs | prompt 12 (input + cache counts), read 2, output 7 |
 | MSG11 | stop reason mapping | `end_turn`, `tool_use`, `max_tokens`, `stop_sequence` | `stop`, `tool_calls`, `length`, `stop` |
 | MSG12 | `ping` ignored | ping between events | no event, no error |
-| MSG13 | `error` event | error block | non-retryable `*provider.Error` |
+| MSG13 | `error` event | an error block of each type | `overloaded_error`, `rate_limit_error` and `api_error` are retryable `*provider.Error`s; `invalid_request_error` and `authentication_error` are not (changed from always non-retryable: the same classes are retried when they arrive as an HTTP status, and a retry restarts the attempt cleanly) |
 | MSG14 | stream ends before `message_stop` | server closes after a text block | retryable; partial text kept |
 | MSG15 | empty stream | no events | retryable "empty stream" |
 | MSG16 | connect timeout | headers never sent; `ConnectTimeout` 50 ms | retryable `*provider.Error` |

@@ -74,6 +74,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   command runs. The run is deregistered before `run_end`, so `Running()` is false by the time a client sees it.
 - `RetryPolicy.Jitter` of zero now means the default and a negative value means none. A mid-stream provider error
   fails the turn, and a tool call with truncated arguments still encodes.
+- An Anthropic stream that reports `overloaded_error`, `rate_limit_error` or `api_error` partway through is now
+  retried like the same failure arriving as an HTTP status; a bad request or key still is not.
 - A JPEG tool image is converted to PNG for Kitty, which draws only PNG, instead of showing nothing.
 - A pasted API key works on the first-run screen (the paste was ignored), and server text there is cleaned.
 - Compaction counts replies and images, keeps tool names and cuts only on real turns.

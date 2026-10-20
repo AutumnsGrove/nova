@@ -74,6 +74,10 @@ func New(cfg Config) *Provider {
 // Name returns the provider id.
 func (p *Provider) Name() string { return p.cfg.Name }
 
+// retryableErrorType lists the error types a stream can report that clear on
+// their own, the same classes retryableStatus holds for an HTTP response.
+var retryableErrorType = map[string]bool{"overloaded_error": true, "rate_limit_error": true, "api_error": true}
+
 // Stream performs one streaming Messages request.
 func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
 	if err := p.target.Check(ctx, req.Model); err != nil {
@@ -165,8 +169,9 @@ func consume(s *ssestream.Stream, model string, onEvent func(provider.StreamEven
 			terminal = true
 		case "error":
 			return false, &provider.Error{
-				Code:    ev.Error.Type,
-				Message: cmp.Or(ev.Error.Message, "messages error"),
+				Code:      ev.Error.Type,
+				Message:   cmp.Or(ev.Error.Message, "messages error"),
+				Retryable: retryableErrorType[ev.Error.Type],
 			}
 		}
 		return terminal, nil

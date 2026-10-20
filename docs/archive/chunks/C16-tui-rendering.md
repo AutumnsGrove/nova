@@ -339,6 +339,7 @@ type Display struct {
 | SLN08 | mono has no colour | mono theme, ASCII profile | no escape codes |
 | SLN09 | never exceeds the width | widths 10 to 200 | every line fits |
 | SLN10 | empty separator | separator empty | the default ` · ` is used |
+| SLN11 | hostile values are cleaned | a cwd, branch, model and hint holding escapes, a bidi override and a newline | no control byte survives and no extra line appears |
 | STS03 | style mapping | warn, error, unknown, empty | distinct tokens; unknown and empty fall back to muted |
 | STS05 | status renders usage | a populated state | tokens, cache, cost, context, model, thinking |
 | STS06 | extension status grows the region | default plus two rows | height goes from three to five |

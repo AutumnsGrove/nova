@@ -118,6 +118,7 @@ func Build(cfg config.StatusConfig, d Data, width int, st styles.Styles, ext []E
 	if sep == "" {
 		sep = " · "
 	}
+	d = d.cleaned()
 	lines := Lines(cfg)
 	out := make([]string, 0, len(lines)+cfg.ExtLines)
 	for _, line := range lines {
@@ -125,6 +126,16 @@ func Build(cfg config.StatusConfig, d Data, width int, st styles.Styles, ext []E
 	}
 	out = append(out, extensionLines(ext, width, cfg.ExtLines, st)...)
 	return out
+}
+
+// cleaned returns d with every text field made safe for one line of a
+// terminal. The working directory and branch come from the folder the user
+// opened, so they can hold bytes a terminal acts on.
+func (d Data) cleaned() Data {
+	for _, f := range []*string{&d.CWD, &d.Branch, &d.Model, &d.Provider, &d.Thinking, &d.Hint, &d.Run} {
+		*f = sanitize.Line(*f)
+	}
+	return d
 }
 
 // segments resolves a list of ids, dropping the ones with no value.

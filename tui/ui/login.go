@@ -168,7 +168,12 @@ func (m *Model) beginLogin(id string) tea.Cmd {
 
 // beginMethod starts one method. The API key is collected by a dialog; the
 // interactive flows call Begin in a command, because Begin does I/O.
+//
+// Any flow already running is torn down first: a retry or a second /login must
+// not leave the old session holding its callback listener, and bumping the
+// generation makes the old session's late result harmless.
 func (m *Model) beginMethod(p providerauth.Provider, method providerauth.Method) tea.Cmd {
+	m.cancelLogin()
 	m.loginProvider = p.ID
 	m.loginMethod = method
 	m.loginErr = ""
@@ -204,6 +209,11 @@ func openURL(url string) error {
 // onLoginBegun shows the started flow and waits for it in the background.
 func (m *Model) onLoginBegun(msg loginBegunMsg) tea.Cmd {
 	if msg.gen != m.loginGen {
+		// A newer sign-in or a cancel superseded this one while it started; its
+		// session must still be released or its listener stays bound.
+		if msg.session != nil {
+			_ = msg.session.Close()
+		}
 		return nil
 	}
 	if msg.err != nil {

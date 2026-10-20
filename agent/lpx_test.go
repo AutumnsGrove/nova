@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -117,6 +119,94 @@ func Test_LPQ16_NothingIsAcceptedOnceTheRunIsEnding(t *testing.T) {
 	}
 	if s, f := a.Queued(); s != 0 || f != 0 {
 		t.Fatalf("queues hold %d and %d messages after the run", s, f)
+	}
+}
+
+// runEnd returns the single run_end event.
+func runEnd(t *testing.T, events []proto.Event) proto.Event {
+	t.Helper()
+	for _, e := range events {
+		if e.Type == proto.EventRunEnd {
+			return e
+		}
+	}
+	t.Fatal("no run_end event")
+	return proto.Event{}
+}
+
+func Test_LPQ17_UnconsumedQueueIsReportedAndCleared(t *testing.T) {
+	testkit.NoLeaks(t)
+	clock := testkit.NewFakeClock(baseTime)
+	started := make(chan struct{}, 1)
+	p := testkit.NewProvider(clock, namedToolTurn("hang"), textTurn("second run"))
+	c := &collector{}
+	a := New(Config{Provider: p, Model: "m", Clock: clock, Tools: registry(hangingTool(started)), Emit: c.emit})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan runOutcome, 1)
+	go func() { done <- runAsyncCtx(a, ctx) }()
+	<-started
+	for _, m := range []string{"s1", "s2"} {
+		if err := a.Steer(message.User(m)); err != nil {
+			t.Fatalf("Steer: %v", err)
+		}
+	}
+	if err := a.FollowUp(message.User("f1")); err != nil {
+		t.Fatalf("FollowUp: %v", err)
+	}
+	// Cancel the context directly rather than calling Abort, so the run itself
+	// has to deal with the queues it did not consume.
+	cancel()
+	<-done
+	dropped := runEnd(t, c.all()).DroppedQueue
+	if dropped == nil || !slices.Equal(dropped.Steering, []string{"s1", "s2"}) || !slices.Equal(dropped.FollowUp, []string{"f1"}) {
+		t.Fatalf("dropped_queue = %+v, want steering [s1 s2] and follow_up [f1]", dropped)
+	}
+	if s, f := a.Queued(); s != 0 || f != 0 {
+		t.Fatalf("queues hold %d and %d messages after the run", s, f)
+	}
+	// Nothing leaks into the next run.
+	if _, err := a.Run(context.Background(), nil, message.User("again")); err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	if requestHas(p, 1, "s1") || requestHas(p, 1, "f1") {
+		t.Fatal("a dropped message reached the next run")
+	}
+}
+
+func Test_LPQ18_NothingDroppedMeansNoField(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	p := testkit.NewProvider(clock, textTurn("done"))
+	_, events := runCollect(t, Config{Provider: p, Model: "m", Clock: clock}, nil, message.User("go"))
+	end := runEnd(t, events)
+	if end.DroppedQueue != nil {
+		t.Fatalf("dropped_queue = %+v, want absent", end.DroppedQueue)
+	}
+	data, err := json.Marshal(end)
+	if err != nil || strings.Contains(string(data), "dropped_queue") {
+		t.Fatalf("run_end JSON = %s (err %v), want no dropped_queue key", data, err)
+	}
+}
+
+func Test_LPQ19_AbortReturnsQueueSoRunEndCarriesNone(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	started := make(chan struct{}, 1)
+	p := testkit.NewProvider(clock, namedToolTurn("hang"))
+	c := &collector{}
+	a := New(Config{Provider: p, Model: "m", Clock: clock, Tools: registry(hangingTool(started)), Emit: c.emit})
+	done := make(chan runOutcome, 1)
+	go func() { done <- runAsyncCtx(a, context.Background()) }()
+	<-started
+	if err := a.Steer(message.User("s")); err != nil {
+		t.Fatalf("Steer: %v", err)
+	}
+	steering, _ := a.Abort()
+	<-done
+	if !slices.Equal(steering, []string{"s"}) {
+		t.Fatalf("Abort returned %v", steering)
+	}
+	// The caller already has the text; reporting it twice would restore it twice.
+	if end := runEnd(t, c.all()); end.DroppedQueue != nil {
+		t.Fatalf("dropped_queue = %+v after Abort returned the queue", end.DroppedQueue)
 	}
 }
 

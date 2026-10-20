@@ -47,7 +47,7 @@ func retryEventDelays(events []proto.Event) []int {
 func Test_LPR01_RetryThenSuccess(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Err: retryable()}, textTurn("ok"))
-	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Second, Cap: 30 * time.Second, Jitter: 0}}
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Second, Cap: 30 * time.Second, Jitter: -1}}
 	c := &collector{}
 	cfg.Emit = c.emit
 	done := make(chan runOutcome, 1)
@@ -65,7 +65,7 @@ func Test_LPR01_RetryThenSuccess(t *testing.T) {
 func Test_LPR02_RetriesExhausted(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, failTurns(3, retryable())...)
-	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 2, Base: time.Second, Cap: 30 * time.Second, Jitter: 0}}
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 2, Base: time.Second, Cap: 30 * time.Second, Jitter: -1}}
 	done := make(chan runOutcome, 1)
 	go func() { done <- runAsync(cfg, nil, message.User("go")) }()
 	advanceN(t, clock, 2)
@@ -81,7 +81,7 @@ func Test_LPR02_RetriesExhausted(t *testing.T) {
 func Test_LPR03_NonRetryable(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Err: nonRetryable()}, textTurn("ok"))
-	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Second, Jitter: 0}}
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Second, Jitter: -1}}
 	res, events, err := runCollectErr(t, cfg, nil, message.User("go"))
 	if err == nil || res.Reason != "error" {
 		t.Fatalf("err = %v reason = %q", err, res.Reason)
@@ -97,7 +97,7 @@ func Test_LPR03_NonRetryable(t *testing.T) {
 func Test_LPR04_BackoffDelays(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, failTurns(5, retryable())...)
-	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 4, Base: time.Second, Cap: 4 * time.Second, Jitter: 0}}
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 4, Base: time.Second, Cap: 4 * time.Second, Jitter: -1}}
 	c := &collector{}
 	cfg.Emit = c.emit
 	done := make(chan runOutcome, 1)
@@ -119,7 +119,7 @@ func Test_LPR04_BackoffDelays(t *testing.T) {
 func Test_LPR05_RetryAfterRespected(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Err: &provider.Error{Status: 429, Retryable: true, RetryAfter: 5 * time.Second}}, textTurn("ok"))
-	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Second, Cap: 30 * time.Second, Jitter: 0}}
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Second, Cap: 30 * time.Second, Jitter: -1}}
 	c := &collector{}
 	cfg.Emit = c.emit
 	done := make(chan runOutcome, 1)
@@ -135,7 +135,7 @@ func Test_LPR05_RetryAfterRespected(t *testing.T) {
 func Test_LPR06_RetryAfterCapped(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Err: &provider.Error{Status: 429, Retryable: true, RetryAfter: time.Hour}}, textTurn("ok"))
-	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Second, Cap: 30 * time.Second, Jitter: 0}}
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Second, Cap: 30 * time.Second, Jitter: -1}}
 	c := &collector{}
 	cfg.Emit = c.emit
 	done := make(chan runOutcome, 1)
@@ -151,7 +151,7 @@ func Test_LPR06_RetryAfterCapped(t *testing.T) {
 func Test_LPR07_CancelDuringBackoff(t *testing.T) {
 	clock := testkit.NewFakeClock(baseTime)
 	p := testkit.NewProvider(clock, testkit.Turn{Err: retryable()}, textTurn("ok"))
-	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Hour, Cap: time.Hour, Jitter: 0}}
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Hour, Cap: time.Hour, Jitter: -1}}
 	a := New(cfg)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan runOutcome, 1)
@@ -170,7 +170,7 @@ func Test_LPR08_PartialOutputDiscarded(t *testing.T) {
 		testkit.Turn{Text: "partial", Err: retryable(), ErrAfter: 1},
 		textTurn("success"),
 	)
-	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Second, Cap: 30 * time.Second, Jitter: 0}}
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Retry: RetryPolicy{Max: 3, Base: time.Second, Cap: 30 * time.Second, Jitter: -1}}
 	c := &collector{}
 	cfg.Emit = c.emit
 	done := make(chan runOutcome, 1)
@@ -207,6 +207,27 @@ func Test_LPR10_JitterBounds(t *testing.T) {
 		d := retryDelay(policy, nil, 0)
 		if d < time.Second || d > 1500*time.Millisecond {
 			t.Fatalf("delay = %v, want within [1s, 1.5s]", d)
+		}
+	}
+}
+
+func Test_LPR12_JitterZeroMeansDefaultNegativeMeansNone(t *testing.T) {
+	// A caller that sets other fields and leaves Jitter at zero gets the default
+	// 0.2, not silently no jitter.
+	jittered := false
+	for range 1000 {
+		d := retryDelay(RetryPolicy{Max: 3, Base: time.Second, Cap: time.Hour}, nil, 0)
+		if d < time.Second || d > 1200*time.Millisecond {
+			t.Fatalf("delay = %v, want within [1s, 1.2s]", d)
+		}
+		jittered = jittered || d > time.Second
+	}
+	if !jittered {
+		t.Fatal("Jitter 0 added no jitter in 1000 draws; want the 0.2 default")
+	}
+	for range 100 {
+		if d := retryDelay(RetryPolicy{Base: time.Second, Cap: time.Hour, Jitter: -1}, nil, 0); d != time.Second {
+			t.Fatalf("negative Jitter gave %v, want exactly 1s", d)
 		}
 	}
 }

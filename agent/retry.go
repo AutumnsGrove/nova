@@ -8,9 +8,7 @@ import (
 )
 
 // Retry defaults, and the upper bound on any delay including a server's
-// Retry-After, so a hostile header cannot park a run for hours. The jitter
-// default applies only to a wholly zero policy, so a caller that sets any field
-// gets exactly the delays it asked for.
+// Retry-After, so a hostile header cannot park a run for hours.
 const (
 	defaultRetryMax = 3
 	defaultJitter   = 0.2
@@ -36,8 +34,10 @@ func retryDelay(policy RetryPolicy, pe *provider.Error, attempt int) time.Durati
 	}
 	d = min(d, capd)
 
+	// Zero means "unset", so a caller that fills in other fields still gets
+	// jitter; only a negative value turns it off.
 	jitter := policy.Jitter
-	if policy == (RetryPolicy{}) {
+	if jitter == 0 {
 		jitter = defaultJitter
 	}
 	if jitter > 0 {

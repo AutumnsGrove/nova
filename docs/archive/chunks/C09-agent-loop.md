@@ -2,7 +2,7 @@
 chunk: C09
 title: "The agent loop"
 packages: [./agent]
-budgets: { ./agent: 1130 }
+budgets: { ./agent: 1150 }
 depends: [C01, C04, C08]
 ---
 
@@ -122,7 +122,7 @@ type RetryPolicy struct {
     Max    int           // default 3 retries (so 4 attempts); negative disables
     Base   time.Duration // default 1s
     Cap    time.Duration // default 30s
-    Jitter float64       // 0 to 1; default 0.2
+    Jitter float64       // fraction of the delay; 0 means the default 0.2, negative means none
 }
 type Clock interface {
     Now() time.Time
@@ -133,7 +133,7 @@ type Result struct {
     Messages  []message.Message // the full transcript, history included
     New       []message.Message // messages produced by this run
     Answer    string
-    Turns     int
+    Turns     int               // completed turns, plus the failed one when the run ends in error
     Usage     provider.Usage
     Reason    string // done | exhausted | aborted | error
     Exhausted bool
@@ -240,6 +240,10 @@ history as given, as before.
     `queue_update`, as does each message the loop takes off a queue. After the run has made its last
     decision to end, both return `ErrNotRunning` too, so nothing is accepted and then lost. `Abort` emits no
     event (its response carries the queues), because the run may already have ended.
+23a. When a run ends for any reason, both queues are cleared. What was still queued is reported as
+    `dropped_queue` (`steering` and `follow_up` texts) on `run_end`, omitted when empty, so a client can
+    restore it; nothing leaks into the next run. A cancelled run does not drain steering into the
+    transcript first. Messages `Abort` already returned are not reported again.
 24. `Abort` cancels the run's context and returns the unconsumed steering and follow-up
     messages, emptying the queues. Calling it when idle returns two empty slices. Calling it
     twice is harmless.
@@ -366,6 +370,9 @@ history as given, as before.
 | LPQ14 | `queue_update` when a follow-up is consumed | follow-up during a turn | a second event with `follow_up` 0 follows the pop |
 | LPQ15 | `queue_update` order under concurrency | 50 concurrent `Steer` calls | the last event reports 50 |
 | LPQ16 | no message accepted once the run is ending | `Steer` and `FollowUp` from `AgentEnd` | `ErrNotRunning`; queues empty |
+| LPQ17 | unconsumed queues at the end of a run | steer twice and follow up, then cancel the context | `run_end.dropped_queue` lists them in order; queues empty; the next run does not see them |
+| LPQ18 | nothing dropped | a normal run | no `dropped_queue` key in the JSON |
+| LPQ19 | `Abort` already returned the queue | steer, then `Abort` | `run_end` carries no `dropped_queue` |
 | LPR01 | retryable error then success | 500 then ok | success; one `retry` event |
 | LPR02 | retries exhausted | always 500, `Max` 2 | 3 attempts; reason error; error returned |
 | LPR03 | non-retryable error | 401 | one attempt; reason error |
@@ -377,6 +384,7 @@ history as given, as before.
 | LPR09 | `Max` negative disables | | one attempt |
 | LPR10 | jitter bounds | many runs | delay within `[d, d*(1+Jitter)]` |
 | LPR11 | error on a later turn after tools ran | | transcript valid (ends with tool results); earlier usage kept |
+| LPR12 | `Jitter` zero is the default, negative is none | `RetryPolicy{Base: 1s}` and `Jitter: -1` | zero gives delays in [1s, 1.2s] with some jitter; negative gives exactly 1s |
 | LPC01 | cancel before the first request | | only run_start and run_end; reason aborted; `context.Canceled` |
 | LPC02 | cancel during streaming | `Hang` turn | partial message discarded; reason aborted |
 | LPC03 | cancel during a tool | slow tool honouring ctx | results for **all** calls appended (`error: cancelled` for the unfinished); transcript valid; reason aborted |

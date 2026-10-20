@@ -53,7 +53,7 @@ nova/
                   bash                                          ≤ 400
   permission/     allow/ask/deny policy                         ≤ 340
   proto/          wire types and JSONL framing                  ≤ 600
-  agent/          the loop, hooks, queues, retry                ≤ 1130
+  agent/          the loop, hooks, queues, retry                ≤ 1150
   session/        JSONL tree store, branches, custom entries    ≤ 900
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
@@ -213,7 +213,8 @@ Rules the loop must keep, each of which has tests in [`TESTING.md`](TESTING.md):
 - **Steering and follow-up.** Two queues, as in Pi. A *steering* message is injected
   after the current assistant turn finishes its tool calls. A *follow-up* message is
   run after the agent has finished all pending work. Abort returns queued messages
-  to the caller. Once the loop has made its last decision to end, a new message is
+  to the caller. Any queue a run ends without consuming is cleared and reported in
+  `run_end.dropped_queue`, so it never leaks into the next run. Once the loop has made its last decision to end, a new message is
   refused with `ErrNotRunning` rather than accepted and lost.
 - **Retry.** A transient provider failure retries with exponential backoff, up to a
   configured count, and emits `retry` events. This includes a network timeout: a

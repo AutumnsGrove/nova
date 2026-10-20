@@ -2,6 +2,7 @@ package agent
 
 import (
 	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/proto"
 )
 
 // Steer queues a message injected after the current turn's tool results, and
@@ -104,6 +105,20 @@ func (r *run) popFollowUp() (message.Message, bool) {
 	a.mu.Unlock()
 	a.emitQueueUpdate(r.id)
 	return m, true
+}
+
+// closeAndDrop stops the agent accepting messages and empties both queues,
+// returning their text for run_end, or nil when nothing was queued.
+func (a *Agent) closeAndDrop() *proto.DroppedQueue {
+	a.mu.Lock()
+	a.closing = true
+	steering, followUp := contents(a.steering), contents(a.followUp)
+	a.steering, a.followUp = nil, nil
+	a.mu.Unlock()
+	if len(steering) == 0 && len(followUp) == 0 {
+		return nil
+	}
+	return &proto.DroppedQueue{Steering: steering, FollowUp: followUp}
 }
 
 // closeQueues stops the agent accepting messages, unless one arrived since the

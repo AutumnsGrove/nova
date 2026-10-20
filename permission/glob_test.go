@@ -1,7 +1,9 @@
 package permission
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -174,6 +176,36 @@ func TestMatchPath_GLB16_NegatedClassStopsAtSlash(t *testing.T) {
 	// A string glob has no separators, so a negated class may match "/".
 	if !MatchString("a[!b]c", "a/c") {
 		t.Error("MatchString [!b] did not match /")
+	}
+}
+
+// TestMatch_GLB17_CacheBounded checks the compiled-pattern cache stays bounded
+// and never changes an answer, including for an invalid pattern seen twice.
+func TestMatch_GLB17_CacheBounded(t *testing.T) {
+	var wg sync.WaitGroup
+	for g := range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 2 * globCacheMax {
+				pattern := fmt.Sprintf("dir%d_%d/*.go", g, i)
+				if !MatchPath(pattern, fmt.Sprintf("dir%d_%d/a.go", g, i)) {
+					t.Errorf("%s did not match its own path", pattern)
+				}
+				if MatchPath(pattern, "other/a.go") {
+					t.Errorf("%s matched an unrelated path", pattern)
+				}
+				if MatchPath("[a", "a") || MatchString("[a", "a") {
+					t.Error("an unbalanced pattern matched")
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	globCache.Lock()
+	defer globCache.Unlock()
+	if n := len(globCache.m); n > globCacheMax {
+		t.Fatalf("cache holds %d patterns, limit %d", n, globCacheMax)
 	}
 }
 

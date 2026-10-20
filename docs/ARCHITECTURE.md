@@ -51,7 +51,7 @@ nova/
   tools/          fs (read write edit list)                     ≤ 1060
                   search (glob grep)                            ≤ 700
                   bash                                          ≤ 400
-  permission/     allow/ask/deny policy                         ≤ 300
+  permission/     allow/ask/deny policy                         ≤ 340
   proto/          wire types and JSONL framing                  ≤ 600
   agent/          the loop, hooks, queues, retry                ≤ 1080
   session/        JSONL tree store, branches, custom entries    ≤ 900

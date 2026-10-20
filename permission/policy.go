@@ -228,7 +228,6 @@ func decodeObject(raw json.RawMessage) map[string]any {
 		return nil
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
 	var value any
 	if err := dec.Decode(&value); err != nil {
 		return nil

@@ -2,7 +2,7 @@
 chunk: C04
 title: "Tool contract, registry, permission policy"
 packages: [./tool, ./permission]
-budgets: { ./tool: 550, ./permission: 300 }
+budgets: { ./tool: 550, ./permission: 340 }
 depends: [C01]
 ---
 
@@ -269,6 +269,7 @@ func MatchString(pattern, s string) bool    // "*" matches any run of characters
 | GLB14 | Unicode | `é*` vs `éclair` | true |
 | GLB15 | `*`, `?` and `**` match a newline | `*rm -rf*` vs `echo hi\nrm -rf /` | true |
 | GLB16 | a negated class never matches `/` in `MatchPath` | `a[!b]c` vs `a/c` | false (`MatchString` still true) |
+| GLB17 | compiled-pattern cache | many distinct patterns, concurrent use | stays bounded; answers unchanged |
 
 ## Fuzz and property tests
 

@@ -46,6 +46,11 @@ func resolveTarget(flag string) (string, error) {
 		return "", errors.New("this nova was started with `go run`, so its binary is a temporary file " +
 			"that is deleted on exit; pass --target <path> or set NOVA_INSTALL_DIR to say what to replace")
 	}
+	// Replace the file behind a symlink, not the link: renaming over the link
+	// would leave the real binary stale.
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
 	return exe, nil
 }
 

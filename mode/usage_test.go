@@ -15,7 +15,7 @@ import (
 func TestUsage_USG21_GetUsageCommand(t *testing.T) {
 	var calls int
 	var mu sync.Mutex
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		mu.Lock()
 		calls++
 		mu.Unlock()

@@ -239,6 +239,15 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV42 | thinking events | reasoning in the script | `thinking_*` with a duration |
 | SRV45 | `run_command quit` and `exit` | | aliases for `shutdown`; `get_commands` lists them |
 | SRV46 | `run_command new` and `clear` | a session with one turn | each opens a fresh session (path changes) and emits `session_changed`; the old messages are gone; `get_commands` lists both; refused with `busy` while a run is active |
+| SRV47 | `set_model` moves the compaction window | switch from an unknown model to one with a catalog window | `get_state` `effective_limit` becomes that window |
+| SRV48 | server-raised events carry `ts` | `set_thinking`, watch `state_changed` | the event has a non-zero `ts` |
+| SRV49 | `get_messages` without a session store | `NoSession`, one run | the in-memory user and assistant messages come back |
+| SRV50 | a session switch forgets the last response's usage | a run reporting a near-full prompt, then `session.new` or `session.navigate`, then a prompt | no `error` event (no spurious compaction) |
+| SRV51 | concurrent session commands | `session.new` beside `get_messages`, `get_state`, `session.tree`, `set_model` | race-free under `-race` |
+| SRV52 | `set_tools` with an unknown or repeated name | `["bash","nope"]`, `["read","read"]` | `bad_request`; the registry is unchanged |
+| SRV53 | `session.list` when the directory cannot be read | a file where the directory tree should be | `internal`; a missing directory is still an empty list |
+| SRV54 | fire-and-forget UI requests keep their order | several `Notify` calls to a pipe client | every request arrives, in order |
+| SRV55 | a client that never reads | more `Notify` calls than the queue holds | `Notify` never blocks |
 | PRI01 | print mode answer | scripted "42" | stdout is `42\n`; exit 0 |
 | PRI02 | stdout has only the answer | tool calls in the run | tool progress only on stderr |
 | PRI03 | `-p -` reads stdin | | prompt from stdin |
@@ -268,6 +277,11 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | RPC12 | correlation ids | two concurrent commands with ids | each response carries its id |
 | RPC13 | backpressure | client reads slowly | no deadlock; server not killed |
 | RPC14 | large event | 1 MiB tool result | delivered intact |
+| RPC15 | a slow command does not stall events | `reload` queued while a run emits more events than the subscriber buffer holds | every event is delivered, no `subscriber too slow` error, the reload then answers `ok` |
+| RPC16 | `abort` overtakes a blocked command | `reload` waiting on a hung run, then `abort` | the abort answers at once, the run ends `aborted`, the reload then answers `ok` |
+| RPC17 | no goroutine outlives `ServeRPC` | cancelled context with unread input | `testkit.NoLeaks` passes |
+| RPC18 | server hello capabilities | | `steer`, `fork`, `compact` |
+| RPC19 | no frame after return | a UI request after `ServeRPC` returned | refused; nothing written |
 | CLI01 | `--help` | | usage on stdout; exit 0 |
 | CLI02 | unknown flag | | message and usage on stderr; exit 2 |
 | CLI03 | conflicting modes | `-p x --mode rpc` | exit 2 |

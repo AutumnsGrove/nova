@@ -22,26 +22,7 @@ func RunJSON(ctx context.Context, s *Server, prompt string, out io.Writer) int {
 		_ = enc.Encode(proto.Event{Type: proto.EventError, Error: resp.Error})
 		return exitForError(resp.Error.Code)
 	}
-
-	interrupted := false
-	ctxDone := ctx.Done()
-	for {
-		select {
-		case <-ctxDone:
-			s.agent.Abort()
-			ctxDone = nil
-			interrupted = true
-		case ev, ok := <-events:
-			if !ok {
-				return 1
-			}
-			_ = enc.Encode(ev)
-			if ev.Type == proto.EventRunEnd {
-				if interrupted {
-					return 130
-				}
-				return exitForReason(ev.Reason)
-			}
-		}
-	}
+	// A line that cannot be written (a closed pipe) must not stop the run from
+	// being drained to its run_end, so the encode error is dropped on purpose.
+	return driveRun(ctx, s, events, func(ev proto.Event) { _ = enc.Encode(ev) })
 }

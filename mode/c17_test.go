@@ -125,18 +125,11 @@ func TestHandlers_SVA04_GetExtensions(t *testing.T) {
 	}
 
 	withExt := newExtServer(t, []string{writeDeclExt(t, "decl_tool_sva04")})
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		rows := decodeArray(t, withExt.Handle(context.Background(), proto.Command{Type: proto.CmdGetExtensions}))
-		if len(rows) > 0 {
-			if rows[0]["name"] != "decl" {
-				t.Fatalf("extension status = %v", rows[0])
-			}
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
+	waitExtStarted(t, withExt)
+	rows := decodeArray(t, withExt.Handle(context.Background(), proto.Command{Type: proto.CmdGetExtensions}))
+	if len(rows) == 0 || rows[0]["name"] != "decl" {
+		t.Fatalf("get_extensions after start = %v, want the loaded extension", rows)
 	}
-	t.Fatal("get_extensions never listed the loaded extension")
 }
 
 func TestSession_SVA05_RememberSessionAddsAllow(t *testing.T) {
@@ -203,7 +196,9 @@ func TestSession_SVA08_RememberIgnoredElsewhere(t *testing.T) {
 	s, _ := testServer(t)
 	c := NewPipe(s, "ui.select")
 	defer c.Close()
+	answered := make(chan struct{})
 	go func() {
+		defer close(answered)
 		_, _ = s.callUI(context.Background(), proto.UIRequest{Type: proto.FrameUIRequest, ID: "u", Method: "select"})
 	}()
 	req := <-c.Requests()
@@ -211,9 +206,11 @@ func TestSession_SVA08_RememberIgnoredElsewhere(t *testing.T) {
 		t.Fatalf("method = %q", req.Method)
 	}
 	c.Answer(proto.UIResponse{Type: proto.FrameUIResponse, ID: req.ID, OK: true, IDs: []string{"a"}, Remember: "session"})
-	time.Sleep(20 * time.Millisecond)
-	if len(s.sessionAllow) != 0 {
-		t.Fatalf("remember on a select added rules: %v", s.sessionAllow)
+	<-answered
+	rules := 0
+	s.sessionAllow.Range(func(_, _ any) bool { rules++; return true })
+	if rules != 0 {
+		t.Fatalf("remember on a select added %d rules", rules)
 	}
 }
 

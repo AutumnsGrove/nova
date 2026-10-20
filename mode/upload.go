@@ -1,10 +1,10 @@
 package mode
 
 import (
-	"crypto/rand"
+	"cmp"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
+	"slices"
 
 	"github.com/AutumnsGrove/nova/media"
 	"github.com/AutumnsGrove/nova/mode/attach"
@@ -14,7 +14,9 @@ import (
 // StoreAttachment keeps an uploaded image for later turns and returns its id.
 // It checks and bounds the bytes here; attach.Message normalizes them again on
 // the way into a prompt. The store lives in memory and expires with the server.
-func (s *Server) StoreAttachment(name, mime string, data []byte) (string, error) {
+// The client's claimed mime type is ignored: the sniffed one is what the bytes
+// are, and the claim is only a hint a hostile client could get wrong.
+func (s *Server) StoreAttachment(name, _ string, data []byte) (string, error) {
 	if len(data) == 0 {
 		return "", fmt.Errorf("empty attachment")
 	}
@@ -25,7 +27,7 @@ func (s *Server) StoreAttachment(name, mime string, data []byte) (string, error)
 	if !ok {
 		return "", fmt.Errorf("attachment is not a supported image")
 	}
-	id := newAttachmentID()
+	id := randomHex(16)
 	s.mu.Lock()
 	if s.attachments == nil {
 		s.attachments = map[string]proto.Attachment{}
@@ -35,19 +37,11 @@ func (s *Server) StoreAttachment(name, mime string, data []byte) (string, error)
 	return id, nil
 }
 
-// newAttachmentID returns a random opaque id for one stored upload.
-func newAttachmentID() string {
-	var b [16]byte
-	_, _ = rand.Read(b[:])
-	return hex.EncodeToString(b[:])
-}
-
-// resolveAttachments replaces an attachment that names a stored id with the
-// stored bytes, returning a copy when anything changes. An unknown id is an
-// error, so a prompt never silently loses an upload.
+// resolveAttachments returns a copy of atts in which an attachment that names a
+// stored id is replaced by the stored bytes. An unknown id is an error, so a
+// prompt never silently loses an upload.
 func (s *Server) resolveAttachments(atts []proto.Attachment) ([]proto.Attachment, error) {
-	out := atts
-	changed := false
+	out := slices.Clone(atts)
 	for i, a := range atts {
 		if a.ID == "" {
 			continue
@@ -58,13 +52,7 @@ func (s *Server) resolveAttachments(atts []proto.Attachment) ([]proto.Attachment
 		if !ok {
 			return nil, fmt.Errorf("attachment %q is unknown or expired", a.ID)
 		}
-		if a.Name != "" {
-			stored.Name = a.Name
-		}
-		if !changed {
-			out = append([]proto.Attachment(nil), atts...)
-			changed = true
-		}
+		stored.Name = cmp.Or(a.Name, stored.Name)
 		out[i] = stored
 	}
 	return out, nil

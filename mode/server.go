@@ -9,9 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
@@ -29,6 +29,9 @@ import (
 	"github.com/AutumnsGrove/nova/tool"
 	"github.com/AutumnsGrove/nova/usage"
 )
+
+// extShutdownTimeout bounds how long Close waits for extensions to stop.
+const extShutdownTimeout = 5 * time.Second
 
 // Clock is the time seam, so tests can drive time with a fake clock.
 type Clock interface {
@@ -80,9 +83,8 @@ type Options struct {
 
 // subscriber is one event consumer.
 type subscriber struct {
-	ch      chan proto.Event
-	seq     int64
-	dropped bool
+	ch  chan proto.Event
+	seq int64
 }
 
 // Server owns the session and implements the protocol commands.
@@ -124,17 +126,27 @@ type Server struct {
 	uiHandler func(context.Context, proto.UIRequest) (proto.UIResponse, error)
 	uiPending map[string]chan proto.UIResponse
 	uiCaps    map[string]bool
-	uiNext    int64
+	uiNext    atomic.Int64
 
-	// sessionMu guards sessionAllow, the per-server allow rules added by a
-	// "remember: session" permission answer. They are never persisted.
-	sessionMu    sync.Mutex
-	sessionAllow map[string]bool
+	// sessionAllow holds the per-server allow rules added by a "remember:
+	// session" permission answer, tool name to true. They are never persisted.
+	sessionAllow sync.Map
 
 	// logins holds the interactive sign-ins in progress, one per provider id,
 	// guarded by mu. loginWG counts their goroutines so Close can wait.
 	logins  map[string]*loginFlow
 	loginWG sync.WaitGroup
+
+	// extStarted closes when the background extension start has finished.
+	extStarted chan struct{}
+
+	// life ends when the server closes. notifyCh feeds the one goroutine that
+	// delivers fire-and-forget UI requests in order; notifying (guarded by mu)
+	// records that it has started.
+	life      context.Context
+	stopLife  context.CancelFunc
+	notifyCh  chan proto.UIRequest
+	notifying bool
 
 	// fallbackConv identifies the conversation when no session store is open
 	// (print mode with no session), so a provider still sees one stable id.
@@ -179,7 +191,12 @@ func New(opt Options) (*Server, error) {
 		limit:     cfg.ContextLimit,
 		uiPending: map[string]chan proto.UIResponse{},
 		ledger:    usage.NewLedger(provider.GetModel),
+		logins:    map[string]*loginFlow{},
+
+		extStarted: make(chan struct{}),
+		notifyCh:   make(chan proto.UIRequest, notifyQueueSize),
 	}
+	s.life, s.stopLife = context.WithCancel(context.Background())
 	s.fallbackConv = newConversationID()
 	s.prov = opt.Provider
 	if s.prov == nil {
@@ -234,7 +251,12 @@ func New(opt Options) (*Server, error) {
 	s.ext = s.buildExtensionHost()
 	if !opt.NoTools {
 		for _, b := range bundled.Enabled(cfg) {
-			_ = s.ext.AddBundled(b)
+			if err := s.ext.AddBundled(b); err != nil {
+				if s.store != nil {
+					_ = s.store.Close()
+				}
+				return nil, fmt.Errorf("mode: add bundled extension: %w", err)
+			}
 		}
 	}
 	extHooks := s.ext.Hooks()
@@ -316,21 +338,21 @@ func (s *Server) Subscribe(buf int) (<-chan proto.Event, func()) {
 }
 
 // emit fans an event out to every subscriber with a per-subscriber sequence.
-// It never blocks: a full subscriber is dropped with a final error event.
+// It never blocks: a full subscriber is dropped with a final error event. An
+// event the agent did not stamp (a server-raised one) gets its time here.
 func (s *Server) emit(ev proto.Event) {
+	if ev.TS.IsZero() {
+		ev.TS = s.clock.Now()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, sub := range s.subs {
-		if sub.dropped {
-			continue
-		}
 		sub.seq++
 		out := ev
 		out.Seq = sub.seq
 		select {
 		case sub.ch <- out:
 		default:
-			sub.dropped = true
 			delete(s.subs, id)
 			// Make room for the final error so a small buffer still sees it.
 			select {
@@ -344,18 +366,23 @@ func (s *Server) emit(ev proto.Event) {
 }
 
 // onMessage persists one message synchronously. A store error aborts the run.
+// The append happens outside the lock so a slow disk never stalls event
+// delivery or the state getters.
 func (s *Server) onMessage(m message.Message, u *provider.Usage) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if u != nil {
 		s.lastUse = *u
 		s.usage.Add(*u)
 	}
-	if s.store == nil {
+	store := s.store
+	if store == nil {
 		s.mem = append(s.mem, m)
+	}
+	s.mu.Unlock()
+	if store == nil {
 		return nil
 	}
-	_, err := s.store.Append(session.Entry{Type: session.TypeMessage, Message: &m, Usage: u})
+	_, err := store.Append(session.Entry{Type: session.TypeMessage, Message: &m, Usage: u})
 	return err
 }
 
@@ -373,21 +400,39 @@ func (s *Server) history() []message.Message {
 	return msgs
 }
 
-// sessionID returns the store's id, or an empty string when none is open.
-func (s *Server) sessionID() string {
-	if s.store == nil {
+// sessionStore returns the open store, or nil when the transcript lives in
+// memory only. session.new, resume, and fork replace the store, so every
+// reader outside New takes it through here rather than reading the field.
+func (s *Server) sessionStore() *session.Store {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.store
+}
+
+// storeID returns a store's session id, or "" when there is none.
+func storeID(st *session.Store) string {
+	if st == nil {
 		return ""
 	}
-	return s.store.Header().ID
+	return st.Header().ID
 }
+
+// storeLeaf returns a store's active leaf, or "" when there is none.
+func storeLeaf(st *session.Store) string {
+	if st == nil {
+		return ""
+	}
+	return st.Leaf()
+}
+
+// sessionID returns the current session's id, or "" when none is open.
+func (s *Server) sessionID() string { return storeID(s.sessionStore()) }
 
 // conversationID is the id providers receive for the current conversation: the
 // session's id, which changes with session.new, resume, and fork, or a random
 // per-server id when there is no session store. It is read on every request,
-// possibly from the run goroutine, so it takes the lock that guards the store.
+// possibly from the run goroutine.
 func (s *Server) conversationID() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if id := s.sessionID(); id != "" {
 		return id
 	}
@@ -396,7 +441,7 @@ func (s *Server) conversationID() string {
 
 // newConversationID returns a random id for a server with no session store. It
 // only labels the conversation for a provider, so it is not a secret.
-func newConversationID() string { return fmt.Sprintf("nova_%016x", rand.Uint64()) }
+func newConversationID() string { return "nova_" + randomHex(8) }
 
 // beforeProviderRequest applies the live model and thinking state to each
 // request, so set_model and set_thinking take effect without rebuilding.
@@ -408,30 +453,53 @@ func (s *Server) beforeProviderRequest(_ context.Context, req *provider.Request)
 	req.ReasoningEffort = s.think
 }
 
-// beforeTurn runs compaction when the context is over the limit.
-func (s *Server) beforeTurn(ctx context.Context, msgs []message.Message) ([]message.Message, error) {
-	if s.store == nil || s.compactor == nil {
-		return nil, nil
-	}
+// compactionState returns a private copy of the compactor with the live
+// context limit applied, so a caller can use it without holding s.mu while
+// set_model or set_context_limit change the originals.
+func (s *Server) compactionState() *compaction.Compactor {
 	s.mu.Lock()
-	settings := s.compactor.Settings
-	settings.ContextLimit = s.limit
-	last := s.lastUse
-	s.mu.Unlock()
-	if !compaction.ShouldCompact(settings, msgs, &last) {
-		return nil, nil
-	}
-	out, err := compaction.Run(ctx, s.store, s.compactor, "")
-	if err != nil {
-		s.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: proto.CodeInternal, Message: "compaction failed: " + err.Error()}})
-		return nil, nil
-	}
+	defer s.mu.Unlock()
+	c := *s.compactor
+	c.Settings.ContextLimit = s.limit
+	return &c
+}
+
+// emitCompaction announces a finished compaction.
+func (s *Server) emitCompaction(out *compaction.Outcome) {
 	s.emit(proto.Event{
 		Type:         proto.EventCompaction,
 		Entry:        out.Entry.ID,
 		TokensBefore: out.TokensBefore,
 		TokensAfter:  out.TokensAfter,
 	})
+}
+
+// reportCompactionFailure tells clients a compaction failed. The run goes on
+// uncompacted, because the provider may still accept the longer context.
+func (s *Server) reportCompactionFailure(err error) {
+	s.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: proto.CodeInternal, Message: "compaction failed: " + err.Error()}})
+}
+
+// beforeTurn runs compaction when the context is over the limit. It returns no
+// error even when compaction fails: see reportCompactionFailure.
+func (s *Server) beforeTurn(ctx context.Context, msgs []message.Message) ([]message.Message, error) {
+	store := s.sessionStore()
+	if store == nil {
+		return nil, nil
+	}
+	c := s.compactionState()
+	s.mu.Lock()
+	last := s.lastUse
+	s.mu.Unlock()
+	if !compaction.ShouldCompact(c.Settings, msgs, &last) {
+		return nil, nil
+	}
+	out, err := compaction.Run(ctx, store, c, "")
+	if err != nil {
+		s.reportCompactionFailure(err)
+		return nil, nil
+	}
+	s.emitCompaction(out)
 	return s.history(), nil
 }
 
@@ -446,7 +514,7 @@ func (s *Server) startRun(m message.Message) error {
 // progress is busy, anything else is a configuration problem.
 func startFailure(cmd proto.Command, err error) proto.Response {
 	if errors.Is(err, agent.ErrBusy) {
-		return failResponse(cmd, proto.CodeBusy, "a run is already in progress")
+		return busyResponse(cmd)
 	}
 	return failResponse(cmd, proto.CodeInternal, err.Error())
 }
@@ -471,16 +539,16 @@ func (s *Server) Close() error {
 	s.closed = true
 	store := s.store
 	s.mu.Unlock()
+	s.stopLife()
 	s.closeLogins()
+	var storeErr error
 	if store != nil {
-		_ = store.Close()
+		storeErr = store.Close()
 	}
-	if s.ext != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return s.ext.Shutdown(ctx)
-	}
-	return nil
+	<-s.extStarted
+	ctx, cancel := context.WithTimeout(context.Background(), extShutdownTimeout)
+	defer cancel()
+	return errors.Join(storeErr, s.ext.Shutdown(ctx))
 }
 
 // SetUIHandler installs the handler used to answer permission and ui requests.

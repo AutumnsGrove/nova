@@ -34,6 +34,14 @@ Every frame has a `type`. Frames that expect an answer carry a client-chosen str
 Command handling is asynchronous. A successful `prompt` response means the prompt
 was **accepted**, not that the run finished. Watch events for that.
 
+Over stdio (`--mode rpc`), commands run one at a time in the order they arrive, and
+events are written independently of them, so a slow command (a `reload` waiting for
+the run to end, a long `bash`) never stalls the event stream. `abort` is the one
+exception: it is handled as soon as it is read, so it can end the run that a queued
+command is waiting for. On end of input the queued commands finish and answer, then
+any run is aborted. A client that stops reading is dropped once it falls 1024 events
+behind.
+
 ### Hello
 
 ```json
@@ -60,17 +68,17 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 | `set_model` | `model` | |
 | `set_thinking` | `level` | `off`, `low`, `medium`, `high` |
 | `set_context_limit` | `tokens` | `0` clears it |
-| `set_tools` | `active: []string` | |
+| `set_tools` | `active: []string` | replace the active built-in tools. An unknown or repeated name is `bad_request` and changes nothing |
 | `compact` | `instructions?` | run compaction now |
-| `session.new` / `session.resume` / `session.fork` | `id?`, `from_entry?` | |
+| `session.new` / `session.resume` / `session.fork` | `session?`, `entry?` | `session.resume` takes `session`, an id or a file path; `session.fork` takes `entry`, the entry to fork at. All three are refused with `busy` while a run is active, and each forgets the previous conversation's token counts |
 | `session.tree` | | entries as a tree |
-| `session.navigate` | `entry` | move the active leaf; may produce a branch summary |
+| `session.navigate` | `entry` | move the active leaf (`busy` during a run) |
 | `session.name` | `name` | |
 | `reload` | | restart extensions; re-read config, skills, prompts |
-| `get_messages` | `leaf?` | active branch as messages |
+| `get_messages` | `entry?` | the branch ending at `entry` (default: the active leaf) as messages; without a session store, the in-memory transcript |
 | `get_commands` | | slash commands, including extension and prompt-template ones |
 | `list_models` | `query?` | the model catalog: id, name, provider, context window, prices |
-| `session.list` | | sessions for the working directory: id, name, modified, entry count |
+| `session.list` | | sessions for the working directory: id, name, modified, entry count. A directory that does not exist yet is an empty list; one that cannot be read is `internal` |
 | `get_extensions` | | each extension's name, version, state, restarts, last error |
 | `run_command` | `name`, `args` | execute a slash command; `quit` and `exit` are aliases for `shutdown`, and `new` and `clear` start a fresh session (the `session.new` command) |
 | `bash` | `command` | run a user shell command and record it in the session |
@@ -86,7 +94,8 @@ where the user is. The credential is never echoed in a response or an event.
 
 ## Events
 
-Events carry `seq` (a per-connection counter) and `ts`. Order within a run is exact.
+Events carry `seq` (a per-connection counter) and `ts`, including the ones the server
+raises itself (`state_changed`, `session_changed`, `compaction`, `error`). Order within a run is exact.
 
 ```
 run_start        { run }

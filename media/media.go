@@ -12,14 +12,14 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/gif"
+	_ "image/gif" // registers the GIF decoder with image.Decode
 	"image/jpeg"
 	"image/png"
 
 	"github.com/AutumnsGrove/nova/message"
 	"golang.org/x/image/draw"
-	_ "golang.org/x/image/tiff"
-	_ "golang.org/x/image/webp"
+	_ "golang.org/x/image/tiff" // registers the TIFF decoder
+	_ "golang.org/x/image/webp" // registers the WebP decoder
 )
 
 const (
@@ -47,15 +47,15 @@ type Result struct {
 	Hints []string
 }
 
-// mimeByFormat maps image.DecodeConfig's format name to a mime type. The set is
-// the formats the decoders this package registers understand.
+// mimeByFormat maps image.DecodeConfig's format name to a mime type. It lists
+// exactly the formats whose decoders this package imports, so a decoder that
+// another package happens to register is still refused.
 var mimeByFormat = map[string]string{
 	"png":  "image/png",
 	"jpeg": "image/jpeg",
 	"gif":  "image/gif",
 	"webp": "image/webp",
 	"tiff": "image/tiff",
-	"bmp":  "image/bmp",
 }
 
 // Sniff reports the mime type of a supported image without decoding it fully.
@@ -79,12 +79,13 @@ func Dimensions(data []byte) (w, h int, ok bool) {
 }
 
 // Normalize decodes data, applies EXIF orientation, resizes it to fit the
-// limits, and re-encodes it under MaxBytes. mimeType is a hint; the decoded
-// format decides how it is re-encoded. name is display only.
-func Normalize(data []byte, mimeType, name string) (Result, error) {
+// limits, and re-encodes it under MaxBytes. The mime type a caller claims is
+// ignored (the decoded format decides how it is re-encoded); the parameter stays
+// so callers need not change. name is display only.
+func Normalize(data []byte, _ /* claimed mime type */, name string) (Result, error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return Result{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+		return Result{}, fmt.Errorf("%w: %w", ErrUnsupported, err)
 	}
 	mime, ok := mimeByFormat[format]
 	if !ok {
@@ -96,7 +97,7 @@ func Normalize(data []byte, mimeType, name string) (Result, error) {
 
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return Result{}, fmt.Errorf("%w: %v", ErrUnsupported, err)
+		return Result{}, fmt.Errorf("%w: %w", ErrUnsupported, err)
 	}
 	oriented := orient(src, exifOrientation(data, mime))
 	origW, origH := oriented.Bounds().Dx(), oriented.Bounds().Dy()

@@ -19,6 +19,10 @@ func exifOrientation(data []byte, mime string) int {
 			continue
 		}
 		marker := data[offset+1]
+		if marker == 0xff {
+			offset++ // JPEG allows 0xff fill bytes before a marker
+			continue
+		}
 		if marker == 0xd8 || marker == 0x01 || (marker >= 0xd0 && marker <= 0xd7) {
 			offset += 2
 			continue
@@ -92,15 +96,15 @@ func orient(src image.Image, o int) image.Image {
 		return src
 	}
 	b := src.Bounds()
-	W, H := b.Dx(), b.Dy()
-	w, h := W, H
+	srcW, srcH := b.Dx(), b.Dy()
+	w, h := srcW, srcH
 	if o >= 5 {
-		w, h = H, W
+		w, h = srcH, srcW
 	}
 	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			sx, sy := mapOrientation(o, x, y, W, H)
+			sx, sy := mapOrientation(o, x, y, srcW, srcH)
 			dst.Set(x, y, src.At(b.Min.X+sx, b.Min.Y+sy))
 		}
 	}
@@ -108,23 +112,23 @@ func orient(src image.Image, o int) image.Image {
 }
 
 // mapOrientation maps an output pixel to its source pixel for one EXIF
-// orientation. W and H are the source dimensions.
-func mapOrientation(o, x, y, W, H int) (int, int) {
+// orientation. srcW and srcH are the source dimensions.
+func mapOrientation(o, x, y, srcW, srcH int) (int, int) {
 	switch o {
 	case 2:
-		return W - 1 - x, y
+		return srcW - 1 - x, y
 	case 3:
-		return W - 1 - x, H - 1 - y
+		return srcW - 1 - x, srcH - 1 - y
 	case 4:
-		return x, H - 1 - y
+		return x, srcH - 1 - y
 	case 5:
 		return y, x
 	case 6:
-		return y, H - 1 - x
+		return y, srcH - 1 - x
 	case 7:
-		return W - 1 - y, H - 1 - x
+		return srcW - 1 - y, srcH - 1 - x
 	case 8:
-		return W - 1 - y, x
+		return srcW - 1 - y, x
 	}
 	return x, y
 }

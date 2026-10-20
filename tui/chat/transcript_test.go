@@ -4,8 +4,11 @@ package chat
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	goimage "image"
+	"image/png"
 	"math/rand"
 	"os"
 	"slices"
@@ -577,12 +580,22 @@ func TestTranscript_CRD13_RestoredMatchesLive(t *testing.T) {
 	}
 }
 
+// tinyPNG is a real 2x2 PNG, base64: the Kitty path decodes what it draws, so a
+// stand-in string would fall back to the text line.
+func tinyPNG() string {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, goimage.NewRGBA(goimage.Rect(0, 0, 2, 2))); err != nil {
+		panic(err)
+	}
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
 func toolWithImage(tr *Transcript, caps image.Capabilities) *toolItem {
 	if caps.Images != "" {
 		tr.SetCapabilities(caps)
 	}
 	tr.Apply(proto.Event{Type: proto.EventToolCall, Call: &proto.ToolCall{ID: "c1", Name: "read"}})
-	part := message.ImagePart("image/png", base64.StdEncoding.EncodeToString([]byte("png")))
+	part := message.ImagePart("image/png", tinyPNG())
 	tr.Apply(proto.Event{Type: proto.EventToolEnd, CallID: "c1", Result: &proto.ToolResult{Content: "ok", Parts: []message.ContentPart{part}}})
 	return findTool(tr, "c1")
 }

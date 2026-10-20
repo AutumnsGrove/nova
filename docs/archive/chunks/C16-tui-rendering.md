@@ -303,6 +303,7 @@ type Display struct {
 | DFV13 | no colour profile | | markers only; no escapes |
 | DFV14 | syntax highlight by extension | `.go` | tokens coloured over the background |
 | DFV15 | rendering is deterministic | twice | identical |
+| DFV16 | no control bytes in any diff line kind | a hunk header, removed, added and context lines, and non-diff text, each holding escapes | none survive, in colour or without |
 | THM01 | load a valid theme | | colours set |
 | THM02 | missing keys | | fall back to dark; warning |
 | THM03 | invalid colour | `blue`, `#12` | warning; fallback |
@@ -353,6 +354,9 @@ type Display struct {
 | GIT05 | no cwd | empty cwd | not ok; git is not run |
 | GIT06 | fake reader | configured info | reports it and counts the call |
 | GIT07 | a repository's config cannot run programs | a repo whose `core.fsmonitor` names a script, read through the real git | the counts are right and the script never ran |
+| HLT01 | one line per input line | Go code, with and without colour | the same line count |
+| HLT02 | file escapes never reach the output | code holding an OSC, a clear-screen and a bidi override, with and without colour | none survive and the visible text stays |
+| HLT03 | `Line` is the first of `Lines` | one line without colour | the input unchanged |
 
 ## Retired rows
 

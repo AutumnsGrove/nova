@@ -13,12 +13,17 @@ import (
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 )
 
-// Lines highlights code and returns one string per input line. When color is
-// false, or the code is empty, the input is returned unchanged. A formatting
-// error falls back to the plain input, so the caller never loses text.
+// Lines highlights code and returns one string per input line. The code is
+// cleaned of anything a terminal acts on first, because the formatter writes
+// token text through as it finds it. When color is false, or the code is empty,
+// the cleaned input is returned. A formatting error falls back to the plain
+// input, so the caller never loses text.
 func Lines(code, filename string, color bool) []string {
+	code = sanitize.Text(code)
 	in := strings.Split(code, "\n")
 	if !color || code == "" {
 		return in

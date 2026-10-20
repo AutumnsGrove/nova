@@ -7,19 +7,15 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AutumnsGrove/nova/tui/highlight"
-	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
 // Highlight syntax-highlights code and returns one line per input line, each
-// within width; with no colour the input is stripped of control sequences.
+// within width. Control sequences in the code are removed by the highlighter.
 func Highlight(code, filename string, st styles.Styles, width int) []string {
 	color := useColor(st)
 	lines := highlight.Lines(code, filename, color)
 	for i, l := range lines {
-		if !color {
-			l = sanitize.Text(l)
-		}
 		lines[i] = ansi.Truncate(l, width, "")
 	}
 	return lines

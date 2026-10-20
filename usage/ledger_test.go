@@ -171,3 +171,33 @@ func Test_LED12_NegativeOrNaN(t *testing.T) {
 		}
 	}
 }
+
+func Test_LED13_CacheWritePremium(t *testing.T) {
+	m := provider.Model{ID: "x", InPerM: 2, OutPerM: 0}
+	usd, source := CostFor(m, provider.Usage{PromptTokens: 1000, CacheWriteTokens: 1000})
+	// A cold cache stores the whole prefix at 1.25x the input rate.
+	want := 1000 * 2 * 1.25 / 1e6
+	if math.Abs(usd-want) > 1e-12 || source != "catalog" {
+		t.Fatalf("usd = %v source = %q, want %v catalog", usd, source, want)
+	}
+}
+
+func Test_LED14_CacheTokensSharePromptCap(t *testing.T) {
+	m := provider.Model{ID: "x", InPerM: 1, OutPerM: 0}
+	usd, _ := CostFor(m, provider.Usage{PromptTokens: 100, CachedTokens: 80, CacheWriteTokens: 80})
+	// Reads are capped at the prompt, then writes at what is left: 80 read at
+	// 10% and 20 written at 1.25x.
+	want := (80*1*0.1 + 20*1*1.25) / 1e6
+	if math.Abs(usd-want) > 1e-12 {
+		t.Fatalf("usd = %v, want %v", usd, want)
+	}
+}
+
+func Test_LED15_ProviderCostIgnoresCatalogRates(t *testing.T) {
+	m := provider.Model{ID: "x", InPerM: 100, OutPerM: 100}
+	u := provider.Usage{PromptTokens: 1000, CacheWriteTokens: 1000, CostUSD: 0.5, CostSource: "provider"}
+	usd, source := CostFor(m, u)
+	if usd != 0.5 || source != "provider" {
+		t.Fatalf("usd = %v source = %q, want the provider's 0.5", usd, source)
+	}
+}

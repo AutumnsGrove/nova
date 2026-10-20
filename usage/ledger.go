@@ -13,6 +13,11 @@ import (
 // cachedDiscount is the fraction of the input price a cached token costs.
 const cachedDiscount = 0.1
 
+// cacheWritePremium is the multiplier a provider charges to store a prefix it
+// will later serve as a cache read. It is the 1.25x Anthropic lists for the
+// 5-minute cache; a cold cache pays it once.
+const cacheWritePremium = 1.25
+
 // Ledger accumulates usage per model and in total. It is safe for concurrent
 // use.
 type Ledger struct {
@@ -113,8 +118,16 @@ func CostFor(m provider.Model, u provider.Usage) (usd float64, source string) {
 	if cached > prompt {
 		cached = prompt
 	}
-	cost := float64(prompt-cached)*m.InPerM/1e6 +
+	write := u.CacheWriteTokens
+	if write < 0 {
+		write = 0
+	}
+	if write > prompt-cached {
+		write = prompt - cached
+	}
+	cost := float64(prompt-cached-write)*m.InPerM/1e6 +
 		float64(cached)*m.InPerM/1e6*cachedDiscount +
+		float64(write)*m.InPerM/1e6*cacheWritePremium +
 		float64(completion)*m.OutPerM/1e6
 	if math.IsNaN(cost) || math.IsInf(cost, 0) || cost < 0 {
 		return 0, ""

@@ -31,9 +31,12 @@ type completion struct {
 	base   string // text before the token being completed
 }
 
-// completionMsg carries directory entries read by a command.
+// completionMsg carries directory entries read by a command. text is the
+// editor text the read was made for, so a late result can be told from a
+// current one.
 type completionMsg struct {
 	kind  string
+	text  string
 	base  string
 	items []completionItem
 	err   error
@@ -80,7 +83,7 @@ func (m *Model) loadPaths(text string, at int) tea.Cmd {
 	return func() tea.Msg {
 		entries, err := os.ReadDir(filepath.Join(cwd, dir))
 		if err != nil {
-			return completionMsg{kind: "path", base: base, err: err}
+			return completionMsg{kind: "path", text: text, base: base, err: err}
 		}
 		var dirs, files []completionItem
 		for _, e := range entries {
@@ -101,12 +104,17 @@ func (m *Model) loadPaths(text string, at int) tea.Cmd {
 		if len(items) > completionMax {
 			items = items[:completionMax]
 		}
-		return completionMsg{kind: "path", base: base, items: items}
+		return completionMsg{kind: "path", text: text, base: base, items: items}
 	}
 }
 
-// applyCompletion installs the results of a directory read.
+// applyCompletion installs the results of a directory read. A read that
+// finished after the text moved on is dropped: the edit that moved it on has
+// already decided what the popup shows.
 func (m *Model) applyCompletion(msg completionMsg) {
+	if msg.text != m.editor.Value() {
+		return
+	}
 	if msg.err != nil || len(msg.items) == 0 {
 		m.completion.active = false
 		return

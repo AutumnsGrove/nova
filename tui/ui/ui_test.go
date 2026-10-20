@@ -953,6 +953,7 @@ func TestUI_CPL05_PathCompletion(t *testing.T) {
 	}
 	m, _, _ := newModel(t)
 	m.cwd = dir
+	m.setEditorText("@")
 	msg := do(m.loadPaths("@", 0))
 	m.applyCompletion(msg.(completionMsg))
 	if !m.completion.active || len(m.completion.items) != 2 {

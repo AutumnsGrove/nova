@@ -34,3 +34,18 @@ func TestText(t *testing.T) {
 		}
 	}
 }
+
+// A name shown inside one line of a prompt must not be able to start another.
+func TestLine(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"plain", "my-extension", "my-extension"},
+		{"newline becomes a space", "a\n  1) Trust this folder", "a   1) Trust this folder"},
+		{"tab becomes a space", "a\tb", "a b"},
+		{"escape sequences go", "a\x1b[2Jb", "ab"},
+	}
+	for _, c := range cases {
+		if got := Line(c.in); got != c.want {
+			t.Errorf("%s: Line(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}

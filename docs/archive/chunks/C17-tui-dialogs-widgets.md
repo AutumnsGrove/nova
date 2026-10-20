@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/status, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
-budgets: { ./tui/sanitize: 60, ./tui/dialog: 2050, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 150,  ./mode: 2470, ./mode/attach: 160, ./tui/ui: 3050, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
+budgets: { ./tui/sanitize: 60, ./tui/dialog: 2050, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 160,  ./mode: 2470, ./mode/attach: 160, ./tui/ui: 3050, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -346,6 +346,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | TRP06 | non-terminal | | no prompt; untrusted |
 | TRP07 | nothing read or run before the answer | project with a hook and an extension | neither started |
 | TRP08 | already trusted or nothing to load | | no prompt |
+| TRP09 | the prompt draws names without control bytes | a folder, an extension and a context file whose names carry escape sequences and a bidi override | the names appear cleaned; no escape or override reaches the output |
 | SVA01 | `list_models` | | catalog entries; `current` set |
 | SVA02 | `list_models` query | | filtered |
 | SVA03 | `session.list` | two sessions | newest first; `current` set |

@@ -33,6 +33,12 @@ func Text(s string) string {
 	}, s)
 }
 
+// Line is Text for a name shown inside one line, such as a folder in a prompt:
+// a newline or tab becomes a space, so the name cannot start a line of its own.
+func Line(s string) string {
+	return strings.NewReplacer("\n", " ", "\t", " ").Replace(Text(s))
+}
+
 // isBidiOrSeparator reports whether r reorders text direction or ends a line in
 // a way a terminal and a reader may disagree on.
 func isBidiOrSeparator(r rune) bool {

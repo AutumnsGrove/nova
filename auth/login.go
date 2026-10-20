@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 // OpenRouter's OAuth PKCE endpoints and the login timeout. They were confirmed
@@ -33,6 +35,9 @@ const (
 	DefaultListen = "127.0.0.1:0"
 	// maxExchangeBody caps how much of an exchange response we read or quote.
 	maxExchangeBody = 1 << 20
+	// callbackHeaderTimeout bounds how long the callback server waits for a
+	// request's headers.
+	callbackHeaderTimeout = 10 * time.Second
 )
 
 // LoginOptions configures Login. Zero values take the documented defaults.
@@ -97,7 +102,9 @@ func Begin(opts BeginOptions) (*Flow, string, error) {
 	lflow := &loginFlow{state: state, result: make(chan callbackResult, 1)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", lflow.callback)
-	srv := &http.Server{Handler: mux}
+	// A client that opens the loopback port and never sends a header must not
+	// hold a connection open for the whole login.
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: callbackHeaderTimeout}
 	go func() { _ = srv.Serve(ln) }()
 
 	callbackURL := "http://" + ln.Addr().String() + "/callback"
@@ -285,7 +292,7 @@ func (f *loginFlow) parse(q url.Values) callbackResult {
 			status: http.StatusForbidden,
 		}
 	}
-	if q.Get("state") != f.state {
+	if subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(f.state)) != 1 {
 		return callbackResult{
 			err:    errors.New("auth: callback state did not match the login request"),
 			page:   "This link is not valid for this login. You can close this tab.",
@@ -374,8 +381,13 @@ func exchange(ctx context.Context, client *http.Client, urlStr, code, verifier, 
 func truncateBody(data []byte) string {
 	s := strings.Join(strings.Fields(string(data)), " ")
 	const limit = 200
-	if len(s) > limit {
-		return s[:limit] + "..."
+	if len(s) <= limit {
+		return s
 	}
-	return s
+	// Back up to a character boundary so the message stays valid UTF-8.
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
 }

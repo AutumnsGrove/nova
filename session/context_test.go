@@ -314,3 +314,19 @@ func TestProperty_CTX14_AlwaysValid(t *testing.T) {
 		}
 	}
 }
+
+// Messages runs every turn. A repair that is still needed must not add another
+// copy of its warning each time, or a long session leaks one per turn.
+func TestSession_CTX18_RepairWarningsNotRepeated(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	_, _ = s.Append(userEntry("u"))
+	_, _ = s.Append(toolCallEntry("c1", "read", "{}"))
+	for range 5 {
+		if _, err := s.Messages(""); err != nil {
+			t.Fatalf("Messages: %v", err)
+		}
+	}
+	if got := len(s.Warnings()); got != 1 {
+		t.Fatalf("warnings = %d (%v), want 1", got, s.Warnings())
+	}
+}

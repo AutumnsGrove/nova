@@ -17,6 +17,7 @@ func FuzzOpen(f *testing.F) {
 		`{"type":"message","id":"b","message":{"role":"user","content":"b"}}` + "\n"))
 	f.Add([]byte(`{"type":"message","id":"a","parent":"missing"}` + "\n"))
 	f.Add([]byte("{"))
+	f.Add([]byte(`{"type":"message","id":"a","parent":"a"}` + "\n"))
 	dir := f.TempDir()
 	f.Fuzz(func(t *testing.T, body []byte) {
 		if len(body) > 1<<16 {

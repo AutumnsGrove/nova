@@ -10,35 +10,9 @@ import (
 // leaf. The result always passes message.Validate; a repair is reported as a
 // warning.
 func (s *Store) Messages(leaf string) ([]message.Message, error) {
-	branch, err := s.Branch(leaf)
+	msgs, _, err := s.ContextWithIDs(leaf)
 	if err != nil {
 		return nil, err
-	}
-	comp := lastCompaction(branch)
-	var msgs []message.Message
-	if comp < 0 {
-		for i := range branch {
-			if m, ok := contextMessage(branch[i]); ok {
-				msgs = append(msgs, m)
-			}
-		}
-	} else {
-		c := branch[comp]
-		msgs = append(msgs, message.User("<summary>\n"+c.Summary+"\n</summary>"))
-		start := comp + 1
-		if c.FirstKept != "" {
-			if idx := entryIndex(branch, c.FirstKept); idx >= 0 {
-				start = idx
-			}
-		}
-		for i := start; i < len(branch); i++ {
-			if branch[i].Type == TypeCompaction {
-				continue
-			}
-			if m, ok := contextMessage(branch[i]); ok {
-				msgs = append(msgs, m)
-			}
-		}
 	}
 	repaired, warnings := repairMessages(msgs)
 	if len(warnings) > 0 {
@@ -49,6 +23,43 @@ func (s *Store) Messages(leaf string) ([]message.Message, error) {
 		s.mu.Unlock()
 	}
 	return repaired, nil
+}
+
+// ContextWithIDs is Messages before repair, with the id of the entry behind each
+// message (the compaction entry for the summary). Compaction uses the ids to turn
+// a cut index back into an entry, so it must see exactly the list Messages starts
+// from.
+func (s *Store) ContextWithIDs(leaf string) ([]message.Message, []string, error) {
+	branch, err := s.Branch(leaf)
+	if err != nil {
+		return nil, nil, err
+	}
+	var msgs []message.Message
+	var ids []string
+	add := func(e Entry, m message.Message) {
+		msgs = append(msgs, m)
+		ids = append(ids, e.ID)
+	}
+	start := 0
+	if comp := lastCompaction(branch); comp >= 0 {
+		c := branch[comp]
+		add(c, message.User("<summary>\n"+c.Summary+"\n</summary>"))
+		start = comp + 1
+		if c.FirstKept != "" {
+			if idx := entryIndex(branch, c.FirstKept); idx >= 0 {
+				start = idx
+			}
+		}
+	}
+	for _, e := range branch[start:] {
+		if e.Type == TypeCompaction {
+			continue
+		}
+		if m, ok := contextMessage(e); ok {
+			add(e, m)
+		}
+	}
+	return msgs, ids, nil
 }
 
 // lastCompaction returns the index of the last compaction entry, or -1.

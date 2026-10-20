@@ -285,7 +285,13 @@ func (s *Store) pickLeaf() {
 }
 
 // warn records a skipped or repaired line.
+// A repair that Messages reports every turn is recorded once.
 func (s *Store) warn(line int, err error) {
+	for _, w := range s.warnings {
+		if w.Line == line && w.Err.Error() == err.Error() {
+			return
+		}
+	}
 	s.warnings = append(s.warnings, Warning{Line: line, Err: err})
 }
 

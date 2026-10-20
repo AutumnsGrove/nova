@@ -627,3 +627,23 @@ func TestSession_SES30_ConcurrentCreateWritesOneHeader(t *testing.T) {
 		t.Fatalf("file has %d header lines, want 1", headers)
 	}
 }
+
+// The loader repairs a self-parent the same way as a longer cycle.
+func TestSession_SES31_SelfParentOnLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	body := `{"type":"session","v":1,"id":"s"}` + "\n" +
+		`{"type":"message","id":"a","parent":"a","message":{"role":"user","content":"a"}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s, err := Open(path, Options{})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+	e, _ := s.Get("a")
+	branch, err := s.Branch("a")
+	if err != nil || e.Parent != "" || len(branch) != 1 || len(s.Warnings()) == 0 {
+		t.Fatalf("entry = %+v branch = %v err = %v warnings = %v, want a root with a warning", e, branch, err, s.Warnings())
+	}
+}

@@ -253,6 +253,7 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV61 | the turn budget follows the file | a reload sets `max_turns` 2 | the next run ends `exhausted` after 2 turns |
 | SRV62 | an explicit system prompt survives | `Options.SystemPrompt` set, then a reload | the system message is still that prompt |
 | SRV63 | `/reload` is a slash command | `run_command` `reload`, with and without a reloader, and a rejected config | a one-line `text` naming what was reloaded and any config error; `reload` is listed by `get_commands` |
+| SRV64 | compaction forgets the old token count | `compact` after a response that reported prompt tokens | the stored last usage is zero, so the next turn is judged on the new history |
 | PRI01 | print mode answer | scripted "42" | stdout is `42\n`; exit 0 |
 | PRI02 | stdout has only the answer | tool calls in the run | tool progress only on stderr |
 | PRI03 | `-p -` reads stdin | | prompt from stdin |

@@ -454,8 +454,10 @@ func (s *Server) compactionState() *compaction.Compactor {
 	return &c
 }
 
-// emitCompaction announces a finished compaction.
+// emitCompaction announces a finished compaction. The history it replaced is
+// the one the last token count described, so that count goes with it.
 func (s *Server) emitCompaction(out *compaction.Outcome) {
+	s.forgetLastUsage()
 	s.emit(proto.Event{
 		Type:         proto.EventCompaction,
 		Entry:        out.Entry.ID,

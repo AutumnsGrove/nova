@@ -159,6 +159,8 @@ func (m *Model) handleResponse(resp proto.Response) tea.Cmd {
 		m.finishSend(resp)
 	case proto.CmdAbort:
 		m.finishAbort(resp)
+	case proto.CmdBash:
+		m.showBashOutput(resp)
 	case proto.CmdShutdown:
 		// The server has released the session and extensions; leave cleanly.
 		return tea.Batch(m.cancelAllDialogs(), tea.Quit)

@@ -414,7 +414,8 @@ func TestUI_EDI04_BashForms(t *testing.T) {
 	m, f, _ := newModel(t)
 	m.setEditorText("!ls")
 	do(update(m, enterKey))
-	if f.sends[0].Type != proto.CmdBash || f.sends[0].Command != "!ls" {
+	// The single ! is the TUI's marker; sent to bash it would run as "!ls".
+	if f.sends[0].Type != proto.CmdBash || f.sends[0].Command != "ls" {
 		t.Fatalf("bash not sent: %+v", f.sends[0])
 	}
 	m.setEditorText("!!ls")

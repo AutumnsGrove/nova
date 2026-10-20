@@ -84,7 +84,7 @@ func (m *Model) submit(action string) tea.Cmd {
 		m.setEditorText("")
 		m.history.add(raw)
 		m.dismissSplash()
-		return m.client.Send(proto.Command{Type: proto.CmdBash, Command: text})
+		return m.client.Send(proto.Command{Type: proto.CmdBash, Command: shellCommand(text)})
 	}
 	kind := "prompt"
 	switch {
@@ -102,6 +102,20 @@ func (m *Model) submit(action string) tea.Cmd {
 	m.pending = pendingSend{kind: kind, text: text, atts: names}
 	m.dismissSplash()
 	return m.client.Send(proto.Command{Type: cmdFor(kind), Text: text, Attachments: atts})
+}
+
+// quietShellPrefix marks a shell command whose output stays out of the model's
+// context; the server recognises it, so it is sent through.
+const quietShellPrefix = "!!"
+
+// shellCommand turns a `!cmd` line into the bash command the server runs. The
+// single ! is only the TUI's marker and must not reach the shell, where it
+// would be run as a command name; the quiet !! prefix is the server's flag.
+func shellCommand(line string) string {
+	if strings.HasPrefix(line, quietShellPrefix) {
+		return line
+	}
+	return strings.TrimSpace(strings.TrimPrefix(line, "!"))
 }
 
 // cmdFor maps a send kind to its protocol command.

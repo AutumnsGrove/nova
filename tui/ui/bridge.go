@@ -10,7 +10,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/dialog"
 	"github.com/AutumnsGrove/nova/tui/widget"
@@ -215,42 +214,8 @@ func (m *Model) applyLocalIntent(intent string, r dialog.Result) tea.Cmd {
 				m.client.Send(proto.Command{Type: proto.CmdGetExtensions}),
 			)
 		}
-	case intentLogin:
-		if id, ok := r.Value.(string); ok && !r.Cancelled {
-			return m.beginLogin(id)
-		}
-	case intentLoginMethod:
-		if label, ok := r.Value.(string); ok && !r.Cancelled {
-			if p, found := providerauth.Get(m.loginProvider); found {
-				if method, ok := providerauth.MethodByLabel(p, label); ok {
-					return m.beginMethod(p, method)
-				}
-			}
-		}
-	case intentLoginKey:
-		if key, ok := r.Value.(string); ok && !r.Cancelled && key != "" {
-			return m.saveCredential(m.loginProvider, providerauth.APIKey, key)
-		}
-	case intentLoginFlow:
-		switch {
-		case r.Cancelled:
-			m.cancelLogin()
-		case r.Retry:
-			if p, found := providerauth.Get(m.loginProvider); found {
-				return m.beginMethod(p, m.loginMethod)
-			}
-		case m.loginSession != nil:
-			if pasted, ok := r.Value.(string); ok && pasted != "" {
-				if err := m.loginSession.Submit(pasted); err != nil {
-					m.loginErr = err.Error()
-					m.pushFlowDialog()
-				}
-			}
-		}
-	case intentLogout:
-		if id, ok := r.Value.(string); ok && !r.Cancelled {
-			return m.logoutCommand(id)
-		}
+	case intentLogin, intentLoginMethod, intentLoginKey, intentLoginFlow, intentLogout:
+		return m.applyLoginIntent(intent, r)
 	}
 	return nil
 }

@@ -52,10 +52,7 @@ type Options struct {
     Provider   provider.Provider   // nil means build OpenRouter from the config and auth
     Session    string              // path to open or create; "" with NoSession false means a new default path
     NoSession  bool                // keep the transcript in memory only
-    Out        io.Writer           // for rpc/json/print
-    In         io.Reader
     Clock      Clock               // injectable; default real
-    Interactive bool               // whether a UI client is attached (affects permission "ask")
     Version    string
 }
 func New(opt Options) (*Server, error)

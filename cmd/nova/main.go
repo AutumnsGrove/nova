@@ -245,7 +245,7 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 	}
 	s, err := mode.Build(mode.BuildOptions{
 		CWD: cwd, Home: home, Mode: o.mode, Version: version, Flags: flags,
-		Yes: o.yes, Interactive: tuiMode, Out: o.stdout, In: o.stdin, NoSession: o.noSession, Session: sessionPath,
+		Yes: o.yes, Interactive: tuiMode, NoSession: o.noSession, Session: sessionPath,
 		NoTools: o.noTools, Tools: tools, Stderr: o.stderr,
 	})
 	if err != nil {

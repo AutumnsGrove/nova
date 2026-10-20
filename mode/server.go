@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -56,20 +55,17 @@ func (realClock) Sleep(ctx context.Context, d time.Duration) error {
 
 // Options configures a Server.
 type Options struct {
-	Config      *config.Config
-	CWD         string
-	Home        string
-	Provider    provider.Provider // nil means build OpenRouter from the config and auth
-	Session     string            // path to open or create; "" means a new default
-	NoSession   bool              // keep the transcript in memory only
-	Out         io.Writer
-	In          io.Reader
-	Clock       Clock
-	Interactive bool // whether a UI client is attached (affects permission "ask")
-	Version     string
-	Mode        string   // tui | print | json | rpc | serve, for extensions
-	Tools       []string // explicit active tool set; nil means use the config
-	NoTools     bool     // register no tools at all
+	Config    *config.Config
+	CWD       string
+	Home      string
+	Provider  provider.Provider // nil means build OpenRouter from the config and auth
+	Session   string            // path to open or create; "" means a new default
+	NoSession bool              // keep the transcript in memory only
+	Clock     Clock
+	Version   string
+	Mode      string   // tui | print | json | rpc | serve, for extensions
+	Tools     []string // explicit active tool set; nil means use the config
+	NoTools   bool     // register no tools at all
 
 	// ExtraTools are added to the tool pool before the active set is resolved,
 	// so a caller (the GitHub Action) can register mode-specific tools. A

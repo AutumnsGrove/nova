@@ -27,8 +27,6 @@ type BuildOptions struct {
 	Flags       map[string]any
 	Yes         bool
 	Stderr      io.Writer
-	Out         io.Writer
-	In          io.Reader
 
 	ExtraTools   []tool.Tool
 	SystemPrompt string
@@ -72,8 +70,8 @@ func Build(o BuildOptions) (*Server, error) {
 	}
 	return New(Options{
 		Config: cfg, CWD: cwd, Home: home, Version: o.Version, Mode: o.Mode,
-		Out: o.Out, In: o.In, NoSession: o.NoSession, Session: o.Session,
-		Tools: o.Tools, NoTools: o.NoTools, Interactive: o.Interactive,
+		NoSession: o.NoSession, Session: o.Session,
+		Tools: o.Tools, NoTools: o.NoTools,
 		ExtraTools: o.ExtraTools, SystemPrompt: o.SystemPrompt,
 	})
 }

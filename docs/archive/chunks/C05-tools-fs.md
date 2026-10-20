@@ -213,6 +213,9 @@ diffMaxLines   = 5000
 | RDF31 | tool annotations | | `ReadOnly` and `Parallel` true |
 | RDF32 | an image path returns an image part | a PNG file | one `image/png` part and a read-image note |
 | RDF33 | a text path has no parts | a `.txt` file | no parts, text as before |
+| RDF34 | the stream fails mid-file | a reader that errors after some text | the line reader returns that error, not EOF |
+| RDF35 | invalid UTF-8 only on a line before `offset` | `offset: 2` | no invalid-bytes note |
+| RDF36 | cancelled context | | error result; the scan stops |
 | WRT01 | create a new file | | file exists; message says `created` |
 | WRT02 | overwrite | | content replaced; says `overwrote` |
 | WRT03 | creates parent directories | `a/b/c.txt` | exists; dirs 0755 |

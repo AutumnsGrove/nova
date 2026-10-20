@@ -2,8 +2,10 @@ package mode
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +15,7 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
+	"github.com/AutumnsGrove/nova/tool"
 )
 
 // noSessionServer builds a server that keeps its transcript in memory only.
@@ -176,6 +179,22 @@ func TestServer_SRV52_SetToolsUnknownKeepsRegistry(t *testing.T) {
 	wantCode(t, resp, proto.CodeBadRequest)
 	if after := s.tools.Names(); strings.Join(after, ",") != strings.Join(before, ",") {
 		t.Fatalf("registry = %v after a rejected set_tools, want %v", after, before)
+	}
+}
+
+// set_tools names built-in tools. A tool an extension registered is not one of
+// them, so changing the active set must leave it where it is.
+func TestServer_SRV56_SetToolsKeepsExtensionTools(t *testing.T) {
+	s, _ := testServer(t)
+	s.tools.MustRegister(tool.New(tool.Info{Name: "from_ext", Description: "x", Parameters: map[string]any{"type": "object"}},
+		func(context.Context, json.RawMessage, *tool.Context) (tool.Result, error) {
+			return tool.Text("ok"), nil
+		}))
+	if resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdSetTools, Active: []string{"bash", "glob"}}); !resp.OK {
+		t.Fatalf("set_tools = %+v", resp)
+	}
+	if got, want := strings.Join(slices.Sorted(slices.Values(s.tools.Names())), ","), "bash,from_ext,glob"; got != want {
+		t.Fatalf("registry = %q, want %q", got, want)
 	}
 }
 

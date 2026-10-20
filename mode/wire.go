@@ -78,7 +78,8 @@ func buildTools(cfg *config.Config) (*tool.Registry, map[string]tool.Tool, error
 	return registry, all, nil
 }
 
-// registerTools replaces the registry's contents with the named tools. It
+// registerTools makes the named tools the registry's built-in set. It leaves
+// alone any tool outside the pool, such as one an extension registered, and it
 // resolves every name before touching the registry, so a bad list leaves the
 // current set exactly as it was instead of half rebuilt.
 func registerTools(registry *tool.Registry, pool map[string]tool.Tool, active []string) error {
@@ -95,7 +96,7 @@ func registerTools(registry *tool.Registry, pool map[string]tool.Tool, active []
 		seen[name] = true
 		chosen = append(chosen, t)
 	}
-	for _, name := range registry.Names() {
+	for name := range pool {
 		registry.Unregister(name)
 	}
 	for _, t := range chosen {

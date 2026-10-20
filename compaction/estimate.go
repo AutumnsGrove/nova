@@ -1,6 +1,6 @@
 // Package compaction keeps a long session inside the model's context window. It
 // estimates size, decides when to compact against a per-session limit, cuts at a
-// safe turn boundary, summarises the old span, and prunes stale tool output.
+// safe turn boundary, and summarises the old span.
 package compaction
 
 import (

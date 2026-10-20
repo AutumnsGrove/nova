@@ -267,10 +267,13 @@ triggers when estimated context exceeds `context_limit - reserve`.
    result.**
 3. Summarise the older span with the session model.
 4. Insert a `compaction` entry that records what it replaced. Keep recent turns whole.
-5. Prune stale tool output at request time without dropping the summary. (`compaction.PruneToolOutput` implements the rule; the loop does not call it yet.)
 
 If summarisation fails, the run continues without compaction and an event reports
 it. A failed compaction never loses entries.
+
+Compaction is the only thing that shrinks the context. Nova does not prune old
+tool output or media at request time, because rewriting a message in the middle of
+the history changes the prompt prefix and misses the cache on every turn (D134).
 
 ### What stays stable for the prompt cache
 
@@ -282,9 +285,8 @@ change between turns:
 - The agent's turn request is append-only: each request starts with the previous
   request's messages unchanged (`LPW02` is the guard). Compaction is the one
   deliberate rewrite; it is rare, and it invalidates the cache once by design.
-- Pruning stale tool output rewrites tool results, so it costs a cache miss for
-  the span it touches. It stays worth it, because it is triggered by the context
-  limit, not every turn.
+- Nothing prunes tool output or images at request time, since that would rewrite
+  the prefix on every turn (D134).
 - A `transform_context` hook or a `before_provider_request` hook that rewrites the
   history chooses its own cache cost. Place a prompt-injection guard or a
   plan-mode note at the end (as `bundled/plan` does), not in the middle.

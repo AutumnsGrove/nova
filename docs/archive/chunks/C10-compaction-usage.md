@@ -33,7 +33,6 @@ cost cap read.
 | `compaction/cut.go` | `CutPoint` |
 | `compaction/summary.go` | the summarisation prompt, input serialisation, file-operation extraction |
 | `compaction/compact.go` | `Compactor`, `Compact`, `Run` |
-| `compaction/prune.go` | request-time tool-output pruning |
 | `compaction/limit.go` | `EffectiveLimit`, `ShouldCompact` |
 | `usage/ledger.go` | the ledger and `CostFor` |
 | `*/*_test.go` | |
@@ -86,7 +85,6 @@ type Outcome struct {
     Replaced     int
 }
 
-func PruneToolOutput(msgs []message.Message, keepLast, maxChars int) []message.Message
 
 // package usage
 type Ledger struct{ /* ... */ }
@@ -161,10 +159,9 @@ func CostFor(m provider.Model, u provider.Usage) (usd float64, source string)
 
 ### Pruning
 
-18. `PruneToolOutput` returns a copy in which every tool result **older than the last `keepLast`
-    tool results** and longer than `maxChars` is replaced by
-    `[output pruned: <n> characters; run the tool again if you need it]`. `ToolCallID` and `Name`
-    are kept, so the transcript still validates. The input is not modified.
+18. Removed (D134). Request-time pruning rewrote old tool results and media, which changes the
+    prompt prefix and misses the cache on every turn, so Nova never prunes; compaction alone shrinks
+    the context. Rows PRN01 to PRN07 went with the function.
 
 ### Ledger and cost
 
@@ -236,13 +233,6 @@ func CostFor(m provider.Model, u provider.Usage) (usd float64, source string)
 | CMP19 | `keep` custom entry before the cut | | still present in `Entries()` |
 | CMP20 | cost of summarisation recorded | | the entry's `Usage` is set |
 | CMP21 | tool pair split by a provider error mid-summary | | no partial write |
-| PRN01 | old long results pruned | 10 results, `keepLast` 3 | 7 pruned if long |
-| PRN02 | short results kept | under `maxChars` | unchanged |
-| PRN03 | recent results kept | the last 3 | unchanged |
-| PRN04 | ids and names preserved | | transcript still validates |
-| PRN05 | input not modified | compare before and after | unchanged |
-| PRN06 | `keepLast` zero | | all long results pruned |
-| PRN07 | no tool results | | returns an equal copy |
 | LED01 | adds usage and returns cost-filled usage | provider cost 0.01 | source `provider` |
 | LED02 | catalog cost fallback | known model, no cost | computed; source `catalog` |
 | LED03 | cached tokens discounted | | as in Behaviour 19 |

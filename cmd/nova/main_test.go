@@ -334,3 +334,14 @@ func TestCLI_CLI21_MaxTokensFlag(t *testing.T) {
 		t.Fatalf("request missing the cap: %s", body)
 	}
 }
+
+// TestCLI_CLI22_ExtensionToolFlag checks a bundled extension's tool can be
+// named on the command line, which used to fail with "unknown tool".
+func TestCLI_CLI22_ExtensionToolFlag(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	withServer(t, srv)
+	code, out, errOut := runCLI(t, "--cwd", t.TempDir(), "--no-session", "--tools", "read,subagent", "-p", "go")
+	if code != 0 {
+		t.Fatalf("exit = %d out = %q stderr = %q", code, out, errOut)
+	}
+}

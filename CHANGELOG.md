@@ -36,6 +36,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   priced at 1.25x input by the cost fallback (#28).
 
 ### Fixed
+- A truncated Responses response no longer reports zero usage: `response.incomplete` carries the
+  same usage object as a completed one, and dropping it hid real spend. Both the Responses and the
+  Messages dialect now also trust a cost the gateway reports (OpenRouter sends one for MiniMax on
+  `message_delta`), so those calls stop falling back to the catalog estimate (#28 follow-up).
 
 - The Messages dialect now reports the **whole** prompt in `prompt_tokens`. Anthropic's
   `input_tokens` is only the uncached remainder, so cache reads and writes are added back:

@@ -144,6 +144,9 @@ func consume(s *ssestream.Stream, model string, onEvent func(provider.StreamEven
 		case "response.incomplete":
 			terminal = true
 			finish = incompleteFinish(ev.Response.IncompleteDetails.Reason)
+			// A truncated response still bills for what it produced, and the
+			// wire carries the usage on this event too; dropping it hides spend.
+			c.Usage(usageOf(ev))
 		case "response.failed":
 			e := ev.Response.Error
 			return false, failure(e.Code, cmp.Or(e.Message, ev.Error.Message), "response failed")
@@ -161,10 +164,12 @@ func consume(s *ssestream.Stream, model string, onEvent func(provider.StreamEven
 	return c.Finish(finish), nil
 }
 
-// usageOf maps a completed response's usage.
+// usageOf maps a response's usage. A present cost is the gateway's own number,
+// so it is trusted as provider-reported; an absent one leaves the price to the
+// caller's catalog fallback.
 func usageOf(ev event) provider.Usage {
 	u := ev.Response.Usage
-	return provider.Usage{
+	out := provider.Usage{
 		PromptTokens:     u.InputTokens,
 		CompletionTokens: u.OutputTokens,
 		ReasoningTokens:  u.OutputDetails.ReasoningTokens,
@@ -172,6 +177,11 @@ func usageOf(ev event) provider.Usage {
 		CacheWriteTokens: u.InputDetails.CacheWriteTokens,
 		TotalTokens:      u.TotalTokens,
 	}
+	if u.Cost != nil {
+		out.CostUSD = *u.Cost
+		out.CostSource = "provider"
+	}
+	return out
 }
 
 // incompleteFinish maps the reason a response stopped early to a finish reason.

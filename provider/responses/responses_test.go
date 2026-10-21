@@ -537,3 +537,50 @@ func TestResponses_RSP23_CacheWriteTokensMapped(t *testing.T) {
 		t.Fatalf("usage = %+v, want 3 read and 7 written", resp.Usage)
 	}
 }
+
+// TestResponses_RSP30_IncompleteUsageMapped checks that a truncated response
+// still reports what it billed. OpenRouter sends the full usage object on
+// response.incomplete, and dropping it hides real spend.
+func TestResponses_RSP30_IncompleteUsageMapped(t *testing.T) {
+	p, _ := newProvider(t, Config{},
+		sse("response.incomplete", `{"type":"response.incomplete","response":{"incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":5111,"output_tokens":16,"total_tokens":5127,"input_tokens_details":{"cached_tokens":3,"cache_write_tokens":7},"output_tokens_details":{"reasoning_tokens":16}}}}`),
+	)
+	resp, _, err := run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.FinishReason != "length" {
+		t.Errorf("finish = %q, want length", resp.FinishReason)
+	}
+	u := resp.Usage
+	if u.PromptTokens != 5111 || u.CompletionTokens != 16 || u.TotalTokens != 5127 ||
+		u.CachedTokens != 3 || u.CacheWriteTokens != 7 || u.ReasoningTokens != 16 {
+		t.Fatalf("usage = %+v, want the incomplete response's usage", u)
+	}
+}
+
+// TestResponses_RSP31_ProviderCost checks the gateway's cost field is trusted
+// as provider-reported, and that an absent one leaves the cost to the caller.
+func TestResponses_RSP31_ProviderCost(t *testing.T) {
+	p, _ := newProvider(t, Config{},
+		sse("response.completed", `{"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12,"cost":0.000123}}}`),
+	)
+	resp, _, err := run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Usage.CostUSD != 0.000123 || resp.Usage.CostSource != "provider" {
+		t.Fatalf("usage = %+v, want the provider cost", resp.Usage)
+	}
+
+	p, _ = newProvider(t, Config{},
+		sse("response.completed", `{"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}`),
+	)
+	resp, _, err = run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Usage.CostUSD != 0 || resp.Usage.CostSource != "" {
+		t.Fatalf("usage = %+v, want no cost", resp.Usage)
+	}
+}

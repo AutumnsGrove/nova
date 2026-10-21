@@ -454,12 +454,16 @@ type OpenCodeGoConfig struct {
 | RSP27 | event that is not JSON | a truncated delta payload after good text | non-retryable invalid-JSON error; earlier text kept |
 | RSP28 | top-level `error` event | `code` and `message` at the top level | `Code` and `Message` read from them |
 | RSP29 | failures inside the stream are classed | `rate_limit_exceeded`, an overload message, `server_error`, and `invalid_prompt` | the first two are retryable; the others are not (a server fault can arrive after output has started) |
+| RSP30 | usage on an incomplete response | `response.incomplete` with input, output, cached, write, reasoning and total | every field mapped; finish `length` |
+| RSP31 | gateway cost on the Responses wire | `usage.cost` present, then absent | `CostSource` `provider`; then 0 and empty |
 | RSP24 | incomplete reasons | `max_output_tokens`, `content_filter`, an unknown reason | `length`, `content_filter`, `stop` |
 | RSP25 | stream cut mid-call | added and an argument fragment, then close | retryable; no tool call returned or delivered |
 | RSP26 | call with no `call_id` | a function call without one | a generated id |
 | MSG27 | event that is not JSON | a truncated delta payload after good text | non-retryable invalid-JSON error; earlier text kept |
 | MSG28 | total tokens | input in `message_start`, output in `message_delta` | `TotalTokens` is the sum; the last usage event equals the response usage |
 | MSG29 | unusable arguments in the transcript | a prior `tool_use` with cut-off, empty or non-object arguments | the request encodes; `input` is `{}` |
+| MSG30 | usage reported on `message_delta` | `message_start` zeros, then input 3480, output 217, read 7, write 3, cost | prompt 3490 (input+read+write), output 217, cost trusted as `provider` |
+| MSG31 | no cost on the native wire | `message_delta` with output only | `message_start` prompt kept, no cost |
 | MSG23 | `tool_choice` required | `"required"` | `{type:"any"}` |
 | MSG24 | `tool_use` with no id | a block without one | a generated id |
 | MSG25 | error event type | `invalid_request_error` | kept as `Code` |

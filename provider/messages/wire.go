@@ -107,8 +107,16 @@ type event struct {
 			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 		} `json:"usage"`
 	} `json:"message"`
+	// Usage on message_delta. A native Anthropic stream reports only
+	// output_tokens here, but a gateway may report the whole usage (MiniMax
+	// through OpenRouter sends zeros at message_start), so every field is
+	// read. Cost is a pointer so an absent one is not mistaken for zero.
 	Usage struct {
-		OutputTokens int `json:"output_tokens"`
+		InputTokens              int      `json:"input_tokens"`
+		OutputTokens             int      `json:"output_tokens"`
+		CacheReadInputTokens     int      `json:"cache_read_input_tokens"`
+		CacheCreationInputTokens int      `json:"cache_creation_input_tokens"`
+		Cost                     *float64 `json:"cost"`
 	} `json:"usage"`
 	Error struct {
 		Type    string `json:"type"`

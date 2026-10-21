@@ -163,7 +163,20 @@ func consume(s *ssestream.Stream, model string, onEvent func(provider.StreamEven
 			}
 		case "message_delta":
 			stopReason = cmp.Or(ev.Delta.StopReason, stopReason)
-			usage.CompletionTokens += ev.Usage.OutputTokens
+			u := ev.Usage
+			usage.CompletionTokens += u.OutputTokens
+			// A gateway may report the whole usage here rather than at
+			// message_start; when it does, its prompt counts are the totals and
+			// replace the zero ones.
+			if u.InputTokens+u.CacheReadInputTokens+u.CacheCreationInputTokens > 0 {
+				usage.PromptTokens = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+				usage.CachedTokens = u.CacheReadInputTokens
+				usage.CacheWriteTokens = u.CacheCreationInputTokens
+			}
+			if u.Cost != nil {
+				usage.CostUSD = *u.Cost
+				usage.CostSource = "provider"
+			}
 			report()
 		case "message_stop":
 			terminal = true

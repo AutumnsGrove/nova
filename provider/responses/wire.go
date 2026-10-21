@@ -83,9 +83,10 @@ type event struct {
 	} `json:"item"`
 	Response struct {
 		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
-			TotalTokens  int `json:"total_tokens"`
+			InputTokens  int      `json:"input_tokens"`
+			OutputTokens int      `json:"output_tokens"`
+			TotalTokens  int      `json:"total_tokens"`
+			Cost         *float64 `json:"cost"`
 			InputDetails struct {
 				CachedTokens     int `json:"cached_tokens"`
 				CacheWriteTokens int `json:"cache_write_tokens"`

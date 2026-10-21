@@ -525,3 +525,45 @@ func TestMessages_MSG22_PromptTokensIncludeCache(t *testing.T) {
 		}
 	}
 }
+
+// TestMessages_MSG30_UsageFromMessageDelta checks the shape a gateway like
+// OpenRouter sends for MiniMax: message_start carries zeros and the real usage
+// arrives with message_delta, including the whole prompt and the cost.
+func TestMessages_MSG30_UsageFromMessageDelta(t *testing.T) {
+	p, _ := newProvider(t, Config{},
+		sse("message_start", `{"type":"message_start","message":{"usage":{"input_tokens":0,"output_tokens":0}}}`),
+		sse("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":3480,"output_tokens":217,"cache_read_input_tokens":7,"cache_creation_input_tokens":3,"cost":0.001291356}}`),
+		sse("message_stop", `{"type":"message_stop"}`),
+	)
+	resp, _, err := run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	u := resp.Usage
+	if u.PromptTokens != 3490 || u.CompletionTokens != 217 || u.CachedTokens != 7 || u.CacheWriteTokens != 3 {
+		t.Fatalf("usage = %+v, want prompt 3490 (input+read+write), output 217", u)
+	}
+	if u.CostUSD != 0.001291356 || u.CostSource != "provider" {
+		t.Fatalf("usage = %+v, want the provider cost", u)
+	}
+}
+
+// TestMessages_MSG31_NoCostOnNativeWire checks a native message_delta, which
+// has no cost field, does not invent one.
+func TestMessages_MSG31_NoCostOnNativeWire(t *testing.T) {
+	p, _ := newProvider(t, Config{},
+		sse("message_start", `{"type":"message_start","message":{"usage":{"input_tokens":5}}}`),
+		sse("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}`),
+		sse("message_stop", `{"type":"message_stop"}`),
+	)
+	resp, _, err := run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Usage.CostUSD != 0 || resp.Usage.CostSource != "" {
+		t.Fatalf("usage = %+v, want no cost", resp.Usage)
+	}
+	if resp.Usage.PromptTokens != 5 || resp.Usage.CompletionTokens != 2 {
+		t.Fatalf("usage = %+v, want the message_start prompt kept", resp.Usage)
+	}
+}

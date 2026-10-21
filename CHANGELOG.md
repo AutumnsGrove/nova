@@ -41,6 +41,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   priced at 1.25x input by the cost fallback (#28).
 
 ### Fixed
+- A subagent now stays on the session's provider. The child run was given only the wire slug, so a
+  session on OpenCode Go quietly sent its subagents to OpenRouter (or failed with "no API key"); the
+  child now carries the parent's catalog model id, and a tool's `model` argument that names another
+  catalog model re-routes it correctly.
 - A truncated Responses response no longer reports zero usage: `response.incomplete` carries the
   same usage object as a completed one, and dropping it hid real spend. Both the Responses and the
   Messages dialect now also trust a cost the gateway reports (OpenRouter sends one for MiniMax on

@@ -7,10 +7,13 @@ import (
 	"context"
 	"maps"
 	"path/filepath"
+	"time"
 
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/decide"
+	decideor "github.com/AutumnsGrove/nova/decide/openrouter"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/opencodego"
@@ -126,6 +129,38 @@ func (r *router) withSession(req provider.Request) provider.Request {
 	headers[opencodego.SessionHeader] = id
 	req.ExtraHeaders = headers
 	return req
+}
+
+// BuildDecider returns a decision client over OpenRouter, wrapped in the roles
+// from the config. A role's timeout is per attempt; a fallback model is tried
+// when the primary fails and the caller's context is still live.
+func BuildDecider(opt Options) decide.Decider {
+	getenv := opt.Getenv
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	store := opt.Store
+	orBase := cmp.Or(opt.Config.Provider.OpenRouter.BaseURL, getenv("NOVA_OPENROUTER_BASE_URL"))
+	client := decideor.New(decideor.Config{
+		BaseURL: orBase,
+		APIKeyFunc: func(context.Context) (string, error) {
+			key, _, err := auth.Resolve("", getenv, store)
+			return key, err
+		},
+	})
+	roles := make(map[string]decide.Role, len(opt.Config.Decide.Roles))
+	for name, role := range opt.Config.Decide.Roles {
+		roles[name] = decide.Role{
+			Model:    role.Model,
+			Fallback: role.Fallback,
+			Timeout:  time.Duration(role.TimeoutMS) * time.Millisecond,
+		}
+	}
+	return decide.NewRoles(decide.RolesConfig{
+		Decider:      client,
+		Roles:        roles,
+		AllowAliases: opt.Config.Decide.AllowAliases,
+	})
 }
 
 // ResolveOpenCodeGoKey resolves the Go key from config, then the environment.

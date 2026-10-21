@@ -155,6 +155,7 @@ func (s *Server) applyConfig(fresh *config.Config) (modelChanged bool, err error
 
 	modelChanged = fresh.Model != s.cfg.Model
 	*s.cfg = *fresh
+	s.decider = buildDecider(fresh, s.home)
 	s.loaded = file
 	s.model, s.think, s.limit = modelSlug(fresh.Model), fresh.Thinking, fresh.ContextLimit
 	s.policy = fresh.Permissions

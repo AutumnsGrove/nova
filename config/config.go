@@ -44,6 +44,7 @@ type Config struct {
 	Webfetch     WebfetchConfig    `yaml:"webfetch"`
 	Subagent     SubagentConfig    `yaml:"subagent"`
 	Display      DisplayConfig     `yaml:"display"`
+	Decide       DecideConfig      `yaml:"decide"`
 }
 
 // DisplayConfig holds the TUI's rendering preferences. Both line counts are
@@ -82,6 +83,24 @@ type WebfetchConfig struct {
 type SubagentConfig struct {
 	MaxDepth      int `yaml:"max_depth"`      // default 1, capped at 3
 	MaxConcurrent int `yaml:"max_concurrent"` // default 4
+}
+
+// DecideConfig maps application roles to decision models. A role such as
+// "oracle" hides the vendor, so changing the best model is a config edit and no
+// application code names one.
+type DecideConfig struct {
+	// AllowAliases permits ids that end in "-latest" or start with "~". Off by
+	// default: an alias moves without notice, and a decision that fires on every
+	// turn would change model invisibly.
+	AllowAliases bool                  `yaml:"allow_aliases"`
+	Roles        map[string]DecideRole `yaml:"roles"`
+}
+
+// DecideRole is one configured role.
+type DecideRole struct {
+	Model     string `yaml:"model"`
+	Fallback  string `yaml:"fallback"`
+	TimeoutMS int    `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
 }
 
 // ProviderConfig holds per-provider settings.
@@ -414,9 +433,23 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 	displayLines(&cfg.Display.ThinkingLines, Defaults().Display.ThinkingLines, "display.thinking_lines", warnings)
 	displayLines(&cfg.Display.ToolLines, Defaults().Display.ToolLines, "display.tool_lines", warnings)
 	displayCells(&cfg.Display.ImageWidthCells, Defaults().Display.ImageWidthCells, "display.image_width_cells", warnings)
+	normaliseDecide(cfg, warnings)
 	if err := cfg.Permissions.Validate(); err != nil {
 		*warnings = append(*warnings, Warning{Source: "config", Message: "invalid permissions: " + err.Error()})
 		cfg.Permissions = Defaults().Permissions
+	}
+}
+
+// normaliseDecide clamps a negative timeout and names a role with no model at
+// load time, so a typo is visible before the first decision call.
+func normaliseDecide(cfg *Config, warnings *[]Warning) {
+	for _, name := range slices.Sorted(maps.Keys(cfg.Decide.Roles)) {
+		role := cfg.Decide.Roles[name]
+		nonNegative(&role.TimeoutMS, "decide.roles."+name+".timeout_ms", warnings)
+		if role.Model == "" {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("decide role %q has no model", name)})
+		}
+		cfg.Decide.Roles[name] = role
 	}
 }
 

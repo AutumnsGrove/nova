@@ -17,6 +17,7 @@ import (
 	"github.com/AutumnsGrove/nova/bundled"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/message"
@@ -95,6 +96,7 @@ type Server struct {
 	clock     Clock
 
 	prov      provider.Provider
+	decider   decide.Decider
 	usesAuth  bool
 	tools     *tool.Registry
 	pool      map[string]tool.Tool
@@ -208,6 +210,7 @@ func New(opt Options) (*Server, error) {
 		s.usesAuth = true
 		s.prov = buildProvider(cfg, home, s.conversationID)
 	}
+	s.decider = buildDecider(cfg, home)
 	tools, pool, err := buildTools(cfg)
 	if err != nil {
 		return nil, err
@@ -279,6 +282,7 @@ func New(opt Options) (*Server, error) {
 		Emit:          s.emit,
 		OnMessage:     s.onMessage,
 		Complete:      s.complete,
+		Decide:        s.decideCall,
 		Hooks: agent.Hooks{
 			BeforeProviderRequest: func(ctx context.Context, req *provider.Request) {
 				s.beforeProviderRequest(ctx, req)

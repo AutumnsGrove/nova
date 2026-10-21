@@ -14,6 +14,7 @@ import (
 	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/bundled/subagent"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/proto"
@@ -125,6 +126,18 @@ func (s *Server) complete(ctx context.Context, req provider.Request) (*provider.
 	req.MaxTokens = cmp.Or(req.MaxTokens, s.cfg.MaxTokens)
 	s.mu.Unlock()
 	return s.prov.Stream(ctx, req, nil)
+}
+
+// decideCall is the decision-model call a tool or hook gets. It reads the
+// decider under the lock, so a reload can swap the role table between runs.
+func (s *Server) decideCall(ctx context.Context, req decide.Request) (*decide.Response, error) {
+	s.mu.Lock()
+	d := s.decider
+	s.mu.Unlock()
+	if d == nil {
+		return nil, errors.New("mode: no decision model is configured")
+	}
+	return d.Decide(ctx, req)
 }
 
 // sessionBridge adapts the server's session store to ext.SessionAPI.

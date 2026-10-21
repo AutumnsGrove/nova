@@ -15,6 +15,7 @@ import (
 	bundledskills "github.com/AutumnsGrove/nova/bundled/skills"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/mode/providers"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
@@ -42,6 +43,18 @@ func buildProvider(cfg *config.Config, home string, sessionID func() string) pro
 		Getenv:    os.Getenv,
 		Store:     auth.NewFileStore(keyPath(home)),
 		SessionID: sessionID,
+	})
+}
+
+// buildDecider builds the role-resolving decision client from the config. It
+// shares the OpenRouter credential with the chat provider, so there is no
+// separate sign-in.
+func buildDecider(cfg *config.Config, home string) decide.Decider {
+	return providers.BuildDecider(providers.Options{
+		Config: cfg,
+		Home:   home,
+		Getenv: os.Getenv,
+		Store:  auth.NewFileStore(keyPath(home)),
 	})
 }
 

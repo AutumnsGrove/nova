@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -81,12 +82,7 @@ func (r *Registry) Unregister(name string) bool {
 		return false
 	}
 	delete(r.tools, name)
-	for i, n := range r.order {
-		if n == name {
-			r.order = append(r.order[:i], r.order[i+1:]...)
-			break
-		}
-	}
+	r.order = slices.DeleteFunc(r.order, func(n string) bool { return n == name })
 	return true
 }
 
@@ -108,7 +104,6 @@ func (r *Registry) View(names ...string) *Registry {
 		}
 		view.tools[name] = r.tools[name]
 		view.order = append(view.order, name)
-		delete(wanted, name)
 	}
 	return view
 }

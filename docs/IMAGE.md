@@ -186,10 +186,10 @@ on disk, no wire change.
 Compaction and the token estimate treat a part as a fixed placeholder
 (`[image]`, counted as about 1000 tokens so compaction still triggers), not as
 text; the summariser cannot describe pixels and must not try to tokenise base64.
-At request time, `compaction.PruneToolOutput`'s window also drops media parts
-older than the kept turns, replacing each with `[image pruned]`, so a long
-conversation does not carry stale pixels into every request. The session keeps
-them, so the transcript still renders.
+Old media parts are not dropped at request time: that would rewrite the history
+and miss the prompt cache on every turn (D134). A long conversation sheds its
+pixels when compaction summarises the old span; the session keeps them, so the
+transcript still renders.
 
 **Fork copies bytes.** `session.Fork` (`session/list.go:102`) rewrites every
 branch entry into a new file, so a fork of an image-heavy session duplicates the

@@ -23,7 +23,12 @@ cleanup() {
 		rm -rf "$tmp"
 	fi
 }
-trap cleanup EXIT HUP INT TERM
+# A trap on a signal runs and then the script would carry on, so the signals
+# exit; EXIT then runs cleanup once.
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 detect_os() {
 	case "$(uname -s)" in
@@ -74,6 +79,14 @@ sha256_file() {
 	fi
 }
 
+# check_version refuses anything but a plain release tag: it becomes part of a
+# URL and a file name, so a slash, a space, or a leading dash must not get in.
+check_version() {
+	case "$1" in
+	"" | [!A-Za-z0-9]* | *[!A-Za-z0-9._+-]*) err "invalid version \"$1\": want a release tag such as v1.2.3" ;;
+	esac
+}
+
 resolve_version() {
 	if [ -n "${NOVA_VERSION:-}" ]; then
 		printf '%s' "$NOVA_VERSION"
@@ -97,6 +110,7 @@ main() {
 	os="$(detect_os)"
 	arch="$(detect_arch)"
 	version="$(resolve_version)"
+	check_version "$version"
 	flavour="${NOVA_FLAVOUR:-full}"
 	install_dir="${NOVA_INSTALL_DIR:-$HOME/.local/bin}"
 	base="${NOVA_RELEASE_BASE:-https://github.com/AutumnsGrove/nova}"
@@ -113,14 +127,15 @@ main() {
 	download "${release_url}/${archive}" "$tmp/$archive" || err "could not download $archive"
 	download "${release_url}/checksums.txt" "$tmp/checksums.txt" || err "could not download checksums.txt"
 
-	expected="$(awk -v f="$archive" '$2 == f {print $1}' "$tmp/checksums.txt")"
+	# A line is "<hash>  <name>", or "<hash> *<name>" when sha256sum was run with -b.
+	expected="$(awk -v f="$archive" '{ n = $2; sub(/^\*/, "", n); sub(/^\.\//, "", n) } n == f { print tolower($1) }' "$tmp/checksums.txt")"
 	[ -n "$expected" ] || err "checksums.txt has no entry for $archive"
 	actual="$(sha256_file "$tmp/$archive")"
 	[ "$expected" = "$actual" ] || err "checksum mismatch for $archive: expected $expected, got $actual"
 
 	mkdir -p "$tmp/extract"
 	tar -xzf "$tmp/$archive" -C "$tmp/extract" || err "could not extract $archive"
-	[ -f "$tmp/extract/nova" ] || err "$archive does not contain the nova binary"
+	[ -f "$tmp/extract/nova" ] && [ ! -L "$tmp/extract/nova" ] || err "$archive does not contain the nova binary"
 
 	mkdir -p "$install_dir"
 	staged="$install_dir/.nova.new"

@@ -577,11 +577,12 @@ func TestProperty_LGP_OneLoginEnd(t *testing.T) {
 			switch rng.Intn(4) {
 			case 0:
 				resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdLogin, Name: id})
-				if active {
+				switch {
+				case active:
 					wantCode(t, resp, proto.CodeBusy)
-				} else if !resp.OK {
+				case !resp.OK:
 					t.Fatalf("seed %d step %d: login = %+v", seed, step, resp)
-				} else {
+				default:
 					active = true
 				}
 			case 1:

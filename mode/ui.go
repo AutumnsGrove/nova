@@ -46,20 +46,12 @@ func (s *Server) ask(ctx context.Context, q agent.Question) (bool, error) {
 
 // sessionAllowed reports whether the user allowed tool for this server.
 func (s *Server) sessionAllowed(tool string) bool {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	return s.sessionAllow[tool]
+	_, ok := s.sessionAllow.Load(tool)
+	return ok
 }
 
 // allowSession records a session-scoped allow rule for tool.
-func (s *Server) allowSession(tool string) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	if s.sessionAllow == nil {
-		s.sessionAllow = map[string]bool{}
-	}
-	s.sessionAllow[tool] = true
-}
+func (s *Server) allowSession(tool string) { s.sessionAllow.Store(tool, true) }
 
 // callUI delivers a UI request and waits for its answer. The handler may answer
 // synchronously; a transport that answers with a separate ui_response frame
@@ -128,7 +120,7 @@ func (s *Server) AnswerUI(resp proto.UIResponse) {
 	ch := s.uiPending[resp.ID]
 	s.uiMu.Unlock()
 	if ch == nil {
-		fmt.Fprintf(os.Stderr, "nova: ignoring ui_response for unknown or expired id %q\n", resp.ID)
+		_, _ = fmt.Fprintf(os.Stderr, "nova: ignoring ui_response for unknown or expired id %q\n", resp.ID)
 		return
 	}
 	select {
@@ -139,8 +131,5 @@ func (s *Server) AnswerUI(resp proto.UIResponse) {
 
 // newUIID returns the next ui_request id.
 func (s *Server) newUIID() string {
-	s.uiMu.Lock()
-	defer s.uiMu.Unlock()
-	s.uiNext++
-	return fmt.Sprintf("ui_%d", s.uiNext)
+	return fmt.Sprintf("ui_%d", s.uiNext.Add(1))
 }

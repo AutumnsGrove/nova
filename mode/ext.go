@@ -1,14 +1,17 @@
 package mode
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/bundled/subagent"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/diag"
@@ -37,9 +40,9 @@ func (s *Server) buildExtensionHost() *ext.Host {
 		Emit:        s.emit,
 		NovaVersion: s.opt.Version,
 		CWD:         s.cwd,
-		Mode:        modeName(s.opt.Mode),
+		Mode:        cmp.Or(s.opt.Mode, "rpc"), // "rpc" is the protocol default
 		Env:         os.Environ,
-		ScrubEnv:    s.cfg.Extensions.ScrubEnv,
+		ScrubEnv:    append(providerauth.CredentialEnv(), s.cfg.Extensions.ScrubEnv...),
 		PassEnv:     s.cfg.Extensions.PassEnv,
 		Config:      s.cfg,
 		Ledger:      s.ledger,
@@ -54,9 +57,12 @@ func (s *Server) buildExtensionHost() *ext.Host {
 // tool_call and tool_result hooks.
 func (s *Server) spawn(ctx context.Context, r ext.SpawnRequest) (*ext.SpawnResult, error) {
 	hooks := s.ext.Hooks()
+	s.mu.Lock()
+	model := s.model
+	s.mu.Unlock()
 	sp := &subagent.Spawner{
 		Provider:   s.prov,
-		Model:      s.model,
+		Model:      model,
 		Registry:   s.tools,
 		Policy:     &s.policy,
 		Ask:        s.ask,
@@ -74,14 +80,18 @@ func (s *Server) spawn(ctx context.Context, r ext.SpawnRequest) (*ext.SpawnResul
 }
 
 // startExtensions starts the host in the background and reports a per-extension
-// failure as an extension_error event.
+// failure as an extension_error event. extStarted closes when it is done, so
+// Close never shuts the host down while it is still starting processes.
 func (s *Server) startExtensions() {
-	if s.ext == nil {
-		return
-	}
+	defer close(s.extStarted)
 	for _, err := range s.ext.Start(context.Background()) {
-		s.emit(proto.Event{Type: proto.EventExtensionError, Error: &proto.Error{Code: proto.CodeInternal, Message: err.Error()}})
+		s.emitExtensionError(err)
 	}
+}
+
+// emitExtensionError reports a failure to load or reload one extension.
+func (s *Server) emitExtensionError(err error) {
+	s.emit(proto.Event{Type: proto.EventExtensionError, Error: &proto.Error{Code: proto.CodeInternal, Message: err.Error()}})
 }
 
 // extensionDirs lists the extension directories to load: explicit config dirs,
@@ -98,7 +108,6 @@ func extensionDirs(cfg *config.Config, cwd, home string) []string {
 	return dirs
 }
 
-// complete performs one non-streaming provider call for model:complete.
 // complete is the nested model call a tool gets as Context.Complete. An empty
 // request picks up the current model; a request that names a catalog ModelID is
 // resolved to that model's slug, so a describe tool can ask for a vision
@@ -119,18 +128,20 @@ func (s *Server) complete(ctx context.Context, req provider.Request) (*provider.
 type sessionBridge struct{ s *Server }
 
 func (b sessionBridge) AppendEntry(kind string, data json.RawMessage, keep bool) error {
-	if b.s.store == nil {
+	store := b.s.sessionStore()
+	if store == nil {
 		return nil
 	}
-	_, err := b.s.store.Append(session.Entry{Type: session.TypeCustom, Kind: kind, Data: data, Keep: keep})
+	_, err := store.Append(session.Entry{Type: session.TypeCustom, Kind: kind, Data: data, Keep: keep})
 	return err
 }
 
 func (b sessionBridge) Entries(kind string) []json.RawMessage {
-	if b.s.store == nil {
+	store := b.s.sessionStore()
+	if store == nil {
 		return nil
 	}
-	entries, err := b.s.store.Branch("")
+	entries, err := store.Branch("")
 	if err != nil {
 		return nil
 	}
@@ -153,48 +164,80 @@ func (b uiBridge) Request(ctx context.Context, req proto.UIRequest) (proto.UIRes
 	return b.s.callUI(ctx, req)
 }
 
+// Notify queues a fire-and-forget request for the client. It never blocks the
+// calling extension: when the client is so far behind that the queue is full,
+// the request is dropped, as a lagging event subscriber is.
 func (b uiBridge) Notify(req proto.UIRequest) {
 	if !b.s.supportsUI("ui." + req.Method) {
 		return
 	}
-	b.s.uiMu.Lock()
-	h := b.s.uiHandler
-	b.s.uiMu.Unlock()
+	b.s.startNotifier()
+	select {
+	case b.s.notifyCh <- req:
+	default:
+	}
+}
+
+// notifyQueueSize bounds the fire-and-forget requests waiting for the client,
+// and notifyTimeout bounds how long the client gets to take one.
+const (
+	notifyQueueSize = 64
+	notifyTimeout   = time.Second
+)
+
+// startNotifier starts the single goroutine that delivers fire-and-forget
+// requests, once, unless the server is closed. One goroutine keeps updates to
+// the same status or widget key in the order the extension sent them.
+func (s *Server) startNotifier() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.notifying {
+		return
+	}
+	s.notifying = true
+	go s.notifyLoop()
+}
+
+// notifyLoop delivers queued requests until the server closes. Close does not
+// wait for it: a handler stuck writing to a dead client must not hang Close.
+func (s *Server) notifyLoop() {
+	for {
+		select {
+		case <-s.life.Done():
+			return
+		case req := <-s.notifyCh:
+			s.deliverNotify(req)
+		}
+	}
+}
+
+// deliverNotify hands one request to the current UI handler. A panicking
+// handler loses that request, not the loop.
+func (s *Server) deliverNotify(req proto.UIRequest) {
+	defer diag.Catch("ui notify")
+	s.uiMu.Lock()
+	h := s.uiHandler
+	s.uiMu.Unlock()
 	if h == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(s.life, notifyTimeout)
 	defer cancel()
-	go func() { defer diag.Catch("ui notify"); _, _ = h(ctx, req) }()
+	_, _ = h(ctx, req)
 }
 
 // errUnsupportedUI reports a UI method the attached client cannot answer.
 var errUnsupportedUI = errors.New("the UI client cannot answer this method")
 
-// extensionCommands returns the running extensions' slash commands.
-func (s *Server) extensionCommands() []ext.Command {
-	if s.ext == nil {
-		return nil
-	}
-	return s.ext.Commands()
-}
-
 // hasExtensionCommand reports whether a running extension owns name.
 func (s *Server) hasExtensionCommand(name string) bool {
-	for _, c := range s.extensionCommands() {
-		if c.Name == name {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(s.ext.Commands(), func(c ext.Command) bool { return c.Name == name })
 }
 
-// modeName maps an empty mode to "rpc", the protocol default.
-func modeName(mode string) string {
-	if mode == "" {
-		return "rpc"
-	}
-	return mode
+// isExtensionDir reports whether dir holds an extension manifest.
+func isExtensionDir(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "extension.yaml"))
+	return err == nil
 }
 
 // extensionsIn returns the immediate extension directories below root. A root
@@ -203,7 +246,7 @@ func extensionsIn(root string) []string {
 	if root == "" {
 		return nil
 	}
-	if pathExists(filepath.Join(root, "extension.yaml")) {
+	if isExtensionDir(root) {
 		return []string{root}
 	}
 	entries, err := os.ReadDir(root)
@@ -215,8 +258,7 @@ func extensionsIn(root string) []string {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		dir := filepath.Join(root, e.Name())
-		if pathExists(filepath.Join(dir, "extension.yaml")) {
+		if dir := filepath.Join(root, e.Name()); isExtensionDir(dir) {
 			out = append(out, dir)
 		}
 	}

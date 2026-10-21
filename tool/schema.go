@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math/big"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -177,7 +178,7 @@ func (v *argValidator) checkObject(schema map[string]any, value map[string]any, 
 			}
 		}
 	}
-	for _, key := range sortedKeys(value) {
+	for _, key := range slices.Sorted(maps.Keys(value)) {
 		sub, declared := props[key].(map[string]any)
 		if !declared {
 			continue
@@ -191,7 +192,7 @@ func (v *argValidator) checkObject(schema map[string]any, value map[string]any, 
 		if !isBool {
 			v.bad(schema)
 		} else if !allow {
-			for _, key := range sortedKeys(value) {
+			for _, key := range slices.Sorted(maps.Keys(value)) {
 				if _, declared := props[key]; !declared {
 					return fmt.Errorf("%s: unknown property %q", at(path), key)
 				}
@@ -313,17 +314,6 @@ func valuesEqual(a, b any) bool {
 		return ok && ra.Cmp(rb) == 0
 	}
 	return reflect.DeepEqual(a, b)
-}
-
-// sortedKeys returns the map's keys in a deterministic order so the first
-// reported problem does not depend on Go's map iteration.
-func sortedKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // at names a path in an error message, falling back to the argument object.

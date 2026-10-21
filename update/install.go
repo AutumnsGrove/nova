@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -42,13 +43,32 @@ func (s *staged) commit(ctx context.Context, opt Options) error {
 	if err := os.Chmod(s.path, 0o755); err != nil {
 		return err
 	}
-	if out, err := opt.Exec(ctx, "", nil, s.path, "version"); err != nil {
+	// An empty, non-nil environment: the version check needs none of the caller's,
+	// which holds the user's keys.
+	if out, err := opt.Exec(ctx, "", []string{}, s.path, "version"); err != nil {
 		return fmt.Errorf("the new binary failed its version check: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	if err := os.Rename(s.path, s.target); err != nil {
 		return fmt.Errorf("replace %s: %w", s.target, err)
 	}
 	return nil
+}
+
+// write copies src into dst, refusing more than maxBinaryBytes: a small archive
+// can unpack to far more than it weighs.
+func write(dst string, src io.Reader) error {
+	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	n, err := io.Copy(f, io.LimitReader(src, maxBinaryBytes+1))
+	if err == nil && n > maxBinaryBytes {
+		err = fmt.Errorf("the binary is too large (over %d bytes)", maxBinaryBytes)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // extract writes the archive member whose cleaned path is exactly member into
@@ -62,7 +82,7 @@ func extract(dst string, archive []byte, member string) error {
 	tr := tar.NewReader(zr)
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -71,18 +91,10 @@ func extract(dst string, archive []byte, member string) error {
 		if path.Clean(hdr.Name) != member {
 			continue
 		}
-		f, err := os.OpenFile(dst, os.O_WRONLY|os.O_TRUNC, 0o755)
-		if err != nil {
-			return fmt.Errorf("write %s: %w", dst, err)
+		if hdr.Typeflag != tar.TypeReg {
+			return fmt.Errorf("archive member %s is not a regular file", member)
 		}
-		if _, err := io.Copy(f, tr); err != nil {
-			f.Close()
-			return err
-		}
-		if err := f.Close(); err != nil {
-			return err
-		}
-		return nil
+		return write(dst, tr)
 	}
 	return fmt.Errorf("archive has no %s binary", member)
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/session"
 	"github.com/AutumnsGrove/nova/testkit"
@@ -71,9 +72,9 @@ func TestCLI_CLI10_Docs(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "# Nova") {
 		t.Fatalf("exit = %d out = %q", code, out)
 	}
-	code, out, _ = runCLI(t, "docs", "no-such-topic")
-	if code != 0 || !strings.Contains(out, "topics:") {
-		t.Fatalf("unknown topic should list topics: exit=%d out=%q", code, out)
+	code, out, errOut := runCLI(t, "docs", "no-such-topic")
+	if code == 0 || out != "" || !strings.Contains(strings.Join(strings.Fields(errOut), ""), "topics:") {
+		t.Fatalf("unknown topic should fail and list topics on stderr: exit=%d out=%q err=%q", code, out, errOut)
 	}
 }
 
@@ -156,9 +157,10 @@ func TestCLI_CLI16_Completion(t *testing.T) {
 }
 
 func TestCLI_CLI18_DocsAfterDoubleDash(t *testing.T) {
-	code, out, _ := runCLI(t, "docs", "--", "--help")
-	if code != 0 || !strings.Contains(out, "topics:") {
-		t.Fatalf("exit = %d out = %q", code, out)
+	// After "--", "--help" is a topic name like any other, not a flag.
+	code, out, errOut := runCLI(t, "docs", "--", "--help")
+	if code == 0 || out != "" || !strings.Contains(strings.ToLower(strings.Join(strings.Fields(errOut), "")), "unknowntopic") {
+		t.Fatalf("exit = %d out = %q err = %q", code, out, errOut)
 	}
 }
 
@@ -228,5 +230,50 @@ func TestCLI_FUL05_UntrustedProjectWarns(t *testing.T) {
 	body := string(srv.Requests()[0].Body)
 	if strings.Contains(body, "sneaky") {
 		t.Fatalf("an untrusted project config must be ignored: %s", body)
+	}
+}
+
+// logout removes the stored credential of the provider it names, OpenRouter's
+// when none is named. It used to reach OpenRouter only, so an OpenCode Go key
+// could not be removed from the command line.
+func TestCLI_CLI19_LogoutNamesTheProvider(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	keyPath := opencode.DefaultKeyPath(home)
+	if err := opencode.SaveKey(keyPath, "go-key"); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := runCLI(t, "logout", "opencode-go"); code != 0 {
+		t.Fatalf("logout opencode-go: exit %d stderr %q", code, errOut)
+	}
+	if _, err := os.Stat(keyPath); err == nil {
+		t.Fatal("the OpenCode Go key survived its logout")
+	}
+	if code, _, _ := runCLI(t, "logout", "opencode-go"); code != 0 {
+		t.Fatal("a second logout of the same provider should also succeed")
+	}
+	if code, _, errOut := runCLI(t, "logout", "nope"); code == 0 || !strings.Contains(errOut, "nope") {
+		t.Fatalf("an unknown provider: exit %d stderr %q, want an error naming it", code, errOut)
+	}
+}
+
+// A lockfile the installer cannot read is replaced by an empty one. The user
+// must hear that on stderr, not find their extensions gone.
+func TestCLI_CLI20_DamagedLockfileIsReported(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".config", "nova")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "extensions.lock"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := runCLI(t, "ext", "list")
+	if code != 0 || !strings.Contains(errOut, "warning:") {
+		t.Fatalf("exit %d stdout %q stderr %q, want a warning on stderr", code, out, errOut)
+	}
+	if strings.Contains(out, "warning") {
+		t.Fatalf("the warning went to stdout: %q", out)
 	}
 }

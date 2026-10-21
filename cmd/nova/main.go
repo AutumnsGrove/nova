@@ -4,13 +4,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 
@@ -18,6 +17,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/auth/opencode"
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/mode"
@@ -156,12 +156,12 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 	root.AddCommand(
 		versionCommand(stdout),
 		modelsCommand(stdout),
-		sessionsCommand(stdout, stderr),
+		sessionsCommand(stdout),
 		loginCommand(stdout, stderr),
-		logoutCommand(stdout, stderr),
+		logoutCommand(stdout),
 		docsCommand(stdout),
 		logCommand(stdout),
-		extCommand(stdin, stdout),
+		extCommand(stdin, stdout, stderr),
 		serveCommand(),
 		actionReview(stdout, exit),
 		doctorCommand(stdout, exit),
@@ -220,10 +220,10 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 			return 0, err
 		}
 	}
-	if o.resume && o.mode != "tui" {
-		return 0, fmt.Errorf("nova: --resume needs the TUI (not built yet)")
-	}
 	tuiMode := shouldStartTUI(o.mode, o.tty, writerIsTerminal(o.stdout))
+	if o.resume && !tuiMode {
+		return 0, fmt.Errorf("nova: --resume opens a picker, so it needs the interactive UI in a terminal")
+	}
 	diag.SetMode(modeLabel(o.mode, tuiMode))
 	diag.Tracef("nova %s mode=%s", version, modeLabel(o.mode, tuiMode))
 	if tuiMode {
@@ -245,7 +245,7 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 	}
 	s, err := mode.Build(mode.BuildOptions{
 		CWD: cwd, Home: home, Mode: o.mode, Version: version, Flags: flags,
-		Yes: o.yes, Interactive: tuiMode, Out: o.stdout, In: o.stdin, NoSession: o.noSession, Session: sessionPath,
+		Yes: o.yes, Interactive: tuiMode, NoSession: o.noSession, Session: sessionPath,
 		NoTools: o.noTools, Tools: tools, Stderr: o.stderr,
 	})
 	if err != nil {
@@ -265,7 +265,7 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 	case o.mode == "json":
 		return mode.RunJSON(sigCtx, s, o.prompt, o.stdout), nil
 	case o.mode == "tui":
-		return 0, startTUI(sigCtx, s)
+		return 0, startTUI(sigCtx, s, o.resume)
 	case o.prompt != "":
 		text, err := buildPrompt(o.prompt, o.stdin, o.tty)
 		if err != nil {
@@ -280,8 +280,8 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 		}
 		return mode.RunPrint(sigCtx, s, text, o.stdout, o.stderr), nil
 	default:
-		if shouldStartTUI(o.mode, o.tty, writerIsTerminal(o.stdout)) {
-			return 0, startTUI(sigCtx, s)
+		if tuiMode {
+			return 0, startTUI(sigCtx, s, o.resume)
 		}
 		return 0, fmt.Errorf("nova: no mode selected; use -p, --mode, or a subcommand")
 	}
@@ -397,7 +397,7 @@ func modelsCommand(stdout io.Writer) *cobra.Command {
 	}
 }
 
-func sessionsCommand(stdout, stderr io.Writer) *cobra.Command {
+func sessionsCommand(stdout io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "sessions",
 		Short: "List sessions for the working directory",
@@ -439,7 +439,7 @@ func loginCommand(stdout, stderr io.Writer) *cobra.Command {
 					cfg.Server = v
 				}
 				if !noBrowser {
-					cfg.OpenBrowser = openBrowser
+					cfg.OpenBrowser = providerauth.OpenBrowser
 				}
 				key, err := opencode.Login(cmd.Context(), cfg)
 				if err != nil {
@@ -462,7 +462,7 @@ func loginCommand(stdout, stderr io.Writer) *cobra.Command {
 				opts.ExchangeURL = v
 			}
 			if !noBrowser {
-				opts.OpenBrowser = openBrowser
+				opts.OpenBrowser = providerauth.OpenBrowser
 			}
 			key, err := auth.Login(cmd.Context(), opts)
 			if err != nil {
@@ -480,17 +480,28 @@ func loginCommand(stdout, stderr io.Writer) *cobra.Command {
 	return cmd
 }
 
-func logoutCommand(stdout, stderr io.Writer) *cobra.Command {
+func logoutCommand(stdout io.Writer) *cobra.Command {
 	return &cobra.Command{
-		Use:   "logout",
-		Short: "Log out of OpenRouter",
-		RunE: func(*cobra.Command, []string) error {
+		Use:   "logout [provider]",
+		Short: "Remove a stored sign-in (OpenRouter unless a provider is named)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
 			home, err := os.UserHomeDir()
 			if err != nil {
 				return err
 			}
-			store := auth.NewFileStore(filepath.Join(config.UserConfigDir(home), "auth.json"))
-			if err := store.Delete(); err != nil {
+			name := "openrouter"
+			if len(args) > 0 {
+				name = args[0]
+			}
+			p, err := providerNamed(name)
+			if err != nil {
+				return err
+			}
+			if p.Delete == nil {
+				return fmt.Errorf("nova: %s has no stored credential", p.ID)
+			}
+			if err := p.Delete(home); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
 			fmt.Fprintln(stdout, "logged out")
@@ -499,14 +510,16 @@ func logoutCommand(stdout, stderr io.Writer) *cobra.Command {
 	}
 }
 
-// openBrowser opens url in the platform's browser.
-func openBrowser(url string) error {
-	switch runtime.GOOS {
-	case "darwin":
-		return exec.Command("open", url).Start()
-	case "windows":
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
-	default:
-		return exec.Command("xdg-open", url).Start()
+// providerNamed finds a sign-in provider by the name a user types: its id, or
+// the spelling "opencodego".
+func providerNamed(name string) (providerauth.Provider, error) {
+	id := strings.ToLower(strings.TrimSpace(name))
+	if id == "opencodego" {
+		id = "opencode-go"
 	}
+	p, ok := providerauth.Get(id)
+	if !ok {
+		return providerauth.Provider{}, fmt.Errorf("nova: unknown provider %q", name)
+	}
+	return p, nil
 }

@@ -30,22 +30,13 @@ type ignoreRule struct {
 // fail a walk. A BOM and CRLF line endings are accepted.
 func parseIgnore(base string, data []byte) *ignoreSet {
 	set := &ignoreSet{dir: filepath.Clean(base)}
-	data = trimBOM(data)
-	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	text := strings.ReplaceAll(strings.TrimPrefix(string(data), "\uFEFF"), "\r\n", "\n")
 	for _, line := range strings.Split(text, "\n") {
 		if rule, ok := parseIgnoreLine(line); ok {
 			set.rules = append(set.rules, rule)
 		}
 	}
 	return set
-}
-
-// trimBOM drops a leading UTF-8 byte-order mark.
-func trimBOM(data []byte) []byte {
-	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
-		return data[3:]
-	}
-	return data
 }
 
 // parseIgnoreLine parses one line of a .gitignore file. It reports false for a

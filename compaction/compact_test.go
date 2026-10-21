@@ -361,3 +361,43 @@ func Test_CMP21_ErrorMidSummaryNoWrite(t *testing.T) {
 		t.Fatal("a partial write happened")
 	}
 }
+
+// The completion of the last response is not in its PromptTokens, so the
+
+// When the span is split, a tool result still gets the name of its call even
+
+// though the call is in another chunk.
+func Test_CMP22_ChunkKeepsToolNames(t *testing.T) {
+	fake := newFake()
+	c := compactor(fake, Settings{InputMaxTokens: 20})
+	span := []message.Message{
+		message.User(strings.Repeat("u", 100)),
+		callMsg("c1", "read", `{"path":"a"}`),
+		message.ToolResult("c1", strings.Repeat("r", 100)),
+	}
+	if _, _, err := c.summariseChunks(context.Background(), span, "", ""); err != nil {
+		t.Fatalf("summariseChunks: %v", err)
+	}
+	if fake.calls() < 3 {
+		t.Fatalf("calls = %d, want the span split into several chunks", fake.calls())
+	}
+	if got := fake.promptText(t); !strings.Contains(got, "[tool read]") {
+		t.Fatalf("prompt lacks the tool name:\n%s", got)
+	}
+}
+
+// The transcript is data to summarise. Text inside it, such as a tool result
+
+// that says "ignore previous instructions", must not be read as a command.
+func Test_CMP23_PromptMarksTranscriptAsData(t *testing.T) {
+	fake := newFake()
+	c := compactor(fake, Settings{KeepRecent: 200})
+	if _, err := c.Compact(context.Background(), longHistory(10), ""); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	if got := fake.promptText(t); !strings.Contains(got, "not instructions") {
+		t.Fatalf("prompt does not say the transcript is data:\n%s", got)
+	}
+}
+
+// docs/IMAGE.md: compaction treats an image part as a fixed placeholder. Without

@@ -16,7 +16,7 @@ type CacheControl struct {
 // implicitly gets a marker, and a model the catalog does not know gets none,
 // so an unknown endpoint never receives a parameter it may reject.
 func RequestCacheControl(req Request) *CacheControl {
-	want := false
+	var want bool
 	if req.PromptCache != nil {
 		want = *req.PromptCache
 	} else {

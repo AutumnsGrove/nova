@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/x/ansi"
-
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -44,7 +43,7 @@ func (bashRenderer) Body(c Call, st styles.Styles, width int, expanded bool) str
 	if cmd := argString(c.Args, "command"); cmd != "" {
 		parts = append(parts, st.Muted.Render(renderText(cmd, st, width, 0)))
 	}
-	if strings.TrimSpace(ansi.Strip(c.Content)) == "" {
+	if strings.TrimSpace(sanitize.Text(c.Content)) == "" {
 		parts = append(parts, st.Muted.Render("(no output)"))
 	} else {
 		parts = append(parts, renderText(lastLines(c.Content, 50), st, width, 0))

@@ -219,6 +219,7 @@ directory), `glob` (optional file-name filter, same syntax as `glob`), `case_ins
 | GRP30 | annotations | | `ReadOnly`, `Parallel` |
 | GRP31 | match at a line that is also over 500 chars, with `context` | | both shown cut |
 | GRP32 | `Roots` containment | | error result outside a root |
+| GRP33 | a named pipe in the tree | `mkfifo` beside a normal file | the pipe is skipped and counted, never opened; the normal file's match is found |
 
 ## Fuzz and property tests
 

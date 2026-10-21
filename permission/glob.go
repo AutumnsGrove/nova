@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // MatchPath reports whether a path matches a path glob.
@@ -44,21 +45,59 @@ func MatchString(pattern, s string) bool {
 	return re.MatchString(s)
 }
 
-// validGlob reports whether a pattern is well-formed enough to match with.
-func validGlob(pattern string) bool {
+// ValidPath reports whether pattern is a glob that MatchPath and MatchString
+// can use: every character class is closed.
+func ValidPath(pattern string) bool {
 	_, ok := compileGlob(pattern, true)
 	return ok
 }
 
-// ValidPath reports whether pattern is a path glob that MatchPath can use.
-func ValidPath(pattern string) bool { return validGlob(pattern) }
+// globCacheMax bounds the compiled-pattern cache. Patterns can come from a
+// model's tool arguments, so the cache must not grow with them; when it fills
+// it is dropped whole, which is cheap and keeps the code small.
+const globCacheMax = 256
 
-// compileGlob translates a glob into an anchored regular expression. The
-// translation runs on bytes so multibyte literals pass through unchanged.
+type globKey struct {
+	pattern  string
+	pathMode bool
+}
+
+// globCache remembers compiled patterns, including invalid ones (a nil entry),
+// because a directory walk matches one pattern against every file and
+// compiling a regexp per file dominates the cost.
+var globCache = struct {
+	sync.Mutex
+	m map[globKey]*regexp.Regexp
+}{m: map[globKey]*regexp.Regexp{}}
+
+// compileGlob returns the compiled form of a glob, from the cache when it can.
 // It returns false for an unbalanced character class.
 func compileGlob(pattern string, pathMode bool) (*regexp.Regexp, bool) {
+	key := globKey{pattern, pathMode}
+	globCache.Lock()
+	re, hit := globCache.m[key]
+	globCache.Unlock()
+	if !hit {
+		re, _ = translateGlob(pattern, pathMode)
+		globCache.Lock()
+		if len(globCache.m) >= globCacheMax {
+			clear(globCache.m)
+		}
+		globCache.m[key] = re
+		globCache.Unlock()
+	}
+	return re, re != nil
+}
+
+// translateGlob translates a glob into an anchored regular expression. The
+// translation runs on bytes so multibyte literals pass through unchanged.
+// It returns false for an unbalanced character class.
+func translateGlob(pattern string, pathMode bool) (*regexp.Regexp, bool) {
 	var out strings.Builder
-	out.WriteByte('^')
+	// The s flag lets `.` match a newline. Without it a deny pattern such as
+	// `*rm -rf*` would stop matching once a command spans two lines, which is
+	// exactly how a command would slip past it.
+	out.WriteString(`(?s)^`)
 	for i := 0; i < len(pattern); {
 		switch c := pattern[i]; c {
 		case '*':
@@ -93,6 +132,10 @@ func compileGlob(pattern string, pathMode bool) (*regexp.Regexp, bool) {
 			out.WriteByte('[')
 			if i < len(pattern) && (pattern[i] == '!' || pattern[i] == '^') {
 				out.WriteByte('^')
+				if pathMode {
+					// A path glob never spans a separator except through `**`.
+					out.WriteByte('/')
+				}
 				i++
 			}
 			if i < len(pattern) && pattern[i] == ']' {

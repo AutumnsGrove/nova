@@ -279,14 +279,29 @@ func TestMessages_MSG12_PingIgnored(t *testing.T) {
 	}
 }
 
+// An error event inside a stream carries the same classes the HTTP statuses do:
+// overload, rate limit and server errors clear on their own, while a bad
+// request or a bad key does not.
 func TestMessages_MSG13_ErrorEvent(t *testing.T) {
-	p, _ := newProvider(t, Config{},
-		sse("error", `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`),
-	)
-	_, _, err := run(t, p, provider.Request{Model: "m"})
-	var perr *provider.Error
-	if !errors.As(err, &perr) || perr.Retryable || perr.Message != "Overloaded" {
-		t.Fatalf("err = %v", err)
+	cases := []struct {
+		typ       string
+		retryable bool
+	}{
+		{"overloaded_error", true},
+		{"rate_limit_error", true},
+		{"api_error", true},
+		{"invalid_request_error", false},
+		{"authentication_error", false},
+	}
+	for _, c := range cases {
+		p, _ := newProvider(t, Config{},
+			sse("error", `{"type":"error","error":{"type":"`+c.typ+`","message":"boom"}}`),
+		)
+		_, _, err := run(t, p, provider.Request{Model: "m"})
+		var perr *provider.Error
+		if !errors.As(err, &perr) || perr.Retryable != c.retryable || perr.Message != "boom" || perr.Code != c.typ {
+			t.Errorf("%s: err = %v, want retryable=%v", c.typ, err, c.retryable)
+		}
 	}
 }
 

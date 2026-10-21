@@ -1,7 +1,7 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,7 +40,7 @@ func LoadTemplates(dirs []string) ([]Template, []Warning) {
 				warnings = append(warnings, Warning{Source: path, Message: "invalid template name " + name})
 				continue
 			}
-			data, err := os.ReadFile(path)
+			data, err := readRegularFile(path, maxReadBytes)
 			if err != nil {
 				warnings = append(warnings, Warning{Source: path, Message: "cannot read template: " + err.Error()})
 				continue
@@ -166,7 +166,7 @@ func SplitArgs(s string) ([]string, error) {
 		}
 	}
 	if quote != 0 {
-		return nil, fmt.Errorf("config: unclosed quote in arguments")
+		return nil, errors.New("config: unclosed quote in arguments")
 	}
 	if started {
 		args = append(args, current.String())

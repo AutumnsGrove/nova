@@ -42,7 +42,7 @@ func Test_LED02_CatalogFallback(t *testing.T) {
 
 func Test_LED03_CachedDiscount(t *testing.T) {
 	m := provider.Model{ID: "x", InPerM: 1, OutPerM: 0}
-	// 1000 prompt, 1000 cached: 900 full + 100 at 10%.
+	// 1000 prompt, all of it cached: every token is billed at the 10% rate.
 	usd, source := CostFor(m, provider.Usage{PromptTokens: 1000, CachedTokens: 1000})
 	want := (0.0 + 1000*1*0.1) / 1e6
 	if math.Abs(usd-want) > 1e-12 || source != "catalog" {
@@ -170,6 +170,63 @@ func Test_LED12_NegativeOrNaN(t *testing.T) {
 			t.Fatalf("usage %+v gave usd %v", u, usd)
 		}
 	}
+}
+
+func Test_LED18_NonFiniteProviderCost(t *testing.T) {
+	m := provider.Model{ID: "x", InPerM: 2, OutPerM: 4}
+	tokens := provider.Usage{PromptTokens: 1000, CompletionTokens: 500}
+	// Garbage costs nothing (D86); a negative or -Inf figure is just not reported.
+	for _, bad := range []float64{math.NaN(), math.Inf(1)} {
+		tokens.CostUSD = bad
+		if usd, source := CostFor(m, tokens); usd != 0 || source != "" {
+			t.Errorf("provider cost %v gave (%v, %q), want (0, empty)", bad, usd, source)
+		}
+	}
+	for _, bad := range []float64{math.Inf(-1), -1} {
+		tokens.CostUSD = bad
+		if usd, source := CostFor(m, tokens); source != "catalog" || math.Abs(usd-0.004) > 1e-12 {
+			t.Errorf("provider cost %v gave (%v, %q), want the catalog estimate 0.004", bad, usd, source)
+		}
+	}
+}
+
+func Test_LED19_RebuildIsAtomic(t *testing.T) {
+	entries := []session.Entry{
+		{Type: session.TypeMessage, Model: "a", Usage: &provider.Usage{PromptTokens: 1}},
+		{Type: session.TypeMessage, Model: "a", Usage: &provider.Usage{PromptTokens: 2}},
+		{Type: session.TypeMessage, Model: "b", Usage: &provider.Usage{PromptTokens: 4}},
+	}
+	l := NewLedger(catalog)
+	l.Rebuild(entries)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				l.Rebuild(entries)
+			}
+		}
+	}()
+	// A reader must never see the half-built ledger a reset-then-add Rebuild
+	// would expose between its first and last entry.
+	for range 2000 {
+		if got := l.Total().PromptTokens; got != 7 {
+			close(stop)
+			<-done
+			t.Fatalf("Total during Rebuild = %d tokens, want 7", got)
+		}
+		if got := l.ByModel()["a"].PromptTokens; got != 3 {
+			close(stop)
+			<-done
+			t.Fatalf("model a during Rebuild = %d tokens, want 3", got)
+		}
+	}
+	close(stop)
+	<-done
 }
 
 func Test_LED13_CacheWritePremium(t *testing.T) {

@@ -179,3 +179,26 @@ func TestTrust_TRP08_NothingToDo(t *testing.T) {
 		t.Fatalf("trusted project prompted:\n%s", out.String())
 	}
 }
+
+// The prompt shows names read from a folder the user has not trusted, which is
+// exactly where hostile bytes arrive. None of them may reach the terminal as a
+// control sequence, or the prompt could be made to read as something else.
+func TestTrust_TRP09_PromptShowsNamesWithoutControlBytes(t *testing.T) {
+	hostile := "\x1b[2J\x1b[Hall clear‮"
+	f := Found{
+		Config:       true,
+		Extensions:   []string{"ext" + hostile},
+		ContextFiles: []string{"/p/AGENTS.md" + hostile},
+	}
+	var out bytes.Buffer
+	if _, err := Prompt("/work"+hostile, f, strings.NewReader("3\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "ext") || !strings.Contains(text, "/work") {
+		t.Fatalf("the names were dropped instead of cleaned:\n%s", text)
+	}
+	if strings.ContainsRune(text, '\x1b') || strings.ContainsRune(text, '‮') {
+		t.Fatalf("the prompt passed control bytes through: %q", text)
+	}
+}

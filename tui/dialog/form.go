@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -287,10 +288,10 @@ func (f *form) View(w, h int, st styles.Styles) string {
 	inner := w - 2
 	body := []string{f.tabsLine(st), ""}
 	if f.current() == nil {
-		body = append(body, f.review(inner, st)...)
+		body = append(body, f.review(st)...)
 	} else {
 		q := f.current()
-		body = append(body, wrap(st.Bold.Render(safe(q.q.Prompt)), inner)...)
+		body = append(body, wrap(st.Bold.Render(sanitize.Text(q.q.Prompt)), inner)...)
 		options := f.options(st)
 		preview := f.preview()
 		switch {
@@ -300,7 +301,7 @@ func (f *form) View(w, h int, st styles.Styles) string {
 			body = append(body, options...)
 			body = append(body, "", st.Muted.Render("preview:"))
 			for _, l := range strings.Split(preview, "\n") {
-				body = append(body, safe(l))
+				body = append(body, sanitize.Text(l))
 			}
 		default:
 			body = append(body, options...)
@@ -342,10 +343,10 @@ func (f *form) tabsLine(st styles.Styles) string {
 func (f *form) options(st styles.Styles) []string {
 	q := f.current()
 	if q.noteMode {
-		return []string{st.Warm.Render("note: ") + safe(string(q.note)) + "▏"}
+		return []string{st.Warm.Render("note: ") + sanitize.Text(string(q.note)) + "▏"}
 	}
 	if q.free {
-		return []string{"> " + safe(string(q.text)) + "▏"}
+		return []string{"> " + sanitize.Text(string(q.text)) + "▏"}
 	}
 	var out []string
 	for i, o := range q.opts {
@@ -355,7 +356,7 @@ func (f *form) options(st styles.Styles) []string {
 		out = append(out, optionLine(q, q.other, proto.UIOption{Label: "Other (type something)"}, st))
 	}
 	if len(q.note) > 0 {
-		out = append(out, st.Dim.Render("note: "+safe(string(q.note))))
+		out = append(out, st.Dim.Render("note: "+sanitize.Text(string(q.note))))
 	}
 	return out
 }
@@ -371,9 +372,9 @@ func optionLine(q *qstate, i int, o proto.UIOption, st styles.Styles) string {
 	} else if i == q.cursor {
 		marker = "> "
 	}
-	line := marker + safe(o.Label)
+	line := marker + sanitize.Text(o.Label)
 	if o.Description != "" {
-		line += "  " + st.Dim.Render(safe(o.Description))
+		line += "  " + st.Dim.Render(sanitize.Text(o.Description))
 	}
 	return line
 }
@@ -399,17 +400,17 @@ func sideBySide(left, right []string, inner int, st styles.Styles) []string {
 		if i < len(right) {
 			r = right[i]
 		}
-		out = append(out, clipPad(l, leftW)+st.Muted.Render(" │ ")+safe(r))
+		out = append(out, clipPad(l, leftW)+st.Muted.Render(" │ ")+sanitize.Text(r))
 	}
 	return out
 }
 
 // review renders every answer.
-func (f *form) review(inner int, st styles.Styles) []string {
+func (f *form) review(st styles.Styles) []string {
 	var out []string
 	for i, a := range f.answers(false) {
-		out = append(out, st.Bold.Render("Q"+strconv.Itoa(i+1)+": "+safe(f.states[i].q.Prompt)))
-		out = append(out, "  "+safe(f.answerText(i, a)))
+		out = append(out, st.Bold.Render("Q"+strconv.Itoa(i+1)+": "+sanitize.Text(f.states[i].q.Prompt)))
+		out = append(out, "  "+sanitize.Text(f.answerText(i, a)))
 		if a.Note != "" {
 			out = append(out, st.Dim.Render("  note: "+a.Note))
 		}

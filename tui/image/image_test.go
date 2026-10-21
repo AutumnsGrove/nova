@@ -1,7 +1,11 @@
 package image
 
 import (
+	"bytes"
 	"encoding/base64"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"strings"
 	"testing"
 
@@ -72,8 +76,25 @@ func TestImage_IMG04_EncodeKittyChunks(t *testing.T) {
 	}
 }
 
+// encoded returns a w x h image in the given format, base64 as a part carries it.
+func encoded(t *testing.T, format string, w, h int) string {
+	t.Helper()
+	var buf bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	var err error
+	if format == "jpeg" {
+		err = jpeg.Encode(&buf, img, nil)
+	} else {
+		err = png.Encode(&buf, img)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
 func TestImage_IMG05_Render(t *testing.T) {
-	part := message.ContentPart{Type: message.PartImage, MimeType: "image/png", Data: base64.StdEncoding.EncodeToString([]byte("not really a png"))}
+	part := message.ContentPart{Type: message.PartImage, MimeType: "image/png", Data: encoded(t, "png", 8, 8)}
 	lines, ok := Render(part, 40, Capabilities{Images: Kitty})
 	if !ok || len(lines) == 0 || !strings.HasPrefix(lines[0], "\x1b_G") {
 		t.Fatalf("Render = %v, %v", lines, ok)
@@ -83,5 +104,27 @@ func TestImage_IMG05_Render(t *testing.T) {
 	}
 	if _, ok := Render(message.ContentPart{Type: message.PartImage}, 40, Capabilities{Images: Kitty}); ok {
 		t.Fatal("Render accepted a part with no data")
+	}
+}
+
+// Kitty draws only PNG for the format Nova sends, so a JPEG part (the media
+// package keeps photos as JPEG) has to be converted or it paints nothing.
+func TestImage_IMG09_RenderConvertsJPEGToPNG(t *testing.T) {
+	part := message.ContentPart{Type: message.PartImage, MimeType: "image/jpeg", Data: encoded(t, "jpeg", 8, 8)}
+	lines, ok := Render(part, 40, Capabilities{Images: Kitty})
+	if !ok {
+		t.Fatal("a JPEG part should render")
+	}
+	payload := lines[0][strings.Index(lines[0], ";")+1 : strings.LastIndex(lines[0], "\x1b\\")]
+	raw, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil || !bytes.HasPrefix(raw, []byte("\x89PNG")) {
+		t.Fatalf("payload is not a PNG (err %v, starts %q)", err, raw[:min(len(raw), 8)])
+	}
+}
+
+func TestImage_IMG10_RenderRefusesUndecodableData(t *testing.T) {
+	part := message.ContentPart{Type: message.PartImage, MimeType: "image/jpeg", Data: base64.StdEncoding.EncodeToString([]byte("junk"))}
+	if _, ok := Render(part, 40, Capabilities{Images: Kitty}); ok {
+		t.Fatal("Render drew bytes that are not an image; the caller should show the text line")
 	}
 }

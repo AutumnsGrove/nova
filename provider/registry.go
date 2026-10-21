@@ -2,7 +2,8 @@ package provider
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"sync"
 )
 
@@ -39,10 +40,5 @@ func Get(name string) (Provider, bool) {
 func Names() []string {
 	regMu.RLock()
 	defer regMu.RUnlock()
-	names := make([]string, 0, len(registry))
-	for name := range registry {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(registry))
 }

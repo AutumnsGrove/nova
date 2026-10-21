@@ -43,25 +43,26 @@ nova/
     openaicompat/ chat-completions + SSE                        ≤ 600
     responses/    OpenAI Responses API + SSE                    ≤ 480
     messages/     Anthropic Messages API + SSE                  ≤ 480
-    ssestream/    shared POST + SSE transport, timeouts         ≤ 320
-    opencodego/   preset: catalog, endpoint routing             ≤ 320
+    ssestream/    shared POST + SSE transport, timeouts         ≤ 420
+    opencodego/   preset: catalog, endpoint routing             ≤ 560
     openrouter/   preset: routing options, headers, usage       ≤ 300
   auth/           OAuth PKCE login, key store                   ≤ 500
-  tool/           Tool contract, registry, schema validation    ≤ 550
+  tool/           Tool contract, registry, schema validation    ≤ 660
   tools/          fs (read write edit list)                     ≤ 1060
                   search (glob grep)                            ≤ 700
                   bash                                          ≤ 400
-  permission/     allow/ask/deny policy                         ≤ 300
+  permission/     allow/ask/deny policy                         ≤ 340
+  proc/           process-group start, signal, exit status       ≤ 80
   proto/          wire types and JSONL framing                  ≤ 600
-  agent/          the loop, hooks, queues, retry                ≤ 1080
+  agent/          the loop, hooks, queues, retry                ≤ 1160
   session/        JSONL tree store, branches, custom entries    ≤ 900
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
-  config/         YAML config, trust, context files, skills     ≤ 1250
-  mode/           server core, print, json, rpc                 ≤ 2320
+  config/         YAML config, trust, context files, skills     ≤ 1460
+  mode/           server core, print, json, rpc                 ≤ 2470
     attach/       protocol attachments to content parts         ≤ 160
-    serve/        the protocol over HTTP and SSE                ≤ 430
-    action/       the GitHub review action                      ≤ 700
+    serve/        the protocol over HTTP and SSE                ≤ 440
+    action/       the GitHub review action                      ≤ 750
     providers/    build both providers, route by model          ≤ 320
   ext/            extension host, manifest, check, reload,
                   in-process API for bundled extensions         ≤ 3100
@@ -69,11 +70,13 @@ nova/
     sdk/          the Go SDK for extensions                     ≤ 700
   testkit/        fake provider and server, clock, golden       ≤ 1200
   bundled/        in-tree extensions: tasks, ask, plan,
-                  subagent, webfetch                            ≤ 2500 total
-  tui/            the terminal UI                               ≤ 9700
-    ui/           the Bubble Tea model and its views           ≤ 2900
+                  subagent, webfetch                            ≤ 2560 total
+  tui/            the terminal UI                               ≤ 9850
+    ui/           the Bubble Tea model and its views           ≤ 3050
     status/       the multi-line status region                 ≤ 320
+    sanitize/     make untrusted text safe to draw              ≤ 60
     git/          branch and working-tree counts for status    ≤ 120
+    highlight/    chroma syntax colouring, cleaning its input  ≤ 80
     image/        inline image capability and Kitty encoding   ≤ 260
     firstrun/     the first-run sign-in and model picker       ≤ 400
     cli/          fang-styled help and errors (full build only) ≤ 150
@@ -102,6 +105,8 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
 - `message` imports nothing.
 - `media` imports `message`. It is the one place image bytes are decoded,
   oriented, resized, and bounded.
+- `proc` imports nothing. It is the one place a command is put in its own process
+  group and signalled, shared by `tools/bash` and `ext`.
 - `provider` imports `message`. `tool` imports `message` and `provider`.
 - `proto` imports `message` and `provider` and nothing above them.
 - `permission` imports `tool`. `usage` imports `provider` and `session`.
@@ -109,7 +114,7 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
   `permission`; they never import each other or a higher layer.
 - `agent` imports `message`, `provider`, `tool`, `permission`, `proto`. `config`
   imports `permission` because it decodes the policy.
-- `session` imports `message`, `provider`, `proto`. `compaction` imports `session`, `provider`, `message`.
+- `session` imports `message` and `provider`. `compaction` imports `session`, `provider`, `message`.
 - `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.
 - `diag` is a stdlib-only leaf: it holds no Nova state, so `agent` and `ext` may
   import it for crash reporting without breaking the layering.
@@ -206,14 +211,16 @@ Rules the loop must keep, each of which has tests in [`TESTING.md`](TESTING.md):
 - **Cancellation.** `ctx` cancel aborts the provider call and is passed to every tool.
   A cancelled run returns the partial transcript and `ctx.Err()`.
 - **Panics.** A panic in a tool becomes an error result, in sequential mode as well
-  as parallel. (The prototype recovers only in parallel mode. That is a known bug.)
+  as parallel.
 - **Order.** Results are appended in call order regardless of completion order.
 - **Spend is never lost.** If the provider fails, the usage already accrued is
   returned with the error.
 - **Steering and follow-up.** Two queues, as in Pi. A *steering* message is injected
   after the current assistant turn finishes its tool calls. A *follow-up* message is
   run after the agent has finished all pending work. Abort returns queued messages
-  to the caller.
+  to the caller. Any queue a run ends without consuming is cleared and reported in
+  `run_end.dropped_queue`, so it never leaks into the next run. Once the loop has made its last decision to end, a new message is
+  refused with `ErrNotRunning` rather than accepted and lost.
 - **Retry.** A transient provider failure retries with exponential backoff, up to a
   configured count, and emits `retry` events. This includes a network timeout: a
   connect or idle timeout is a retryable error on every provider dialect, and the
@@ -252,7 +259,7 @@ older entry makes a new branch without deleting the old one.
 Entry types: `message`, `model_change`, `compaction`, `branch_summary`, `custom`
 (an extension's data), `custom_message` (an extension's visible message),
 `label`, and `session_info`. A `custom` entry marked `keep: true` survives
-compaction. `session.Manager` is the only authority for the model-facing context;
+compaction. `session.Store` is the only authority for the model-facing context;
 assigning an in-memory slice never replaces the persisted one.
 
 ## 6. Compaction and the context limit
@@ -265,10 +272,13 @@ triggers when estimated context exceeds `context_limit - reserve`.
    result.**
 3. Summarise the older span with the session model.
 4. Insert a `compaction` entry that records what it replaced. Keep recent turns whole.
-5. Prune stale tool output at request time without dropping the summary.
 
 If summarisation fails, the run continues without compaction and an event reports
 it. A failed compaction never loses entries.
+
+Compaction is the only thing that shrinks the context. Nova does not prune old
+tool output or media at request time, because rewriting a message in the middle of
+the history changes the prompt prefix and misses the cache on every turn (D134).
 
 ### What stays stable for the prompt cache
 
@@ -280,9 +290,8 @@ change between turns:
 - The agent's turn request is append-only: each request starts with the previous
   request's messages unchanged (`LPW02` is the guard). Compaction is the one
   deliberate rewrite; it is rare, and it invalidates the cache once by design.
-- Pruning stale tool output rewrites tool results, so it costs a cache miss for
-  the span it touches. It stays worth it, because it is triggered by the context
-  limit, not every turn.
+- Nothing prunes tool output or images at request time, since that would rewrite
+  the prefix on every turn (D134).
 - A `transform_context` hook or a `before_provider_request` hook that rewrites the
   history chooses its own cache cost. Place a prompt-injection guard or a
   plan-mode note at the end (as `bundled/plan` does), not in the middle.
@@ -320,17 +329,23 @@ options, the attribution headers, and OpenRouter's `cost` field. `opencodego` is
 the second: a preset with its own catalog that routes each model to one of three
 streaming dialects, `provider/responses` (the OpenAI Responses API),
 `provider/messages` (the Anthropic Messages API), or `openaicompat`. All three
-dialects sit on `provider/ssestream`, which owns the connect timeout (30 s), the
-idle timeout (120 s), the SSE line reader, and the `provider.Classify` error
-mapping, so a network timeout is retryable and identical on every endpoint.
+dialects sit on `provider/ssestream`, which owns the request plumbing (header
+precedence, the credential), the connect timeout (30 s), the idle timeout
+(120 s), the SSE line reader, and the `provider.Classify` error mapping, so a
+network timeout or a stream cut mid-event is retryable and identical on every
+endpoint. They also share `provider.Collector`, which turns deltas into the
+`Response` (text, reasoning, usage, tool-call assembly, finish reason), so a
+dialect only parses its own events.
 `mode/providers` builds both providers and picks one by the model's catalog entry.
 
 `auth` owns login. `nova login` runs OpenRouter's OAuth PKCE flow with a loopback
 redirect (or prints a URL with `--no-browser`) and stores the key in the user's
-config directory with mode 0600. Resolution order: explicit config, `OPENROUTER_API_KEY`,
-stored key. OpenCode Go resolves `provider.opencode_go.api_key` then
-`OPENCODE_GO_API_KEY`; it has no OAuth flow at launch. Credentials resolve per
-request so a refreshed token takes effect mid-run.
+config directory (`auth.json`) with mode 0600. The OpenRouter order is
+`OPENROUTER_API_KEY`, then the stored key; the config has no OpenRouter key field.
+OpenCode Go resolves `provider.opencode_go.api_key`, then `OPENCODE_GO_API_KEY`,
+then the key `nova login opencode-go` stored in `opencode-go.json`, which comes
+from the Console device grant rather than PKCE (D67). Credentials resolve per
+request so a key saved by `/login` takes effect mid-run.
 
 Models are a code-defined catalog (stable id, wire slug, context window, pricing)
 so a stored choice keeps resolving when a provider renames a slug, and cost has a
@@ -370,7 +385,7 @@ The GitHub Action is a thin `action.yml` that installs the binary and runs
 - Tool calls in one assistant message run in parallel unless a tool declares
   otherwise. Results are stored by index.
 - File-mutating tools serialise per path.
-- `session.Manager` is safe for concurrent readers and serialises writers.
+- `session.Store` is safe for concurrent readers and serialises writers.
 - Each extension process has one reader and one writer goroutine per connection.
   A slow extension never blocks the loop past its hook deadline.
 

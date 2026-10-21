@@ -140,10 +140,10 @@ func TestSetUser_CFW07_AtomicWriteFailureKeepsOriginal(t *testing.T) {
 	if got := readUser(t, home); got != original {
 		t.Fatalf("original changed on failed rename:\n%q", got)
 	}
-	// No temp files are left behind.
+	// The directory holds only the original file: no temp file is left behind.
 	entries, _ := os.ReadDir(filepath.Dir(userConfigPath(home)))
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".config-") {
+		if e.Name() != "config.yaml" {
 			t.Fatalf("left temp file %s", e.Name())
 		}
 	}

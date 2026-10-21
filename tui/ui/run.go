@@ -29,6 +29,7 @@ type RunOptions struct {
 	Theme   string
 	Version string
 	NoColor bool
+	Resume  bool // open the session picker at start (nova --resume)
 }
 
 // capabilities are the UI methods the C17 client can answer. The server will
@@ -71,14 +72,15 @@ func runWith(ctx context.Context, srv *mode.Server, opt RunOptions, in io.Reader
 	display := chat.DefaultDisplay()
 	display.ThinkingPreviewLines, display.ToolPreviewLines, display.ShowImages, display.ImageWidthCells = srv.Display()
 	model := New(Options{
-		Client:   client.FromPipe(c),
-		Theme:    theme,
-		Profile:  profile,
-		CWD:      cwd,
-		Version:  opt.Version,
-		Renderer: chat.NewGlamourRenderer(st),
-		Display:  display,
-		Status:   srv.StatusConfig(),
+		Client:       client.FromPipe(c),
+		Theme:        theme,
+		Profile:      profile,
+		CWD:          cwd,
+		Version:      opt.Version,
+		Renderer:     chat.NewGlamourRenderer(st),
+		Display:      display,
+		Status:       srv.StatusConfig(),
+		OpenSessions: opt.Resume,
 	})
 	diag.SetMode("tui")
 	diag.SetOp("tui running")
@@ -103,7 +105,7 @@ func reportProgramError(w io.Writer, err error) {
 	if !errors.Is(err, tea.ErrProgramPanic) {
 		return
 	}
-	fmt.Fprintln(w, "\nnova: internal error in the UI (stack above)")
+	_, _ = fmt.Fprintln(w, "\nnova: internal error in the UI (stack above)") // best effort: the terminal may be gone
 	reportCrash(w, err, "tui program")
 }
 
@@ -115,7 +117,7 @@ func reportCrash(w io.Writer, v any, op string) {
 	if err != nil || path == "" {
 		return
 	}
-	fmt.Fprintf(w, "nova: crash report: %s\n", path)
+	_, _ = fmt.Fprintf(w, "nova: crash report: %s\n", path) // best effort, as above
 }
 
 // Interactive reports whether the TUI should start for the given mode flag and

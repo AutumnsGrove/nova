@@ -269,14 +269,14 @@ func TestUI_UIM09_RunState(t *testing.T) {
 
 func TestUI_UIM10_PromptErrorRestores(t *testing.T) {
 	m, f, _ := newModel(t)
+	f.responses[proto.CmdPrompt] = proto.Response{
+		Command: proto.CmdPrompt, OK: false, Error: &proto.Error{Message: "busy"},
+	}
 	m.setEditorText("hi")
-	do(update(m, enterKey))
+	update(m, do(update(m, enterKey)))
 	if len(f.sends) != 1 || f.sends[0].Type != proto.CmdPrompt {
 		t.Fatalf("prompt not sent: %v", f.sends)
 	}
-	update(m, client.ResponseMsg{Response: proto.Response{
-		Command: proto.CmdPrompt, OK: false, Error: &proto.Error{Message: "busy"},
-	}})
 	if m.notice != "busy" {
 		t.Fatalf("notice = %q", m.notice)
 	}
@@ -414,7 +414,8 @@ func TestUI_EDI04_BashForms(t *testing.T) {
 	m, f, _ := newModel(t)
 	m.setEditorText("!ls")
 	do(update(m, enterKey))
-	if f.sends[0].Type != proto.CmdBash || f.sends[0].Command != "!ls" {
+	// The single ! is the TUI's marker; sent to bash it would run as "!ls".
+	if f.sends[0].Type != proto.CmdBash || f.sends[0].Command != "ls" {
 		t.Fatalf("bash not sent: %+v", f.sends[0])
 	}
 	m.setEditorText("!!ls")
@@ -734,11 +735,11 @@ func TestUI_KEY08_PageScroll(t *testing.T) {
 func TestUI_KEY09_CtrlOToggles(t *testing.T) {
 	m, _, _ := newModel(t)
 	update(m, ctrlKey('o'))
-	if !m.expanded || !strings.Contains(m.hint(), "collapse") {
-		t.Fatalf("expanded=%v hint=%q", m.expanded, m.hint())
+	if !m.display.ExpandTools || !strings.Contains(m.hint(), "collapse") {
+		t.Fatalf("expanded=%v hint=%q", m.display.ExpandTools, m.hint())
 	}
 	update(m, ctrlKey('o'))
-	if m.expanded {
+	if m.display.ExpandTools {
 		t.Fatal("ctrl+o did not collapse")
 	}
 }
@@ -952,6 +953,7 @@ func TestUI_CPL05_PathCompletion(t *testing.T) {
 	}
 	m, _, _ := newModel(t)
 	m.cwd = dir
+	m.setEditorText("@")
 	msg := do(m.loadPaths("@", 0))
 	m.applyCompletion(msg.(completionMsg))
 	if !m.completion.active || len(m.completion.items) != 2 {
@@ -1068,9 +1070,10 @@ func TestUI_LogCommand_ShowsReport(t *testing.T) {
 	}
 	m, _, _ := newModel(t)
 	cmd, handled := m.localCommand("log", "")
-	if !handled || cmd != nil {
-		t.Fatalf("localCommand(log) = (%v, %v), want handled with no command", cmd, handled)
+	if !handled || cmd == nil {
+		t.Fatalf("localCommand(log) = (%v, %v), want handled with a command: Update must not read the file", cmd, handled)
 	}
+	update(m, do(cmd))
 	if !strings.Contains(m.View().Content, "boom") {
 		t.Fatalf("crash report not shown:\n%s", m.View().Content)
 	}
@@ -1081,9 +1084,11 @@ func TestUI_LogCommand_NoReports(t *testing.T) {
 	diag.SetDefault(rec)
 	defer diag.SetDefault(nil)
 	m, _, _ := newModel(t)
-	if _, handled := m.localCommand("log", ""); !handled {
+	cmd, handled := m.localCommand("log", "")
+	if !handled {
 		t.Fatal("log command not handled")
 	}
+	update(m, do(cmd))
 	if m.notice != "no crash reports" {
 		t.Fatalf("notice = %q, want no crash reports", m.notice)
 	}
@@ -1153,15 +1158,21 @@ func TestUI_PST02_NoImageNotice(t *testing.T) {
 	}
 }
 
-func TestUI_PST03_PathAutoAttaches(t *testing.T) {
-	m, f, _ := newModel(t)
+// writePNG writes a tiny valid PNG named name into dir.
+func writePNG(t *testing.T, dir, name string) {
+	t.Helper()
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(m.cwd, "shot.png"), buf.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name), buf.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestUI_PST03_PathAutoAttaches(t *testing.T) {
+	m, f, _ := newModel(t)
+	writePNG(t, m.cwd, "shot.png")
 	m.setEditorText("describe shot.png")
 	execAll(update(m, enterKey))
 	if len(f.sends) != 1 || len(f.sends[0].Attachments) != 1 {
@@ -1177,13 +1188,7 @@ func TestUI_PST03_PathAutoAttaches(t *testing.T) {
 
 func TestUI_PST04_AtPathAttaches(t *testing.T) {
 	m, f, _ := newModel(t)
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(m.cwd, "shot.png"), buf.Bytes(), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writePNG(t, m.cwd, "shot.png")
 	// Path completion inserts an @ before the path, so submit must strip it
 	// before resolving the file.
 	m.setEditorText("look at @shot.png")

@@ -14,6 +14,36 @@ import (
 func (a *Agent) emit(ev proto.Event) {
 	a.emitMu.Lock()
 	defer a.emitMu.Unlock()
+	a.emitLocked(ev)
+}
+
+// emitQueueUpdate reports the queue sizes as they are when the event is
+// sequenced. Reading the counts under the emit lock keeps concurrent callers
+// from emitting them out of order, which would leave a client showing a stale
+// count after the last event.
+func (a *Agent) emitQueueUpdate(runID string) {
+	a.emitMu.Lock()
+	defer a.emitMu.Unlock()
+	a.mu.Lock()
+	steering, followUp := len(a.steering), len(a.followUp)
+	a.mu.Unlock()
+	a.emitLocked(proto.Event{Type: proto.EventQueueUpdate, Run: runID, Steering: &steering, FollowUp: &followUp})
+}
+
+// emitRunEnd releases the run and delivers its run_end in one step under the
+// emit lock. A client that reacts to run_end by sending a command therefore
+// finds the agent idle, and a run started in reaction cannot emit its
+// run_start before the old run's run_end.
+func (a *Agent) emitRunEnd(r *run, ev proto.Event) {
+	a.emitMu.Lock()
+	defer a.emitMu.Unlock()
+	r.release()
+	ev.Run = r.id
+	a.emitLocked(ev)
+}
+
+// emitLocked is emit for a caller that already holds emitMu.
+func (a *Agent) emitLocked(ev proto.Event) {
 	a.seq++
 	ev.Seq = a.seq
 	if ev.TS.IsZero() {
@@ -33,9 +63,20 @@ func (r *run) emit(ev proto.Event) {
 // intp returns a pointer to v, for the event fields where zero is meaningful.
 func intp(v int) *int { return &v }
 
+// wireArgs returns raw when it can travel inside a JSON frame and nil when it
+// cannot. A model cut off mid-arguments leaves truncated JSON, and a RawMessage
+// holding that fails to marshal, which would lose the whole event.
+func wireArgs(raw json.RawMessage) json.RawMessage {
+	if json.Valid(raw) {
+		return raw
+	}
+	return nil
+}
+
 // emitToolCall reports one assembled tool call.
 func (r *run) emitToolCall(c message.ToolCall) {
-	r.emit(proto.Event{Type: proto.EventToolCall, Turn: intp(r.turn), Call: &proto.ToolCall{ID: c.ID, Name: c.Function.Name, Arguments: json.RawMessage(c.Function.Arguments)}})
+	args := wireArgs(json.RawMessage(c.Function.Arguments))
+	r.emit(proto.Event{Type: proto.EventToolCall, Turn: intp(r.turn), Call: &proto.ToolCall{ID: c.ID, Name: c.Function.Name, Arguments: args}})
 }
 
 // emitToolEnd reports a call's final result.

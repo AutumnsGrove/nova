@@ -1,3 +1,5 @@
+//go:build !notui
+
 // Package firstrun is the flow a new user sees before the chat screen: sign in
 // or paste a key, then pick a model. It is a Bubble Tea model; cmd/nova runs it
 // before building the server so the saved key and model are picked up.
@@ -8,12 +10,14 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 )
 
 // Step is one screen in the first-run flow.
@@ -168,8 +172,25 @@ func (m Flow) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onCredSaved(msg)
 	case tea.KeyPressMsg:
 		return m.handleKey(msg.Keystroke())
+	case tea.PasteMsg:
+		return m.handlePaste(msg.Content), nil
 	}
 	return m, nil
+}
+
+// handlePaste adds pasted text to the key being entered; anywhere else a paste
+// means nothing. A key is one line, so line endings and other control
+// characters, which a copy often drags along, are dropped.
+func (m Flow) handlePaste(text string) Flow {
+	if m.step != Login || m.mode != keyMode {
+		return m
+	}
+	for _, r := range text {
+		if !unicode.IsControl(r) {
+			m.input = append(m.input, r)
+		}
+	}
+	return m
 }
 
 // handleKey routes one key press for the current screen.
@@ -388,7 +409,7 @@ func (m Flow) View() tea.View {
 		b.WriteString("\nOpening your browser…\n")
 	}
 	if m.errText != "" {
-		fmt.Fprintf(&b, "\nerror: %s\nenter to retry, esc to skip\n", m.errText)
+		fmt.Fprintf(&b, "\nerror: %s\nenter to retry, esc to skip\n", sanitize.Line(m.errText))
 	}
 	return tea.NewView(b.String())
 }
@@ -403,16 +424,16 @@ func (m Flow) loginView(b *strings.Builder) {
 			b.WriteString("Waiting for sign-in…\n")
 			return
 		}
-		fmt.Fprintf(b, "%s\n\n", m.session.Prompt())
+		fmt.Fprintf(b, "%s\n\n", sanitize.Text(m.session.Prompt()))
 		if url := m.session.URL(); url != "" {
-			b.WriteString("Open this page in your browser:\n  " + url + "\n\n")
+			b.WriteString("Open this page in your browser:\n  " + sanitize.Line(url) + "\n\n")
 		}
 		if code := m.session.Code(); code != "" {
-			b.WriteString("code: " + code + "\n\n")
+			b.WriteString("code: " + sanitize.Line(code) + "\n\n")
 		}
 		if r, ok := m.session.(providerauth.StatusReporter); ok {
 			if s := r.Status(); s != "" {
-				b.WriteString(s + "\n")
+				b.WriteString(sanitize.Text(s) + "\n")
 			}
 		}
 		b.WriteString("Waiting for sign-in…  esc skip\n")

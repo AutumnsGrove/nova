@@ -6,7 +6,6 @@ import (
 	"io"
 	"runtime"
 	"runtime/debug"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -105,13 +104,4 @@ func versionCommand(stdout io.Writer) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the fields as JSON")
 	return cmd
-}
-
-// versionSummary is the compact form the TUI header shows.
-func versionSummary() string {
-	v := currentVersion()
-	if v.Version == "dev" {
-		return "dev"
-	}
-	return strings.TrimSpace(v.Version + " " + shortCommit(v.Commit))
 }

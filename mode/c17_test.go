@@ -125,18 +125,11 @@ func TestHandlers_SVA04_GetExtensions(t *testing.T) {
 	}
 
 	withExt := newExtServer(t, []string{writeDeclExt(t, "decl_tool_sva04")})
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		rows := decodeArray(t, withExt.Handle(context.Background(), proto.Command{Type: proto.CmdGetExtensions}))
-		if len(rows) > 0 {
-			if rows[0]["name"] != "decl" {
-				t.Fatalf("extension status = %v", rows[0])
-			}
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
+	waitExtStarted(t, withExt)
+	rows := decodeArray(t, withExt.Handle(context.Background(), proto.Command{Type: proto.CmdGetExtensions}))
+	if len(rows) == 0 || rows[0]["name"] != "decl" {
+		t.Fatalf("get_extensions after start = %v, want the loaded extension", rows)
 	}
-	t.Fatal("get_extensions never listed the loaded extension")
 }
 
 func TestSession_SVA05_RememberSessionAddsAllow(t *testing.T) {
@@ -203,7 +196,9 @@ func TestSession_SVA08_RememberIgnoredElsewhere(t *testing.T) {
 	s, _ := testServer(t)
 	c := NewPipe(s, "ui.select")
 	defer c.Close()
+	answered := make(chan struct{})
 	go func() {
+		defer close(answered)
 		_, _ = s.callUI(context.Background(), proto.UIRequest{Type: proto.FrameUIRequest, ID: "u", Method: "select"})
 	}()
 	req := <-c.Requests()
@@ -211,9 +206,11 @@ func TestSession_SVA08_RememberIgnoredElsewhere(t *testing.T) {
 		t.Fatalf("method = %q", req.Method)
 	}
 	c.Answer(proto.UIResponse{Type: proto.FrameUIResponse, ID: req.ID, OK: true, IDs: []string{"a"}, Remember: "session"})
-	time.Sleep(20 * time.Millisecond)
-	if len(s.sessionAllow) != 0 {
-		t.Fatalf("remember on a select added rules: %v", s.sessionAllow)
+	<-answered
+	rules := 0
+	s.sessionAllow.Range(func(_, _ any) bool { rules++; return true })
+	if rules != 0 {
+		t.Fatalf("remember on a select added %d rules", rules)
 	}
 }
 
@@ -414,7 +411,7 @@ func TestHandlers_SVA16_StoredAttachmentResolves(t *testing.T) {
 	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.StoreAttachment("shot.png", "image/png", buf.Bytes())
+	id, _, err := s.StoreAttachment("shot.png", buf.Bytes())
 	if err != nil {
 		t.Fatalf("StoreAttachment: %v", err)
 	}
@@ -427,5 +424,33 @@ func TestHandlers_SVA16_StoredAttachmentResolves(t *testing.T) {
 	}
 	if _, err := s.commandMessage("look", []proto.Attachment{{ID: "nope"}}); err == nil {
 		t.Fatal("an unknown attachment id did not error")
+	}
+}
+
+// The upload endpoint is open to anyone with the token, and the store lives as
+// long as the server, so it needs a ceiling or a loop of uploads fills memory.
+func TestHandlers_SVA17_UploadStoreHasACeiling(t *testing.T) {
+	s, _ := testServer(t)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 4, 4))); err != nil {
+		t.Fatal(err)
+	}
+	size := buf.Len()
+	old := maxStoredAttachmentBytes
+	maxStoredAttachmentBytes = size*2 + size/2 // room for two
+	t.Cleanup(func() { maxStoredAttachmentBytes = old })
+
+	first, _, err := s.StoreAttachment("a.png", buf.Bytes())
+	if err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	if _, _, err := s.StoreAttachment("b.png", buf.Bytes()); err != nil {
+		t.Fatalf("second upload: %v", err)
+	}
+	if _, _, err := s.StoreAttachment("c.png", buf.Bytes()); err == nil {
+		t.Fatal("a third upload past the ceiling was stored")
+	}
+	if _, err := s.resolveAttachments([]proto.Attachment{{ID: first}}); err != nil {
+		t.Fatalf("a refused upload must not evict a stored one: %v", err)
 	}
 }

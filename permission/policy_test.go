@@ -183,6 +183,20 @@ func TestPolicy_PRM15_DenyWithOperator(t *testing.T) {
 	}
 }
 
+// TestPolicy_PRM31_DenyAcrossNewline checks a deny rule on a command still
+// matches when a newline separates the denied part from the start.
+func TestPolicy_PRM31_DenyAcrossNewline(t *testing.T) {
+	p := &Policy{Default: Allow, Rules: []Rule{{
+		Tool:   "bash",
+		Match:  map[string]string{"command": "*rm -rf*"},
+		Action: Deny,
+	}}}
+	d := p.Decide(call("bash", `{"command":"echo hi\nrm -rf /"}`, tool.Info{}, "/w"), true)
+	if d.Action != Deny || d.Rule != 0 {
+		t.Fatalf("Decision = %+v, want deny by rule 0", d)
+	}
+}
+
 // TestPolicy_PRM16_PathsRelative checks a relative path matches a relative glob.
 func TestPolicy_PRM16_PathsRelative(t *testing.T) {
 	p := &Policy{Default: Deny, Rules: []Rule{{

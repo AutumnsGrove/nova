@@ -1,9 +1,10 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
+	"unicode/utf8"
 )
 
 // Defaults for context-file discovery.
@@ -74,7 +75,7 @@ func LoadContext(cwd, home string, opt ContextOptions) ([]ContextFile, []Warning
 	candidates := global
 	if trusted {
 		candidates = append(append([]string{}, global...), project...)
-	} else if exists := anyExists(readFile, project); exists {
+	} else if anyExists(project) {
 		warnings = append(warnings, Warning{
 			Source:  cwd,
 			Message: "project is not trusted; skipping project instructions",
@@ -110,8 +111,14 @@ func LoadContext(cwd, home string, opt ContextOptions) ([]ContextFile, []Warning
 // loadContextFile reads and normalises one candidate. It reports whether the
 // file should be included; any problem is recorded as a warning.
 func loadContextFile(readFile func(string) ([]byte, error), path string, maxFile int, warnings *[]Warning) (ContextFile, bool) {
-	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		return ContextFile{}, false
+	if info, err := os.Stat(path); err == nil {
+		if info.IsDir() {
+			return ContextFile{}, false
+		}
+		if err := checkReadable(info, maxReadBytes); err != nil {
+			*warnings = append(*warnings, Warning{Source: path, Message: "skipping context file: " + err.Error()})
+			return ContextFile{}, false
+		}
 	}
 	data, err := readFile(path)
 	if err != nil {
@@ -131,7 +138,7 @@ func loadContextFile(readFile func(string) ([]byte, error), path string, maxFile
 	}
 	truncated := false
 	if len(data) > maxFile {
-		data = data[:maxFile]
+		data = cutAtRune(data, maxFile)
 		truncated = true
 	}
 	content := string(data)
@@ -157,10 +164,11 @@ func capTotal(files []ContextFile, globalCount, maxTotal int, warnings []Warning
 	return files, warnings
 }
 
-// anyExists reports whether any candidate can be read.
-func anyExists(readFile func(string) ([]byte, error), paths []string) bool {
+// anyExists reports whether any candidate is a file. It stats instead of
+// reading: this runs for an untrusted project, whose files must not be opened.
+func anyExists(paths []string) bool {
 	for _, path := range paths {
-		if _, err := readFile(path); err == nil {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			return true
 		}
 	}
@@ -206,9 +214,14 @@ func stripBOM(data []byte) []byte {
 
 // hasNUL reports a NUL byte in the sniff window.
 func hasNUL(data []byte) bool {
-	window := data
-	if len(window) > binarySniffBytes {
-		window = window[:binarySniffBytes]
+	return bytes.IndexByte(data[:min(len(data), binarySniffBytes)], 0) >= 0
+}
+
+// cutAtRune returns at most limit leading bytes of data without splitting a
+// UTF-8 sequence, which would put invalid text into the system prompt.
+func cutAtRune(data []byte, limit int) []byte {
+	for limit > 0 && limit < len(data) && !utf8.RuneStart(data[limit]) {
+		limit--
 	}
-	return strings.IndexByte(string(window), 0) >= 0
+	return data[:limit]
 }

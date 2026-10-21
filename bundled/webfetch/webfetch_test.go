@@ -331,7 +331,7 @@ func TestWebfetch_WFT21_Non2xx(t *testing.T) {
 	defer srv.Close()
 	e := newLocal()
 	res := local(t, e, srv.URL+"/404", false, 0)
-	if !res.IsError || !strings.Contains(res.Content, "(404,") || len(res.Content) > headerBodyCap+120 {
+	if !res.IsError || !strings.Contains(res.Content, "(404,") || len(res.Content) > errorBodyChars+120 {
 		t.Fatalf("404 result len=%d %q", len(res.Content), res.Content[:80])
 	}
 	res = local(t, e, srv.URL+"/500", false, 0)

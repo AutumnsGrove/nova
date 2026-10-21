@@ -1,12 +1,14 @@
 package action
 
 import (
+	"cmp"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/AutumnsGrove/nova/tool"
 )
@@ -66,6 +68,13 @@ func (st *State) result() ([]Comment, string) {
 	return append([]Comment(nil), st.comments...), st.summary
 }
 
+// Caps on the text the model may post, in characters. GitHub itself refuses a
+// review body over 65536, so these keep a runaway reply from becoming one.
+const (
+	maxCommentChars = 4000
+	maxSummaryChars = 20000
+)
+
 // severities are the accepted review severities.
 var severities = map[string]bool{"nit": true, "suggestion": true, "issue": true, "blocker": true}
 
@@ -99,10 +108,12 @@ func (st *State) runComment(_ context.Context, args json.RawMessage, _ *tool.Con
 	switch {
 	case strings.TrimSpace(c.Body) == "":
 		return tool.Errorf("body is required"), nil
+	case utf8.RuneCountInString(c.Body) > maxCommentChars:
+		return tool.Errorf("body is over %d characters; say less, or put it in the summary", maxCommentChars), nil
 	case !severities[c.Severity]:
 		return tool.Errorf("severity must be nit, suggestion, issue, or blocker"), nil
 	}
-	side := def(strings.ToUpper(strings.TrimSpace(c.Side)), "RIGHT")
+	side := cmp.Or(strings.ToUpper(strings.TrimSpace(c.Side)), "RIGHT")
 	if side != "LEFT" && side != "RIGHT" {
 		return tool.Errorf("side must be LEFT or RIGHT"), nil
 	}
@@ -145,6 +156,9 @@ func (st *State) summaryTool() tool.Tool {
 		}
 		if err := json.Unmarshal(args, &in); err != nil {
 			return tool.Errorf("invalid arguments: %v", err), nil
+		}
+		if utf8.RuneCountInString(in.Body) > maxSummaryChars {
+			return tool.Errorf("body is over %d characters; shorten it", maxSummaryChars), nil
 		}
 		st.mu.Lock()
 		st.summary = in.Body

@@ -174,3 +174,28 @@ func TestStatus_STS03_StyleMapping(t *testing.T) {
 		t.Fatal("an empty style should map to muted")
 	}
 }
+
+// The working directory, branch and model come from the folder the user opened
+// or from a config file, so they can carry bytes a terminal acts on. With a
+// colourless theme any escape that survives is one of theirs.
+func TestStatus_SLN11_HostileValuesAreCleaned(t *testing.T) {
+	mono := styles.Build(styles.Mono(), colorprofile.ASCII)
+	d := sample()
+	hostile := "\x1b]0;pwned\x07\x1b[2J‮\n"
+	d.CWD, d.Branch, d.Model, d.Provider, d.Thinking, d.Hint, d.Run = "/w"+hostile, "b"+hostile, "m"+hostile, "p"+hostile, "t"+hostile, "ctrl+o "+hostile, "r"+hostile
+	cfg := Default()
+	cfg.Lines = append(cfg.Lines, config.StatusLine{Left: []string{"model", "provider", "thinking", "hint", "run"}})
+	out := Build(cfg, d, 200, mono, nil)
+	joined := strings.Join(out, "\n")
+	if !strings.Contains(joined, "/w") || !strings.Contains(joined, "m") {
+		t.Fatalf("the values were dropped instead of cleaned: %q", joined)
+	}
+	if len(out) != len(cfg.Lines) {
+		t.Fatalf("a newline in a value made %d lines, want %d", len(out), len(cfg.Lines))
+	}
+	for _, line := range out {
+		if strings.ContainsAny(line, "\x1b\x07‮") {
+			t.Fatalf("status line carries control bytes: %q", line)
+		}
+	}
+}

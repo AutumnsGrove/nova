@@ -1,7 +1,9 @@
 package provider
 
 import (
-	"sort"
+	"cmp"
+	"maps"
+	"slices"
 	"sync"
 )
 
@@ -38,12 +40,7 @@ type Model struct {
 // AcceptsImages reports whether the model declares image input. A model with
 // no modalities is text only, so this is false for anything Nova does not know.
 func (m Model) AcceptsImages() bool {
-	for _, kind := range m.InputModalities {
-		if kind == "image" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.InputModalities, "image")
 }
 
 var (
@@ -73,15 +70,9 @@ func GetModel(id string) (Model, bool) {
 func Models() []Model {
 	modelMu.RLock()
 	defer modelMu.RUnlock()
-	out := make([]Model, 0, len(models))
-	for _, m := range models {
-		out = append(out, m)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Provider != out[j].Provider {
-			return out[i].Provider < out[j].Provider
-		}
-		return out[i].ID < out[j].ID
+	out := slices.Collect(maps.Values(models))
+	slices.SortFunc(out, func(a, b Model) int {
+		return cmp.Or(cmp.Compare(a.Provider, b.Provider), cmp.Compare(a.ID, b.ID))
 	})
 	return out
 }

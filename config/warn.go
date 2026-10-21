@@ -1,8 +1,9 @@
 package config
 
 import (
+	"maps"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -17,7 +18,7 @@ func unknownKeys(m map[string]any, source string) []Warning {
 
 // walkUnknown checks one map against one type. prefix is the dotted path so far.
 func walkUnknown(m map[string]any, t reflect.Type, prefix, source string, out *[]Warning) {
-	for _, key := range sortedKeys(m) {
+	for _, key := range slices.Sorted(maps.Keys(m)) {
 		dotted := key
 		if prefix != "" {
 			dotted = prefix + "." + key
@@ -45,7 +46,7 @@ func walkUnknownValue(value any, t reflect.Type, dotted, source string, out *[]W
 		if !ok {
 			return
 		}
-		for _, key := range sortedKeys(entries) {
+		for _, key := range slices.Sorted(maps.Keys(entries)) {
 			if item, ok := entries[key].(map[string]any); ok {
 				walkUnknown(item, indirect(t.Elem()), dotted, source, out)
 			}
@@ -69,16 +70,6 @@ func walkUnknownValue(value any, t reflect.Type, dotted, source string, out *[]W
 			walkUnknown(im, t, dotted, source, out)
 		}
 	}
-}
-
-// sortedKeys returns a map's keys in order so walking is deterministic.
-func sortedKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // fieldType finds a struct field by its yaml name.

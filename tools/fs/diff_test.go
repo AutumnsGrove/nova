@@ -83,7 +83,7 @@ func oldStart(header string) int {
 
 // TestDiff_DIF01_NoChange checks equal input produces no diff.
 func TestDiff_DIF01_NoChange(t *testing.T) {
-	diff, added, removed, ok := unifiedDiff("f", "a\n", "a\n", 3)
+	diff, added, removed, ok := unifiedDiff("f", "a\n", "a\n")
 	if ok || diff != "" || added != 0 || removed != 0 {
 		t.Fatalf("diff=%q added=%d removed=%d ok=%v", diff, added, removed, ok)
 	}
@@ -91,7 +91,7 @@ func TestDiff_DIF01_NoChange(t *testing.T) {
 
 // TestDiff_DIF02_OneLine checks one changed line.
 func TestDiff_DIF02_OneLine(t *testing.T) {
-	diff, added, removed, ok := unifiedDiff("f", "a\nb\nc\n", "a\nX\nc\n", 3)
+	diff, added, removed, ok := unifiedDiff("f", "a\nb\nc\n", "a\nX\nc\n")
 	if !ok || added != 1 || removed != 1 {
 		t.Fatalf("added=%d removed=%d ok=%v", added, removed, ok)
 	}
@@ -104,7 +104,7 @@ func TestDiff_DIF02_OneLine(t *testing.T) {
 func TestDiff_DIF03_InsertDelete(t *testing.T) {
 	before := "a\nb\nc\nd\n"
 	after := "a\nc\nX\nd\n"
-	diff, added, removed, _ := unifiedDiff("f", before, after, 3)
+	diff, added, removed, _ := unifiedDiff("f", before, after)
 	if added != 1 || removed != 1 {
 		t.Fatalf("added=%d removed=%d, want 1 and 1", added, removed)
 	}
@@ -117,7 +117,7 @@ func TestDiff_DIF03_InsertDelete(t *testing.T) {
 func TestDiff_DIF04_Context(t *testing.T) {
 	before := "1\n2\n3\n4\n5\n6\n7\n8\n9\n"
 	after := "1\n2\n3\n4\nX\n6\n7\n8\n9\n"
-	diff, _, _, _ := unifiedDiff("f", before, after, 3)
+	diff, _, _, _ := unifiedDiff("f", before, after)
 	context := 0
 	for _, line := range strings.Split(diff, "\n") {
 		if strings.HasPrefix(line, " ") {
@@ -133,7 +133,7 @@ func TestDiff_DIF04_Context(t *testing.T) {
 func TestDiff_DIF05_TwoHunks(t *testing.T) {
 	before := "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\n"
 	after := "A\nb\nc\nd\ne\nf\ng\nh\ni\nJ\nk\n"
-	diff, _, _, _ := unifiedDiff("f", before, after, 3)
+	diff, _, _, _ := unifiedDiff("f", before, after)
 	if got := strings.Count(diff, "@@ -"); got != 2 {
 		t.Fatalf("hunks = %d, want 2\ndiff:\n%s", got, diff)
 	}
@@ -144,7 +144,7 @@ func TestDiff_DIF05_TwoHunks(t *testing.T) {
 
 // TestDiff_DIF06_NoNewline checks the no-newline marker.
 func TestDiff_DIF06_NoNewline(t *testing.T) {
-	diff, _, _, _ := unifiedDiff("f", "a\nb", "a\nB", 3)
+	diff, _, _, _ := unifiedDiff("f", "a\nb", "a\nB")
 	if !strings.Contains(diff, "\\ No newline at end of file") {
 		t.Fatalf("diff = %q, want the no-newline marker", diff)
 	}
@@ -156,7 +156,7 @@ func TestDiff_DIF07_ApplyReproduces(t *testing.T) {
 	for i := 0; i < 300; i++ {
 		before := randomText(rng)
 		after := mutate(rng, before)
-		diff, _, _, _ := unifiedDiff("f", before, after, 3)
+		diff, _, _, _ := unifiedDiff("f", before, after)
 		got := applyUnified(t, diff, before)
 		if got != after {
 			t.Fatalf("case %d: before=%q after=%q applied=%q\ndiff:\n%s", i, before, after, got, diff)
@@ -211,7 +211,7 @@ func FuzzUnifiedDiff(f *testing.F) {
 		if len(before) > 4096 || len(after) > 4096 {
 			return
 		}
-		diff, _, _, _ := unifiedDiff("f", before, after, 3)
+		diff, _, _, _ := unifiedDiff("f", before, after)
 		got := applyUnified(t, diff, before)
 		if got != after {
 			t.Fatalf("before=%q after=%q applied=%q\ndiff:\n%s", before, after, got, diff)

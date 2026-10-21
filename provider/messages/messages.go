@@ -3,17 +3,14 @@
 package messages
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/ssestream"
 )
@@ -21,7 +18,7 @@ import (
 // anthropicVersion is the API version the Messages endpoint requires.
 const anthropicVersion = "2023-06-01"
 
-// defaultMaxTokens is sent when the request sets none.
+// defaultMaxTokens is sent when the request sets none; the API requires one.
 const defaultMaxTokens = 4096
 
 // Config configures a Provider. BaseURL is the API root; "/messages" is
@@ -41,7 +38,8 @@ type Config struct {
 
 // Provider is a Messages-API provider.
 type Provider struct {
-	cfg Config
+	cfg    Config
+	target ssestream.Target
 }
 
 // New builds a provider from cfg.
@@ -53,57 +51,48 @@ func New(cfg Config) *Provider {
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = defaultMaxTokens
 	}
-	return &Provider{cfg: cfg}
+	target := ssestream.Target{
+		Config: ssestream.Config{
+			HTTPClient:     cfg.HTTPClient,
+			ConnectTimeout: cfg.ConnectTimeout,
+			IdleTimeout:    cfg.IdleTimeout,
+			MaxLineBytes:   cfg.MaxLineBytes,
+		},
+		Dialect:    "messages",
+		Headers:    cfg.Headers,
+		Fixed:      map[string]string{"anthropic-version": anthropicVersion},
+		APIKey:     cfg.APIKey,
+		APIKeyFunc: cfg.APIKeyFunc,
+		KeyHeader:  "x-api-key",
+	}
+	if cfg.BaseURL != "" {
+		target.URL = cfg.BaseURL + "/messages"
+	}
+	return &Provider{cfg: cfg, target: target}
 }
 
 // Name returns the provider id.
 func (p *Provider) Name() string { return p.cfg.Name }
 
+// retryableErrorType lists the error types a stream can report that clear on
+// their own, the same classes retryableStatus holds for an HTTP response.
+var retryableErrorType = map[string]bool{"overloaded_error": true, "rate_limit_error": true, "api_error": true}
+
 // Stream performs one streaming Messages request.
 func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
-	if err := ctx.Err(); err != nil {
+	if err := p.target.Check(ctx, req.Model); err != nil {
 		return nil, err
-	}
-	if req.Model == "" {
-		return nil, fmt.Errorf("messages: model is required")
-	}
-	if p.cfg.BaseURL == "" {
-		return nil, fmt.Errorf("messages: base URL is required")
-	}
-	key := p.cfg.APIKey
-	if p.cfg.APIKeyFunc != nil {
-		var err error
-		key, err = p.cfg.APIKeyFunc(ctx)
-		if err != nil {
-			return nil, &provider.Error{Message: "resolving API key", Retryable: false, Err: err}
-		}
 	}
 	body, err := p.buildBody(req)
 	if err != nil {
 		return nil, err
 	}
-	headers := http.Header{}
-	for k, v := range p.cfg.Headers {
-		headers.Set(k, v)
-	}
-	for k, v := range req.ExtraHeaders {
-		headers.Set(k, v)
-	}
-	headers.Set("anthropic-version", anthropicVersion)
-	if key != "" {
-		headers.Set("x-api-key", key)
-	}
-	s, err := ssestream.Open(ctx, ssestream.Config{
-		HTTPClient:     p.cfg.HTTPClient,
-		ConnectTimeout: p.cfg.ConnectTimeout,
-		IdleTimeout:    p.cfg.IdleTimeout,
-		MaxLineBytes:   p.cfg.MaxLineBytes,
-	}, p.cfg.BaseURL+"/messages", headers, body)
+	s, err := p.target.Open(ctx, req.ExtraHeaders, body)
 	if err != nil {
 		return nil, err
 	}
 	defer s.Close()
-	return p.consume(s, req, onEvent)
+	return consume(s, req.Model, onEvent)
 }
 
 // buildBody renders the request and merges ProviderOptions at the top level.
@@ -112,172 +101,86 @@ func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 	if msgs == nil {
 		msgs = []wireMessage{}
 	}
-	max := req.MaxTokens
-	if max <= 0 {
-		max = p.cfg.MaxTokens
-	}
-	r := request{
+	data, err := json.Marshal(request{
 		Model:        req.Model,
 		System:       system,
 		Messages:     msgs,
 		Stream:       true,
-		MaxTokens:    max,
-		Tools:        flattenTools(req.Tools),
+		MaxTokens:    cmp.Or(max(req.MaxTokens, 0), p.cfg.MaxTokens),
+		Tools:        provider.MapTools(req.Tools, flattenTool),
 		ToolChoice:   mapToolChoice(req.ToolChoice),
+		Temperature:  req.Temperature,
 		CacheControl: provider.RequestCacheControl(req),
-	}
-	if req.Temperature != nil {
-		r.Temperature = req.Temperature
-	}
-	data, err := json.Marshal(r)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("messages: encode request: %w", err)
 	}
-	if len(req.ProviderOptions) == 0 {
-		return data, nil
-	}
-	var base map[string]any
-	if err := json.Unmarshal(data, &base); err != nil {
-		return nil, fmt.Errorf("messages: encode request: %w", err)
-	}
-	return json.Marshal(provider.MergeOptions(base, req.ProviderOptions))
+	return provider.MergeJSON(data, req.ProviderOptions)
 }
 
-// callAcc accumulates one tool_use block.
-type callAcc struct {
-	id, name string
-	args     strings.Builder
-	index    int
-}
-
-// consume reads the event stream into a Response.
-func (p *Provider) consume(s *ssestream.Stream, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
-	result := &provider.Response{Model: req.Model}
-	result.Message.Role = message.RoleAssistant
-	var text, reasoning strings.Builder
-	calls := map[int]*callAcc{}
-	var order []int
+// consume reads the event stream into a Response. A stream that ends before
+// message_stop is an error, returned with the text delivered so far.
+func consume(s *ssestream.Stream, model string, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
+	c := provider.NewCollector(model, onEvent)
+	var usage provider.Usage
 	stopReason := ""
 	terminal := false
-
-	partial := func() *provider.Response {
-		result.Message.Content = text.String()
-		result.Message.Reasoning = reasoning.String()
-		return result
-	}
-	assembled := func() []message.ToolCall {
-		indexes := append([]int(nil), order...)
-		sort.Ints(indexes)
-		var out []message.ToolCall
-		for _, idx := range indexes {
-			acc := calls[idx]
-			if acc.name == "" {
-				continue
-			}
-			args := acc.args.String()
-			if args == "" {
-				args = "{}"
-			}
-			out = append(out, message.ToolCall{
-				ID:       acc.id,
-				Type:     "function",
-				Function: message.FunctionCall{Name: acc.name, Arguments: args},
-			})
-		}
-		return out
+	// report delivers the running usage. The API sends input tokens first and
+	// output tokens at the end, and never a total.
+	report := func() {
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+		c.Usage(usage)
 	}
 
-	for {
-		raw, err := s.Next()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return partial(), err
+	err := s.Each(func(raw ssestream.Event) (bool, error) {
+		var ev event
+		if err := raw.Decode(&ev); err != nil {
+			return false, err
 		}
-		ev, err := decodeEvent(raw.Data)
-		if err != nil {
-			continue
-		}
-		if ev.Type == "" {
-			ev.Type = raw.Name
-		}
+		ev.Type = cmp.Or(ev.Type, raw.Name)
 		switch ev.Type {
 		case "message_start":
 			// Anthropic's input_tokens is the uncached remainder; the cache
 			// counts are separate. Usage.PromptTokens means the whole prompt
 			// on every dialect, so sum all three here.
-			usage := ev.Message.Usage
-			result.Usage.PromptTokens = usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens
-			result.Usage.CachedTokens = usage.CacheReadInputTokens
-			result.Usage.CacheWriteTokens = usage.CacheCreationInputTokens
+			u := ev.Message.Usage
+			usage.PromptTokens = u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+			usage.CachedTokens = u.CacheReadInputTokens
+			usage.CacheWriteTokens = u.CacheCreationInputTokens
+			report()
 		case "content_block_start":
 			if ev.ContentBlock.Type == "tool_use" {
-				if _, ok := calls[ev.Index]; !ok {
-					order = append(order, ev.Index)
-				}
-				calls[ev.Index] = &callAcc{id: ev.ContentBlock.ID, name: ev.ContentBlock.Name, index: ev.Index}
+				c.ToolCall(ev.Index, ev.ContentBlock.ID, "", ev.ContentBlock.Name, "")
 			}
 		case "content_block_delta":
 			switch ev.Delta.Type {
 			case "text_delta":
-				text.WriteString(ev.Delta.Text)
-				emit(onEvent, provider.StreamEvent{Type: provider.StreamTextDelta, Text: ev.Delta.Text})
+				c.Text(ev.Delta.Text)
 			case "thinking_delta":
-				reasoning.WriteString(ev.Delta.Thinking)
-				emit(onEvent, provider.StreamEvent{Type: provider.StreamReasoningDelta, Text: ev.Delta.Thinking})
+				c.Reasoning(ev.Delta.Thinking)
 			case "input_json_delta":
-				acc := calls[ev.Index]
-				if acc == nil {
-					acc = &callAcc{index: ev.Index}
-					calls[ev.Index] = acc
-					order = append(order, ev.Index)
-				}
-				acc.args.WriteString(ev.Delta.PartialJSON)
+				c.ToolCall(ev.Index, "", "", "", ev.Delta.PartialJSON)
 			}
 		case "message_delta":
-			if ev.Delta.StopReason != "" {
-				stopReason = ev.Delta.StopReason
-			}
-			result.Usage.CompletionTokens += ev.Usage.OutputTokens
+			stopReason = cmp.Or(ev.Delta.StopReason, stopReason)
+			usage.CompletionTokens += ev.Usage.OutputTokens
+			report()
 		case "message_stop":
 			terminal = true
-		case "ping":
-			// ignored
 		case "error":
-			msg := ev.Error.Message
-			if msg == "" {
-				msg = "messages error"
+			return false, &provider.Error{
+				Code:      ev.Error.Type,
+				Message:   cmp.Or(ev.Error.Message, "messages error"),
+				Retryable: retryableErrorType[ev.Error.Type],
 			}
-			return partial(), &provider.Error{Message: msg, Retryable: false}
 		}
-		if terminal {
-			break
-		}
+		return terminal, nil
+	})
+	switch {
+	case err != nil:
+		return c.Partial(), err
+	case !terminal:
+		return c.Partial(), &provider.Error{Message: "stream ended before message_stop", Retryable: true}
 	}
-
-	partial()
-	complete := assembled()
-	if len(complete) > 0 {
-		result.Message.ToolCalls = complete
-		for i := range complete {
-			emit(onEvent, provider.StreamEvent{Type: provider.StreamToolCall, ToolCall: &complete[i]})
-		}
-	}
-	finish := provider.NormalizeFinish(stopReason)
-	if finish == "" && len(complete) > 0 {
-		finish = "tool_calls"
-	}
-	result.FinishReason = finish
-	if !terminal {
-		return result, &provider.Error{Message: "stream ended before message_stop", Retryable: true}
-	}
-	return result, nil
-}
-
-// emit calls onEvent when it is set.
-func emit(onEvent func(provider.StreamEvent), ev provider.StreamEvent) {
-	if onEvent != nil {
-		onEvent(ev)
-	}
+	return c.Finish(stopReason), nil
 }

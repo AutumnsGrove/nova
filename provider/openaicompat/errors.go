@@ -1,39 +1,21 @@
 package openaicompat
 
 import (
-	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/provider/ssestream"
 )
 
-// streamErrorObject turns a 200 response whose first chunk is an error object
-// into a provider error. A rate-limit code or an "overload" message is the only
-// thing worth retrying, because the HTTP status alone said success.
+// streamErrorObject turns a 200 response whose chunk is an error object into a
+// provider error. The HTTP status alone said success, so the code and message
+// decide whether a retry can help.
 func streamErrorObject(o *errorObject) *provider.Error {
-	code := codeString(o.Code)
-	retryable := code == "rate_limit_exceeded" ||
-		strings.Contains(strings.ToLower(o.Message), "overload")
+	code := ssestream.CodeString(o.Code)
 	return &provider.Error{
 		Status:    http.StatusOK,
 		Code:      code,
 		Message:   o.Message,
-		Retryable: retryable,
-	}
-}
-
-// codeString renders a JSON code that may be a string, a number, or absent.
-func codeString(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return ""
-	case string:
-		return t
-	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
-	default:
-		return fmt.Sprint(t)
+		Retryable: ssestream.StreamErrorRetryable(code, o.Message),
 	}
 }

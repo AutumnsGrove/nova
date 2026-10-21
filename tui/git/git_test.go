@@ -5,7 +5,11 @@ package git
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 // fakeRunner answers git commands from a map keyed by the subcommand.
@@ -94,5 +98,56 @@ func TestGit_GIT06_Fake(t *testing.T) {
 	f := &Fake{Info: Info{Branch: "x", Added: 1, OK: true}}
 	if got := f.Read(context.Background(), "/r"); !got.OK || got.Branch != "x" || f.Calls != 1 {
 		t.Fatalf("fake = %+v calls=%d", got, f.Calls)
+	}
+}
+
+// A repository's own config can name programs git runs while reading it. The
+// status refresh reads whatever folder the user opened, trusted or not, so it
+// must not run any of them. This is the one test that runs the real git: the
+// hardening lives in the arguments execGit builds, which no fake can see.
+func TestGit_GIT07_RepoConfigCannotRunPrograms(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "ran")
+	hook := filepath.Join(t.TempDir(), "hook.sh")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\ntouch '"+marker+"'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	setup := [][]string{
+		{"init", "-q"},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "t"},
+		{"commit", "-q", "--allow-empty", "-m", "first"},
+		{"config", "core.fsmonitor", hook},
+	}
+	for _, args := range setup {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", dir, "add", "-N", "a.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+	// Setting the marker up front proves the hook is wired: run it once by hand.
+	if err := exec.Command(hook).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatalf("hook did not run when called directly: %v", err)
+	}
+
+	info := (Exec{Timeout: 10 * time.Second}).Read(context.Background(), dir)
+
+	if !info.OK || info.Added != 1 {
+		t.Fatalf("info = %+v, want the one added line counted", info)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the repository's own config ran a program during a status read")
 	}
 }

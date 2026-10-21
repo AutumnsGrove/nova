@@ -35,7 +35,7 @@ func (editRenderer) Body(c Call, st styles.Styles, width int, expanded bool) str
 		return renderText(c.Live, st, width, 5)
 	}
 	if detailBool(c.Details, "diff_omitted") {
-		return omittedBody(c, st, width)
+		return omittedBody(c, st)
 	}
 	unified := detailString(c.Details, "diff")
 	if unified == "" {
@@ -51,7 +51,7 @@ func (editRenderer) Body(c Call, st styles.Styles, width int, expanded bool) str
 }
 
 // omittedBody shows the replaced and new text when the tool could not diff.
-func omittedBody(c Call, st styles.Styles, width int) string {
+func omittedBody(c Call, st styles.Styles) string {
 	edits, _ := argMap(c.Args)["edits"].([]any)
 	var out []string
 	for _, e := range edits {

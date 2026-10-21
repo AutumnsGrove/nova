@@ -623,3 +623,30 @@ func TestRender_TCP05_ExpandedStillFull(t *testing.T) {
 		}
 	}
 }
+
+// The path in a card header is chosen by the model, so a hostile one must not
+// reach the terminal as a control sequence.
+func TestRender_CRD16_HeaderPathHasNoControlBytes(t *testing.T) {
+	st := mono()
+	r := NewRegistry()
+	for _, tool := range []string{"read", "write", "edit"} {
+		c := call(tool, `{"path":"a\u001b]0;pwned\u0007\u001b[2Jb‮.go"}`)
+		h := r.Lookup(tool).Header(c, st, 80)
+		// The theme's own bold is an escape, so look for the path's.
+		if strings.Contains(h, "\x1b]") || strings.Contains(h, "[2J") || strings.ContainsAny(h, "\x07‮") {
+			t.Fatalf("%s header carries control bytes: %q", tool, h)
+		}
+		if !strings.Contains(h, "ab.go") {
+			t.Fatalf("%s header lost the visible path: %q", tool, h)
+		}
+	}
+}
+
+// A model can call a tool that does not exist, under any name it likes.
+func TestRender_CRD17_ToolNameHasNoControlBytes(t *testing.T) {
+	c := call("t\x1b]0;pwned\x07\x1b[2Jx", `{}`)
+	h := NewRegistry().Lookup(c.Name).Header(c, mono(), 80)
+	if strings.Contains(h, "\x1b]") || strings.Contains(h, "[2J") || strings.ContainsRune(h, '\x07') {
+		t.Fatalf("header carries control bytes: %q", h)
+	}
+}

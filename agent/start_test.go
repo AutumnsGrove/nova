@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
 
@@ -19,19 +20,22 @@ func startHung(t *testing.T) (*Agent, *collector) {
 	return New(cfg), c
 }
 
-func waitIdle(t *testing.T, a *Agent) {
+// waitIdle waits for the run to deregister and, when c is given, for its run_end
+// to be recorded: the agent goes idle just before run_end is delivered, so idle
+// alone does not mean the collector has the event yet.
+func waitIdle(t *testing.T, a *Agent, c *collector) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
-	for a.Running() {
+	for a.Running() || (c != nil && c.count(proto.EventRunEnd) == 0) {
 		if time.Now().After(deadline) {
 			t.Fatal("run did not end after Abort")
 		}
-		time.Sleep(time.Millisecond)
+		runtime.Gosched()
 	}
 }
 
 func Test_STA01_StartRegistersBeforeReturning(t *testing.T) {
-	a, _ := startHung(t)
+	a, c := startHung(t)
 	if err := a.Start(context.Background(), nil, message.User("go")); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -41,7 +45,7 @@ func Test_STA01_StartRegistersBeforeReturning(t *testing.T) {
 		t.Fatal("Running() = false immediately after Start")
 	}
 	a.Abort()
-	waitIdle(t, a)
+	waitIdle(t, a, c)
 }
 
 func Test_STA02_AbortRightAfterStartAlwaysLands(t *testing.T) {
@@ -51,7 +55,7 @@ func Test_STA02_AbortRightAfterStartAlwaysLands(t *testing.T) {
 			t.Fatalf("iteration %d: Start: %v", i, err)
 		}
 		a.Abort()
-		waitIdle(t, a)
+		waitIdle(t, a, c)
 		ends := 0
 		for _, e := range c.all() {
 			if e.Type == proto.EventRunEnd {
@@ -72,7 +76,7 @@ func Test_STA03_StartWhileRunningIsBusy(t *testing.T) {
 	if err := a.Start(context.Background(), nil, message.User("one")); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { a.Abort(); waitIdle(t, a) }()
+	defer func() { a.Abort(); waitIdle(t, a, nil) }()
 	if err := a.Start(context.Background(), nil, message.User("two")); !errors.Is(err, ErrBusy) {
 		t.Fatalf("second Start = %v, want ErrBusy", err)
 	}

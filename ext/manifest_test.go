@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/AutumnsGrove/nova/testkit"
 )
 
 // writeManifest writes extension.yaml into a fresh temp dir and returns it.
@@ -183,6 +186,43 @@ func TestManifest_MAN18_MalformedYAML(t *testing.T) {
 	err := loadErr(t, "name: [\n")
 	if !strings.Contains(err.Error(), "line") {
 		t.Fatalf("error does not name a line: %v", err)
+	}
+}
+
+// A cloned repository chooses what extension.yaml is. A named pipe must be
+// refused, not waited on, and a device must not be read to the end.
+func TestManifest_MAN17b_NotARegularFile(t *testing.T) {
+	dir := t.TempDir()
+	testkit.Mkfifo(t, filepath.Join(dir, "extension.yaml"))
+	done := make(chan error, 1)
+	go func() {
+		_, err := LoadManifest(dir)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "regular file") {
+			t.Fatalf("err = %v, want a refusal naming regular files", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("LoadManifest blocked on a named pipe")
+	}
+
+	dev := t.TempDir()
+	if err := os.Symlink("/dev/zero", filepath.Join(dev, "extension.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadManifest(dev); err == nil {
+		t.Fatal("a manifest symlinked to a device was accepted")
+	}
+}
+
+// The command of an exec tool is checked once, at load, so it cannot be filled
+// in from a model-supplied argument later.
+func TestManifest_MAN19_ExecCommandIsNotATemplate(t *testing.T) {
+	err := loadErr(t, "name: hello\nversion: 1.0.0\ndescription: x\ntools:\n  - name: t\n    description: x\n    parameters: {type: object}\n    exec: [\"{{.dir}}/run.sh\"]\n")
+	if !strings.Contains(err.Error(), "placeholder") {
+		t.Fatalf("err = %v, want a refusal naming placeholders", err)
 	}
 }
 

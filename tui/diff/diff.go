@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AutumnsGrove/nova/tui/highlight"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -56,7 +57,9 @@ func Render(unified, path string, width int, st styles.Styles, opt Options) stri
 	if width < 1 {
 		width = 1
 	}
-	lines := parse(unified)
+	// The diff is made of file contents, so clean it once here, before any line
+	// kind (hunk header, plain text, code) is drawn.
+	lines := parse(sanitize.Text(unified))
 	if len(lines) == 0 {
 		return ansi.Truncate("(no changes)", width, "")
 	}
@@ -87,7 +90,7 @@ func Render(unified, path string, width int, st styles.Styles, opt Options) stri
 	}
 	contentW := width - gutterW
 	if contentW < 1 {
-		contentW, gutterW, showNum = width, 0, false
+		contentW, showNum = width, false
 	}
 
 	var out []string
@@ -145,7 +148,7 @@ func markerFor(k kind) string {
 func styleCode(style interface{ Render(...string) string }, marker, seg, path string, color bool) string {
 	body := highlight.Line(seg, path, color)
 	if !color {
-		return marker + ansi.Strip(body)
+		return marker + body
 	}
 	return style.Render(marker + body)
 }

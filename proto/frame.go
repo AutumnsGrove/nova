@@ -86,7 +86,7 @@ type ToolResult struct {
 type Event struct {
 	Type         string           `json:"type"`
 	Seq          int64            `json:"seq,omitempty"`
-	TS           time.Time        `json:"ts,omitempty"`
+	TS           time.Time        `json:"ts,omitzero"`
 	ID           string           `json:"id,omitempty"`
 	Run          string           `json:"run,omitempty"`
 	Turn         *int             `json:"turn,omitempty"`
@@ -117,6 +117,16 @@ type Event struct {
 	Leaf         string           `json:"leaf,omitempty"`
 	State        json.RawMessage  `json:"state,omitempty"`
 	Decision     string           `json:"decision,omitempty"`
+	// DroppedQueue is set only on run_end: the queued messages the run ended
+	// without consuming, so a client can put them back in its input box.
+	DroppedQueue *DroppedQueue `json:"dropped_queue,omitempty"`
+}
+
+// DroppedQueue carries the text of steering and follow-up messages a run
+// discarded when it ended. Attachments are not restored.
+type DroppedQueue struct {
+	Steering []string `json:"steering,omitempty"`
+	FollowUp []string `json:"follow_up,omitempty"`
 }
 
 // UIOption is one choice in a select or form question.

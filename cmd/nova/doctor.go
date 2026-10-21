@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/doctor"
 	"github.com/AutumnsGrove/nova/ext"
@@ -63,7 +64,7 @@ func extensionStatus(home, cwd string) doctor.HostStatus {
 		out := make([]doctor.ExtensionStatus, 0, len(dirs))
 		for _, dir := range dirs {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			problems := ext.Check(ctx, dir, ext.CheckOptions{Timeout: 5 * time.Second})
+			problems := ext.Check(ctx, dir, ext.CheckOptions{Timeout: 5 * time.Second, Run: ext.NewExecRunner(providerauth.CredentialEnv())})
 			cancel()
 			status := doctor.ExtensionStatus{Name: filepath.Base(dir), OK: len(problems) == 0}
 			if len(problems) > 0 {

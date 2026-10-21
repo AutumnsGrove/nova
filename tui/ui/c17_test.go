@@ -8,10 +8,12 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/client"
 	"github.com/AutumnsGrove/nova/tui/dialog"
+	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
 // uiReq builds a UI request for tests.
@@ -357,3 +359,20 @@ func TestUI_TST04_ToastsDoNotTakeFocus(t *testing.T) {
 
 // cancelledResult is a cancelled dialog result for tests.
 func cancelledResult() dialog.Result { return dialog.Result{Done: true, Cancelled: true} }
+
+// nova --resume starts with the session picker already asked for, the way the
+// /resume command asks for it.
+func TestUI_RSM01_ResumeOptionAsksForTheSessionList(t *testing.T) {
+	f := &fakeClient{responses: map[string]proto.Response{}}
+	clk := &fakeClock{now: time.Unix(1_700_000_000, 0)}
+	m := New(Options{Client: f, Theme: styles.Mono(), Clock: clk, CWD: t.TempDir(), Profile: colorprofile.ASCII, Renderer: echoRenderer{}, Width: 80, Height: 24, OpenSessions: true})
+	execAll(m.Init())
+	if !sent(f, proto.CmdSessionList) {
+		t.Fatalf("Init did not ask for the session list: %+v", f.sends)
+	}
+	plain, pf, _ := newModel(t)
+	execAll(plain.Init())
+	if sent(pf, proto.CmdSessionList) {
+		t.Fatal("an ordinary start asked for the session list")
+	}
+}

@@ -2,7 +2,7 @@
 chunk: C12
 title: "The server core, modes, and the nova command"
 packages: [./mode, ./cmd/nova]
-budgets: { ./mode: 2320, ./cmd/nova: 1260 }
+budgets: { ./mode: 2470, ./cmd/nova: 1260 }
 depends: [C09, C10, C11]
 ---
 
@@ -52,10 +52,7 @@ type Options struct {
     Provider   provider.Provider   // nil means build OpenRouter from the config and auth
     Session    string              // path to open or create; "" with NoSession false means a new default path
     NoSession  bool                // keep the transcript in memory only
-    Out        io.Writer           // for rpc/json/print
-    In         io.Reader
     Clock      Clock               // injectable; default real
-    Interactive bool               // whether a UI client is attached (affects permission "ask")
     Version    string
 }
 func New(opt Options) (*Server, error)
@@ -239,6 +236,24 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV42 | thinking events | reasoning in the script | `thinking_*` with a duration |
 | SRV45 | `run_command quit` and `exit` | | aliases for `shutdown`; `get_commands` lists them |
 | SRV46 | `run_command new` and `clear` | a session with one turn | each opens a fresh session (path changes) and emits `session_changed`; the old messages are gone; `get_commands` lists both; refused with `busy` while a run is active |
+| SRV47 | `set_model` moves the compaction window | switch from an unknown model to one with a catalog window | `get_state` `effective_limit` becomes that window |
+| SRV48 | server-raised events carry `ts` | `set_thinking`, watch `state_changed` | the event has a non-zero `ts` |
+| SRV49 | `get_messages` without a session store | `NoSession`, one run | the in-memory user and assistant messages come back |
+| SRV50 | a session switch forgets the last response's usage | a run reporting a near-full prompt, then `session.new` or `session.navigate`, then a prompt | no `error` event (no spurious compaction) |
+| SRV51 | concurrent session commands | `session.new` beside `get_messages`, `get_state`, `session.tree`, `set_model` | race-free under `-race` |
+| SRV52 | `set_tools` with an unknown or repeated name | `["bash","nope"]`, `["read","read"]` | `bad_request`; the registry is unchanged |
+| SRV53 | `session.list` when the directory cannot be read | a file where the directory tree should be | `internal`; a missing directory is still an empty list |
+| SRV54 | fire-and-forget UI requests keep their order | several `Notify` calls to a pipe client | every request arrives, in order |
+| SRV55 | a client that never reads | more `Notify` calls than the queue holds | `Notify` never blocks |
+| SRV56 | `set_tools` keeps extension tools | a tool registered outside the built-in pool, then `set_tools` | the extension tool stays registered; only built-in tools change |
+| SRV57 | reload applies the edited config | `Options.Reload` returns a config with new display, permissions and active tools | the display, the policy and the registry follow it; `config` is in `reloaded` |
+| SRV58 | runtime overrides survive a reload | `set_model`, then a reload whose file names another model; thinking never set | the model stays the runtime choice, also after a second reload; thinking follows the file (SRV58b: a model never set follows the file) |
+| SRV59 | a failed load changes nothing | the reloader errors; a config naming an unknown tool | `config_error` is set, `config` is not in `reloaded`, the rest of the reload still ran, and the tools and model are as they were |
+| SRV60 | no reloader, no claim | `Options.Reload` nil | `config` is not in `reloaded` (SRV60b: the reloader's warnings are returned in `warnings`) |
+| SRV61 | the turn budget follows the file | a reload sets `max_turns` 2 | the next run ends `exhausted` after 2 turns |
+| SRV62 | an explicit system prompt survives | `Options.SystemPrompt` set, then a reload | the system message is still that prompt |
+| SRV63 | `/reload` is a slash command | `run_command` `reload`, with and without a reloader, and a rejected config | a one-line `text` naming what was reloaded and any config error; `reload` is listed by `get_commands` |
+| SRV64 | compaction forgets the old token count | `compact` after a response that reported prompt tokens | the stored last usage is zero, so the next turn is judged on the new history |
 | PRI01 | print mode answer | scripted "42" | stdout is `42\n`; exit 0 |
 | PRI02 | stdout has only the answer | tool calls in the run | tool progress only on stderr |
 | PRI03 | `-p -` reads stdin | | prompt from stdin |
@@ -268,6 +283,11 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | RPC12 | correlation ids | two concurrent commands with ids | each response carries its id |
 | RPC13 | backpressure | client reads slowly | no deadlock; server not killed |
 | RPC14 | large event | 1 MiB tool result | delivered intact |
+| RPC15 | a slow command does not stall events | `reload` queued while a run emits more events than the subscriber buffer holds | every event is delivered, no `subscriber too slow` error, the reload then answers `ok` |
+| RPC16 | `abort` overtakes a blocked command | `reload` waiting on a hung run, then `abort` | the abort answers at once, the run ends `aborted`, the reload then answers `ok` |
+| RPC17 | no goroutine outlives `ServeRPC` | cancelled context with unread input | `testkit.NoLeaks` passes |
+| RPC18 | server hello capabilities | | `steer`, `fork`, `compact` |
+| RPC19 | no frame after return | a UI request after `ServeRPC` returned | refused; nothing written |
 | CLI01 | `--help` | | usage on stdout; exit 0 |
 | CLI02 | unknown flag | | message and usage on stderr; exit 2 |
 | CLI03 | conflicting modes | `-p x --mode rpc` | exit 2 |
@@ -277,7 +297,7 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | CLI07 | `nova logout` | | key removed; second call is fine |
 | CLI08 | `nova models` | | lists the catalog |
 | CLI09 | `nova sessions` | two sessions | listed, newest first |
-| CLI10 | `nova docs` and `nova docs extensions` | | embedded text printed; unknown topic lists topics |
+| CLI10 | `nova docs` and `nova docs extensions` | | embedded text printed; an unknown topic is an error (exit 1) that lists the topics on stderr (changed from exit 0 on stdout, so a script can detect a typo) |
 | CLI11 | no mode and no terminal | | usage; exit 2 |
 | CLI12 | `NO_COLOR` | | no ANSI in any message |
 | CLI13 | `--tools` and `--no-tools` | | the registry matches |
@@ -286,6 +306,9 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | CLI16 | `nova completion bash`, `zsh`, `fish` | | a valid completion script on stdout; exit 0 |
 | CLI17 | cobra errors map to exit 2 | unknown flag, missing argument, unknown subcommand | message on stderr; exit 2; no stack |
 | CLI18 | flags after subcommands and `--` | `nova docs -- --help` | handled as cobra documents |
+| CLI19 | `logout` names the provider | `logout opencode-go`, a second one, `logout nope` | the OpenCode Go key is removed, a repeat succeeds, an unknown name is an error naming it; no argument still means OpenRouter |
+| RSM02 | `--resume` needs a terminal | `--resume` with no terminal | an error about the interactive UI, not "not built yet" |
+| CLI20 | a damaged lockfile is reported | `ext list` with an unreadable `extensions.lock` | a `warning:` line on stderr, nothing on stdout |
 | FUL01 | the whole stack | scripted: read a file, edit it, answer | file changed; events as expected; session file valid |
 | FUL02 | tool permission denied by config | policy denies `write` | tool blocked; file unchanged; model sees the error |
 | FUL03 | compaction in a real run | small limit | compacted; the next request contains the summary |

@@ -236,12 +236,11 @@ func TestProto_PRT02_UnknownCommand(t *testing.T) {
 }
 
 func TestProto_PRT03_DecodeEachEvent(t *testing.T) {
-	names := []string{
-		EventRunStart, EventTurnStart, EventMessageStart, EventTextDelta, EventThinkingStart,
-		EventThinkingDelta, EventThinkingEnd, EventToolCall, EventToolStart, EventToolUpdate,
-		EventToolEnd, EventPermission, EventMessageEnd, EventTurnEnd, EventUsage, EventRetry,
-		EventCompaction, EventQueueUpdate, EventRunEnd, EventError, EventExtensionError,
-		EventUIExpired, EventSessionChanged, EventStateChanged,
+	// The names come from the source so a new Event constant that is missing
+	// from eventNames (and would decode as a Command) fails here.
+	names := constValues(t, "Event")
+	if len(names) != len(eventNames) {
+		t.Fatalf("%d Event constants but %d in eventNames", len(names), len(eventNames))
 	}
 	for _, name := range names {
 		f, err := Decode([]byte(`{"type":"` + name + `"}`))
@@ -273,6 +272,21 @@ func TestProto_PRT04_DecodeFamilies(t *testing.T) {
 func TestProto_PRT05_InvalidJSON(t *testing.T) {
 	if _, err := Decode([]byte(`{`)); !errors.Is(err, ErrBadFrame) {
 		t.Fatalf("err = %v, want ErrBadFrame", err)
+	}
+}
+
+// A caller that wants the position of the syntax error must be able to reach
+// the JSON error behind ErrBadFrame, not only its text.
+func TestProto_PRT20_BadFrameKeepsCause(t *testing.T) {
+	_, err := Decode([]byte(`{`))
+	var syn *json.SyntaxError
+	if !errors.Is(err, ErrBadFrame) || !errors.As(err, &syn) {
+		t.Fatalf("syntax err = %v, want ErrBadFrame wrapping *json.SyntaxError", err)
+	}
+	_, err = Decode([]byte(`{"type":"prompt","text":5}`))
+	var typ *json.UnmarshalTypeError
+	if !errors.Is(err, ErrBadFrame) || !errors.As(err, &typ) {
+		t.Fatalf("type err = %v, want ErrBadFrame wrapping *json.UnmarshalTypeError", err)
 	}
 }
 
@@ -419,7 +433,23 @@ func FuzzDecode(f *testing.F) {
 		if !utf8.Valid(line) {
 			return
 		}
-		Decode(line)
+		f, err := Decode(line)
+		var unknown *UnknownTypeError
+		if err != nil {
+			if !errors.Is(err, ErrBadFrame) && !errors.As(err, &unknown) {
+				t.Fatalf("err = %v, want ErrBadFrame or UnknownTypeError", err)
+			}
+			return
+		}
+		set := 0
+		for _, present := range []bool{f.Command != nil, f.Response != nil, f.Event != nil, f.UIRequest != nil, f.UIResponse != nil, f.Hello != nil} {
+			if present {
+				set++
+			}
+		}
+		if set != 1 {
+			t.Fatalf("frame has %d fields set, want exactly one: %+v", set, f)
+		}
 	})
 }
 

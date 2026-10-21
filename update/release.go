@@ -8,7 +8,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
+)
+
+// Limits on what a download may bring. They are variables so a test can lower
+// them. A release binary is tens of megabytes, so these are generous and still
+// stop a hostile server from filling memory or disk.
+var (
+	maxMetaBytes    int64 = 1 << 20   // the release API reply and checksums.txt
+	maxArchiveBytes int64 = 256 << 20 // the release archive
+	maxBinaryBytes  int64 = 256 << 20 // the binary unpacked from it
 )
 
 // runRelease resolves, downloads, verifies, and installs a GitHub release.
@@ -23,6 +33,11 @@ func runRelease(ctx context.Context, opt Options) (Result, error) {
 			return Result{}, err
 		}
 		version = resolved
+	}
+	// The version becomes part of a URL and a file name, so only a plain tag is
+	// accepted, whichever of the flag or the release API it came from.
+	if !validVersion(version) {
+		return Result{}, fmt.Errorf("invalid version %q: want a release tag such as v1.2.3", version)
 	}
 	res := Result{Mode: Release, From: opt.Current, To: version}
 	if opt.Check {
@@ -43,11 +58,11 @@ func runRelease(ctx context.Context, opt Options) (Result, error) {
 	}
 	archive := fmt.Sprintf("%s_%s_%s_%s.tar.gz", prefix, version, opt.GOOS, opt.GOARCH)
 	base := fmt.Sprintf("%s/releases/download/%s", opt.BaseURL, version)
-	body, err := download(ctx, opt, base+"/"+archive)
+	body, err := download(ctx, opt, base+"/"+archive, maxArchiveBytes)
 	if err != nil {
 		return Result{}, err
 	}
-	checksums, err := download(ctx, opt, base+"/checksums.txt")
+	checksums, err := download(ctx, opt, base+"/checksums.txt", maxMetaBytes)
 	if err != nil {
 		return Result{}, err
 	}
@@ -85,7 +100,7 @@ func supported(goos, goarch string) bool {
 
 // latestVersion reads the tag from the release API.
 func latestVersion(ctx context.Context, opt Options) (string, error) {
-	body, err := download(ctx, opt, opt.APIURL)
+	body, err := download(ctx, opt, opt.APIURL, maxMetaBytes)
 	if err != nil {
 		return "", err
 	}
@@ -101,8 +116,9 @@ func latestVersion(ctx context.Context, opt Options) (string, error) {
 	return payload.TagName, nil
 }
 
-// download fetches a URL and returns its body, failing on any non-200 status.
-func download(ctx context.Context, opt Options, url string) ([]byte, error) {
+// download fetches a URL and returns its body, failing on any non-200 status or
+// a body over limit bytes.
+func download(ctx context.Context, opt Options, url string, limit int64) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -115,7 +131,14 @@ func download(ctx context.Context, opt Options, url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download %s: %s", url, resp.Status)
 	}
-	return io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("download %s: %w", url, err)
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("download %s: response is too large (over %d bytes)", url, limit)
+	}
+	return body, nil
 }
 
 // checksumFor finds the digest for name in a checksums file of "<hex>  <name>"
@@ -123,9 +146,15 @@ func download(ctx context.Context, opt Options, url string) ([]byte, error) {
 func checksumFor(data []byte, name string) (string, bool) {
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) == 2 && strings.TrimPrefix(fields[1], "*") == name {
+		if len(fields) == 2 && strings.TrimPrefix(strings.TrimPrefix(fields[1], "*"), "./") == name {
 			return strings.ToLower(fields[0]), true
 		}
 	}
 	return "", false
 }
+
+// validVersion reports whether v is a plain release tag: letters, digits and the
+// punctuation of a version, starting with a letter or digit.
+func validVersion(v string) bool { return versionRe.MatchString(v) }
+
+var versionRe = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z._+-]*$`)

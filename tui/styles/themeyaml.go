@@ -4,10 +4,11 @@ package styles
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -46,11 +47,7 @@ func LoadTheme(path string) (Theme, []string, error) {
 	}
 	t := Theme{Name: raw.Name, Colors: map[string]string{}}
 	var warnings []string
-	keys := make([]string, 0, len(raw.Colors))
-	for k := range raw.Colors {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(raw.Colors))
 	for _, k := range keys {
 		v := raw.Colors[k]
 		switch {
@@ -92,7 +89,7 @@ func LoadThemes(dirs []string) []Theme {
 				names = append(names, e.Name())
 			}
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		for _, name := range names {
 			t, _, err := LoadTheme(filepath.Join(dir, name))
 			if err != nil {

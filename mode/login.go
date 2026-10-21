@@ -159,9 +159,6 @@ func (s *Server) loginInteractive(cmd proto.Command, p providerauth.Provider, me
 func (s *Server) claimLogin(id string, f *loginFlow) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.logins == nil {
-		s.logins = map[string]*loginFlow{}
-	}
 	if _, busy := s.logins[id]; busy {
 		return false
 	}
@@ -198,22 +195,25 @@ func (s *Server) awaitLogin(ctx context.Context, p providerauth.Provider, f *log
 	s.emit(ev)
 }
 
-// flowFor returns the open flow for a provider.
-func (s *Server) flowFor(id string) (*loginFlow, bool) {
+// openFlow returns the open sign-in for cmd.Name, or the not_found response to
+// send. A flow still inside Begin has no session yet and does not count as open.
+func (s *Server) openFlow(cmd proto.Command) (*loginFlow, *proto.Response) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	f, ok := s.logins[id]
-	if ok && f.session == nil {
-		return nil, false
+	f := s.logins[cmd.Name]
+	open := f != nil && f.session != nil
+	s.mu.Unlock()
+	if !open {
+		resp := failResponse(cmd, proto.CodeNotFound, cmd.Type+": no sign-in in progress for "+cmd.Name)
+		return nil, &resp
 	}
-	return f, ok
+	return f, nil
 }
 
 // handleLoginSubmit feeds a pasted redirect URL to the open flow.
 func (s *Server) handleLoginSubmit(cmd proto.Command) proto.Response {
-	f, ok := s.flowFor(cmd.Name)
-	if !ok {
-		return failResponse(cmd, proto.CodeNotFound, "login_submit: no sign-in in progress for "+cmd.Name)
+	f, notFound := s.openFlow(cmd)
+	if notFound != nil {
+		return *notFound
 	}
 	if err := f.session.Submit(cmd.Text); err != nil {
 		return failResponse(cmd, proto.CodeBadRequest, scrub("login_submit: "+err.Error(), cmd.Text))
@@ -223,9 +223,9 @@ func (s *Server) handleLoginSubmit(cmd proto.Command) proto.Response {
 
 // handleLoginCancel abandons the open flow without emitting login_end.
 func (s *Server) handleLoginCancel(cmd proto.Command) proto.Response {
-	f, ok := s.flowFor(cmd.Name)
-	if !ok {
-		return failResponse(cmd, proto.CodeNotFound, "login_cancel: no sign-in in progress for "+cmd.Name)
+	f, notFound := s.openFlow(cmd)
+	if notFound != nil {
+		return *notFound
 	}
 	s.releaseLogin(cmd.Name, f)
 	f.cancel()

@@ -3,17 +3,18 @@ package main
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"github.com/AutumnsGrove/nova/ext/sdk"
 )
 
 func main() {
 	sdk.Run(func(h *sdk.Host) error {
-		turns := 0
+		// Hooks run on their own goroutines, so shared state is atomic.
+		var turns atomic.Int32
 		h.On("turn_end", func(*sdk.Hook) (*sdk.HookDecision, error) {
-			turns++
 			_ = h.UI.Status("turns", []sdk.Segment{
-				{Text: fmt.Sprintf("turn %d", turns), Style: "accent"},
+				{Text: fmt.Sprintf("turn %d", turns.Add(1)), Style: "accent"},
 			})
 			return nil, nil
 		})

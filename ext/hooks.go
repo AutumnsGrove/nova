@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os/exec"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,9 @@ const (
 	hookTimeout        = 2 * time.Second
 	hookErrorInterval  = time.Minute
 	commandHookTimeout = 10 * time.Second
+	// maxHookOutputBytes bounds what a command hook may print, so a runaway
+	// script cannot exhaust memory. A decision is a few hundred bytes.
+	maxHookOutputBytes = 1 << 20
 )
 
 // toolCallEvent and toolCallResult are the tool_call hook's wire shapes.
@@ -73,15 +77,27 @@ func (h *Host) Hooks() agent.Hooks {
 	}
 }
 
-// hookInstances snapshots the running instances that answer hook, in order.
-func (h *Host) hookInstances(hook string) []*instance {
-	h.mu.Lock()
-	insts := append([]*instance(nil), h.insts...)
-	h.mu.Unlock()
-	var out []*instance
-	for _, inst := range insts {
-		if inst.declaresHook(hook) {
-			out = append(out, inst)
+// hookSource is one extension that answers a hook, with the functions that
+// answer it.
+type hookSource struct {
+	inst  *instance
+	hooks agent.Hooks
+}
+
+// hookSources lists, in load order, the running extensions that answer hook. A
+// bundled extension answers with its own Go hooks and a subprocess one with
+// functions that send the hook over its connection, so the composition below
+// treats both alike.
+func (h *Host) hookSources(hook string) []hookSource {
+	var out []hookSource
+	for _, inst := range h.snapshot() {
+		if !inst.declaresHook(hook) {
+			continue
+		}
+		if fns, bundled := inst.bundleHook(); bundled {
+			out = append(out, hookSource{inst, fns})
+		} else {
+			out = append(out, hookSource{inst, h.processHooks(inst)})
 		}
 	}
 	return out
@@ -91,18 +107,7 @@ func (h *Host) hookInstances(hook string) []*instance {
 func (inst *instance) declaresHook(hook string) bool {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
-	if inst.state != stateRunning {
-		return false
-	}
-	if inst.bundleHooks[hook] {
-		return true
-	}
-	for _, name := range inst.reg.hooks {
-		if name == hook {
-			return true
-		}
-	}
-	return false
+	return inst.state == stateRunning && (inst.bundleHooks[hook] || slices.Contains(inst.reg.hooks, hook))
 }
 
 // bundleHook snapshots a bundled instance's hooks. ok is false for a subprocess
@@ -116,9 +121,72 @@ func (inst *instance) bundleHook() (agent.Hooks, bool) {
 	return inst.envHooks, true
 }
 
-// callBundledHook runs a bundled hook with panic recovery. It reports false
-// when the hook panicked, so the caller can ignore a zero result.
-func (h *Host) callBundledHook(inst *instance, hook string, fn func()) (ok bool) {
+// processHooks adapts a subprocess extension to the loop's hook functions. A
+// timeout, a down extension, or an invalid answer leaves the value unchanged.
+func (h *Host) processHooks(inst *instance) agent.Hooks {
+	call := func(ctx context.Context, hook string, event, out any) bool {
+		return h.callHook(ctx, inst, hook, event, out)
+	}
+	return agent.Hooks{
+		ToolCall: func(ctx context.Context, c agent.ToolCall) *agent.CallDecision {
+			var res toolCallResult
+			if !call(ctx, "tool_call", toolCallEvent{Tool: c.Name, Arguments: c.Arguments, CallID: c.ID}, &res) {
+				return nil
+			}
+			return &agent.CallDecision{Block: res.Block, Reason: res.Reason, Arguments: res.Arguments}
+		},
+		ToolResult: func(ctx context.Context, c agent.ToolCall, r tool.Result) tool.Result {
+			var res struct {
+				Result *toolResult `json:"result"`
+			}
+			event := hookWire{Tool: c.Name, Result: &toolResult{Content: r.Content, IsError: r.IsError, Details: r.Details, Parts: r.Parts}}
+			if !call(ctx, "tool_result", event, &res) || res.Result == nil {
+				return r
+			}
+			return tool.Result{Content: res.Result.Content, IsError: res.Result.IsError, Details: res.Result.Details, Parts: res.Result.Parts, Truncated: r.Truncated}
+		},
+		TransformContext: func(ctx context.Context, msgs []message.Message) []message.Message {
+			var res hookWire
+			if !call(ctx, "transform_context", hookWire{Messages: msgs}, &res) || res.Messages == nil {
+				return msgs
+			}
+			return res.Messages
+		},
+		BeforeProviderRequest: func(ctx context.Context, req *provider.Request) {
+			var res hookWire
+			if call(ctx, "before_provider_request", hookWire{Request: req}, &res) && res.Request != nil {
+				*req = *res.Request
+			}
+		},
+		MessageEnd: func(ctx context.Context, m message.Message) message.Message {
+			var res hookWire
+			if !call(ctx, "message_end", hookWire{Message: &m}, &res) || res.Message == nil {
+				return m
+			}
+			return *res.Message
+		},
+		TurnEnd: func(ctx context.Context, t agent.Turn) agent.TurnDecision {
+			results := make([]toolResult, 0, len(t.Results))
+			for _, r := range t.Results {
+				results = append(results, toolResult{Content: r.Content, IsError: r.IsError, Details: r.Details})
+			}
+			var res hookWire
+			if !call(ctx, "turn_end", hookWire{Turn: t.Index, Message: &t.Message, Results: results}, &res) {
+				return agent.TurnDecision{}
+			}
+			return agent.TurnDecision{End: res.End, Continue: res.Continue, Inject: res.Inject}
+		},
+		AgentEnd: func(ctx context.Context, r *agent.Result) {
+			event := map[string]any{"reason": r.Reason, "turns": r.Turns, "answer": r.Answer}
+			call(ctx, "agent_end", event, &map[string]any{})
+		},
+	}
+}
+
+// guard runs fn, which calls an extension's hook, and recovers a panic in a
+// bundled extension's Go code. It reports false when fn panicked, so the caller
+// ignores whatever fn left behind.
+func (h *Host) guard(inst *instance, hook string, fn func()) (ok bool) {
 	ok = true
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -137,7 +205,7 @@ func (h *Host) callHook(ctx context.Context, inst *instance, hook string, event 
 	if err != nil {
 		return false
 	}
-	reply, err := inst.conn.request(ctx, &outFrame{
+	reply, err := inst.request(ctx, &outFrame{
 		Type:       "hook",
 		Hook:       hook,
 		Event:      raw,
@@ -183,43 +251,24 @@ func (h *Host) reportHookErr(inst *instance, hook string, err error) {
 func (h *Host) hookToolCall(ctx context.Context, c agent.ToolCall) *agent.CallDecision {
 	args := c.Arguments
 	changed := false
-	for _, inst := range h.hookInstances("tool_call") {
-		if fns, bundled := inst.bundleHook(); bundled {
-			if fns.ToolCall == nil {
-				continue
-			}
-			var dec *agent.CallDecision
-			if !h.callBundledHook(inst, "tool_call", func() {
-				dec = fns.ToolCall(ctx, agent.ToolCall{ID: c.ID, Name: c.Name, Arguments: args})
-			}) || dec == nil {
-				continue
-			}
-			if dec.Block {
-				return &agent.CallDecision{Block: true, Reason: dec.Reason}
-			}
-			if len(dec.Arguments) > 0 {
-				args = dec.Arguments
-				changed = true
-			}
+	for _, src := range h.hookSources("tool_call") {
+		var dec *agent.CallDecision
+		if !h.guard(src.inst, "tool_call", func() {
+			dec = src.hooks.ToolCall(ctx, agent.ToolCall{ID: c.ID, Name: c.Name, Arguments: args})
+		}) || dec == nil {
 			continue
 		}
-		var res toolCallResult
-		if !h.callHook(ctx, inst, "tool_call", toolCallEvent{Tool: c.Name, Arguments: args, CallID: c.ID}, &res) {
-			continue
+		if dec.Block {
+			return &agent.CallDecision{Block: true, Reason: dec.Reason}
 		}
-		if res.Block {
-			return &agent.CallDecision{Block: true, Reason: res.Reason}
-		}
-		if len(res.Arguments) > 0 {
-			args = res.Arguments
-			changed = true
+		if len(dec.Arguments) > 0 {
+			args, changed = dec.Arguments, true
 		}
 	}
 	if dec, written := h.runCallCommandHooks(ctx, c.Name, args, c.ID); dec != nil {
 		return dec
 	} else if written != nil {
-		args = written
-		changed = true
+		args, changed = written, true
 	}
 	if changed {
 		return &agent.CallDecision{Arguments: args}
@@ -230,27 +279,11 @@ func (h *Host) hookToolCall(ctx context.Context, c agent.ToolCall) *agent.CallDe
 // hookToolResult composes tool_result hooks as a chain.
 func (h *Host) hookToolResult(ctx context.Context, c agent.ToolCall, r tool.Result) tool.Result {
 	out := r
-	for _, inst := range h.hookInstances("tool_result") {
-		if fns, bundled := inst.bundleHook(); bundled {
-			if fns.ToolResult == nil {
-				continue
-			}
-			var next tool.Result
-			if h.callBundledHook(inst, "tool_result", func() {
-				next = fns.ToolResult(ctx, c, out)
-			}) {
-				out = next
-			}
-			continue
+	for _, src := range h.hookSources("tool_result") {
+		var next tool.Result
+		if h.guard(src.inst, "tool_result", func() { next = src.hooks.ToolResult(ctx, c, out) }) {
+			out = next
 		}
-		event := hookWire{Tool: c.Name, Result: &toolResult{Content: out.Content, IsError: out.IsError, Details: out.Details, Parts: out.Parts}}
-		var res struct {
-			Result *toolResult `json:"result"`
-		}
-		if !h.callHook(ctx, inst, "tool_result", event, &res) || res.Result == nil {
-			continue
-		}
-		out = tool.Result{Content: res.Result.Content, IsError: res.Result.IsError, Details: res.Result.Details, Parts: res.Result.Parts}
 	}
 	return out
 }
@@ -258,25 +291,11 @@ func (h *Host) hookToolResult(ctx context.Context, c agent.ToolCall, r tool.Resu
 // hookTransformContext composes transform_context hooks as a chain.
 func (h *Host) hookTransformContext(ctx context.Context, msgs []message.Message) []message.Message {
 	out := msgs
-	for _, inst := range h.hookInstances("transform_context") {
-		if fns, bundled := inst.bundleHook(); bundled {
-			if fns.TransformContext == nil {
-				continue
-			}
-			var next []message.Message
-			if h.callBundledHook(inst, "transform_context", func() {
-				next = fns.TransformContext(ctx, out)
-			}) && next != nil {
-				out = next
-			}
-			continue
+	for _, src := range h.hookSources("transform_context") {
+		var next []message.Message
+		if h.guard(src.inst, "transform_context", func() { next = src.hooks.TransformContext(ctx, out) }) && next != nil {
+			out = next
 		}
-		event := hookWire{Messages: out}
-		var res hookWire
-		if !h.callHook(ctx, inst, "transform_context", event, &res) || res.Messages == nil {
-			continue
-		}
-		out = res.Messages
 	}
 	return out
 }
@@ -284,25 +303,11 @@ func (h *Host) hookTransformContext(ctx context.Context, msgs []message.Message)
 // hookBeforeProviderRequest runs every before_provider_request hook in order.
 func (h *Host) hookBeforeProviderRequest(ctx context.Context, req *provider.Request) {
 	current := *req
-	for _, inst := range h.hookInstances("before_provider_request") {
-		if fns, bundled := inst.bundleHook(); bundled {
-			if fns.BeforeProviderRequest == nil {
-				continue
-			}
-			local := current
-			if h.callBundledHook(inst, "before_provider_request", func() {
-				fns.BeforeProviderRequest(ctx, &local)
-			}) {
-				current = local
-			}
-			continue
+	for _, src := range h.hookSources("before_provider_request") {
+		local := current
+		if h.guard(src.inst, "before_provider_request", func() { src.hooks.BeforeProviderRequest(ctx, &local) }) {
+			current = local
 		}
-		event := hookWire{Request: &current}
-		var res hookWire
-		if !h.callHook(ctx, inst, "before_provider_request", event, &res) || res.Request == nil {
-			continue
-		}
-		current = *res.Request
 	}
 	*req = current
 }
@@ -310,25 +315,11 @@ func (h *Host) hookBeforeProviderRequest(ctx context.Context, req *provider.Requ
 // hookMessageEnd composes message_end hooks as a chain.
 func (h *Host) hookMessageEnd(ctx context.Context, m message.Message) message.Message {
 	out := m
-	for _, inst := range h.hookInstances("message_end") {
-		if fns, bundled := inst.bundleHook(); bundled {
-			if fns.MessageEnd == nil {
-				continue
-			}
-			var next message.Message
-			if h.callBundledHook(inst, "message_end", func() {
-				next = fns.MessageEnd(ctx, out)
-			}) {
-				out = next
-			}
-			continue
+	for _, src := range h.hookSources("message_end") {
+		var next message.Message
+		if h.guard(src.inst, "message_end", func() { next = src.hooks.MessageEnd(ctx, out) }) {
+			out = next
 		}
-		event := hookWire{Message: &out}
-		var res hookWire
-		if !h.callHook(ctx, inst, "message_end", event, &res) || res.Message == nil {
-			continue
-		}
-		out = *res.Message
 	}
 	return out
 }
@@ -336,39 +327,13 @@ func (h *Host) hookMessageEnd(ctx context.Context, m message.Message) message.Me
 // hookTurnEnd merges End, Continue, and Inject across every extension.
 func (h *Host) hookTurnEnd(ctx context.Context, t agent.Turn) agent.TurnDecision {
 	var decision agent.TurnDecision
-	results := make([]toolResult, 0, len(t.Results))
-	for _, r := range t.Results {
-		results = append(results, toolResult{Content: r.Content, IsError: r.IsError, Details: r.Details})
-	}
-	for _, inst := range h.hookInstances("turn_end") {
-		if fns, bundled := inst.bundleHook(); bundled {
-			if fns.TurnEnd == nil {
-				continue
-			}
-			var res agent.TurnDecision
-			if !h.callBundledHook(inst, "turn_end", func() { res = fns.TurnEnd(ctx, t) }) {
-				continue
-			}
-			if res.End {
-				decision.End = true
-			}
-			if res.Continue {
-				decision.Continue = true
-			}
-			decision.Inject = append(decision.Inject, res.Inject...)
+	for _, src := range h.hookSources("turn_end") {
+		var res agent.TurnDecision
+		if !h.guard(src.inst, "turn_end", func() { res = src.hooks.TurnEnd(ctx, t) }) {
 			continue
 		}
-		event := hookWire{Turn: t.Index, Message: &t.Message, Results: results}
-		var res hookWire
-		if !h.callHook(ctx, inst, "turn_end", event, &res) {
-			continue
-		}
-		if res.End {
-			decision.End = true
-		}
-		if res.Continue {
-			decision.Continue = true
-		}
+		decision.End = decision.End || res.End
+		decision.Continue = decision.Continue || res.Continue
 		decision.Inject = append(decision.Inject, res.Inject...)
 	}
 	return decision
@@ -376,31 +341,20 @@ func (h *Host) hookTurnEnd(ctx context.Context, t agent.Turn) agent.TurnDecision
 
 // hookAgentEnd runs every agent_end observer. Observers cannot change a run.
 func (h *Host) hookAgentEnd(ctx context.Context, r *agent.Result) {
-	for _, inst := range h.hookInstances("agent_end") {
-		if fns, bundled := inst.bundleHook(); bundled {
-			if fns.AgentEnd == nil {
-				continue
-			}
-			h.callBundledHook(inst, "agent_end", func() { fns.AgentEnd(ctx, r) })
-			continue
-		}
-		event := map[string]any{"reason": r.Reason, "turns": r.Turns, "answer": r.Answer}
-		_ = h.callHook(ctx, inst, "agent_end", event, &map[string]any{})
+	for _, src := range h.hookSources("agent_end") {
+		h.guard(src.inst, "agent_end", func() { src.hooks.AgentEnd(ctx, r) })
 	}
 }
 
 // runCallCommandHooks runs every matching tool_call command hook. It returns a
 // block decision or rewritten arguments, whichever a script produced.
 func (h *Host) runCallCommandHooks(ctx context.Context, toolName string, args json.RawMessage, callID string) (*agent.CallDecision, json.RawMessage) {
-	h.mu.Lock()
-	insts := append([]*instance(nil), h.insts...)
-	h.mu.Unlock()
 	event := toolCallEvent{Tool: toolName, Arguments: args, CallID: callID}
 	var written json.RawMessage
-	for _, inst := range insts {
+	for _, inst := range h.snapshot() {
 		inst.mu.Lock()
 		running := inst.state == stateRunning
-		specs := append([]HookSpec(nil), inst.manifest.Hooks...)
+		specs := slices.Clone(inst.manifest.Hooks)
 		inst.mu.Unlock()
 		if !running {
 			continue
@@ -425,16 +379,17 @@ func (h *Host) runCallCommandHooks(ctx context.Context, toolName string, args js
 	return nil, written
 }
 
-// matchHook applies a command hook's match map to a tool call.
+// matchHook applies a command hook's match map to a tool call: "tool" matches
+// the tool name, any other key matches the string argument of that name.
 func matchHook(spec HookSpec, ev toolCallEvent) bool {
+	var args map[string]any
 	for key, pattern := range spec.Match {
-		value := ""
-		if key == "tool" {
-			value = ev.Tool
-		} else {
-			var m map[string]any
-			_ = json.Unmarshal(ev.Arguments, &m)
-			value, _ = m[key].(string)
+		value := ev.Tool
+		if key != "tool" {
+			if args == nil {
+				_ = json.Unmarshal(ev.Arguments, &args)
+			}
+			value, _ = args[key].(string)
 		}
 		if !permission.MatchString(pattern, value) {
 			return false
@@ -449,13 +404,13 @@ func (h *Host) runCommandHook(ctx context.Context, inst *instance, spec HookSpec
 	if err != nil {
 		return toolCallResult{}, false
 	}
-	stdout, code, err := runHookScript(ctx, inst.manifest.Dir, spec.Run, payload, commandHookTimeout)
+	stdout, code, err := runHookScript(ctx, inst.manifest.Dir, spec.Run, payload, commandHookTimeout, h.commandEnv())
 	if err != nil {
 		h.logf("warn", inst.manifest.Name+": command hook failed: "+err.Error())
 		return toolCallResult{}, false
 	}
 	if code != 0 {
-		h.logf("warn", inst.manifest.Name+": command hook exited with code "+itoa(int64(code)))
+		h.logf("warn", inst.manifest.Name+": command hook exited with code "+strconv.Itoa(code))
 		return toolCallResult{}, false
 	}
 	if len(strings.TrimSpace(stdout)) == 0 {
@@ -471,24 +426,23 @@ func (h *Host) runCommandHook(ctx context.Context, inst *instance, spec HookSpec
 
 // runHookScript runs a command hook with the event on stdin and returns its
 // stdout and exit code. It runs directly, never through a shell.
-func runHookScript(ctx context.Context, dir string, argv []string, stdin []byte, timeout time.Duration) (string, int, error) {
+func runHookScript(ctx context.Context, dir string, argv []string, stdin []byte, timeout time.Duration, env []string) (string, int, error) {
 	if len(argv) == 0 {
 		return "", 0, errors.New("empty command")
 	}
 	call, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(call, resolveExec(dir, argv[0]), argv[1:]...)
+	cmd := groupCommand(call, resolveExec(dir, argv[0]), argv[1:]...)
 	cmd.Dir = dir
+	cmd.Env = env
 	cmd.Stdin = bytes.NewReader(stdin)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = nil
-	setProcessGroup(cmd)
+	out := tool.NewTailBuffer(maxHookOutputBytes)
+	cmd.Stdout = out
 	if err := cmd.Run(); err != nil {
 		if call.Err() != nil {
-			return out.String(), -1, call.Err()
+			return string(out.Bytes()), -1, call.Err()
 		}
-		return out.String(), exitCode(err), nil
+		return string(out.Bytes()), exitCode(err), nil
 	}
-	return out.String(), 0, nil
+	return string(out.Bytes()), 0, nil
 }

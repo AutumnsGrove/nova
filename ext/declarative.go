@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AutumnsGrove/nova/diag"
+	"github.com/AutumnsGrove/nova/proc"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -59,7 +58,7 @@ func decodeArgs(raw json.RawMessage) (map[string]any, error) {
 	}
 	m, ok := value.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("arguments must be a JSON object")
+		return nil, errors.New("arguments must be a JSON object")
 	}
 	return m, nil
 }
@@ -100,11 +99,9 @@ func renderValue(v any) string {
 	case string:
 		return value
 	case bool:
-		return fmt.Sprintf("%t", value)
+		return strconv.FormatBool(value)
 	case json.Number:
 		return value.String()
-	case float64:
-		return strconvFormatFloat(value)
 	default:
 		b, err := json.Marshal(value)
 		if err != nil {
@@ -113,9 +110,6 @@ func renderValue(v any) string {
 		return string(b)
 	}
 }
-
-// strconvFormatFloat renders a float the shortest way that round-trips.
-func strconvFormatFloat(f float64) string { return strconv.FormatFloat(f, 'f', -1, 64) }
 
 // renderString substitutes placeholders in a render template. It keeps the
 // empty string for a missing value rather than dropping anything.
@@ -130,6 +124,8 @@ func renderString(tmpl string, values map[string]any) string {
 type execTool struct {
 	dir  string
 	spec DeclTool
+	// env is the environment the command runs in; nil inherits the process's.
+	env func() []string
 }
 
 // Info returns the tool's model-facing definition.
@@ -158,7 +154,11 @@ func (t *execTool) Run(ctx context.Context, args json.RawMessage, tctx *tool.Con
 		work = tctx.WorkDir
 	}
 	argv[0] = resolveExec(t.dir, argv[0])
-	out := runExec(ctx, work, argv, time.Duration(t.spec.TimeoutMS)*time.Millisecond)
+	var env []string
+	if t.env != nil {
+		env = t.env()
+	}
+	out := runExec(ctx, work, argv, time.Duration(t.spec.TimeoutMS)*time.Millisecond, env)
 	return t.result(out, values), nil
 }
 
@@ -206,77 +206,54 @@ func (o execOutcome) isError() bool {
 }
 
 // runExec runs argv in work with the given timeout, capturing merged output
-// with the bash-style cap and killing the whole group on timeout.
-func runExec(ctx context.Context, work string, argv []string, timeout time.Duration) execOutcome {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Dir = work
-	setProcessGroup(cmd)
-	if devnull, err := os.Open(os.DevNull); err == nil {
-		cmd.Stdin = devnull
-		defer devnull.Close()
-	}
-	pr, pw, err := os.Pipe()
-	if err != nil {
-		return execOutcome{content: "error: pipe: " + err.Error(), exit: -1}
-	}
-	cmd.Stdout, cmd.Stderr = pw, pw
-
-	if err := cmd.Start(); err != nil {
-		pw.Close()
-		pr.Close()
-		if errors.Is(err, exec.ErrNotFound) || os.IsNotExist(err) {
-			return execOutcome{content: "error: command not found: " + argv[0], exit: -1, notFound: true}
-		}
-		return execOutcome{content: "error: " + err.Error(), exit: -1}
-	}
-	pw.Close()
-	pid := cmd.Process.Pid
-
-	buf := newCapBuffer(maxExecOutputBytes)
-	readDone := make(chan struct{})
-	go func() {
-		defer close(readDone)
-		defer pr.Close()
-		defer diag.Catch("extension output")
-		io.Copy(buf, pr)
-	}()
-	waitDone := make(chan error, 1)
-	go func() { defer diag.Catch("extension process"); waitDone <- cmd.Wait() }()
-
+// with the bash-style cap. On timeout or cancellation it asks the whole process
+// group to stop, then kills it after a short wait.
+func runExec(ctx context.Context, work string, argv []string, timeout time.Duration, env []string) execOutcome {
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	cmd := exec.CommandContext(callCtx, argv[0], argv[1:]...)
+	cmd.Dir = work
+	cmd.Env = env
+	proc.SetGroup(cmd)
+	cmd.Cancel = func() error {
+		proc.Terminate(cmd.Process.Pid)
+		return nil
+	}
+	cmd.WaitDelay = groupWaitDelay
+	buf := tool.NewTailBuffer(maxExecOutputBytes)
+	cmd.Stdout, cmd.Stderr = buf, buf
+
+	err := cmd.Run()
+	if cmd.Process != nil {
+		// Whatever the command left running goes with it; after a timeout this
+		// is also the kill the grace period was waiting for.
+		proc.Kill(cmd.Process.Pid)
+	}
 	out := execOutcome{}
-	select {
-	case err := <-waitDone:
-		out.exit = exitCode(err)
-	case <-callCtx.Done():
+	switch {
+	case callCtx.Err() != nil:
 		out.cancelled = ctx.Err() != nil
 		out.timedOut = !out.cancelled
-		terminateGroup(pid)
-		select {
-		case <-waitDone:
-		case <-time.After(2 * time.Second):
-			forceKillGroup(pid)
-			<-waitDone
-		}
 		out.exit = -1
-	}
-	forceKillGroup(pid)
-	select {
-	case <-readDone:
-	case <-time.After(2 * time.Second):
+	case errors.Is(err, exec.ErrWaitDelay):
+		// The command succeeded but a descendant kept its output open.
+	case errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist):
+		return execOutcome{content: "error: command not found: " + argv[0], exit: -1, notFound: true}
+	case err != nil:
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return execOutcome{content: "error: " + err.Error(), exit: -1}
+		}
+		out.exit = exitCode(err)
 	}
 	out.content = shapeExecOutput(buf, out, timeout)
-	out.truncated = buf.truncated()
+	out.truncated = buf.Truncated()
 	return out
 }
 
 // shapeExecOutput adds the failure marker and sanitises the captured output.
-func shapeExecOutput(buf *capBuffer, out execOutcome, timeout time.Duration) string {
-	content := strings.ToValidUTF8(strings.ReplaceAll(string(buf.bytes()), "\x00", "\uFFFD"), "\uFFFD")
+func shapeExecOutput(buf *tool.TailBuffer, out execOutcome, timeout time.Duration) string {
+	content := strings.ToValidUTF8(strings.ReplaceAll(string(buf.Bytes()), "\x00", "\uFFFD"), "\uFFFD")
 	label := ""
 	switch {
 	case out.timedOut:
@@ -297,45 +274,3 @@ func shapeExecOutput(buf *capBuffer, out execOutcome, timeout time.Duration) str
 	}
 	return content
 }
-
-// capBuffer keeps the first 20% and last 80% of a fixed byte budget.
-type capBuffer struct {
-	headCap, tailCap int
-	head, tail       []byte
-	total            int
-}
-
-func newCapBuffer(limit int) *capBuffer {
-	head := limit * 20 / 100
-	return &capBuffer{headCap: head, tailCap: limit - head}
-}
-
-func (b *capBuffer) Write(in []byte) (int, error) {
-	n := len(in)
-	b.total += n
-	p := in
-	if keep := b.headCap - len(b.head); keep > 0 {
-		if keep > len(p) {
-			keep = len(p)
-		}
-		b.head = append(b.head, p[:keep]...)
-		p = p[keep:]
-	}
-	if b.tailCap > 0 && len(p) > 0 {
-		b.tail = append(b.tail, p...)
-		if len(b.tail) > b.tailCap {
-			b.tail = b.tail[len(b.tail)-b.tailCap:]
-		}
-	}
-	return n, nil
-}
-
-func (b *capBuffer) bytes() []byte {
-	out := append([]byte{}, b.head...)
-	if omitted := b.total - len(b.head) - len(b.tail); omitted > 0 {
-		out = append(out, fmt.Sprintf("\n... (%d bytes omitted) ...\n", omitted)...)
-	}
-	return append(out, b.tail...)
-}
-
-func (b *capBuffer) truncated() bool { return b.total > len(b.head)+len(b.tail) }

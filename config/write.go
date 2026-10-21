@@ -2,10 +2,7 @@ package config
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -40,15 +37,15 @@ func SetUser(home, key string, value any) error {
 	setUserMu.Lock()
 	defer setUserMu.Unlock()
 
-	path := UserConfigPath(home) + ".yaml"
-	doc, err := loadUserDoc(path)
+	base := UserConfigPath(home)
+	doc, err := loadUserDoc(base)
 	if err != nil {
 		return err
 	}
 	if err := setNestedNode(doc, parts, value); err != nil {
 		return err
 	}
-	return writeUserDoc(path, doc)
+	return writeUserDoc(base+".yaml", doc)
 }
 
 // secretWords are the path segments that name credentials. A config file holds
@@ -98,16 +95,19 @@ func checkSchemaKey(parts []string) error {
 	return nil
 }
 
-// loadUserDoc reads path into a YAML document node. A missing file yields an
-// empty mapping document. A file that is not valid YAML, or whose root is not a
-// mapping, is an error so a corrupt file is never overwritten.
-func loadUserDoc(path string) (*yaml.Node, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return emptyDoc(), nil
-	}
+// loadUserDoc reads the user config at base (config.yaml, else config.json, the
+// same choice Load makes) into a YAML document node. Starting from the JSON file
+// matters: SetUser writes config.yaml, which Load prefers, so writing a fresh
+// YAML file beside an existing config.json would hide all of its settings. No
+// file yields an empty mapping document. A file that is not valid YAML, or whose
+// root is not a mapping, is an error so a corrupt file is never overwritten.
+func loadUserDoc(base string) (*yaml.Node, error) {
+	data, path, err := readFirst(readConfigFile, base)
 	if err != nil {
 		return nil, fmt.Errorf("config: read %s: %w", path, err)
+	}
+	if path == "" {
+		return emptyDoc(), nil
 	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
@@ -125,7 +125,19 @@ func loadUserDoc(path string) (*yaml.Node, error) {
 	if root.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("config: %s: root is not a mapping", path)
 	}
+	if filepath.Ext(path) == ".json" {
+		clearStyles(root)
+	}
 	return &doc, nil
+}
+
+// clearStyles drops the flow and quoting styles a JSON file carries, so the
+// YAML written from it reads as block YAML.
+func clearStyles(n *yaml.Node) {
+	n.Style = 0
+	for _, child := range n.Content {
+		clearStyles(child)
+	}
 }
 
 // emptyDoc returns a document holding an empty mapping.
@@ -149,6 +161,8 @@ func setNestedNode(doc *yaml.Node, parts []string, value any) error {
 				mapping.Content = append(mapping.Content,
 					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: part}, vn)
 			} else {
+				old := mapping.Content[valAt]
+				vn.HeadComment, vn.LineComment, vn.FootComment = old.HeadComment, old.LineComment, old.FootComment
 				mapping.Content[valAt] = vn
 			}
 			return nil
@@ -172,7 +186,6 @@ func setNestedNode(doc *yaml.Node, parts []string, value any) error {
 
 // findKey returns the indices of the key and value nodes for name, or -1 each.
 func findKey(mapping *yaml.Node, name string) (keyAt, valAt int) {
-	keyAt = -1
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		if mapping.Content[i].Value == name {
 			return i, i + 1
@@ -197,13 +210,9 @@ func valueNode(value any) (*yaml.Node, error) {
 	return doc.Content[0], nil
 }
 
-// writeUserDoc encodes doc and replaces path atomically via a temp file in the
-// same directory, so a crash mid-write never truncates the live config.
+// writeUserDoc encodes doc and replaces path atomically, so a crash mid-write
+// never truncates the live config.
 func writeUserDoc(path string, doc *yaml.Node) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("config: create %s: %w", dir, err)
-	}
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
@@ -213,28 +222,5 @@ func writeUserDoc(path string, doc *yaml.Node) error {
 	if err := enc.Close(); err != nil {
 		return fmt.Errorf("config: encode %s: %w", path, err)
 	}
-	tmp, err := os.CreateTemp(dir, ".config-*.yaml")
-	if err != nil {
-		return fmt.Errorf("config: temp file in %s: %w", dir, err)
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(buf.Bytes()); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return fmt.Errorf("config: write %s: %w", tmpName, err)
-	}
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return fmt.Errorf("config: chmod %s: %w", tmpName, err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("config: close %s: %w", tmpName, err)
-	}
-	if err := renameFile(tmpName, path); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("config: replace %s: %w", path, err)
-	}
-	return nil
+	return writeFileAtomic(path, buf.Bytes(), "user config")
 }

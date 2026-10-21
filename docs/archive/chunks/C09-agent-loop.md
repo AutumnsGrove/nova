@@ -2,7 +2,7 @@
 chunk: C09
 title: "The agent loop"
 packages: [./agent]
-budgets: { ./agent: 1080 }
+budgets: { ./agent: 1160 }
 depends: [C01, C04, C08]
 ---
 
@@ -122,7 +122,7 @@ type RetryPolicy struct {
     Max    int           // default 3 retries (so 4 attempts); negative disables
     Base   time.Duration // default 1s
     Cap    time.Duration // default 30s
-    Jitter float64       // 0 to 1; default 0.2
+    Jitter float64       // fraction of the delay; 0 means the default 0.2, negative means none
 }
 type Clock interface {
     Now() time.Time
@@ -133,7 +133,7 @@ type Result struct {
     Messages  []message.Message // the full transcript, history included
     New       []message.Message // messages produced by this run
     Answer    string
-    Turns     int
+    Turns     int               // completed turns, plus the failed one when the run ends in error
     Usage     provider.Usage
     Reason    string // done | exhausted | aborted | error
     Exhausted bool
@@ -172,7 +172,7 @@ history as given, as before.
    When a caller sets a positive budget, reaching it ends the run with
    `Reason: "exhausted"`, `Exhausted: true`, and **no error**.
 4. Exactly one `run_start` and exactly one `run_end` are emitted per run, including for
-   errors, aborts, and exhaustion. Nothing is emitted after `run_end`. `Seq` is strictly
+   errors, aborts, and exhaustion. Nothing is emitted after `run_end`, and the agent is already idle (`Running()` false, `Steer` and `FollowUp` refused, a new `Start` accepted) when `run_end` is delivered. `Seq` is strictly
    increasing across the agent's lifetime; `Run` is `r_<n>`; `TS` comes from `Clock`.
 5. Event order for a turn: `turn_start`, `message_start`, then any of `thinking_*` and
    `text_delta`, then `tool_call` for each assembled call, `message_end`, then for each call
@@ -237,7 +237,13 @@ history as given, as before.
     run (no tool calls, no steering). It is then appended and the run continues. Follow-ups are
     appended **one at a time**: each runs to completion before the next is appended.
 23. Both return `ErrNotRunning` when idle. Both are safe from any goroutine. Each emits
-    `queue_update`.
+    `queue_update`, as does each message the loop takes off a queue. After the run has made its last
+    decision to end, both return `ErrNotRunning` too, so nothing is accepted and then lost. `Abort` emits no
+    event (its response carries the queues), because the run may already have ended.
+23a. When a run ends for any reason, both queues are cleared. What was still queued is reported as
+    `dropped_queue` (`steering` and `follow_up` texts) on `run_end`, omitted when empty, so a client can
+    restore it; nothing leaks into the next run. A cancelled run does not drain steering into the
+    transcript first. Messages `Abort` already returned are not reported again.
 24. `Abort` cancels the run's context and returns the unconsumed steering and follow-up
     messages, emptying the queues. Calling it when idle returns two empty slices. Calling it
     twice is harmless.
@@ -303,6 +309,8 @@ history as given, as before.
 | LPE19 | final answer text | | `Result.Answer` |
 | LPE20 | `New` contains only this run's messages | | excludes history |
 | LPE21 | the provider panics | `Stream` panics | the run ends `error` with one `run_end`; the process survives |
+| LPE22 | `run_end` is delivered to an idle agent | from the `Emit` callback on `run_end`: `Running()`, `Steer`, `FollowUp`, `Start` | `Running()` false; `ErrNotRunning` twice; `Start` accepted and its run completes |
+| LPE23 | a run started in reaction to `run_end` | `Start` from the `run_end` callback | the new run's `run_start` comes after the old `run_end` |
 | LPT01 | one tool call | | result appended after the assistant message |
 | LPT02 | many calls, parallel | 5 slow `Parallel` tools | run concurrently (peak concurrency > 1) |
 | LPT03 | completion order differs from call order | call 1 slow | results still appended in call order |
@@ -323,6 +331,9 @@ history as given, as before.
 | LPT18 | tool progress | tool emits 3 updates | 3 `tool_update` events in order |
 | LPT19 | slow consumer of progress | `Emit` blocks | tool is not blocked; some updates may drop; final result correct |
 | LPT20 | transcript validity after every case in this group | | `message.Validate` passes |
+| LPT21 | progress after the tool returned | a tool keeps `Context.Emit` and calls it after the run | dropped; no panic |
+| LPT22 | `ToolResult` hook blanks a result | hook returns an empty result | `tool_end` and the transcript both say `(empty result)` |
+| LPT23 | truncated JSON arguments | a call whose arguments are `{"a":` | every event still marshals; the call gets an `invalid arguments` result |
 | LPH01 | `ToolCall` hook blocks | | `error: blocked: <reason>`; tool not run |
 | LPH02 | `ToolCall` hook rewrites arguments | | tool receives the new arguments |
 | LPH03 | `ToolCall` hook returns nil | | normal |
@@ -353,6 +364,7 @@ history as given, as before.
 | LPP08 | `permission` event for every decision | | emitted with the decision and reason |
 | LPP09 | `Ask` honours cancellation | cancel while waiting | returns; run aborts |
 | LPP10 | concurrent asks for parallel calls | 3 calls need approval | each asked; no deadlock |
+| LPP11 | unknown policy action fails closed | `Policy{Default: "alow"}` | `error: blocked by policy: ...`; tool not run |
 | LPQ01 | steer during a tool call | | injected after the turn's results, before the next request |
 | LPQ02 | steer during streaming | | same |
 | LPQ03 | several steering messages | | all appended in order |
@@ -365,6 +377,13 @@ history as given, as before.
 | LPQ10 | `Abort` returns queued messages | | both slices, in order; queues empty |
 | LPQ11 | `Abort` when idle; `Abort` twice | | empty slices; no panic |
 | LPQ12 | concurrent `Steer` and `FollowUp` calls | `-race` | no race; none lost |
+| LPQ13 | `queue_update` when steering is consumed | steer during a tool call | a second event with `steering` 0 follows the injection |
+| LPQ14 | `queue_update` when a follow-up is consumed | follow-up during a turn | a second event with `follow_up` 0 follows the pop |
+| LPQ15 | `queue_update` order under concurrency | 50 concurrent `Steer` calls | the last event reports 50 |
+| LPQ16 | no message accepted once the run is ending | `Steer` and `FollowUp` from `AgentEnd` | `ErrNotRunning`; queues empty |
+| LPQ17 | unconsumed queues at the end of a run | steer twice and follow up, then cancel the context | `run_end.dropped_queue` lists them in order; queues empty; the next run does not see them |
+| LPQ18 | nothing dropped | a normal run | no `dropped_queue` key in the JSON |
+| LPQ19 | `Abort` already returned the queue | steer, then `Abort` | `run_end` carries no `dropped_queue` |
 | LPR01 | retryable error then success | 500 then ok | success; one `retry` event |
 | LPR02 | retries exhausted | always 500, `Max` 2 | 3 attempts; reason error; error returned |
 | LPR03 | non-retryable error | 401 | one attempt; reason error |
@@ -376,6 +395,9 @@ history as given, as before.
 | LPR09 | `Max` negative disables | | one attempt |
 | LPR10 | jitter bounds | many runs | delay within `[d, d*(1+Jitter)]` |
 | LPR11 | error on a later turn after tools ran | | transcript valid (ends with tool results); earlier usage kept |
+| LPR12 | `Jitter` zero is the default, negative is none | `RetryPolicy{Base: 1s}` and `Jitter: -1` | zero gives delays in [1s, 1.2s] with some jitter; negative gives exactly 1s |
+| LPX01 | reconfigure applies to the next run | `MaxTurns` 1, run, `Reconfigure` to 3, run again | the second run takes 3 turns |
+| LPX02 | reconfigure is refused during a run | `Reconfigure` while a tool is running | `ErrBusy`, and the callback never runs |
 | LPC01 | cancel before the first request | | only run_start and run_end; reason aborted; `context.Canceled` |
 | LPC02 | cancel during streaming | `Hang` turn | partial message discarded; reason aborted |
 | LPC03 | cancel during a tool | slow tool honouring ctx | results for **all** calls appended (`error: cancelled` for the unfinished); transcript valid; reason aborted |

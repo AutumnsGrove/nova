@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -58,7 +59,7 @@ func (readRenderer) Body(c Call, st styles.Styles, width int, expanded bool) str
 		}
 		num, code, ok := strings.Cut(l, "\t")
 		if !ok {
-			out = append(out, ansi.Truncate(ansi.Strip(l), width, ""))
+			out = append(out, ansi.Truncate(sanitize.Text(l), width, ""))
 			continue
 		}
 		out = append(out, st.Muted.Render(fmt.Sprintf("%4s", num))+" "+ansi.Truncate(highlightCode(code, path, st), width, ""))

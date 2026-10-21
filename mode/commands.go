@@ -3,17 +3,19 @@ package mode
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
+	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/mode/attach"
 	"github.com/AutumnsGrove/nova/proto"
-	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
 )
 
@@ -35,74 +37,62 @@ func (s *Server) recoverResponse(cmd proto.Command, fn func() proto.Response) (r
 	return fn()
 }
 
+// commandHandler runs one command. Every handler is a method on Server, so the
+// tables below can name them as method expressions.
+type commandHandler func(*Server, proto.Command) proto.Response
+
+// ctxHandler is a commandHandler that can block, so it takes the caller's
+// context: a disconnected client or a shutdown cancels it.
+type ctxHandler func(*Server, context.Context, proto.Command) proto.Response
+
+// handlers maps each protocol command to its handler.
+var handlers = map[string]commandHandler{
+	proto.CmdPrompt:          (*Server).handlePrompt,
+	proto.CmdSteer:           (*Server).handleSteer,
+	proto.CmdFollowUp:        (*Server).handleFollowUp,
+	proto.CmdAbort:           (*Server).handleAbort,
+	proto.CmdGetState:        (*Server).handleGetState,
+	proto.CmdSetModel:        (*Server).handleSetModel,
+	proto.CmdSetThinking:     (*Server).handleSetThinking,
+	proto.CmdSetContextLimit: (*Server).handleSetContextLimit,
+	proto.CmdSetTools:        (*Server).handleSetTools,
+	proto.CmdGetMessages:     (*Server).handleGetMessages,
+	proto.CmdGetCommands:     (*Server).handleGetCommands,
+	proto.CmdListModels:      (*Server).handleListModels,
+	proto.CmdSessionList:     (*Server).handleSessionList,
+	proto.CmdGetExtensions:   (*Server).handleGetExtensions,
+	proto.CmdSessionTree:     (*Server).handleSessionTree,
+	proto.CmdSessionNavigate: (*Server).handleSessionNavigate,
+	proto.CmdSessionName:     (*Server).handleSessionName,
+	proto.CmdSessionNew:      (*Server).handleSessionNew,
+	proto.CmdSessionResume:   (*Server).handleSessionResume,
+	proto.CmdSessionFork:     (*Server).handleSessionFork,
+	proto.CmdShutdown:        (*Server).handleShutdown,
+	proto.CmdListProviders:   (*Server).handleListProviders,
+	proto.CmdLogin:           (*Server).handleLogin,
+	proto.CmdLoginSubmit:     (*Server).handleLoginSubmit,
+	proto.CmdLoginCancel:     (*Server).handleLoginCancel,
+	proto.CmdLogout:          (*Server).handleLogout,
+}
+
+// ctxHandlers maps the commands that can block to their handlers.
+var ctxHandlers = map[string]ctxHandler{
+	proto.CmdCompact:    (*Server).handleCompact,
+	proto.CmdGetUsage:   (*Server).handleGetUsage,
+	proto.CmdBash:       (*Server).handleBash,
+	proto.CmdReload:     (*Server).handleReload,
+	proto.CmdRunCommand: (*Server).handleRunCommand,
+}
+
 // dispatch routes a command to its handler.
 func (s *Server) dispatch(ctx context.Context, cmd proto.Command) proto.Response {
-	switch cmd.Type {
-	case proto.CmdPrompt:
-		return s.handlePrompt(cmd)
-	case proto.CmdSteer:
-		return s.handleSteer(cmd)
-	case proto.CmdFollowUp:
-		return s.handleFollowUp(cmd)
-	case proto.CmdAbort:
-		return s.handleAbort(cmd)
-	case proto.CmdGetState:
-		return s.handleGetState(cmd)
-	case proto.CmdSetModel:
-		return s.handleSetModel(cmd)
-	case proto.CmdSetThinking:
-		return s.handleSetThinking(cmd)
-	case proto.CmdSetContextLimit:
-		return s.handleSetContextLimit(cmd)
-	case proto.CmdSetTools:
-		return s.handleSetTools(cmd)
-	case proto.CmdCompact:
-		return s.handleCompact(cmd)
-	case proto.CmdGetMessages:
-		return s.handleGetMessages(cmd)
-	case proto.CmdGetCommands:
-		return s.handleGetCommands(cmd)
-	case proto.CmdListModels:
-		return s.handleListModels(cmd)
-	case proto.CmdSessionList:
-		return s.handleSessionList(cmd)
-	case proto.CmdGetExtensions:
-		return s.handleGetExtensions(cmd)
-	case proto.CmdGetUsage:
-		return s.handleGetUsage(cmd)
-	case proto.CmdSessionTree:
-		return s.handleSessionTree(cmd)
-	case proto.CmdSessionNavigate:
-		return s.handleSessionNavigate(cmd)
-	case proto.CmdSessionName:
-		return s.handleSessionName(cmd)
-	case proto.CmdSessionNew:
-		return s.handleSessionNew(cmd)
-	case proto.CmdSessionResume:
-		return s.handleSessionResume(cmd)
-	case proto.CmdSessionFork:
-		return s.handleSessionFork(cmd)
-	case proto.CmdBash:
-		return s.handleBash(cmd)
-	case proto.CmdReload:
-		return s.handleReload(ctx, cmd)
-	case proto.CmdRunCommand:
-		return s.handleRunCommand(cmd)
-	case proto.CmdShutdown:
-		return s.handleShutdown(cmd)
-	case proto.CmdListProviders:
-		return s.handleListProviders(cmd)
-	case proto.CmdLogin:
-		return s.handleLogin(cmd)
-	case proto.CmdLoginSubmit:
-		return s.handleLoginSubmit(cmd)
-	case proto.CmdLoginCancel:
-		return s.handleLoginCancel(cmd)
-	case proto.CmdLogout:
-		return s.handleLogout(cmd)
-	default:
-		return failResponse(cmd, proto.CodeUnsupported, "unsupported command "+cmd.Type)
+	if h, ok := handlers[cmd.Type]; ok {
+		return h(s, cmd)
 	}
+	if h, ok := ctxHandlers[cmd.Type]; ok {
+		return h(s, ctx, cmd)
+	}
+	return failResponse(cmd, proto.CodeUnsupported, "unsupported command "+cmd.Type)
 }
 
 // handlePrompt accepts a prompt and starts a run in the background.
@@ -115,21 +105,33 @@ func (s *Server) handlePrompt(cmd proto.Command) proto.Response {
 		return failResponse(cmd, proto.CodeBadRequest, "prompt: text is required")
 	}
 	if s.usesAuth {
-		if msg := s.signInProblem(); msg != "" {
-			return failResponse(cmd, proto.CodeProviderError, msg)
+		if problem := s.signInProblem(); problem != "" {
+			return failResponse(cmd, proto.CodeProviderError, problem)
 		}
 	}
-	if s.agent.Running() {
-		if !cmd.Queue {
-			return failResponse(cmd, proto.CodeBusy, "a run is already in progress")
-		}
-		if err := s.agent.FollowUp(msg); err != nil {
-			return failResponse(cmd, proto.CodeBadRequest, err.Error())
-		}
-		return okResponse(cmd, nil)
+	if cmd.Queue {
+		return s.queueOrStart(cmd, msg)
 	}
 	if err := s.startRun(msg); err != nil {
 		return startFailure(cmd, err)
+	}
+	return okResponse(cmd, nil)
+}
+
+// queueOrStart queues msg behind the active run, or starts a run when the
+// agent is idle. It tries the queue first because a run can end between a
+// Running check and the enqueue, which would answer a valid request with an
+// error.
+func (s *Server) queueOrStart(cmd proto.Command, msg message.Message) proto.Response {
+	err := s.agent.FollowUp(msg)
+	if errors.Is(err, agent.ErrNotRunning) {
+		if err := s.startRun(msg); err != nil {
+			return startFailure(cmd, err)
+		}
+		return okResponse(cmd, nil)
+	}
+	if err != nil {
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
 	}
 	return okResponse(cmd, nil)
 }
@@ -180,16 +182,7 @@ func (s *Server) handleFollowUp(cmd proto.Command) proto.Response {
 	if err != nil {
 		return failResponse(cmd, proto.CodeBadRequest, err.Error())
 	}
-	if s.agent.Running() {
-		if err := s.agent.FollowUp(msg); err != nil {
-			return failResponse(cmd, proto.CodeBadRequest, err.Error())
-		}
-		return okResponse(cmd, nil)
-	}
-	if err := s.startRun(msg); err != nil {
-		return startFailure(cmd, err)
-	}
-	return okResponse(cmd, nil)
+	return s.queueOrStart(cmd, msg)
 }
 
 // commandMessage builds a prompt, steer, or follow-up message from a command,
@@ -221,9 +214,9 @@ func (s *Server) handleGetState(cmd proto.Command) proto.Response {
 		"model":            s.cfg.Model,
 		"thinking":         s.think,
 		"context_limit":    s.limit,
-		"session":          s.sessionID(),
+		"session":          storeID(s.store),
 		"path":             s.path,
-		"leaf":             s.leafID(),
+		"leaf":             storeLeaf(s.store),
 		"running":          s.agent.Running(),
 		"context_tokens":   compaction.Estimate(msgs),
 		"effective_limit":  compaction.EffectiveLimit(settings),
@@ -248,6 +241,9 @@ func (s *Server) handleSetModel(cmd proto.Command) proto.Response {
 	s.mu.Lock()
 	s.model = slug
 	s.compactor.Model = slug
+	// The compaction trigger is the smaller of the user's limit and the model's
+	// own window, so it must follow the model.
+	s.compactor.Settings.ModelWindow = modelWindow(name)
 	s.cfg.Model = name
 	s.mu.Unlock()
 	diag.SetModel(name)
@@ -258,9 +254,7 @@ func (s *Server) handleSetModel(cmd proto.Command) proto.Response {
 
 // handleSetThinking switches the reasoning effort.
 func (s *Server) handleSetThinking(cmd proto.Command) proto.Response {
-	switch cmd.Level {
-	case "off", "low", "medium", "high":
-	default:
+	if !slices.Contains([]string{"off", "low", "medium", "high"}, cmd.Level) {
 		return failResponse(cmd, proto.CodeBadRequest, "set_thinking: level must be off, low, medium, or high")
 	}
 	s.mu.Lock()
@@ -273,11 +267,8 @@ func (s *Server) handleSetThinking(cmd proto.Command) proto.Response {
 
 // handleSetContextLimit changes the compaction trigger.
 func (s *Server) handleSetContextLimit(cmd proto.Command) proto.Response {
-	if cmd.Tokens == nil {
-		return failResponse(cmd, proto.CodeBadRequest, "set_context_limit: tokens is required")
-	}
-	if *cmd.Tokens < 0 {
-		return failResponse(cmd, proto.CodeBadRequest, "set_context_limit: tokens must not be negative")
+	if cmd.Tokens == nil || *cmd.Tokens < 0 {
+		return failResponse(cmd, proto.CodeBadRequest, "set_context_limit: tokens is required and must not be negative")
 	}
 	s.mu.Lock()
 	s.limit = *cmd.Tokens
@@ -293,13 +284,18 @@ func (s *Server) handleSetTools(cmd proto.Command) proto.Response {
 	if len(active) == 0 {
 		active = defaultToolNames
 	}
-	if err := registerTools(s.tools, s.pool, active); err != nil {
+	// The lock also serialises two set_tools commands, which would otherwise
+	// interleave their unregister and register steps.
+	s.mu.Lock()
+	err := registerTools(s.tools, s.pool, active)
+	if err == nil {
+		s.active = append([]string(nil), active...)
+		s.cfg.Tools.Active = append([]string(nil), active...)
+	}
+	s.mu.Unlock()
+	if err != nil {
 		return failResponse(cmd, proto.CodeBadRequest, err.Error())
 	}
-	s.mu.Lock()
-	s.active = append([]string(nil), active...)
-	s.cfg.Tools.Active = append([]string(nil), active...)
-	s.mu.Unlock()
 	s.emitState()
 	return okResponse(cmd, nil)
 }
@@ -307,25 +303,22 @@ func (s *Server) handleSetTools(cmd proto.Command) proto.Response {
 // handleShutdown aborts any run and closes the session.
 func (s *Server) handleShutdown(cmd proto.Command) proto.Response {
 	s.agent.Abort()
-	_ = s.Close()
+	if err := s.Close(); err != nil {
+		return failResponse(cmd, proto.CodeInternal, "shutdown: "+err.Error())
+	}
 	return okResponse(cmd, nil)
 }
 
-// leafID returns the active session leaf.
-func (s *Server) leafID() string {
-	if s.store == nil {
-		return ""
-	}
-	return s.store.Leaf()
-}
-
-// recordEntry appends a non-message entry to the session store.
+// recordEntry appends a non-message entry to the session store. A failed append
+// is reported as an error event: the entry is bookkeeping for a change that
+// already took effect, so the command that caused it still succeeds.
 func (s *Server) recordEntry(entry session.Entry) {
-	s.mu.Lock()
-	store := s.store
-	s.mu.Unlock()
-	if store != nil {
-		_, _ = store.Append(entry)
+	store := s.sessionStore()
+	if store == nil {
+		return
+	}
+	if _, err := store.Append(entry); err != nil {
+		s.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: proto.CodeInternal, Message: "session entry was not recorded: " + err.Error()}})
 	}
 }
 
@@ -344,16 +337,6 @@ func (s *Server) emitState() {
 	s.emit(proto.Event{Type: proto.EventStateChanged, State: raw})
 }
 
-// modelModalities returns a catalog model's declared input kinds, or nil when
-// the model is unknown (which the protocol treats as text only). It does not
-// take s.mu, so callers already holding it can use it.
-func modelModalities(id string) []string {
-	if m, ok := provider.GetModel(id); ok {
-		return m.InputModalities
-	}
-	return nil
-}
-
 // okResponse builds a successful response with optional JSON data.
 func okResponse(cmd proto.Command, data any) proto.Response {
 	resp := proto.Response{Type: proto.FrameResponse, ID: cmd.ID, Command: cmd.Type, OK: true}
@@ -363,6 +346,11 @@ func okResponse(cmd proto.Command, data any) proto.Response {
 		}
 	}
 	return resp
+}
+
+// busyResponse refuses a command that cannot run while the agent does.
+func busyResponse(cmd proto.Command) proto.Response {
+	return failResponse(cmd, proto.CodeBusy, "a run is already in progress")
 }
 
 // failResponse builds an error response.

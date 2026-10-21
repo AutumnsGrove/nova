@@ -12,6 +12,15 @@ import (
 // quitWindow is how long a second ctrl+c still quits.
 const quitWindow = 2 * time.Second
 
+// quitExpiredMsg fires when the quit window may have closed, so the footer hint
+// is withdrawn even when nothing else redraws.
+type quitExpiredMsg struct{}
+
+// expireQuit disarms ctrl+c once its window has passed.
+func (m *Model) expireQuit() {
+	m.quitArmed = m.quitArmed && m.clock.Now().Before(m.quitAt)
+}
+
 // wheelScroll is how many lines one wheel notch moves the transcript.
 const wheelScroll = 3
 
@@ -22,11 +31,11 @@ const editorWheelLines = 3
 // pointer is over it and its content overflows, and the transcript otherwise;
 // a left click toggles the block under the pointer. ItemAt rejects a click
 // outside the main region, so only the overlay needs guarding.
-func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
+func (m *Model) handleMouse(msg tea.MouseMsg) {
 	switch msg := msg.(type) {
 	case tea.MouseWheelMsg:
 		if m.scrollEditor(msg) {
-			return nil
+			return
 		}
 		switch msg.Button {
 		case tea.MouseWheelUp:
@@ -41,7 +50,6 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 			}
 		}
 	}
-	return nil
 }
 
 // scrollEditor moves the editor window when the pointer is over it and its
@@ -70,11 +78,12 @@ func (m *Model) scrollEditor(msg tea.MouseWheelMsg) bool {
 	return true
 }
 
-// toggleExpanded flips both expansion flags together, as ctrl+o does.
+// toggleExpanded expands or collapses every thinking and tool block, as ctrl+o
+// does. The tools flag decides the direction (it is also what the footer hint
+// reads), so a display that starts with the two flags apart ends up uniform.
 func (m *Model) toggleExpanded() {
-	m.display.ExpandThinking = !m.display.ExpandThinking
-	m.display.ExpandTools = !m.display.ExpandTools
-	m.expanded = m.display.ExpandTools
+	expand := !m.display.ExpandTools
+	m.display.ExpandThinking, m.display.ExpandTools = expand, expand
 	m.transcript.SetDisplay(m.display)
 }
 
@@ -126,7 +135,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 			return m.quit()
 		}
 		m.quitArmed, m.quitAt = true, m.clock.Now().Add(quitWindow)
-		return m.clock.After(quitWindow)
+		return m.timer(quitWindow, quitExpiredMsg{})
 	case "enter":
 		return m.submit("enter")
 	case "alt+enter":
@@ -169,7 +178,8 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.pasteImage()
 	case "?":
 		if strings.TrimSpace(m.editor.Value()) == "" {
-			return m.openHelp()
+			m.openHelp()
+			return nil
 		}
 	case "ctrl+l":
 		return m.requestModelPicker()

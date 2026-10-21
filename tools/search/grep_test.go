@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -393,5 +394,25 @@ func TestGrep_GRP32_RootsContainment(t *testing.T) {
 	res := run(t, Grep(), &tool.Context{WorkDir: dir, Roots: []string{root}}, map[string]any{"pattern": "needle", "path": "outside"})
 	if !res.IsError {
 		t.Fatalf("result = %+v, want a containment error", res)
+	}
+}
+
+// TestGrep_GRP33_SkipsNamedPipe checks a named pipe in the tree is skipped and
+// counted rather than opened, because opening one with no writer blocks forever.
+func TestGrep_GRP33_SkipsNamedPipe(t *testing.T) {
+	dir := tree(t, map[string]string{"a.txt": "needle\n"})
+	testkit.Mkfifo(t, filepath.Join(dir, "pipe"))
+	done := make(chan tool.Result, 1)
+	go func() { done <- grep(t, dir, map[string]any{"pattern": "needle"}) }()
+	select {
+	case res := <-done:
+		if res.IsError || !strings.Contains(res.Content, "a.txt:1:needle") {
+			t.Fatalf("result = %+v, want the regular file's match", res)
+		}
+		if skipped := mustJSON(t, res.Details)["skipped"]; skipped != float64(1) {
+			t.Fatalf("skipped = %v, want 1 for the pipe", skipped)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("grep blocked opening a named pipe")
 	}
 }

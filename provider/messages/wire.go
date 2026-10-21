@@ -62,11 +62,10 @@ func imageBlock(p message.ContentPart) (block, bool) {
 		if !ok {
 			return block{}, false
 		}
-		comma := strings.IndexByte(rest, ',')
-		if comma < 0 {
+		header, payload, ok := strings.Cut(rest, ",")
+		if !ok {
 			return block{}, false
 		}
-		header, payload := rest[:comma], rest[comma+1:]
 		data = payload
 		if mime == "" {
 			mime, _, _ = strings.Cut(header, ";")
@@ -90,11 +89,9 @@ type event struct {
 	Type         string `json:"type"`
 	Index        int    `json:"index"`
 	ContentBlock struct {
-		Type     string `json:"type"`
-		ID       string `json:"id"`
-		Name     string `json:"name"`
-		Text     string `json:"text"`
-		Thinking string `json:"thinking"`
+		Type string `json:"type"`
+		ID   string `json:"id"`
+		Name string `json:"name"`
 	} `json:"content_block"`
 	Delta struct {
 		Type        string `json:"type"`
@@ -114,30 +111,16 @@ type event struct {
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
 	Error struct {
+		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error"`
 }
 
-// decodeEvent unmarshals one SSE payload.
-func decodeEvent(data []byte) (event, error) {
-	var ev event
-	err := json.Unmarshal(data, &ev)
-	return ev, err
-}
-
 // buildMessages converts the transcript into a system string and wire messages.
 func buildMessages(messages []message.Message) (string, []wireMessage) {
-	system := ""
+	system, rest := provider.SplitSystem(messages)
 	var out []wireMessage
-	for _, m := range messages {
-		if m.Role == message.RoleSystem {
-			if system == "" {
-				system = m.Content
-			} else {
-				system += "\n\n" + m.Content
-			}
-			continue
-		}
+	for _, m := range rest {
 		if m.Role == message.RoleTool {
 			out = append(out, wireMessage{Role: "user", Content: []block{{
 				Type: "tool_result", ToolUseID: m.ToolCallID, Content: m.Content,
@@ -154,12 +137,8 @@ func buildMessages(messages []message.Message) (string, []wireMessage) {
 			}
 		}
 		for _, tc := range m.ToolCalls {
-			args := tc.Function.Arguments
-			if args == "" {
-				args = "{}"
-			}
 			blocks = append(blocks, block{
-				Type: "tool_use", ID: tc.ID, Name: tc.Function.Name, Input: json.RawMessage(args),
+				Type: "tool_use", ID: tc.ID, Name: tc.Function.Name, Input: toolInput(tc.Function.Arguments),
 			})
 		}
 		if len(blocks) == 0 {
@@ -170,12 +149,28 @@ func buildMessages(messages []message.Message) (string, []wireMessage) {
 	return system, out
 }
 
+// toolInput is the tool_use input for a call's argument string. The API wants
+// a JSON object, and a model can emit arguments that are empty, cut off or not
+// an object, so anything else becomes {}: embedding it raw would fail the whole
+// request encode, on every retry, for as long as that call stays in the
+// transcript.
+func toolInput(args string) json.RawMessage {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal([]byte(args), &obj) != nil || obj == nil {
+		return json.RawMessage("{}")
+	}
+	return json.RawMessage(args)
+}
+
 // mapToolChoice converts the request's tool choice to the Messages shape.
 func mapToolChoice(choice any) any {
 	switch v := choice.(type) {
 	case nil:
 		return nil
 	case string:
+		if v == "required" { // the OpenAI word for "must call some tool"
+			v = "any"
+		}
 		return map[string]any{"type": v}
 	case map[string]any:
 		if name, ok := v["name"].(string); ok {
@@ -190,18 +185,7 @@ func mapToolChoice(choice any) any {
 	return choice
 }
 
-// flattenTools converts tool definitions to the Messages shape.
-func flattenTools(tools []provider.ToolDef) []toolDef {
-	if len(tools) == 0 {
-		return nil
-	}
-	out := make([]toolDef, 0, len(tools))
-	for _, t := range tools {
-		out = append(out, toolDef{
-			Name:        t.Function.Name,
-			Description: t.Function.Description,
-			InputSchema: t.Function.Parameters,
-		})
-	}
-	return out
+// flattenTool converts one tool definition to the Messages shape.
+func flattenTool(f provider.ToolFunction) toolDef {
+	return toolDef{Name: f.Name, Description: f.Description, InputSchema: f.Parameters}
 }

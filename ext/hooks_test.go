@@ -185,12 +185,34 @@ func TestHooks_HK12_CommandHookNoOpinion(t *testing.T) {
 }
 
 func TestHooks_HK13_CommandHookTimeout(t *testing.T) {
+	// The script's child inherits the stdout pipe, so killing only the shell
+	// would leave the call waiting for the child's full sleep.
 	dir := commandHookDir(t, "  - on: tool_call\n    run: [\"./hook.sh\"]\n", "#!/bin/sh\ncat >/dev/null\nsleep 30\n")
 	h := startHost(t, []string{dir}, HostOptions{})
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	if dec := h.Hooks().ToolCall(ctx, agent.ToolCall{Name: "x", Arguments: json.RawMessage(`{}`)}); dec != nil {
-		t.Fatalf("timed-out hook contributed %+v", dec)
+	done := make(chan *agent.CallDecision, 1)
+	go func() {
+		done <- h.Hooks().ToolCall(ctx, agent.ToolCall{Name: "x", Arguments: json.RawMessage(`{}`)})
+	}()
+	select {
+	case dec := <-done:
+		if dec != nil {
+			t.Fatalf("timed-out hook contributed %+v", dec)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a timed-out command hook was not killed: the call is still waiting on its descendants")
+	}
+}
+
+func TestHooks_HK13b_CommandHookOutputIsCapped(t *testing.T) {
+	out, code, err := runHookScript(context.Background(), t.TempDir(),
+		[]string{"sh", "-c", "head -c 3000000 /dev/zero | tr '\\000' a"}, nil, commandHookTimeout, nil)
+	if err != nil || code != 0 {
+		t.Fatalf("code=%d err=%v", code, err)
+	}
+	if len(out) == 0 || len(out) > 2*maxHookOutputBytes {
+		t.Fatalf("captured %d bytes, want between 1 and %d", len(out), 2*maxHookOutputBytes)
 	}
 }
 

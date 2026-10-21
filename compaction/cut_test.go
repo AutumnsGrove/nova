@@ -244,3 +244,22 @@ func FuzzCutPoint(f *testing.F) {
 		}
 	})
 }
+
+// The image message the loop injects after a tool batch is not the start of a
+// turn: cutting there would keep the picture and summarise away the call it
+// answers.
+func Test_CUT12_SyntheticUserIsNotABoundary(t *testing.T) {
+	synthetic := msgTokens(message.RoleUser, 100)
+	synthetic.Synthetic = true
+	msgs := []message.Message{
+		msgTokens(message.RoleUser, 100),
+		msgTokens(message.RoleAssistant, 100),
+		msgTokens(message.RoleUser, 100), // index 2: the real turn start
+	}
+	msgs = append(msgs, toolGroup("c1")...)
+	msgs = append(msgs, synthetic, msgTokens(message.RoleAssistant, 100))
+	cut, ok := CutPoint(msgs, 150)
+	if !ok || cut != 2 {
+		t.Fatalf("cut = %d ok = %v, want 2", cut, ok)
+	}
+}

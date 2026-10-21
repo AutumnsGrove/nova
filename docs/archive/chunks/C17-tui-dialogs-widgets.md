@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/status, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
-budgets: { ./tui/dialog: 2050, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 150,  ./mode: 2320, ./mode/attach: 160, ./tui/ui: 2900, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
+budgets: { ./tui/sanitize: 60, ./tui/dialog: 2050, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 160,  ./mode: 2470, ./mode/attach: 160, ./tui/ui: 3050, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -252,6 +252,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | PRD06 | `n` and `esc` deny | | `ok:false` |
 | PRD07 | `tab` expands arguments | | pretty JSON, capped at 30 lines |
 | PRD08 | hostile arguments | control sequences and 1 MiB strings | stripped; capped; widths correct |
+| PRD20 | nothing the terminal acts on is drawn | a request whose title, tool, reason and command hold `\r`, backspace, bell, NUL and bidi overrides | none reaches the view, expanded or not, and the command text itself is still shown |
 | PRD09 | no `remember` offered | request without it | no session choice shown |
 | SEL01 | single select | | `enter` returns one id |
 | SEL02 | multi select | `space` toggles | ids in option order |
@@ -306,6 +307,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | KYA01 | `ctrl+l`, `ctrl+r`, `ctrl+t` are live | | open picker, list, cycle |
 | KYA02 | `ctrl+t` cycles | four presses | off, low, medium, high, off |
 | KYA03 | `?` with an empty editor | | opens help; with text, types `?` |
+| RSM01 | `--resume` opens the picker | `Options.OpenSessions` set, then `Init` | `session.list` is requested at start; an ordinary start does not request it |
 | WDG01 | set a text widget | above | shown above the editor |
 | WDG02 | clear a widget | `nil` | removed |
 | WDG03 | order by first appearance | A, B, then update A | A stays first |
@@ -314,6 +316,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | WDG06 | table kind | | columns fit; truncated with `…` |
 | WDG07 | progress kind | 0.4 | bar and `40%` |
 | WDG08 | clipped to width; control sequences stripped | | yes |
+| WDG20 | extension text is cleaned | text, list and table widgets whose strings hold control and bidi characters | none reaches a drawn line |
 | WDG09 | sidebar widget with no sidebar | | drawn under the editor |
 | WDG10 | placements independent | | each has its own cap |
 | WDG11 | `Height` matches `Lines` | | equal |
@@ -335,6 +338,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | UXB07 | undeclared method frame | | ignored |
 | UXB08 | hello declares the capabilities | | the documented list |
 | UXB09 | end to end with a real server | extension asks a form; user answers | the extension receives the answers |
+| UXB10 | a title carries no control bytes | a `title` request with a bell, an escape and a newline | the stored title keeps the words and none of those |
 | TRP01 | untrusted project with content | | prompt shown with what would load |
 | TRP02 | trust | | store updated; project loads |
 | TRP03 | continue without | | not trusted; project skipped |
@@ -343,6 +347,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | TRP06 | non-terminal | | no prompt; untrusted |
 | TRP07 | nothing read or run before the answer | project with a hook and an extension | neither started |
 | TRP08 | already trusted or nothing to load | | no prompt |
+| TRP09 | the prompt draws names without control bytes | a folder, an extension and a context file whose names carry escape sequences and a bidi override | the names appear cleaned; no escape or override reaches the output |
 | SVA01 | `list_models` | | catalog entries; `current` set |
 | SVA02 | `list_models` query | | filtered |
 | SVA03 | `session.list` | two sessions | newest first; `current` set |
@@ -359,6 +364,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | SVA14 | a text-only model rejects a prompt image | a PNG attachment, no modalities | `bad_request` naming the capability |
 | SVA15 | a steer attachment is queued when the model takes images | steer with a PNG while a run is active, vision model | `ok`; one steering message queued |
 | SVA16 | a stored attachment resolves by id | `StoreAttachment`, then a prompt referencing the id | the message carries the image; an unknown id errors |
+| SVA17 | the upload store has a ceiling | uploads past a lowered byte cap | the upload past it is refused and the stored ones still resolve |
 | CLB01 | osascript pasteboard data is decoded | `«data PNGf<hex>»`; junk | the PNG bytes; `ErrNoImage` |
 | CLB02 | command reader errors | a missing binary; a command with no output | `ErrUnavailable`; `ErrNoImage` |
 | CLB03 | the test fake | a configured image; a configured error | returns them and counts calls |
@@ -368,6 +374,8 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | IMG03 | fallback text | a named PNG with dimensions; empty | a labelled line; `[image]` |
 | IMG04 | Kitty encoding chunks | a short payload; one over 4096 chars | params with `C=1`; `m=1` then `m=0` |
 | IMG05 | render returns the rows an image covers | a Kitty part; iTerm2; no data | lines starting `\x1b_G`; false for the last two |
+| IMG09 | a JPEG part is drawn as PNG | a Kitty JPEG part | the escape payload decodes to a PNG |
+| IMG10 | undecodable data is not drawn | a part whose bytes are not an image | false, so the caller shows the text line |
 
 ## Fuzz and property tests
 

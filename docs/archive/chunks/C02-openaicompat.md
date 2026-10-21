@@ -86,7 +86,7 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
    tags stripped. The body is read with a 1 MiB cap.
 7. A 2xx response whose stream's first event is a JSON object with a top-level `error`
    field is an error: `Status` 200, `Code` from `error.code`, not retryable unless the
-   code is `rate_limit_exceeded` or the message mentions overload.
+   code is `rate_limit_exceeded`, or the message mentions overload (the rule is shared with the Responses dialect).
 8. Connection failures (refused, DNS, reset before any data, timeout to first byte) are
    `*provider.Error` with `Retryable: true` and `Err` set. Context cancellation returns
    `ctx.Err()` unwrapped (not a `*provider.Error`).
@@ -203,6 +203,8 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 | OAI67 | no marker for an implicit, unknown, or opted-out model | catalog true; no catalog entry; `PromptCache` false | no `cache_control` key |
 | OAI68 | an explicit `ProviderOptions` marker wins | model that gets no marker, option sets one | the option's `cache_control` is sent |
 | OAI69 | cache-write tokens mapped | `prompt_tokens_details.cache_write_tokens` 7 | `Usage.CacheWriteTokens` 7, reads kept |
+| OAI70 | error object after output has started | a chunk with `error` and `finish_reason` `error` after a text delta | non-retryable `*provider.Error` with the code; the delivered text is kept |
+| OAI71 | `finish_reason` `error` with no error object | text, then a chunk finishing with `error` | non-retryable `*provider.Error`; the delivered text is kept |
 
 ## Fuzz and property tests
 

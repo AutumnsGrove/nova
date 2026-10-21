@@ -2,7 +2,7 @@
 chunk: C19
 title: "Polish, first run, doctor, examples, release"
 packages: [./cmd/nova, ./doctor, ./config, ./tui/firstrun, ./tui/cli, ./docs]
-budgets: { ./cmd/nova: 1260, ./doctor: 440, ./config: 1450, ./tui/firstrun: 400, ./tui/cli: 150, ./docs: 220, ./diag: 250 }
+budgets: { ./cmd/nova: 1260, ./doctor: 440, ./config: 1460, ./tui/firstrun: 400, ./tui/cli: 150, ./docs: 220, ./diag: 250 }
 depends: [C16, C17, C18]
 ---
 
@@ -195,6 +195,9 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | FRS13 | every registered provider is offered | OpenRouter and OpenCode Go | both appear, with sign-in and paste-key rows |
 | FRS14 | a device flow shows its page and code | a fake device session | the verification URL, the user code, and the status line |
 | FRS15 | the chosen provider and method reach the login backend | select OpenCode Go device | `Begin` is called once with the device method |
+| FRS16 | a pasted key fills the field | a bracketed paste of a key with a line ending, on the paste-key screen | the key is saved without the line ending and is never shown |
+| FRS17 | a paste elsewhere is ignored | a paste on the provider list | nothing is kept |
+| FRS18 | server text is cleaned | a sign-in page, code, status and error holding escapes and a newline | no control byte reaches the view and the words stay |
 | CFW01 | set a new key in a new file | | created with mode 0600; directory 0700 |
 | CFW02 | change an existing key | | only that key changes |
 | CFW03 | comments and order preserved | | byte-identical elsewhere |
@@ -225,13 +228,14 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | DRX18 | crash log path | no report; a report present | path shown; last crash reported |
 | DOC01 | topic list | | embedded topics |
 | DOC02 | print a topic | `extensions` | the document |
-| DOC03 | unknown topic | | lists topics |
+| DOC03 | unknown topic | | an error (exit 1) listing the topics on stderr |
 | DOC04 | search ranking | a title match and a body match | title match first |
 | DOC05 | top 5 with excerpts | | at most 5 |
 | DOC06 | no results | | message |
 | DOC07 | piped output | | no colour |
 | DOC08 | embedded set | | includes the examples and the SDK documentation |
 | DOC09 | authoring context size | | under 40,000 estimated tokens |
+| DOC10 | an excerpt never splits a character | a hit on a line whose 100th byte is inside a multi-byte character | the excerpt is valid UTF-8 |
 | SKA01 | skill embedded and listed | | `extension-author`, `Source: builtin` |
 | SKA02 | lowest precedence | user skill of the same name | the user's wins |
 | SKA03 | body contains the workflow steps | | each step present |
@@ -259,6 +263,8 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | REL03 | flags | | `CGO_ENABLED=0`, `-trimpath`, `-s -w`, the version variables |
 | REL04 | archive names and contents | dry run of the packaging step | as specified |
 | REL05 | checksums file | | one line per archive |
+| REL06 | the published checksums install | the release job's own checksum step run on two archives, its `checksums.txt` served as the release's | `install.sh` finds the archive and installs; the file names are bare (`./name` never matched) |
+| REL07 | write access only where used | the release workflow | `contents: read` for the workflow, `contents: write` for the `release` job only |
 | ISH01 | happy path | fake release server | binary installed 0755 in the default directory |
 | ISH02 | checksum mismatch | tampered archive | aborts before extraction; nothing installed |
 | ISH03 | unsupported OS or architecture | | clear error naming it |
@@ -272,6 +278,9 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | ISH11 | download failure | server returns 500 | error; nothing changed |
 | ISH12 | only the sanity check runs downloaded code | | `nova version` after install |
 | ISH13 | `sh` compatibility | run with `dash` | works |
+| ISH14 | the version must be a plain tag | `NOVA_VERSION` of `../../evil`, `v1/x`, a space, a leading dash, `?`, `;`; a bad tag from the release API | a version error and no download |
+| ISH15 | every checksum line form | lines of the form `<hash> *<name>` and `<hash>  ./<name>` | the install succeeds |
+| ISH16 | a symlink member is refused | an archive whose `nova` is a symlink | the install fails and no binary is written |
 
 ## Fuzz and property tests
 

@@ -104,3 +104,29 @@ func TestUpdate_UPD38_OutputNamesTheTarget(t *testing.T) {
 		t.Fatalf("stdout = %q, want it to name the target", out)
 	}
 }
+
+// A running binary reached through a symlink must not be replaced by a regular
+// file that takes the link's place while the real binary stays stale.
+func TestUpdate_UPD44_RunningBinaryBehindASymlinkIsResolved(t *testing.T) {
+	t.Setenv("NOVA_INSTALL_DIR", "")
+	dir := t.TempDir()
+	real := filepath.Join(dir, "versions", "nova-1")
+	if err := os.MkdirAll(filepath.Dir(real), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(real, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "nova")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	want, err := filepath.EvalSymlinks(real) // the temp directory itself may be a link
+	if err != nil {
+		t.Fatal(err)
+	}
+	opt, _, _, _, _ := runUpdateWith(t, link)
+	if opt.Target != want {
+		t.Fatalf("target = %q, want the file behind the link, %q", opt.Target, want)
+	}
+}

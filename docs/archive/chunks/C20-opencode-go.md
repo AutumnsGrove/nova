@@ -2,7 +2,7 @@
 chunk: C20
 title: "OpenCode Go, the second launch provider"
 packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./mode/providers, ./auth/opencode, ./mode, ./tui/ui]
-budgets: { ./provider/ssestream: 320, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1450, ./auth: 500, ./mode: 2320, ./tui/ui: 2900 }
+budgets: { ./provider/ssestream: 420, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1460, ./auth: 500, ./mode: 2470, ./tui/ui: 3050 }
 depends: [C02, C03, C12]
 ---
 
@@ -381,7 +381,7 @@ type OpenCodeGoConfig struct {
 | MSG10 | usage across events | `message_start` input 10 + read 2, two `message_delta` outputs | prompt 12 (input + cache counts), read 2, output 7 |
 | MSG11 | stop reason mapping | `end_turn`, `tool_use`, `max_tokens`, `stop_sequence` | `stop`, `tool_calls`, `length`, `stop` |
 | MSG12 | `ping` ignored | ping between events | no event, no error |
-| MSG13 | `error` event | error block | non-retryable `*provider.Error` |
+| MSG13 | `error` event | an error block of each type | `overloaded_error`, `rate_limit_error` and `api_error` are retryable `*provider.Error`s; `invalid_request_error` and `authentication_error` are not (changed from always non-retryable: the same classes are retried when they arrive as an HTTP status, and a retry restarts the attempt cleanly) |
 | MSG14 | stream ends before `message_stop` | server closes after a text block | retryable; partial text kept |
 | MSG15 | empty stream | no events | retryable "empty stream" |
 | MSG16 | connect timeout | headers never sent; `ConnectTimeout` 50 ms | retryable `*provider.Error` |
@@ -451,6 +451,28 @@ type OpenCodeGoConfig struct {
 | OPG32 | sign-in failure names the right provider | OpenCode Go model, no OpenCode Go key | `provider_error` naming OpenCode Go, `nova login opencode-go`, and its env var |
 | OPG33 | the router uses the stable model id | `Model` is the wire slug, `ModelID` the catalog id | the request goes to OpenCode Go, not OpenRouter |
 | OPG34 | an unknown model id falls back | `ModelID` not in the catalog | the request goes to OpenRouter |
+| RSP27 | event that is not JSON | a truncated delta payload after good text | non-retryable invalid-JSON error; earlier text kept |
+| RSP28 | top-level `error` event | `code` and `message` at the top level | `Code` and `Message` read from them |
+| RSP29 | failures inside the stream are classed | `rate_limit_exceeded`, an overload message, `server_error`, and `invalid_prompt` | the first two are retryable; the others are not (a server fault can arrive after output has started) |
+| RSP24 | incomplete reasons | `max_output_tokens`, `content_filter`, an unknown reason | `length`, `content_filter`, `stop` |
+| RSP25 | stream cut mid-call | added and an argument fragment, then close | retryable; no tool call returned or delivered |
+| RSP26 | call with no `call_id` | a function call without one | a generated id |
+| MSG27 | event that is not JSON | a truncated delta payload after good text | non-retryable invalid-JSON error; earlier text kept |
+| MSG28 | total tokens | input in `message_start`, output in `message_delta` | `TotalTokens` is the sum; the last usage event equals the response usage |
+| MSG29 | unusable arguments in the transcript | a prior `tool_use` with cut-off, empty or non-object arguments | the request encodes; `input` is `{}` |
+| MSG23 | `tool_choice` required | `"required"` | `{type:"any"}` |
+| MSG24 | `tool_use` with no id | a block without one | a generated id |
+| MSG25 | error event type | `invalid_request_error` | kept as `Code` |
+| MSG26 | stream cut mid-call | `tool_use` start and a fragment, then close | retryable; no tool call returned or delivered |
+| TMO18 | error message bounds | a 600-rune JSON message and prose body | valid UTF-8, at most 500 bytes |
+| TMO19 | error body never echoes the key | a body containing the `Authorization` token | the token is replaced by `[redacted]` |
+| TMO20 | cut and oversize lines are provider errors | a line cut mid-event; a line over the cap | retryable and non-retryable `*provider.Error`, still matching the sentinels |
+| TMO21 | long line across buffer refills | a line larger than the read buffer, `\n` and `\r\n` | delivered whole |
+| TMO22 | `Each` and `Decode` | a bare event, good events, a bad payload | the bare event skipped; early stop; invalid JSON names its line |
+| TMO23 | `Target` header precedence | config, request, fixed headers and a key | config < request < fixed; the key last, from `APIKeyFunc` first |
+| TMO24 | `Target` key error and preflight | failing key func; cancelled context, no model, no URL | provider error; the matching error before any request |
+| DSC02 | refresh while routing | `Refresh` in a loop while `APIFor` runs | no race (under `-race`) |
+| DSC03 | empty or unusable models reply | `{"data":[]}`, an error object, HTML, rows without ids | `Refresh` errors; overlay kept; cache not stamped fresh |
 | OPG35 | catalog says which models cache implicitly | every baseline entry | Claude false; the rest true, and a discovered override keeps the baseline flag |
 
 | USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |

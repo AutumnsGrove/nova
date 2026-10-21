@@ -172,6 +172,19 @@ func TestBash_BSH14_WithEnv(t *testing.T) {
 	}
 }
 
+// Nova's own credentials are in the process environment, and a model-run
+// command must not inherit them. Other variables and explicit extras survive.
+func TestBash_BSH52_ScrubbedEnvironment(t *testing.T) {
+	t.Setenv("NOVA_TEST_SECRET", "hunter2")
+	t.Setenv("NOVA_TEST_KEPT", "ok")
+	res := command(t, t.TempDir(), `echo "[$NOVA_TEST_SECRET][$NOVA_TEST_KEPT][$NOVA_TEST_EXPLICIT]"`,
+		WithScrubEnv([]string{"NOVA_TEST_SECRET", "NOVA_TEST_EXPLICIT"}),
+		WithEnv(map[string]string{"NOVA_TEST_EXPLICIT": "asked-for"}))
+	if got := strings.TrimSpace(res.Content); got != "[][ok][asked-for]" {
+		t.Fatalf("env = %q, want the secret gone and the others kept", got)
+	}
+}
+
 func TestBash_BSH15_PagerDisabled(t *testing.T) {
 	res := command(t, t.TempDir(), `echo $PAGER`)
 	if strings.TrimSpace(res.Content) != "cat" {
@@ -334,6 +347,18 @@ func TestBash_BSH39_TimeoutCapped(t *testing.T) {
 	res := runBash(t, bashTool(t, WithMaxTimeout(300*time.Millisecond)), &tool.Context{WorkDir: t.TempDir()}, map[string]any{"command": "sleep 5", "timeout": 99999})
 	if !strings.Contains(res.Content, "timed out") || time.Since(began) > 3*time.Second {
 		t.Fatalf("result = %+v, want the max timeout applied", res)
+	}
+}
+
+// TestBash_BSH51_TimeoutOverflow checks a timeout so large that seconds times
+// time.Second overflows int64 is capped, not wrapped into a negative duration
+// that expires at once.
+func TestBash_BSH51_TimeoutOverflow(t *testing.T) {
+	for _, opts := range [][]Option{nil, {WithMaxTimeout(0)}} {
+		res := runBash(t, bashTool(t, opts...), &tool.Context{WorkDir: t.TempDir()}, map[string]any{"command": "echo hi", "timeout": 9_300_000_000})
+		if res.IsError || res.Content != "hi\n" {
+			t.Fatalf("result = %+v, want the command to run", res)
+		}
 	}
 }
 

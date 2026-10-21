@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/ext"
@@ -84,7 +85,7 @@ func (e *Extension) Init(env *ext.Env) error {
 			e.setOn(true)
 		}
 	}
-	if e.onLocked() {
+	if e.isOn() {
 		e.publish()
 	}
 	return nil
@@ -112,11 +113,11 @@ func (e *Extension) submit(ctx context.Context, args json.RawMessage, _ *tool.Co
 	if err := json.Unmarshal(args, &in); err != nil {
 		return tool.Errorf("invalid arguments: %v", err), nil
 	}
-	if !e.onLocked() {
+	if !e.isOn() {
 		return tool.Errorf("not in plan mode"), nil
 	}
 	plan := strings.TrimSpace(in.Plan)
-	if plan == "" || len([]rune(plan)) > maxPlan {
+	if plan == "" || utf8.RuneCountInString(plan) > maxPlan {
 		return tool.Errorf("a plan must be 1 to %d characters", maxPlan), nil
 	}
 	e.recordPlan(plan)
@@ -205,13 +206,10 @@ func (e *Extension) command(_ context.Context, _ string) (string, error) {
 
 // hookToolCall blocks a non-read-only tool while plan mode is on.
 func (e *Extension) hookToolCall(_ context.Context, c agent.ToolCall) *agent.CallDecision {
-	if !e.onLocked() {
+	if !e.isOn() {
 		return nil
 	}
-	if c.Name == "plan_submit" || c.Name == "ask" {
-		return nil
-	}
-	if e.readOnly(c.Name) {
+	if c.Name == "plan_submit" || e.readOnly(c.Name) {
 		return nil
 	}
 	return &agent.CallDecision{Block: true, Reason: blockReason}
@@ -220,7 +218,7 @@ func (e *Extension) hookToolCall(_ context.Context, c agent.ToolCall) *agent.Cal
 // hookBeforeProviderRequest appends the plan-mode instructions to the system
 // message.
 func (e *Extension) hookBeforeProviderRequest(_ context.Context, req *provider.Request) {
-	if !e.onLocked() {
+	if !e.isOn() {
 		return
 	}
 	for i := range req.Messages {
@@ -256,8 +254,8 @@ func (e *Extension) readOnly(name string) bool {
 	return false
 }
 
-// onLocked reads the mode flag.
-func (e *Extension) onLocked() bool {
+// isOn reports whether plan mode is on.
+func (e *Extension) isOn() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.on
@@ -318,7 +316,7 @@ func (e *Extension) publish() {
 	if e.env == nil || e.env.UI == nil {
 		return
 	}
-	if e.onLocked() {
+	if e.isOn() {
 		e.env.UI.Notify(proto.UIRequest{Method: "status", Key: "plan", Segments: []proto.UISegment{{Text: "plan", Style: "accent"}}})
 		return
 	}
@@ -327,5 +325,5 @@ func (e *Extension) publish() {
 
 // fmtPlan summarises a plan for the TUI card.
 func fmtPlan(plan string) string {
-	return fmt.Sprintf("%d characters", len([]rune(plan)))
+	return fmt.Sprintf("%d characters", utf8.RuneCountInString(plan))
 }

@@ -17,6 +17,7 @@ type run struct {
 	a        *Agent
 	cfg      Config
 	ctx      context.Context
+	cancel   context.CancelFunc
 	id       string
 	turn     int
 	messages []message.Message
@@ -39,12 +40,12 @@ func (a *Agent) Run(ctx context.Context, history []message.Message, prompt messa
 // until a run is registered. Config errors and ErrBusy are returned here; the
 // run's own outcome arrives through Emit, ending in one run_end.
 func (a *Agent) Start(ctx context.Context, history []message.Message, prompt message.Message) error {
-	r, release, err := a.begin(ctx)
+	r, err := a.begin(ctx)
 	if err != nil {
 		return err
 	}
 	go func() {
-		defer release()
+		defer r.release()
 		defer diag.Catch("agent run")
 		_, _ = r.execute(history, &prompt)
 	}()
@@ -54,44 +55,50 @@ func (a *Agent) Start(ctx context.Context, history []message.Message, prompt mes
 // run is Run with an optional prompt; the compatibility function passes nil so
 // history is the whole transcript.
 func (a *Agent) run(ctx context.Context, history []message.Message, prompt *message.Message) (*Result, error) {
-	r, release, err := a.begin(ctx)
+	r, err := a.begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer release()
+	defer r.release()
 	return r.execute(history, prompt)
 }
 
 // begin validates the config and registers a run, so Running and Abort see it
-// from this point. The returned release ends the registration and must be
-// called exactly once, after the run finishes.
-func (a *Agent) begin(ctx context.Context) (*run, func(), error) {
+// from this point. The caller must call the run's release when it is done.
+func (a *Agent) begin(ctx context.Context) (*run, error) {
 	if a.cfg.Provider == nil {
-		return nil, nil, errors.New("agent: Provider is required")
+		return nil, errors.New("agent: Provider is required")
 	}
 	if a.cfg.Model == "" {
-		return nil, nil, errors.New("agent: Model is required")
+		return nil, errors.New("agent: Model is required")
 	}
 
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.running {
-		a.mu.Unlock()
-		return nil, nil, ErrBusy
+		return nil, ErrBusy
 	}
 	a.running = true
+	a.closing = false
 	a.runCount++
 	a.runID = fmt.Sprintf("r_%d", a.runCount)
 	runCtx, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
-	a.mu.Unlock()
-	release := func() {
-		cancel()
-		a.mu.Lock()
+	return &run{a: a, cfg: a.cfg, ctx: runCtx, id: a.runID, cancel: cancel}, nil
+}
+
+// release ends this run's registration. It is safe to call more than once and
+// never touches a newer run's registration, because finish releases the run
+// before run_end is delivered and the deferred call then arrives late.
+func (r *run) release() {
+	r.cancel()
+	a := r.a
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.runID == r.id && a.running {
 		a.running = false
 		a.cancel = nil
-		a.mu.Unlock()
 	}
-	return &run{a: a, cfg: a.cfg, ctx: runCtx, id: a.runID}, release, nil
 }
 
 // execute runs the loop for a registered run. A panic in code the loop calls
@@ -132,83 +139,118 @@ func (r *run) execute(history []message.Message, prompt *message.Message) (res *
 // provider fails, or an explicitly set budget runs out. With no budget the loop
 // is unbounded; the abort path is what stops a runaway run.
 func (r *run) loop() (*Result, error) {
-	maxTurns := r.cfg.MaxTurns
 	for r.turn = 0; ; r.turn++ {
-		// A budget is only in force when a caller set one; zero and negative
-		// both mean unlimited.
-		if maxTurns > 0 && r.turn >= maxTurns {
-			res := r.result("exhausted")
-			res.Exhausted = true
-			res.Turns = maxTurns
-			return r.finish(res, nil)
+		reason, err := r.runTurn()
+		if reason == "" {
+			continue
 		}
-		if err := r.ctx.Err(); err != nil {
-			return r.finish(r.result("aborted"), err)
-		}
-		r.emit(proto.Event{Type: proto.EventTurnStart, Turn: intp(r.turn)})
+		res := r.result(reason)
+		res.Exhausted = reason == "exhausted"
+		return r.finish(res, err)
+	}
+}
 
-		assistant, usage, err := r.turnRequest()
-		if err != nil {
-			if cerr := r.ctx.Err(); cerr != nil {
-				return r.finish(r.result("aborted"), cerr)
-			}
-			res := r.result("error")
-			res.Turns = r.turn + 1
-			return r.finish(res, err)
-		}
-		r.usage.Add(usage)
-		r.turns = r.turn + 1
-		if err := r.record(assistant, &usage); err != nil {
-			return r.finish(r.result("error"), err)
-		}
-		if assistant.Content != "" {
-			r.answer = assistant.Content
-		}
+// runTurn runs one turn: request, tools, the TurnEnd hook, and the queues. It
+// returns the reason the run ends, or "" when another turn should follow.
+func (r *run) runTurn() (string, error) {
+	// A budget is only in force when a caller set one; zero and negative both
+	// mean unlimited.
+	if r.cfg.MaxTurns > 0 && r.turn >= r.cfg.MaxTurns {
+		return "exhausted", nil
+	}
+	if err := r.ctx.Err(); err != nil {
+		return "aborted", err
+	}
+	r.emit(proto.Event{Type: proto.EventTurnStart, Turn: intp(r.turn)})
 
-		results, err := r.dispatchTools(assistant)
-		if err != nil {
-			return r.finish(r.result("error"), err)
-		}
-		r.emit(proto.Event{Type: proto.EventTurnEnd, Turn: intp(r.turn), Usage: &usage})
-		continueTurn := false
-		injected := 0
-		if r.cfg.Hooks.TurnEnd != nil {
-			turnIndex := r.turn
-			td, ok := runHook(r, "turn_end", func(ctx context.Context) TurnDecision {
-				return r.cfg.Hooks.TurnEnd(ctx, Turn{Index: turnIndex, Message: assistant, Results: results})
-			})
-			if ok {
-				if td.End {
-					return r.finish(r.result("done"), nil)
-				}
-				continueTurn = td.Continue
-				injected = len(td.Inject)
-				for _, m := range td.Inject {
-					if err := r.record(m, nil); err != nil {
-						return r.finish(r.result("error"), err)
-					}
-				}
-			}
-		}
-
-		steered, err := r.drainSteering()
-		if err != nil {
-			return r.finish(r.result("error"), err)
-		}
+	assistant, usage, err := r.turnRequest()
+	if err != nil {
 		if cerr := r.ctx.Err(); cerr != nil {
-			return r.finish(r.result("aborted"), cerr)
+			return "aborted", cerr
 		}
-		if len(assistant.ToolCalls) == 0 {
-			if steered > 0 || continueTurn || injected > 0 {
-				continue
-			}
-			if m, ok := r.popFollowUp(); ok {
-				if err := r.record(m, nil); err != nil {
-					return r.finish(r.result("error"), err)
-				}
-				continue
-			}
-			return r.finish(r.result("done"), nil)
+		// The failed request counts as a turn, so run_end reports the work done.
+		r.turns = r.turn + 1
+		return "error", err
+	}
+	r.usage.Add(usage)
+	r.turns = r.turn + 1
+	if err := r.record(assistant, &usage); err != nil {
+		return "error", err
+	}
+	if assistant.Content != "" {
+		r.answer = assistant.Content
+	}
+
+	results, err := r.dispatchTools(assistant)
+	if err != nil {
+		return "error", err
+	}
+	r.emit(proto.Event{Type: proto.EventTurnEnd, Turn: intp(r.turn), Usage: &usage})
+	td, err := r.turnEndHook(assistant, results)
+	if err != nil {
+		return "error", err
+	}
+	if td.End {
+		return "done", nil
+	}
+
+	// Checked before the drain: a cancelled run must not move queued messages
+	// into the transcript, because they are handed back to the client instead.
+	if cerr := r.ctx.Err(); cerr != nil {
+		return "aborted", cerr
+	}
+	steered, err := r.drainSteering()
+	if err != nil {
+		return "error", err
+	}
+	if len(assistant.ToolCalls) > 0 || steered > 0 || td.Continue || len(td.Inject) > 0 {
+		return "", nil
+	}
+	more, err := r.takeQueued()
+	if err != nil {
+		return "error", err
+	}
+	if more {
+		return "", nil
+	}
+	return "done", nil
+}
+
+// turnEndHook runs the TurnEnd hook and records the messages it injects. A hook
+// that fails or times out decides nothing, so the zero decision is returned.
+func (r *run) turnEndHook(assistant message.Message, results []tool.Result) (TurnDecision, error) {
+	h := r.cfg.Hooks.TurnEnd
+	if h == nil {
+		return TurnDecision{}, nil
+	}
+	turn := Turn{Index: r.turn, Message: assistant.Clone(), Results: results}
+	td, ok := runHook(r, "turn_end", func(ctx context.Context) TurnDecision { return h(ctx, turn) })
+	if !ok || td.End {
+		return TurnDecision{End: td.End}, nil
+	}
+	for _, m := range td.Inject {
+		if err := r.record(m, nil); err != nil {
+			return td, err
+		}
+	}
+	return td, nil
+}
+
+// takeQueued appends the next queued work, steering before follow-ups, and
+// reports whether there was any. It is the run's last word on ending: when it
+// reports false the agent has stopped accepting messages, so nothing queued
+// before that point is left behind.
+func (r *run) takeQueued() (bool, error) {
+	for {
+		n, err := r.drainSteering()
+		if err != nil || n > 0 {
+			return n > 0, err
+		}
+		if m, ok := r.popFollowUp(); ok {
+			return true, r.record(m, nil)
+		}
+		if r.a.closeQueues() {
+			return false, nil
 		}
 	}
 }
@@ -228,11 +270,7 @@ func (r *run) dispatchTools(assistant message.Message) ([]tool.Result, error) {
 	for i, call := range assistant.ToolCalls {
 		results[i] = outcomes[i].result
 		toolUsage.Add(outcomes[i].usage)
-		content := outcomes[i].result.Content
-		if content == "" {
-			content = "(empty result)"
-		}
-		if err := r.record(message.ToolResult(call.ID, content), nil); err != nil {
+		if err := r.record(message.ToolResult(call.ID, outcomes[i].result.Content), nil); err != nil {
 			return results, err
 		}
 	}
@@ -282,6 +320,10 @@ func (r *run) result(reason string) *Result {
 // finish emits the closing events, runs AgentEnd (even after an abort), and
 // returns the result.
 func (r *run) finish(res *Result, err error) (*Result, error) {
+	// AgentEnd can take seconds; a message queued meanwhile would never run.
+	// What is still queued is dropped here and reported in run_end, so it
+	// neither leaks into the next run nor vanishes.
+	dropped := r.a.closeAndDrop()
 	if err != nil && res.Reason == "error" {
 		code := proto.CodeInternal
 		var pe *provider.Error
@@ -291,13 +333,13 @@ func (r *run) finish(res *Result, err error) (*Result, error) {
 		r.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: code, Message: err.Error()}})
 	}
 	if r.cfg.Hooks.AgentEnd != nil {
-		runHookUnder(r, context.WithoutCancel(r.ctx), "agent_end", func(ctx context.Context) struct{} {
+		runHookUnder(context.WithoutCancel(r.ctx), r, "agent_end", func(ctx context.Context) struct{} {
 			r.cfg.Hooks.AgentEnd(ctx, res)
 			return struct{}{}
 		})
 	}
 	usage := r.usage
 	r.ended = true
-	r.emit(proto.Event{Type: proto.EventRunEnd, Reason: res.Reason, Turn: intp(res.Turns), Usage: &usage})
+	r.a.emitRunEnd(r, proto.Event{Type: proto.EventRunEnd, Reason: res.Reason, Turn: intp(res.Turns), Usage: &usage, DroppedQueue: dropped})
 	return res, err
 }

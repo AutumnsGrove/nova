@@ -1,10 +1,12 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -12,10 +14,11 @@ import (
 // maxSkillBytes bounds one SKILL.md file.
 const maxSkillBytes = 256 << 10
 
-// maxDescriptionBytes bounds a skill description or template description.
-const maxDescriptionBytes = 1024
+// maxDescriptionChars bounds a skill description. Characters, not bytes, so a
+// description in a script that needs three bytes a letter is not penalised.
+const maxDescriptionChars = 1024
 
-// skillNameRE is the allowed shape of a skill or template name.
+// skillNameRE is the allowed shape of a skill name.
 var skillNameRE = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // Skill is one discoverable capability. Only Name and Description reach the
@@ -42,56 +45,70 @@ func LoadSkills(dirs []string) ([]Skill, []Warning) {
 			continue
 		}
 		for _, entry := range entries {
-			name := entry.Name()
-			if strings.HasPrefix(name, ".") {
+			dir, ok := skillDir(root, entry.Name(), visited)
+			if !ok {
 				continue
 			}
-			dir := filepath.Join(root, name)
-			info, err := os.Stat(dir)
-			if err != nil || !info.IsDir() {
-				continue
+			skill, warning := loadSkill(dir, entry.Name())
+			if warning != nil {
+				warnings = append(warnings, *warning)
 			}
-			real, err := filepath.EvalSymlinks(dir)
-			if err != nil {
-				real = dir
-			}
-			if visited[real] {
-				continue
-			}
-			visited[real] = true
-
-			skillPath := filepath.Join(dir, "SKILL.md")
-			data, err := os.ReadFile(skillPath)
-			if err != nil {
-				// A directory without a readable SKILL.md is not a skill.
-				continue
-			}
-			if len(data) > maxSkillBytes {
-				warnings = append(warnings, Warning{Source: skillPath, Message: "skill exceeds 256 KiB; skipping"})
-				continue
-			}
-			skill, reason := parseSkill(name, dir, string(data))
-			if reason != "" {
-				warnings = append(warnings, Warning{Source: skillPath, Message: reason})
+			if skill == nil {
 				continue
 			}
 			if seen[skill.Name] {
-				warnings = append(warnings, Warning{Source: skillPath, Message: "duplicate skill name " + skill.Name + "; keeping the first"})
+				warnings = append(warnings, Warning{Source: filepath.Join(dir, "SKILL.md"), Message: "duplicate skill name " + skill.Name + "; keeping the first"})
 				continue
 			}
 			seen[skill.Name] = true
 			skill.Source = root
-			skills = append(skills, skill)
+			skills = append(skills, *skill)
 		}
 	}
 	return skills, warnings
 }
 
-// ParseSkill validates one SKILL.md and returns the skill. A non-empty reason
-// means it is skipped. It is exported so the built-in skills, embedded outside
-// this package, parse exactly like on-disk ones.
-func ParseSkill(dirName, dir, content string) (Skill, string) {
-	return parseSkill(dirName, dir, content)
+// skillDir resolves a directory entry to a candidate skill directory. Hidden
+// entries, non-directories, and a directory already reached through another
+// path (a symlink followed once) are not candidates.
+func skillDir(root, name string, visited map[string]bool) (string, bool) {
+	if strings.HasPrefix(name, ".") {
+		return "", false
+	}
+	dir := filepath.Join(root, name)
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return "", false
+	}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		real = dir
+	}
+	if visited[real] {
+		return "", false
+	}
+	visited[real] = true
+	return dir, true
+}
+
+// loadSkill reads and validates dir/SKILL.md. It returns the skill, or nil
+// with a warning when the file breaks a rule. A directory without a readable
+// SKILL.md is simply not a skill, so it yields neither.
+func loadSkill(dir, dirName string) (*Skill, *Warning) {
+	path := filepath.Join(dir, "SKILL.md")
+	data, err := readRegularFile(path, maxSkillBytes)
+	switch {
+	case errors.Is(err, errTooLarge):
+		return nil, &Warning{Source: path, Message: "skill exceeds 256 KiB; skipping"}
+	case errors.Is(err, errNotRegular):
+		return nil, &Warning{Source: path, Message: "skill file is not a regular file; skipping"}
+	case err != nil:
+		return nil, nil
+	}
+	skill, reason := ParseSkill(dirName, dir, string(data))
+	if reason != "" {
+		return nil, &Warning{Source: path, Message: reason}
+	}
+	return &skill, nil
 }
 
 // LoadSkillsWithBuiltins loads directory skills and then appends the built-in
@@ -113,8 +130,10 @@ func LoadSkillsWithBuiltins(dirs []string, builtins []Skill) ([]Skill, []Warning
 	return skills, warnings
 }
 
-// parseSkill validates one SKILL.md. A non-empty reason means it is skipped.
-func parseSkill(dirName, dir, content string) (Skill, string) {
+// ParseSkill validates one SKILL.md and returns the skill. A non-empty reason
+// means it is skipped. It is exported so the built-in skills, embedded outside
+// this package, parse exactly like on-disk ones.
+func ParseSkill(dirName, dir, content string) (Skill, string) {
 	doc, body, present, err := parseFrontMatter(content)
 	if err != nil {
 		return Skill{}, "malformed front matter: " + err.Error()
@@ -131,7 +150,7 @@ func parseSkill(dirName, dir, content string) (Skill, string) {
 	if doc.Description == "" {
 		return Skill{}, "skill description is required"
 	}
-	if len(doc.Description) > maxDescriptionBytes {
+	if utf8.RuneCountInString(doc.Description) > maxDescriptionChars {
 		return Skill{}, "skill description exceeds 1024 characters"
 	}
 	return Skill{Name: doc.Name, Description: doc.Description, Dir: dir, Body: body}, ""
@@ -145,8 +164,10 @@ type frontMatter struct {
 
 // parseFrontMatter splits a Markdown file into its YAML front matter and body.
 // present is false when there is no front matter at all; err is for malformed
-// YAML or an unterminated fence.
+// YAML or an unterminated fence. A leading byte-order mark is ignored, because
+// some editors add one and it would hide the opening fence.
 func parseFrontMatter(content string) (frontMatter, string, bool, error) {
+	content = strings.TrimPrefix(content, "\ufeff")
 	raw, body, ok := splitFrontMatter(content)
 	if !ok {
 		return frontMatter{}, content, false, nil

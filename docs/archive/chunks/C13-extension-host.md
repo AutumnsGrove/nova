@@ -360,6 +360,7 @@ twice, answer slowly, answer twice, print garbage to stdout, exit after N calls,
 | HST23 | flags passed in `init` | | present |
 | HST24 | `Status` | | state, restarts, last error |
 | HST25 | an extension tool result carries image parts | `ECHO_IMAGE=1` | `tool.Result.Parts` has the image part |
+| HST26 | the `complete` cap is per run | an extension's count above zero, then a `run_start` event | the count is zero |
 | HK01 | block: first handler wins | two extensions both block | first reason used |
 | HK02 | rewrite chains | A rewrites, B sees the rewrite | B's input is A's output |
 | HK03 | block after a rewrite | | block wins |
@@ -410,7 +411,7 @@ twice, answer slowly, answer twice, print garbage to stdout, exit after N calls,
 | INS20 | cancel mid-install | | cleaned up |
 | INS21 | update to a new commit | | new plan with the capability diff; replaced atomically |
 | INS22 | update failure restores the old version | build fails | old directory and lock intact |
-| INS23 | update with nothing new | | reports up to date |
+| INS23 | update with nothing new | | `ErrUpToDate`, which the CLI reports as an outcome (exit 0), not a failure |
 | INS24 | remove | | directory and lock entry gone; not installed is an error |
 | INS25 | `List` drift | edit the directory's HEAD | `drifted` |
 | INS26 | lockfile atomic write | simulate a failed rename | old lock intact |

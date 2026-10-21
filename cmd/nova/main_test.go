@@ -307,3 +307,16 @@ func TestCLI_JSN04_NoHello(t *testing.T) {
 		t.Fatalf("JSON mode must not write a hello frame: %s", out)
 	}
 }
+
+// --resume opens the session picker, which only the interactive UI has. Without
+// a terminal it is an error that says so, and the message must not claim the UI
+// is missing from the build.
+func TestCLI_RSM02_ResumeNeedsATerminal(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
+	var out, errOut bytes.Buffer
+	code := run([]string{"--cwd", t.TempDir(), "--resume"}, strings.NewReader(""), &out, &errOut, false)
+	if code == 0 || !strings.Contains(errOut.String(), "--resume") || strings.Contains(errOut.String(), "not built") {
+		t.Fatalf("exit %d, stderr %q, want a --resume error that does not say the UI is unbuilt", code, errOut.String())
+	}
+}

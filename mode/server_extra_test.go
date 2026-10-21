@@ -403,3 +403,35 @@ func serverWithHTTP(t *testing.T, baseURL string) *Server {
 
 // msgPtr returns a pointer to m.
 func msgPtr(m message.Message) *message.Message { return &m }
+
+// A token count describes the request that produced it. Once compaction
+// replaces that history, the old count would make the short conversation look
+// full and trigger a second compaction on the next turn.
+func TestServer_SRV64_CompactionForgetsTheOldTokenCount(t *testing.T) {
+	s, _ := testServer(t, testkit.Turn{Text: "summary"})
+	s.cfg.ContextLimit = 40
+	s.limit = 40
+	s.compactor.Settings.Enabled = true
+	s.compactor.Settings.KeepRecent = 1
+	long := strings.Repeat("word ", 200)
+	for _, m := range []message.Message{message.User(long), message.Assistant(long), message.User("next")} {
+		if _, err := s.store.Append(session.Entry{Type: session.TypeMessage, Message: msgPtr(m)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.mu.Lock()
+	s.lastUse = provider.Usage{PromptTokens: 30, TotalTokens: 30}
+	s.mu.Unlock()
+
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdCompact})
+	if !resp.OK {
+		t.Fatalf("compact = %+v", resp)
+	}
+
+	s.mu.Lock()
+	got := s.lastUse
+	s.mu.Unlock()
+	if got.PromptTokens != 0 {
+		t.Fatalf("lastUse.PromptTokens = %d after compaction, want it forgotten", got.PromptTokens)
+	}
+}

@@ -191,3 +191,64 @@ func TestAction_GHC09_APIURLOverride(t *testing.T) {
 		t.Fatalf("fake server URL = %q", ts.URL)
 	}
 }
+
+// A 403 is mostly a permissions answer. Waiting and asking again only delays the
+// error, so it is retried only when GitHub says it is rate limiting.
+func TestAction_GHC10_PlainForbiddenIsNotRetried(t *testing.T) {
+	var calls atomic.Int32
+	g, _ := fakeGitHub(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "Resource not accessible by integration", http.StatusForbidden)
+	})
+	_, err := g.Pull(context.Background(), "o/r", 1)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusForbidden || calls.Load() != 1 {
+		t.Fatalf("err = %v after %d calls, want one 403 call", err, calls.Load())
+	}
+	calls.Store(0)
+	g, _ = fakeGitHub(t, func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(Pull{Number: 1})
+	})
+	if _, err := g.Pull(context.Background(), "o/r", 1); err != nil || calls.Load() != 2 {
+		t.Fatalf("an exhausted rate limit was not retried: %v after %d calls", err, calls.Load())
+	}
+}
+
+// A server error on a POST may have been acted on before it failed. Asking again
+// could post the review twice, so only reads are retried after a 5xx.
+func TestAction_GHC11_ServerErrorOnPostIsNotRetried(t *testing.T) {
+	var calls atomic.Int32
+	g, _ := fakeGitHub(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "boom", http.StatusBadGateway)
+	})
+	if _, err := g.PostReview(context.Background(), "o/r", 1, ReviewRequest{Body: "b", Event: "COMMENT"}); err == nil {
+		t.Fatal("want an error")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("a failed POST was sent %d times, want once", calls.Load())
+	}
+}
+
+func TestAction_GHC12_ClientHasATimeout(t *testing.T) {
+	if g := NewGitHub("https://api.github.com", "t"); g.Client == http.DefaultClient || g.Client.Timeout <= 0 {
+		t.Fatalf("client = %+v, want its own client with a timeout", g.Client)
+	}
+}
+
+func TestAction_GHC13_ResponseSizeIsCapped(t *testing.T) {
+	old := maxResponseBytes
+	maxResponseBytes = 64
+	t.Cleanup(func() { maxResponseBytes = old })
+	g, _ := fakeGitHub(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(Pull{Number: 1, Title: "t", Body: strings.Repeat("x", 4096)})
+	})
+	if _, err := g.Pull(context.Background(), "o/r", 1); err == nil {
+		t.Fatal("a response far over the cap was decoded")
+	}
+}

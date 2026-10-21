@@ -11,8 +11,8 @@ import (
 
 	"github.com/AutumnsGrove/nova/media"
 	"github.com/AutumnsGrove/nova/message"
-	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/image"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -43,30 +43,11 @@ func wrapPlain(s string, width int) string {
 	if width < 1 {
 		width = 1
 	}
-	lines := strings.Split(ansi.Strip(s), "\n")
+	lines := strings.Split(sanitize.Text(s), "\n")
 	for i, line := range lines {
 		lines[i] = wrap(expandTabs(line, 4), width)
 	}
 	return strings.Join(lines, "\n")
-}
-
-// attachmentSummary renders the attachment names on one muted line.
-func attachmentSummary(atts []proto.Attachment) string {
-	var names []string
-	for _, a := range atts {
-		switch {
-		case a.Name != "":
-			names = append(names, a.Name)
-		case a.Path != "":
-			names = append(names, a.Path)
-		case a.Kind != "":
-			names = append(names, a.Kind)
-		}
-	}
-	if len(names) == 0 {
-		return ""
-	}
-	return "[attached: " + strings.Join(names, ", ") + "]"
 }
 
 // userItem is a message from the user. queued marks a steering or follow-up

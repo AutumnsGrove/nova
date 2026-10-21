@@ -1,34 +1,52 @@
+// Package install installs, updates, removes and lists extensions from git
+// repositories or local directories, and pins what it installed in a lockfile.
 package install
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
+
+	"github.com/AutumnsGrove/nova/tool"
 )
+
+// gitWaitDelay is how long a cancelled git command may take to let go of its
+// output pipes before they are closed under it. git clone starts helper
+// processes that inherit them and are not killed with git itself.
+const gitWaitDelay = 5 * time.Second
+
+// maxGitOutputBytes bounds the git output kept for an error message.
+const maxGitOutputBytes = 8 << 10
+
+// commitRe matches a 7 to 40 character hex commit id.
+var commitRe = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
 
 // GitRunner runs git operations for the installer. Tests may inject a fake.
 type GitRunner interface {
 	Run(ctx context.Context, dir string, args ...string) (string, error)
 }
 
-// gitEnv is the environment that keeps git non-interactive and disables hooks.
+// gitEnv is the environment that keeps git from ever waiting on a person.
 func gitEnv() []string {
 	return []string{"GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=true"}
 }
 
 // execGit is the default GitRunner: it invokes the git binary.
-type execGit struct{}
+type execGit struct{ scrub []string }
 
 func (g execGit) Run(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), gitEnv()...)
-	var out strings.Builder
-	cmd.Stdout = &out
-	cmd.Stderr = &out
+	cmd.Env = append(tool.ScrubEnv(os.Environ(), g.scrub), gitEnv()...)
+	cmd.WaitDelay = gitWaitDelay
+	var out cappedBuffer
+	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(out.String())
 		if msg == "" {
@@ -38,6 +56,19 @@ func (g execGit) Run(ctx context.Context, dir string, args ...string) (string, e
 	}
 	return strings.TrimSpace(out.String()), nil
 }
+
+// cappedBuffer keeps the first maxGitOutputBytes written to it and discards the
+// rest, so a chatty command cannot grow an error message without bound.
+type cappedBuffer struct{ buf bytes.Buffer }
+
+func (b *cappedBuffer) Write(p []byte) (int, error) {
+	if room := maxGitOutputBytes - b.buf.Len(); room > 0 {
+		b.buf.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
+}
+
+func (b *cappedBuffer) String() string { return b.buf.String() }
 
 // gitClone clones url into dir at ref. ref may be empty (the default branch),
 // a branch, a tag, or a commit.
@@ -50,10 +81,10 @@ func gitClone(ctx context.Context, git GitRunner, url, ref, dir string) error {
 	if _, err := git.Run(ctx, "", args...); err != nil {
 		return err
 	}
-	if ref != "" && looksLikeCommit(ref) {
-		if _, err := git.Run(ctx, dir, "-c", "core.hooksPath=/dev/null", "checkout", "--", ref); err != nil {
-			return err
-		}
+	if looksLikeCommit(ref) {
+		// The trailing "--" tells git ref is a revision, not a path to restore.
+		_, err := git.Run(ctx, dir, "-c", "core.hooksPath=/dev/null", "checkout", "--detach", ref, "--")
+		return err
 	}
 	return nil
 }
@@ -87,17 +118,7 @@ func findExtensions(root string) []string {
 }
 
 // looksLikeCommit reports whether ref is a 7-40 character hex commit.
-func looksLikeCommit(ref string) bool {
-	if len(ref) < 7 || len(ref) > 40 {
-		return false
-	}
-	for _, r := range ref {
-		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F') {
-			return false
-		}
-	}
-	return true
-}
+func looksLikeCommit(ref string) bool { return commitRe.MatchString(ref) }
 
 // pathExists reports whether path can be stat'd.
 func pathExists(path string) bool {

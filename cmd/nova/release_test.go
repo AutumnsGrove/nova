@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -20,11 +23,13 @@ import (
 
 // workflow is the subset of release.yml the REL tests read.
 type workflow struct {
-	On map[string]struct {
+	Permissions map[string]string `yaml:"permissions"`
+	On          map[string]struct {
 		Tags []string `yaml:"tags"`
 	} `yaml:"on"`
 	Jobs map[string]struct {
-		Steps []struct {
+		Permissions map[string]string `yaml:"permissions"`
+		Steps       []struct {
 			Run string            `yaml:"run"`
 			Env map[string]string `yaml:"env"`
 		} `yaml:"steps"`
@@ -481,4 +486,121 @@ func containsPath(paths []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// The version names a path on the release server, so a value that is not a plain
+// tag is refused before anything is downloaded, whether it came from the
+// environment or from the release API.
+func TestInstall_ISH14_VersionMustBeAPlainTag(t *testing.T) {
+	for _, bad := range []string{"../../evil", "v1/x", "v1 2", "-v1", "v1?x=1", "v1;id"} {
+		fr := newFakeRelease(t, "v0.1.0")
+		installDir := t.TempDir()
+		out, code := runInstall(t, fr, installDir, t.TempDir(), "NOVA_VERSION="+bad)
+		if code == 0 || !strings.Contains(out, "version") {
+			t.Errorf("NOVA_VERSION=%q: exit %d out %q, want a version error", bad, code, out)
+		}
+		if containsPath(fr.paths(), "/releases/download/") {
+			t.Errorf("NOVA_VERSION=%q: a download was attempted: %v", bad, fr.paths())
+		}
+	}
+	fr := newFakeRelease(t, "../up")
+	if out, code := runInstall(t, fr, t.TempDir(), t.TempDir()); code == 0 || !strings.Contains(out, "version") {
+		t.Errorf("a bad tag from the API: exit %d out %q, want a version error", code, out)
+	}
+}
+
+// sha256sum -b writes "<hash> *<name>"; the Go updater accepts it, so must this.
+func TestInstall_ISH15_BinaryModeChecksumLine(t *testing.T) {
+	fr := newFakeRelease(t, "v0.1.0")
+	for _, form := range []string{" *nova_", "  ./nova_"} {
+		fr.setChecksums(strings.ReplaceAll(fr.checksums, "  nova_", form))
+		if out, code := runInstall(t, fr, t.TempDir(), t.TempDir()); code != 0 {
+			t.Fatalf("checksum line form %q: exit %d:\n%s", form, code, out)
+		}
+		fr.setChecksums(strings.ReplaceAll(fr.checksums, form, "  nova_"))
+	}
+}
+
+// A link named nova in the archive is not the binary.
+func TestInstall_ISH16_SymlinkMemberIsRefused(t *testing.T) {
+	fr := newFakeRelease(t, "v0.1.0")
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(zw)
+	if err := tw.WriteHeader(&tar.Header{Name: "nova", Typeflag: tar.TypeSymlink, Linkname: "/bin/sh", Mode: 0o755}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fr.archive = buf.Bytes()
+	sum := hex.EncodeToString(sha256Sum(fr.archive))
+	fr.setChecksums(fmt.Sprintf("%s  nova_v0.1.0_%s_%s.tar.gz\n", sum, fr.os, fr.arch))
+	installDir := t.TempDir()
+	if out, code := runInstall(t, fr, installDir, t.TempDir()); code == 0 {
+		t.Fatalf("a symlink member was installed:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "nova")); err == nil {
+		t.Fatal("a binary was installed from a symlink member")
+	}
+}
+
+// The checksums.txt that is published is the one the release job writes, not the
+// ones package.sh writes per platform. install.sh and `nova update` look an
+// archive up by its bare name, so the workflow's own step must write bare names.
+func TestRelease_REL06_PublishedChecksumsInstall(t *testing.T) {
+	var script string
+	for _, s := range loadReleaseWorkflow(t).Jobs["release"].Steps {
+		if strings.Contains(s.Run, "checksums.txt") {
+			script = s.Run
+		}
+	}
+	if script == "" {
+		t.Fatal("the release job has no step that writes checksums.txt")
+	}
+	fr := newFakeRelease(t, "v0.1.0")
+	work := t.TempDir()
+	dist := filepath.Join(work, "dist")
+	if err := os.MkdirAll(dist, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		fmt.Sprintf("nova_v0.1.0_%s_%s.tar.gz", fr.os, fr.arch),
+		fmt.Sprintf("nova-min_v0.1.0_%s_%s.tar.gz", fr.os, fr.arch),
+	} {
+		if err := os.WriteFile(filepath.Join(dist, name), fr.archive, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	step := exec.Command("sh", "-c", script)
+	step.Dir = work
+	if out, err := step.CombinedOutput(); err != nil {
+		t.Fatalf("the checksum step failed: %v\n%s", err, out)
+	}
+	published, err := os.ReadFile(filepath.Join(dist, "checksums.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fr.setChecksums(string(published))
+	if out, code := runInstall(t, fr, t.TempDir(), t.TempDir()); code != 0 {
+		t.Fatalf("install.sh could not use the published checksums.txt (exit %d):\n%s\n%s", code, out, published)
+	}
+}
+
+// Only the job that publishes the release writes to the repository. A build or
+// acceptance step that is compromised should not hold a token that can.
+func TestRelease_REL07_WriteAccessOnlyWhereItIsUsed(t *testing.T) {
+	w := loadReleaseWorkflow(t)
+	if w.Permissions["contents"] != "read" {
+		t.Errorf("workflow permissions = %v, want contents: read", w.Permissions)
+	}
+	for name, job := range w.Jobs {
+		wantWrite := name == "release"
+		if got := job.Permissions["contents"] == "write"; got != wantWrite {
+			t.Errorf("job %s: contents write = %v, want %v", name, got, wantWrite)
+		}
+	}
 }

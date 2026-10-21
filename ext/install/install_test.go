@@ -3,6 +3,7 @@ package install
 import (
 	"context"
 	"errors"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -362,8 +363,10 @@ func TestInstall_INS23_UpdateNothingNew(t *testing.T) {
 	if _, err := inst.Install(context.Background(), Source{URL: repo, Ref: "main"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := inst.Update(context.Background(), "hello"); err == nil {
-		t.Fatal("expected up-to-date error")
+	// Nothing to update is an outcome a caller reports, not a failure, so it has
+	// its own error to recognise.
+	if _, err := inst.Update(context.Background(), "hello"); !errors.Is(err, ErrUpToDate) {
+		t.Fatalf("err = %v, want ErrUpToDate", err)
 	}
 }
 
@@ -396,7 +399,7 @@ func TestInstall_INS25_ListDrift(t *testing.T) {
 	runGit(t, filepath.Join(root, "hello"), "config", "user.email", "t@example.com")
 	runGit(t, filepath.Join(root, "hello"), "config", "user.name", "t")
 	runGit(t, filepath.Join(root, "hello"), "commit", "-q", "--allow-empty", "-m", "drift")
-	list, _ := inst.List()
+	list, _ := inst.List(context.Background())
 	if len(list) != 1 || !list[0].Drifted {
 		t.Fatalf("list = %+v", list)
 	}
@@ -497,6 +500,169 @@ func TestInstall_INS29_ConcurrentSame(t *testing.T) {
 	}
 	if entries, _ := readLock(lock); len(entries) != 1 {
 		t.Fatalf("lock = %+v", entries)
+	}
+}
+
+// FuzzParseSource checks that no input panics and that every source it accepts
+// obeys the rules of the spec: no option-looking source or ref, no file:// or
+// ext:: transport, no credentials, no plain http.
+func FuzzParseSource(f *testing.F) {
+	for _, seed := range []string{
+		"github.com/a/b@v1", "a/b", "https://host/a/b.git@main", "git@host:a/b.git", "./x", "/x", "~/x",
+		"file:///x", "ext::sh -c x", "https://u:p@host/a", "-x", "a/b@-x", "http://h/a", "a/b@..", "",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		src, err := ParseSource(input)
+		if err != nil {
+			return
+		}
+		if strings.HasPrefix(src.URL, "-") || strings.HasPrefix(src.Ref, "-") || strings.Contains(src.Ref, "..") {
+			t.Fatalf("ParseSource(%q) accepted an option-like source %+v", input, src)
+		}
+		for _, banned := range []string{"file://", "ext::", "http://"} {
+			if strings.HasPrefix(src.URL, banned) {
+				t.Fatalf("ParseSource(%q) accepted %s: %+v", input, banned, src)
+			}
+		}
+		if !src.Local {
+			if u, perr := url.Parse(src.URL); perr == nil && u.User != nil {
+				t.Fatalf("ParseSource(%q) accepted credentials: %+v", input, src)
+			}
+		}
+	})
+}
+
+// A commit ref must install that commit, not whatever the default branch holds.
+func TestInstall_INS18b_PinnedToOlderCommit(t *testing.T) {
+	for _, short := range []bool{false, true} {
+		repo, first := gitRepo(t, map[string]string{"extension.yaml": echoManifest})
+		writeRepoFiles(t, repo, map[string]string{"extension.yaml": "name: hello\nversion: 2.0.0\ndescription: newer\nrun: [echo]\n"})
+		runGit(t, repo, "add", "-A")
+		runGit(t, repo, "commit", "-q", "-m", "newer")
+		ref := first
+		if short {
+			ref = first[:7]
+		}
+		inst, root, lock := newTestInstaller(t)
+		m, err := inst.Install(context.Background(), Source{URL: repo, Ref: ref})
+		if err != nil {
+			t.Fatalf("ref %q: %v", ref, err)
+		}
+		if m.Version != "1.0.0" {
+			t.Fatalf("ref %q installed version %s, want the pinned 1.0.0", ref, m.Version)
+		}
+		if entries, _ := readLock(lock); entries["hello"].Commit != first {
+			t.Fatalf("ref %q locked %q, want %q", ref, entries["hello"].Commit, first)
+		}
+		_ = root
+	}
+}
+
+func TestInstall_INS14b_LocalBuiltinName(t *testing.T) {
+	src := t.TempDir()
+	writeRepoFiles(t, src, map[string]string{"extension.yaml": "name: read\nversion: 1.0.0\ndescription: x\nrun: [echo]\n"})
+	inst, root, lock := newTestInstaller(t)
+	if _, err := inst.Install(context.Background(), Source{URL: src, Path: src, Local: true}); err == nil {
+		t.Fatal("a local extension took a built-in name")
+	}
+	assertNothingInstalled(t, root, lock)
+}
+
+// A cloned repository can hold anything under the manifest's name; a symlinked
+// manifest must not be followed out of the clone.
+func TestInstall_INS06b_SymlinkedManifestRefused(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "secret.yaml")
+	if err := os.WriteFile(target, []byte(echoManifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-q", "-b", "main")
+	runGit(t, repo, "config", "user.email", "t@example.com")
+	runGit(t, repo, "config", "user.name", "t")
+	if err := os.Symlink(target, filepath.Join(repo, "extension.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", "-A")
+	runGit(t, repo, "commit", "-q", "-m", "link")
+	inst, root, lock := newTestInstaller(t)
+	if _, err := inst.Install(context.Background(), Source{URL: repo, Ref: "main"}); err == nil {
+		t.Fatal("a symlinked extension.yaml was accepted")
+	}
+	assertNothingInstalled(t, root, lock)
+}
+
+func TestInstall_INS02b_PlainHTTPRejected(t *testing.T) {
+	if _, err := ParseSource("http://host/a/b.git"); err == nil {
+		t.Fatal("http:// would fetch code in the clear")
+	}
+}
+
+// recordingGit notes whether it was ever asked to run.
+type recordingGit struct{ called bool }
+
+func (g *recordingGit) Run(context.Context, string, ...string) (string, error) {
+	g.called = true
+	return "", errors.New("unexpected git call")
+}
+
+// The lockfile is user data that can be damaged; an entry whose source is no
+// longer a valid one must stop an update, not be fetched as written.
+func TestInstall_INS21b_UpdateRefusesBadLockedSource(t *testing.T) {
+	root := t.TempDir()
+	lock := filepath.Join(root, "extensions.lock")
+	if err := writeLock(lock, map[string]LockEntry{"hello": {Name: "hello", Source: "ext::sh -c touch pwned", Commit: "1"}}); err != nil {
+		t.Fatal(err)
+	}
+	git := &recordingGit{}
+	inst := NewInstaller(InstallOptions{Root: root, LockPath: lock, Git: git, Confirm: func(Plan) bool { return true }})
+	if _, err := inst.Update(context.Background(), "hello"); err == nil {
+		t.Fatal("update accepted a locked source it would not have installed")
+	}
+	if git.called {
+		t.Fatal("git ran for a rejected source")
+	}
+}
+
+// A lock entry's name becomes a path below Root; one that climbs out must not
+// reach removal.
+func TestInstall_INS24b_RemoveStaysInsideRoot(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "root")
+	victim := filepath.Join(parent, "victim")
+	for _, dir := range []string{root, victim} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lock := filepath.Join(parent, "extensions.lock")
+	if err := writeLock(lock, map[string]LockEntry{"../victim": {Name: "../victim", Commit: "1"}}); err != nil {
+		t.Fatal(err)
+	}
+	inst := NewInstaller(InstallOptions{Root: root, LockPath: lock})
+	if err := inst.Remove("../victim"); err == nil {
+		t.Fatal("expected a refusal")
+	}
+	if !pathExists(victim) {
+		t.Fatal("Remove deleted a directory outside Root")
+	}
+}
+
+// A damaged lockfile is read as empty, but the installer says so.
+func TestInstall_INS27b_CorruptLockIsReported(t *testing.T) {
+	root := t.TempDir()
+	lock := filepath.Join(root, "extensions.lock")
+	if err := os.WriteFile(lock, []byte(": not yaml ["), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var warned []string
+	inst := NewInstaller(InstallOptions{Root: root, LockPath: lock, Warn: func(msg string) { warned = append(warned, msg) }})
+	if list, err := inst.List(context.Background()); err != nil || len(list) != 0 {
+		t.Fatalf("list = %v, %v", list, err)
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], "corrupt") {
+		t.Fatalf("warnings = %v", warned)
 	}
 }
 

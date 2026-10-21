@@ -2,6 +2,7 @@ package ask
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/AutumnsGrove/nova/proto"
@@ -23,20 +24,19 @@ func formatAnswers(questions []question, resp proto.UIResponse) string {
 		switch {
 		case a.Skipped || (a.Value == "" && len(a.Values) == 0):
 			b.WriteString("skipped")
-		case q.Kind == kindMulti:
-			labels := make([]string, 0, len(a.Values))
-			for _, id := range a.Values {
-				labels = append(labels, optionLabel(q, id))
-			}
-			b.WriteString(strings.Join(labels, ", "))
 		case q.Kind == kindText:
 			b.WriteString(a.Value)
 		default:
-			if a.Value != "" {
-				b.WriteString("Other: " + a.Value)
-			} else {
-				b.WriteString(optionLabel(q, a.Values[0]))
+			// The form answers with option ids, or with free text when the user
+			// picked Other; a client may send both.
+			parts := make([]string, 0, len(a.Values)+1)
+			for _, id := range a.Values {
+				parts = append(parts, optionLabel(q, id))
 			}
+			if a.Value != "" {
+				parts = append(parts, "Other: "+a.Value)
+			}
+			b.WriteString(strings.Join(parts, ", "))
 		}
 		if a.Notes != "" {
 			b.WriteString("\nNote: " + a.Notes)
@@ -48,10 +48,8 @@ func formatAnswers(questions []question, resp proto.UIResponse) string {
 
 // optionLabel maps an option id to its label, falling back to the id.
 func optionLabel(q question, id string) string {
-	for _, o := range q.Options {
-		if o.ID == id {
-			return o.Label
-		}
+	if i := slices.IndexFunc(q.Options, func(o option) bool { return o.ID == id }); i >= 0 {
+		return q.Options[i].Label
 	}
 	return id
 }

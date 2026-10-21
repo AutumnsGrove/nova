@@ -173,6 +173,20 @@ func (t *Transcript) QueueUser(text, kind string) string {
 	return u.id
 }
 
+// DropQueued removes every steering and follow-up message the server has not
+// consumed and returns their text in order. The caller uses it when the run
+// ends or aborts and the messages go back to the editor, so each one shows once.
+func (t *Transcript) DropQueued() []string {
+	dropped := make([]string, 0, len(t.queued))
+	for _, u := range t.queued {
+		dropped = append(dropped, u.text)
+		t.remove(u)
+		delete(t.kinds, u)
+	}
+	t.queued = nil
+	return dropped
+}
+
 // Apply folds one event into the transcript and returns the ids of items that
 // changed or were added.
 func (t *Transcript) Apply(e proto.Event) []string {

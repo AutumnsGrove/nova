@@ -116,11 +116,7 @@ func (m *Model) scheduleGit() tea.Cmd {
 		return nil
 	}
 	m.gitArmed = true
-	after := m.clock.After(gitRefreshInterval)
-	return func() tea.Msg {
-		after()
-		return gitTickMsg{}
-	}
+	return m.timer(gitRefreshInterval, gitTickMsg{})
 }
 
 // readGit runs one read off the update path.

@@ -73,7 +73,9 @@ func (s *Store) Branch(leaf string) ([]Entry, error) {
 		return nil, fmt.Errorf("session: unknown entry %q", leaf)
 	}
 	var reversed []Entry
-	for {
+	// A branch can never be longer than the session; the bound keeps a parent
+	// cycle that slipped past the loader from growing without limit.
+	for len(reversed) <= len(s.entries) {
 		e := s.entries[i]
 		reversed = append(reversed, e)
 		if e.Parent == "" {

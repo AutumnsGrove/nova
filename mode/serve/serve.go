@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -19,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/mode"
 	"github.com/AutumnsGrove/nova/proto"
@@ -32,6 +34,7 @@ const (
 	defaultHeader    = 10 * time.Second
 	idleTimeout      = 120 * time.Second
 	writeTimeout     = 30 * time.Second
+	readTimeout      = 2 * time.Minute // a request body must arrive within this
 	shutdownGrace    = 5 * time.Second
 )
 
@@ -43,7 +46,7 @@ type Options struct {
 	CORSOrigin   string        // a single exact origin, or ""
 	RingSize     int           // events kept for resume; default 1000
 	Heartbeat    time.Duration // default 15s
-	MaxBody      int64         // default 16 MiB
+	MaxBody      int64         // default 32 MiB
 
 	headerTimeout time.Duration // test seam; zero means the documented 10s
 }
@@ -51,12 +54,12 @@ type Options struct {
 // apply fills defaults and validates the configuration. The heartbeat uses the
 // real clock; a test that wants it sooner sets a small Heartbeat.
 func (o *Options) apply() error {
-	o.Listen = def(o.Listen, defaultListen)
-	o.Token = def(o.Token, os.Getenv("NOVA_SERVE_TOKEN"))
-	o.RingSize = def(o.RingSize, defaultRingSize)
-	o.Heartbeat = def(o.Heartbeat, defaultHeartbeat)
-	o.MaxBody = def(o.MaxBody, defaultMaxBody)
-	o.headerTimeout = def(o.headerTimeout, defaultHeader)
+	o.Listen = cmp.Or(o.Listen, defaultListen)
+	o.Token = cmp.Or(o.Token, os.Getenv(auth.EnvServeToken))
+	o.RingSize = cmp.Or(o.RingSize, defaultRingSize)
+	o.Heartbeat = cmp.Or(o.Heartbeat, defaultHeartbeat)
+	o.MaxBody = cmp.Or(o.MaxBody, defaultMaxBody)
+	o.headerTimeout = cmp.Or(o.headerTimeout, defaultHeader)
 	if o.CORSOrigin != "" {
 		u, err := url.Parse(o.CORSOrigin)
 		if o.CORSOrigin == "*" || err != nil || u.Scheme == "" || u.Host == "" {
@@ -64,15 +67,6 @@ func (o *Options) apply() error {
 		}
 	}
 	return nil
-}
-
-// def returns v, or d when v is the zero value.
-func def[T comparable](v, d T) T {
-	var zero T
-	if v == zero {
-		return d
-	}
-	return v
 }
 
 // server is the transport. It owns the event ring and UI forwarding, not the
@@ -143,10 +137,21 @@ func (s *server) start() {
 				if !ok {
 					return
 				}
-				s.publish(ev)
+				s.onEvent(ev)
 			}
 		}
 	}()
+}
+
+// onEvent handles one event from the mode server. A UI request that expired will
+// never be answered, so its id stops being live.
+func (s *server) onEvent(ev proto.Event) {
+	if ev.Type == proto.EventUIExpired {
+		s.mu.Lock()
+		delete(s.pending, ev.ID)
+		s.mu.Unlock()
+	}
+	s.publish(ev)
 }
 
 // close stops the pump and releases every event stream. It is idempotent.
@@ -167,11 +172,16 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, fail(proto.CodeInternal, "internal error"))
 		}
 	}()
-	// The event stream is long-lived by design, so only the request/response routes
-	// get a write deadline, set before auth so that rejections are bounded too; a stalled reader cannot pin a handler forever. A writer
-	// without deadline support (a test recorder) returns an error we can ignore.
+	// The event stream is long-lived by design, so only the request/response
+	// routes get deadlines, set before auth so that rejections are bounded too: a
+	// stalled reader or a body sent a byte at a time cannot pin a handler forever.
+	// A writer without deadline support (a test recorder) returns an error we can
+	// ignore.
 	if r.URL.Path != "/v1/events" {
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(writeTimeout))
+		rc := http.NewResponseController(w)
+		now := time.Now()
+		_ = rc.SetWriteDeadline(now.Add(writeTimeout))
+		_ = rc.SetReadDeadline(now.Add(readTimeout))
 	}
 	if s.opt.CORSOrigin != "" {
 		w.Header().Add("Vary", "Origin")
@@ -208,13 +218,20 @@ func fail(code, message string) proto.Response {
 	return proto.Response{Type: proto.FrameResponse, Error: &proto.Error{Code: code, Message: message}}
 }
 
-// readBody enforces the content type and body limit and returns the bytes. On
-// failure it has already written the response.
+// readBody enforces the JSON content type and the body limit and returns the
+// bytes. On failure it has already written the response.
 func (s *server) readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
 	if strings.TrimSpace(r.Header.Get("Content-Type")) != "application/json" {
 		writeJSON(w, http.StatusUnsupportedMediaType, fail(proto.CodeUnsupported, "Content-Type must be application/json"))
 		return nil, false
 	}
+	return readLimited(w, r, limit)
+}
+
+// readLimited reads a body of at most limit bytes. On failure it has already
+// written the response: 413 for a body over the limit, 400 for any other read
+// error.
+func readLimited(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		if maxErr := (*http.MaxBytesError)(nil); errors.As(err, &maxErr) {
@@ -246,17 +263,15 @@ func (s *server) handleCommands(w http.ResponseWriter, r *http.Request) {
 // or another client uses; the inline data form still works. The bytes are
 // validated and bounded by the server's store, not by this transport.
 func (s *server) handleAttachments(w http.ResponseWriter, r *http.Request) {
-	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.opt.MaxBody))
-	if err != nil {
-		writeJSON(w, http.StatusRequestEntityTooLarge, fail(proto.CodeBadRequest, "request body too large"))
+	data, ok := readLimited(w, r, s.opt.MaxBody)
+	if !ok {
 		return
 	}
 	name := r.URL.Query().Get("name")
 	if name == "" {
 		name = r.Header.Get("X-Attachment-Name")
 	}
-	mime := r.Header.Get("Content-Type")
-	id, err := s.mode.StoreAttachment(name, mime, data)
+	id, mime, err := s.mode.StoreAttachment(name, data)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, fail(proto.CodeBadRequest, err.Error()))
 		return
@@ -361,20 +376,22 @@ func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, fail(proto.CodeInternal, "streaming unsupported"))
 		return
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
-
 	lastID, hasLast := int64(0), false
 	if v := r.Header.Get("Last-Event-ID"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			lastID, hasLast = n, true
 		}
 	}
+	// Subscribe before the headers go out: a client that has seen the 200 may
+	// send a command at once, and its events must not be published to nobody.
 	replay, ch, resync := s.subscribe(lastID, hasLast)
 	defer s.unsubscribe(ch)
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
 
 	var skip int64
 	if resync {

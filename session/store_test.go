@@ -534,3 +534,151 @@ func TestSession_SES27_EmptyFile(t *testing.T) {
 		t.Fatalf("header = %+v, want a written header", s.Header())
 	}
 }
+
+// A final line cut short by a crash is terminated on open. That repair adds a
+// newline but no new line, so the count that numbers later warnings must not
+// move: the next append is line 4 of "header, entry, junk, new entry".
+func TestSession_SES28_TruncatedTailKeepsLineCount(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	body := `{"type":"session","v":1,"id":"s"}` + "\n" +
+		`{"type":"message","id":"a","message":{"role":"user","content":"a"}}` + "\n" +
+		`{"type":"message","id":"b"`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s, err := Open(path, Options{})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+	e, err := s.Append(userEntry("c"))
+	if err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if want := len(fileLines(t, path)); e.line != want {
+		t.Fatalf("appended entry is line %d, but it is line %d of the file", e.line, want)
+	}
+}
+
+// Another process can append a line whose parent is itself. The load-time
+// repair never sees it, so Branch must still terminate.
+func TestSession_SES29_SelfParentAppendedByAnotherProcess(t *testing.T) {
+	s, path := openStore(t, Options{})
+	if _, err := s.Append(userEntry("a")); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	line := `{"type":"message","id":"x","parent":"x","message":{"role":"user","content":"x"}}` + "\n"
+	if _, err := f.WriteString(line); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	f.Close()
+
+	done := make(chan []Entry, 1)
+	go func() {
+		branch, _ := s.Branch("x")
+		done <- branch
+	}()
+	select {
+	case branch := <-done:
+		if len(branch) != 1 || branch[0].ID != "x" {
+			t.Fatalf("branch = %+v, want just x as a root", branch)
+		}
+		if len(s.Warnings()) == 0 {
+			t.Fatal("want a warning for the self-parent")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Branch looped on a self-parent")
+	}
+}
+
+// Two processes starting a session at the same new path must not both write a
+// header: the second would be read as a corrupt entry forever.
+func TestSession_SES30_ConcurrentCreateWritesOneHeader(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	const n = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			s, err := Open(path, Options{})
+			if err != nil {
+				t.Errorf("Open: %v", err)
+				return
+			}
+			s.Close()
+		}()
+	}
+	close(start)
+	wg.Wait()
+	headers := 0
+	for _, line := range fileLines(t, path) {
+		if strings.Contains(line, `"type":"session"`) {
+			headers++
+		}
+	}
+	if headers != 1 {
+		t.Fatalf("file has %d header lines, want 1", headers)
+	}
+}
+
+// The loader repairs a self-parent the same way as a longer cycle.
+func TestSession_SES31_SelfParentOnLoad(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	body := `{"type":"session","v":1,"id":"s"}` + "\n" +
+		`{"type":"message","id":"a","parent":"a","message":{"role":"user","content":"a"}}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s, err := Open(path, Options{})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+	e, _ := s.Get("a")
+	branch, err := s.Branch("a")
+	if err != nil || e.Parent != "" || len(branch) != 1 || len(s.Warnings()) == 0 {
+		t.Fatalf("entry = %+v branch = %v err = %v warnings = %v, want a root with a warning", e, branch, err, s.Warnings())
+	}
+}
+
+// A process that crashed mid-append leaves an unterminated line. A store that
+// was already open must not glue its next entry onto it.
+func TestSession_SES32_AppendAfterAnotherProcessCrashed(t *testing.T) {
+	s, path := openStore(t, Options{})
+	if _, err := s.Append(userEntry("a")); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if _, err := f.WriteString(`{"type":"message","id":"half"`); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	f.Close()
+
+	e, err := s.Append(userEntry("b"))
+	if err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	for i, line := range fileLines(t, path)[1:] {
+		if strings.Contains(line, `"half"`) && strings.Contains(line, `"b"`) {
+			t.Fatalf("line %d glues the new entry to the junk: %s", i+2, line)
+		}
+	}
+	reopened, err := Open(path, Options{})
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer reopened.Close()
+	if _, ok := reopened.Get(e.ID); !ok {
+		t.Fatalf("entry %s lost after reopen", e.ID)
+	}
+}

@@ -175,3 +175,56 @@ func TestPackageReport_UsesDefault(t *testing.T) {
 		t.Fatal("Report with no default recorder should error")
 	}
 }
+
+// A log must not grow without bound: past its limit it moves aside to <name>.1,
+// and the live file keeps the newest entries.
+func TestReport_RotatesAtTheLimit(t *testing.T) {
+	dir := t.TempDir()
+	r := New(Options{Dir: dir, Now: fixedClock, MaxBytes: 300,
+		Stack: func() []byte { return []byte(strings.Repeat("s", 150)) }})
+	for _, v := range []string{"first", "second", "third", "fourth"} {
+		if _, err := r.Report(v, "op"); err != nil {
+			t.Fatalf("Report(%s): %v", v, err)
+		}
+	}
+	live, err := os.ReadFile(filepath.Join(dir, CrashFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(live), "panic: fourth") {
+		t.Fatalf("the live log lost the newest report:\n%s", live)
+	}
+	old, err := os.ReadFile(filepath.Join(dir, CrashFile+".1"))
+	if err != nil {
+		t.Fatalf("nothing was rotated: %v", err)
+	}
+	if len(live) > 600 || len(old) > 600 {
+		t.Fatalf("logs are %d and %d bytes, want each held near the 300-byte limit", len(live), len(old))
+	}
+	info, err := os.Stat(filepath.Join(dir, CrashFile+".1"))
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("rotated log mode = %v, %v, want 0600", info.Mode().Perm(), err)
+	}
+}
+
+func TestDebugf_RotatesAtTheLimit(t *testing.T) {
+	dir := t.TempDir()
+	r := New(Options{Dir: dir, Now: fixedClock, Debug: true, MaxBytes: 200})
+	t.Cleanup(func() { _ = r.Close() })
+	for i := range 20 {
+		r.Debugf("line %02d %s", i, strings.Repeat("x", 30))
+	}
+	live, err := os.ReadFile(filepath.Join(dir, DebugFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(live), "line 19") {
+		t.Fatalf("the live trace lost the newest line:\n%s", live)
+	}
+	if _, err := os.Stat(filepath.Join(dir, DebugFile+".1")); err != nil {
+		t.Fatalf("nothing was rotated: %v", err)
+	}
+	if len(live) > 600 {
+		t.Fatalf("the live trace is %d bytes, want it near the 200-byte limit", len(live))
+	}
+}

@@ -2,8 +2,10 @@ package ext
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +53,22 @@ func TestCheck_CHK04_BuildFailure(t *testing.T) {
 	problems := Check(context.Background(), dir, CheckOptions{})
 	if len(problems) == 0 {
 		t.Fatal("expected a build failure")
+	}
+}
+
+// A build that outlives its timeout is killed with its children, which hold the
+// output pipe open; killing only the shell would leave Check waiting for them.
+func TestCheck_CHK04b_BuildTimeoutKillsTheTree(t *testing.T) {
+	dir := rawEchoDir(t, "echo", "build: [\"sh\", \"-c\", \"sleep 30; true\"]\n")
+	done := make(chan []error, 1)
+	go func() { done <- Check(context.Background(), dir, CheckOptions{Timeout: 100 * time.Millisecond}) }()
+	select {
+	case problems := <-done:
+		if len(problems) == 0 {
+			t.Fatal("a build that timed out was not reported")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Check waited for the build's children after the timeout")
 	}
 }
 
@@ -209,6 +227,39 @@ func writeRepoFiles(t *testing.T, dir string, files map[string]string) {
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// failingBuild is a CommandRunner whose build step fails and counts its runs.
+type failingBuild struct{ runs int }
+
+func (f *failingBuild) Run(context.Context, string, []string) error {
+	f.runs++
+	return errors.New("compile error")
+}
+
+// A build that fails on reload must be reported, and must be tried again on the
+// next reload rather than remembered as done.
+func TestReload_RLD03b_FailedBuildIsReportedAndRetried(t *testing.T) {
+	dir := t.TempDir()
+	body := "name: decl\nversion: 1.0.0\ndescription: x\nbuild: [make]\ntools:\n  - name: one\n    description: x\n    parameters: {type: object}\n    exec: [echo]\n"
+	if err := os.WriteFile(filepath.Join(dir, "extension.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	build := &failingBuild{}
+	h := startHost(t, []string{dir}, HostOptions{Run: build})
+	if err := os.WriteFile(filepath.Join(dir, "extension.yaml"), []byte(body+"# changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	errs := h.Reload(context.Background())
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "compile error") {
+		t.Fatalf("reload errors = %v, want the build failure", errs)
+	}
+	if errs := h.Reload(context.Background()); len(errs) != 1 {
+		t.Fatalf("second reload errors = %v, want the build retried and reported again", errs)
+	}
+	if build.runs != 2 {
+		t.Fatalf("build ran %d times, want 2", build.runs)
 	}
 }
 

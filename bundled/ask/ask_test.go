@@ -282,6 +282,27 @@ func TestAsk_ASK16_AbortWhileWaiting(t *testing.T) {
 
 // FuzzAskFormat formats arbitrary answers and checks no panic and that every
 // question appears.
+// The form returns free text instead of option ids when the user picks Other, on
+// a multi-choice question as much as on a single one. The model must see it.
+func TestAsk_ASK17_OtherTextOnAMultiChoiceQuestion(t *testing.T) {
+	questions := []question{{ID: "b", Prompt: "B", Kind: kindMulti, Options: []option{{ID: "p", Label: "P"}, {ID: "q", Label: "Q"}}}}
+	cases := map[string]struct {
+		answer proto.UIAnswer
+		want   string
+	}{
+		"other only":     {proto.UIAnswer{ID: "b", Value: "something else"}, "Answer: Other: something else"},
+		"options+other":  {proto.UIAnswer{ID: "b", Values: []string{"p"}, Value: "more"}, "Answer: P, Other: more"},
+		"options only":   {proto.UIAnswer{ID: "b", Values: []string{"p", "q"}}, "Answer: P, Q"},
+		"unknown option": {proto.UIAnswer{ID: "b", Values: []string{"zz"}}, "Answer: zz"},
+	}
+	for name, c := range cases {
+		out := formatAnswers(questions, proto.UIResponse{Answers: []proto.UIAnswer{c.answer}})
+		if !strings.Contains(out, c.want) {
+			t.Errorf("%s: %q does not contain %q", name, out, c.want)
+		}
+	}
+}
+
 func FuzzAskFormat(f *testing.F) {
 	f.Add([]byte{0, 1, 2, 3})
 	f.Fuzz(func(t *testing.T, data []byte) {

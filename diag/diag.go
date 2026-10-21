@@ -20,6 +20,11 @@ import (
 // one in an appended file.
 const Header = "=== nova crash report ==="
 
+// defaultMaxBytes bounds a log file. A log past it moves to <name>.1, replacing
+// the one before, so the newest entries stay in the live file and a long
+// session cannot fill the disk or make `nova log` read a huge file.
+const defaultMaxBytes = 4 << 20
+
 // The file names under the configuration directory.
 const (
 	CrashFile = "crash.log"
@@ -34,6 +39,9 @@ type Options struct {
 	Mode    string
 	Model   string
 	Debug   bool
+	// MaxBytes is how large a log may grow before it moves aside to <name>.1; zero
+	// means 4 MiB.
+	MaxBytes int64
 
 	// Now and Stack are seams for tests.
 	Now   func() time.Time
@@ -54,6 +62,7 @@ type Recorder struct {
 	crashPath string
 	debugPath string
 	debugFile *os.File
+	debugSize int64 // bytes in the open debug file
 }
 
 // New builds a Recorder. The zero Options is valid: it records nothing and is
@@ -63,7 +72,10 @@ func New(opt Options) *Recorder {
 		opt.Now = time.Now
 	}
 	if opt.Stack == nil {
-		opt.Stack = func() []byte { return debug.Stack() }
+		opt.Stack = debug.Stack
+	}
+	if opt.MaxBytes <= 0 {
+		opt.MaxBytes = defaultMaxBytes
 	}
 	r := &Recorder{
 		opt:   opt,
@@ -130,6 +142,7 @@ func (r *Recorder) Report(v any, op string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(r.crashPath), 0o750); err != nil {
 		return r.crashPath, err
 	}
+	rotate(r.crashPath, r.opt.MaxBytes)
 	f, err := os.OpenFile(r.crashPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return r.crashPath, err
@@ -181,14 +194,33 @@ func (r *Recorder) Debugf(format string, args ...any) {
 		if err := os.MkdirAll(filepath.Dir(r.debugPath), 0o750); err != nil {
 			return
 		}
+		rotate(r.debugPath, r.opt.MaxBytes)
 		f, err := os.OpenFile(r.debugPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return
 		}
-		r.debugFile = f
+		r.debugFile, r.debugSize = f, 0
+		if info, err := f.Stat(); err == nil {
+			r.debugSize = info.Size()
+		}
 	}
 	line := fmt.Sprintf("%s %s\n", r.opt.Now().UTC().Format(time.RFC3339), fmt.Sprintf(format, args...))
-	_, _ = r.debugFile.WriteString(line)
+	n, _ := r.debugFile.WriteString(line)
+	r.debugSize += int64(n)
+	if r.debugSize > r.opt.MaxBytes {
+		// Close now; the next line reopens a fresh file after the old one moves aside.
+		_ = r.debugFile.Close()
+		r.debugFile = nil
+	}
+}
+
+// rotate moves path to path+".1" when it has grown past limit, replacing any
+// earlier ".1". A failure leaves the log as it is: losing a rotation must never
+// cost a crash report.
+func rotate(path string, limit int64) {
+	if info, err := os.Stat(path); err == nil && info.Size() > limit {
+		_ = os.Rename(path, path+".1")
+	}
 }
 
 // Close releases the debug file, if one is open.

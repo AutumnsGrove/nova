@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -39,7 +40,7 @@ func isImagePath(path string) bool {
 // readImage decodes and normalizes an image file into a result the model can
 // see. media.Normalize applies the one set of size and format limits.
 func readImage(abs string) tool.Result {
-	info, err := os.Stat(abs)
+	info, err := statRegular(abs)
 	if err != nil {
 		return tool.Errorf("%v", err)
 	}
@@ -82,9 +83,9 @@ func Read() tool.Tool {
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"path":   stringProp("File path (relative to the working directory, or absolute)"),
-				"offset": intProp("1-indexed line to start from (default 1)"),
-				"limit":  intProp("Maximum number of lines to read (default 2000, max 2000)"),
+				"path":   tool.StringProp("File path (relative to the working directory, or absolute)"),
+				"offset": tool.IntProp("1-indexed line to start from (default 1)"),
+				"limit":  tool.IntProp("Maximum number of lines to read (default 2000, max 2000)"),
 			},
 			"required": []string{"path"},
 		},
@@ -97,7 +98,7 @@ func Read() tool.Tool {
 		if err := json.Unmarshal(args, &in); err != nil {
 			return tool.Result{}, fmt.Errorf("invalid arguments: %w", err)
 		}
-		abs, err := resolve(tctx, in.Path)
+		abs, err := tool.ResolvePath(tctx, in.Path)
 		if err != nil {
 			return tool.Errorf("%v", err), nil
 		}
@@ -118,106 +119,119 @@ func Read() tool.Tool {
 		if limit > maxReadLines {
 			limit = maxReadLines
 		}
-		return renderRead(abs, offset, limit), nil
+		return renderRead(ctx, abs, offset, limit), nil
 	})
 }
 
+// ctxCheckEvery is how many lines scanPage reads between context checks. A
+// context check takes a lock, so doing it per line would cost more than the scan.
+const ctxCheckEvery = 4096
+
 // renderRead streams abs and renders lines offset..offset+limit-1, stopping early
 // at the byte cap while still counting the remaining lines.
-func renderRead(abs string, offset, limit int) tool.Result {
+func renderRead(ctx context.Context, abs string, offset, limit int) tool.Result {
+	info, err := statRegular(abs)
+	if err != nil {
+		return tool.Errorf("%v", err)
+	}
 	f, err := os.Open(abs)
 	if err != nil {
 		return tool.Errorf("%v", err)
 	}
 	defer f.Close()
-	info, err := f.Stat()
+	prefix, err := io.ReadAll(io.LimitReader(f, tool.BinarySniffBytes))
 	if err != nil {
 		return tool.Errorf("%v", err)
 	}
-	if info.IsDir() {
-		return tool.Errorf("%s is a directory; use list", abs)
-	}
-	prefix, err := io.ReadAll(io.LimitReader(f, int64(binarySniff)))
-	if err != nil {
-		return tool.Errorf("%v", err)
-	}
-	if bytes.IndexByte(prefix, 0) >= 0 {
+	if tool.LooksBinary(prefix) {
 		return tool.Errorf("%s looks like a binary file (%d bytes)", abs, info.Size())
 	}
-	bom := bytes.HasPrefix(prefix, utf8BOM)
-	reader := &lineReader{r: bufio.NewReader(io.MultiReader(bytes.NewReader(prefix), f)), maxRunes: maxLineChars}
+	lr := &lineReader{r: bufio.NewReader(io.MultiReader(bytes.NewReader(prefix), f)), maxRunes: maxLineChars}
+	page, err := scanPage(ctx, lr, offset, limit)
+	if err != nil {
+		return tool.Errorf("%v", err)
+	}
+	return page.result(abs, offset, bytes.HasPrefix(prefix, utf8BOM))
+}
 
-	var out strings.Builder
-	lineNo, emitted, lastLine := 0, 0, 0
-	lf, crlf := false, false
-	invalidUTF8 := false
-	totalKnown := true
-	emitting := true
-	var total int
+// pageScan is what scanning a file for one page of lines found.
+type pageScan struct {
+	text        strings.Builder // the rendered page
+	lines       int             // lines seen; the file's total when counted
+	counted     bool            // the scan reached the end of the file
+	lastLine    int             // number of the last rendered line, 0 when none
+	lf, crlf    bool            // line-ending styles seen
+	invalidUTF8 bool            // a rendered line held invalid UTF-8
+}
 
+// scanPage reads every line, so the total is known, but renders only the
+// requested page: lines offset.. up to limit lines or the byte cap. A read error
+// ends the scan with counted false, because a partial count would mislead.
+func scanPage(ctx context.Context, lr *lineReader, offset, limit int) (*pageScan, error) {
+	p := &pageScan{}
+	full := false
 	for {
-		line, _, ending, readErr := reader.next()
-		if readErr == io.EOF {
+		if p.lines%ctxCheckEvery == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+		line, ending, err := lr.next()
+		if err != nil {
+			p.counted = errors.Is(err, io.EOF)
 			break
 		}
-		if readErr != nil {
-			totalKnown = false
-			break
-		}
-		lineNo++
+		p.lines++
 		switch ending {
 		case "lf":
-			lf = true
+			p.lf = true
 		case "crlf":
-			crlf = true
+			p.crlf = true
 		}
-		if lineNo == 1 {
+		if full || p.lines < offset {
+			continue
+		}
+		if p.lines == 1 {
 			line = strings.TrimPrefix(line, "\uFEFF")
 		}
 		if !utf8.ValidString(line) {
-			invalidUTF8 = true
+			p.invalidUTF8 = true
 			line = strings.ToValidUTF8(line, "\uFFFD")
 		}
-		if lineNo < offset || !emitting || emitted >= limit {
-			continue
-		}
-		fmt.Fprintf(&out, "%d\t%s\n", lineNo, line)
-		emitted++
-		lastLine = lineNo
-		if out.Len() >= maxReadBytes {
-			emitting = false
-		}
+		fmt.Fprintf(&p.text, "%d\t%s\n", p.lines, line)
+		p.lastLine = p.lines
+		full = p.lastLine-offset+1 >= limit || p.text.Len() >= maxReadBytes
 	}
-	if totalKnown {
-		total = lineNo
-	}
+	return p, nil
+}
 
-	if totalKnown && total == 0 {
-		details, _ := json.Marshal(readDetails{Path: abs, Start: offset, End: 0, Total: &total, LineEndings: endings(lf, crlf), BOM: bom})
-		return tool.Result{Content: "(empty file)", Details: details}
-	}
-	if totalKnown && offset > total {
-		return tool.Errorf("offset %d is beyond the end of the file (%d lines)", offset, total)
-	}
-
-	content := out.String()
-	truncated := false
-	if !totalKnown {
-		content += "... (more lines remain)\n"
-		truncated = true
-	} else if lastLine < total {
-		fmt.Fprintf(&out, "... (%d more lines; continue with offset=%d)\n", total-lastLine, lastLine+1)
-		content = out.String()
-		truncated = true
-	}
-	if invalidUTF8 {
-		content += "(some bytes were not valid UTF-8)\n"
-	}
-	details := readDetails{Path: abs, Start: offset, End: lastLine, LineEndings: endings(lf, crlf), BOM: bom}
-	if totalKnown {
-		details.Total = &total
+// result shapes a scan into the tool result: the page plus a footer saying how to
+// continue, or an error when the offset is past the end.
+func (p *pageScan) result(abs string, offset int, bom bool) tool.Result {
+	details := readDetails{Path: abs, Start: offset, End: p.lastLine, LineEndings: endings(p.lf, p.crlf), BOM: bom}
+	if p.counted {
+		details.Total = &p.lines
 	}
 	raw, _ := json.Marshal(details)
+	if p.counted && p.lines == 0 {
+		return tool.Result{Content: "(empty file)", Details: raw}
+	}
+	if p.counted && offset > p.lines {
+		return tool.Errorf("offset %d is beyond the end of the file (%d lines)", offset, p.lines)
+	}
+	content := p.text.String()
+	truncated := true
+	switch {
+	case !p.counted:
+		content += "... (more lines remain)\n"
+	case p.lastLine < p.lines:
+		content += fmt.Sprintf("... (%d more lines; continue with offset=%d)\n", p.lines-p.lastLine, p.lastLine+1)
+	default:
+		truncated = false
+	}
+	if p.invalidUTF8 {
+		content += "(some bytes were not valid UTF-8)\n"
+	}
 	return tool.Result{Content: content, Truncated: truncated, Details: raw}
 }
 
@@ -242,22 +256,21 @@ type lineReader struct {
 	maxRunes int
 }
 
-// next returns the next line's display text and rune count. A line that ends in
-// EOF without a newline is returned with a nil error; a subsequent call returns
-// io.EOF.
-func (lr *lineReader) next() (line string, runes int, ending string, err error) {
-	if _, peekErr := lr.r.Peek(1); peekErr != nil {
-		return "", 0, "", peekErr
+// next returns the next line's display text and its ending, "lf" or "crlf" (empty
+// for a last line with no newline). A line that ends in EOF without a newline is
+// returned with a nil error; a subsequent call returns io.EOF. A read error is
+// returned as is, and the partial line is dropped.
+func (lr *lineReader) next() (line, ending string, err error) {
+	if _, err := lr.r.Peek(1); err != nil {
+		return "", "", err
 	}
 	var kept, pending []byte
+	runes := 0
 	prev := byte(0)
 	for {
 		chunk, readErr := lr.r.ReadSlice('\n')
 		newline := readErr == nil
-		if i := bytes.IndexByte(chunk, '\n'); i >= 0 {
-			chunk = chunk[:i]
-		}
-		kept, pending, runes, prev = lr.feed(chunk, kept, pending, runes, prev)
+		kept, pending, runes, prev = lr.feed(bytes.TrimSuffix(chunk, []byte("\n")), kept, pending, runes, prev)
 		if newline {
 			ending = "lf"
 			if prev == '\r' {
@@ -267,11 +280,11 @@ func (lr *lineReader) next() (line string, runes int, ending string, err error) 
 			}
 			break
 		}
-		if readErr == bufio.ErrBufferFull {
+		if errors.Is(readErr, bufio.ErrBufferFull) {
 			continue
 		}
-		if readErr != nil && readErr != io.EOF {
-			err = readErr
+		if !errors.Is(readErr, io.EOF) {
+			return "", "", readErr
 		}
 		break
 	}
@@ -285,7 +298,7 @@ func (lr *lineReader) next() (line string, runes int, ending string, err error) 
 	if runes > lr.maxRunes {
 		line += fmt.Sprintf("… (line truncated, %d chars)", runes)
 	}
-	return line, runes, ending, nil
+	return line, ending, nil
 }
 
 // feed consumes one chunk of a line, counting runes and retaining at most

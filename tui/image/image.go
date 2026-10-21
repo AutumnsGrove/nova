@@ -118,7 +118,7 @@ var imageIDs atomic.Uint32
 // it. The first line carries the graphics sequence and the rest are blank, so
 // the caller reserves the image's height. ok is false when the protocol is not
 // Kitty (iTerm2 is deferred) or the part has no decodable image, and the caller
-// shows Fallback instead.
+// shows Fallback instead. A part that is not a PNG is converted first.
 func Render(part message.ContentPart, maxWidthCells int, caps Capabilities) (lines []string, ok bool) {
 	if caps.Images != Kitty || part.Data == "" {
 		return nil, false
@@ -127,12 +127,14 @@ func Render(part message.ContentPart, maxWidthCells int, caps Capabilities) (lin
 	if err != nil {
 		return nil, false
 	}
-	w, h, okDim := media.Dimensions(data)
-	if !okDim {
-		w, h = 800, 600
+	// Kitty draws PNG here, and photos are kept as JPEG, so convert what is not.
+	data, err = media.PNG(data)
+	if err != nil {
+		return nil, false
 	}
+	w, h, _ := media.Dimensions(data)
 	cols, rows := CellSize(w, h, maxWidthCells, 0, 0)
 	lines = make([]string, rows)
-	lines[0] = EncodeKitty(part.Data, cols, rows, imageIDs.Add(1))
+	lines[0] = EncodeKitty(base64.StdEncoding.EncodeToString(data), cols, rows, imageIDs.Add(1))
 	return lines, true
 }

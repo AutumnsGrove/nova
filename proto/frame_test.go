@@ -86,3 +86,20 @@ func TestProto_PRT12_RoundTrip(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// A server-originated event (an error, a session change) carries no timestamp.
+// omitempty does not omit a zero time.Time, so without omitzero every such
+// event goes out with "ts":"0001-01-01T00:00:00Z", a date no client can use.
+func TestProto_PRT19_ZeroTimestampOmitted(t *testing.T) {
+	b, err := json.Marshal(Event{Type: EventSessionChanged, Session: "s"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(b, []byte(`"ts"`)) {
+		t.Fatalf("event = %s, want no ts for a zero time", b)
+	}
+	stamped, err := json.Marshal(Event{Type: EventSessionChanged, TS: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)})
+	if err != nil || !bytes.Contains(stamped, []byte(`"ts":"2026-10-09T12:00:00Z"`)) {
+		t.Fatalf("stamped event = %s err = %v, want its ts kept", stamped, err)
+	}
+}

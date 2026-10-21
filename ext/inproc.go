@@ -3,14 +3,15 @@ package ext
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/diag"
-	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
@@ -68,7 +69,7 @@ type Env struct {
 	HasUI func(capability string) bool
 }
 
-// InProcCommand is one bundled slack command.
+// InProcCommand is one bundled slash command.
 type InProcCommand struct {
 	Name        string
 	Description string
@@ -100,7 +101,7 @@ type SpawnResult struct {
 // host has already started, otherwise on the next Start.
 func (h *Host) AddBundled(b Bundled) error {
 	if b == nil || b.Name() == "" {
-		return fmt.Errorf("ext: a bundled extension needs a name")
+		return errors.New("ext: a bundled extension needs a name")
 	}
 	h.mu.Lock()
 	if _, exists := h.byName[b.Name()]; exists {
@@ -132,7 +133,9 @@ func (h *Host) startBundled(b Bundled) error {
 	inst.cmdRun = map[string]InProcCommand{}
 	inst.envHooks = agent.Hooks{}
 	inst.bundleHooks = map[string]bool{}
-	h.addInstance(inst)
+	if !h.addInstance(inst) {
+		return nil
+	}
 	inst.env = h.newEnv(inst)
 	return h.initBundle(inst)
 }
@@ -152,7 +155,6 @@ func (h *Host) initBundle(inst *instance) (err error) {
 		return err
 	}
 	inst.setState(stateRunning, "")
-	inst.markRegistered()
 	return nil
 }
 
@@ -173,14 +175,11 @@ func (h *Host) newEnv(inst *instance) *Env {
 		HasUI:    h.hasUI,
 	}
 	env.Tool = func(t tool.Tool) error {
-		if _, exists := h.reg.Get(t.Info().Name); exists {
-			return fmt.Errorf("ext: tool %q is already registered", t.Info().Name)
-		}
-		return h.registerTool(inst, t.Info(), &bundledTool{inst: inst, t: t})
+		return h.registerTool(inst, &bundledTool{inst: inst, t: t}, false)
 	}
 	env.Command = func(c InProcCommand) error {
 		if c.Name == "" {
-			return fmt.Errorf("ext: command needs a name")
+			return errors.New("ext: command needs a name")
 		}
 		inst.mu.Lock()
 		defer inst.mu.Unlock()
@@ -195,29 +194,11 @@ func (h *Host) newEnv(inst *instance) *Env {
 	}
 	env.Hooks = func(hk agent.Hooks) {
 		inst.mu.Lock()
+		defer inst.mu.Unlock()
 		mergeHooks(&inst.envHooks, hk)
-		if hk.ToolCall != nil {
-			inst.bundleHooks["tool_call"] = true
+		for _, name := range declaredHooks(hk) {
+			inst.bundleHooks[name] = true
 		}
-		if hk.ToolResult != nil {
-			inst.bundleHooks["tool_result"] = true
-		}
-		if hk.TransformContext != nil {
-			inst.bundleHooks["transform_context"] = true
-		}
-		if hk.BeforeProviderRequest != nil {
-			inst.bundleHooks["before_provider_request"] = true
-		}
-		if hk.MessageEnd != nil {
-			inst.bundleHooks["message_end"] = true
-		}
-		if hk.TurnEnd != nil {
-			inst.bundleHooks["turn_end"] = true
-		}
-		if hk.AgentEnd != nil {
-			inst.bundleHooks["agent_end"] = true
-		}
-		inst.mu.Unlock()
 	}
 	env.Events = func(fn func(proto.Event)) {
 		if fn == nil {
@@ -230,107 +211,118 @@ func (h *Host) newEnv(inst *instance) *Env {
 	return env
 }
 
-// mergeHooks fills any unset hook in dst from src, so two calls to Env.Hooks
-// compose rather than replace.
+// mergeHooks composes src after dst, hook by hook, so two Env.Hooks calls from
+// one extension add to each other instead of replacing. BeforeTurn belongs to
+// the server, not to extensions, and is not composed.
 func mergeHooks(dst *agent.Hooks, src agent.Hooks) {
-	if src.BeforeProviderRequest != nil {
-		prev := dst.BeforeProviderRequest
-		dst.BeforeProviderRequest = chainBeforeProviderRequest(prev, src.BeforeProviderRequest)
-	}
-	if src.TransformContext != nil {
-		prev := dst.TransformContext
-		dst.TransformContext = chainTransformContext(prev, src.TransformContext)
-	}
-	if src.MessageEnd != nil {
-		prev := dst.MessageEnd
-		dst.MessageEnd = chainMessageEnd(prev, src.MessageEnd)
-	}
-	if src.ToolCall != nil {
-		prev := dst.ToolCall
-		dst.ToolCall = chainToolCall(prev, src.ToolCall)
-	}
-	if src.ToolResult != nil {
-		prev := dst.ToolResult
-		dst.ToolResult = chainToolResult(prev, src.ToolResult)
-	}
-	if src.TurnEnd != nil {
-		prev := dst.TurnEnd
-		dst.TurnEnd = chainTurnEnd(prev, src.TurnEnd)
-	}
-	if src.AgentEnd != nil {
-		prev := dst.AgentEnd
-		dst.AgentEnd = chainAgentEnd(prev, src.AgentEnd)
-	}
+	dst.BeforeProviderRequest = chainObserver(dst.BeforeProviderRequest, src.BeforeProviderRequest)
+	dst.AgentEnd = chainObserver(dst.AgentEnd, src.AgentEnd)
+	dst.TransformContext = chainRewrite(dst.TransformContext, src.TransformContext)
+	dst.MessageEnd = chainRewrite(dst.MessageEnd, src.MessageEnd)
+	dst.ToolCall = chainToolCall(dst.ToolCall, src.ToolCall)
+	dst.ToolResult = chainToolResult(dst.ToolResult, src.ToolResult)
+	dst.TurnEnd = chainTurnEnd(dst.TurnEnd, src.TurnEnd)
 }
 
-func chainBeforeProviderRequest(a, b func(context.Context, *provider.Request)) func(context.Context, *provider.Request) {
-	if a == nil {
+// chainObserver runs a then b on the same value.
+func chainObserver[T any](a, b func(context.Context, T)) func(context.Context, T) {
+	switch {
+	case a == nil:
 		return b
+	case b == nil:
+		return a
 	}
-	return func(ctx context.Context, req *provider.Request) { a(ctx, req); b(ctx, req) }
+	return func(ctx context.Context, v T) { a(ctx, v); b(ctx, v) }
 }
 
-func chainTransformContext(a, b func(context.Context, []message.Message) []message.Message) func(context.Context, []message.Message) []message.Message {
-	if a == nil {
+// chainRewrite feeds a's output to b.
+func chainRewrite[T any](a, b func(context.Context, T) T) func(context.Context, T) T {
+	switch {
+	case a == nil:
 		return b
+	case b == nil:
+		return a
 	}
-	return func(ctx context.Context, m []message.Message) []message.Message { return b(ctx, a(ctx, m)) }
+	return func(ctx context.Context, v T) T { return b(ctx, a(ctx, v)) }
 }
 
-func chainMessageEnd(a, b func(context.Context, message.Message) message.Message) func(context.Context, message.Message) message.Message {
-	if a == nil {
-		return b
-	}
-	return func(ctx context.Context, m message.Message) message.Message { return b(ctx, a(ctx, m)) }
-}
-
+// chainToolCall lets b see a's argument rewrite. A block ends the chain, and a
+// rewrite by a survives a b that has no opinion.
 func chainToolCall(a, b func(context.Context, agent.ToolCall) *agent.CallDecision) func(context.Context, agent.ToolCall) *agent.CallDecision {
-	if a == nil {
+	switch {
+	case a == nil:
 		return b
+	case b == nil:
+		return a
 	}
 	return func(ctx context.Context, c agent.ToolCall) *agent.CallDecision {
-		if dec := a(ctx, c); dec != nil {
-			if dec.Block {
-				return dec
+		first := a(ctx, c)
+		if first != nil {
+			if first.Block {
+				return first
 			}
-			if dec.Arguments != nil {
-				c.Arguments = dec.Arguments
+			if first.Arguments != nil {
+				c.Arguments = first.Arguments
 			}
 		}
-		return b(ctx, c)
+		second := b(ctx, c)
+		if second == nil || (first != nil && !second.Block && second.Arguments == nil) {
+			return first
+		}
+		return second
 	}
 }
 
+// chainToolResult feeds a's result to b.
 func chainToolResult(a, b func(context.Context, agent.ToolCall, tool.Result) tool.Result) func(context.Context, agent.ToolCall, tool.Result) tool.Result {
-	if a == nil {
+	switch {
+	case a == nil:
 		return b
+	case b == nil:
+		return a
 	}
 	return func(ctx context.Context, c agent.ToolCall, r tool.Result) tool.Result { return b(ctx, c, a(ctx, c, r)) }
 }
 
+// chainTurnEnd merges both decisions: either may end or continue the run, and
+// their injected messages are concatenated in order.
 func chainTurnEnd(a, b func(context.Context, agent.Turn) agent.TurnDecision) func(context.Context, agent.Turn) agent.TurnDecision {
-	if a == nil {
+	switch {
+	case a == nil:
 		return b
+	case b == nil:
+		return a
 	}
 	return func(ctx context.Context, t agent.Turn) agent.TurnDecision {
-		first := a(ctx, t)
-		second := b(ctx, t)
-		out := first
-		out.End = first.End || second.End
-		out.Continue = first.Continue || second.Continue
-		out.Inject = append(append([]message.Message(nil), first.Inject...), second.Inject...)
-		return out
+		first, second := a(ctx, t), b(ctx, t)
+		return agent.TurnDecision{
+			End:      first.End || second.End,
+			Continue: first.Continue || second.Continue,
+			Inject:   append(slices.Clone(first.Inject), second.Inject...),
+		}
 	}
 }
 
-func chainAgentEnd(a, b func(context.Context, *agent.Result)) func(context.Context, *agent.Result) {
-	if a == nil {
-		return b
+// declaredHooks names the hook points a set of Go hooks fills.
+func declaredHooks(h agent.Hooks) []string {
+	var out []string
+	for name, present := range map[string]bool{
+		"tool_call":               h.ToolCall != nil,
+		"tool_result":             h.ToolResult != nil,
+		"transform_context":       h.TransformContext != nil,
+		"before_provider_request": h.BeforeProviderRequest != nil,
+		"message_end":             h.MessageEnd != nil,
+		"turn_end":                h.TurnEnd != nil,
+		"agent_end":               h.AgentEnd != nil,
+	} {
+		if present {
+			out = append(out, name)
+		}
 	}
-	return func(ctx context.Context, r *agent.Result) { a(ctx, r); b(ctx, r) }
+	return out
 }
 
-// hasUI normalizes a capability name to the ui. prefix the hello uses.
+// hasUI normalizes a capability name to the "ui." prefix the client's hello uses.
 func (h *Host) hasUI(capability string) bool {
 	if h.opt.HasUI == nil {
 		return false
@@ -340,8 +332,6 @@ func (h *Host) hasUI(capability string) bool {
 	}
 	return h.opt.HasUI(capability)
 }
-
-// hasUI is the Env-facing view.
 
 // bundledTool adapts an in-process tool and recovers a panic into an error
 // result, reporting it as an extension_error.
@@ -364,7 +354,7 @@ func (b *bundledTool) Run(ctx context.Context, args json.RawMessage, tctx *tool.
 }
 
 // runBundledCommand runs a bundled command with panic recovery.
-func (h *Host) runBundledCommand(inst *instance, cmd InProcCommand, ctx context.Context, args string) (out string, err error) {
+func (h *Host) runBundledCommand(ctx context.Context, inst *instance, cmd InProcCommand, args string) (out string, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			h.reportHookErr(inst, "command:"+cmd.Name, fmt.Errorf("panic: %v", rec))
@@ -380,6 +370,9 @@ func (h *Host) runBundledCommand(inst *instance, cmd InProcCommand, ctx context.
 // reported at most once per minute.
 func (h *Host) Observe(ev proto.Event) {
 	h.mu.Lock()
+	if ev.Type == proto.EventRunStart {
+		clear(h.complete) // the completion cap is per run
+	}
 	insts := append([]*instance(nil), h.insts...)
 	h.mu.Unlock()
 	for _, inst := range insts {

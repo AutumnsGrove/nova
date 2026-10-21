@@ -3,7 +3,9 @@
 package providers
 
 import (
+	"cmp"
 	"context"
+	"maps"
 	"path/filepath"
 
 	"github.com/AutumnsGrove/nova/auth"
@@ -37,10 +39,7 @@ func Build(opt Options) provider.Provider {
 	}
 	store := opt.Store
 
-	orBase := opt.Config.Provider.OpenRouter.BaseURL
-	if orBase == "" {
-		orBase = getenv("NOVA_OPENROUTER_BASE_URL")
-	}
+	orBase := cmp.Or(opt.Config.Provider.OpenRouter.BaseURL, getenv("NOVA_OPENROUTER_BASE_URL"))
 	openRouter := openrouter.New(openrouter.Config{
 		BaseURL: orBase,
 		APIKeyFunc: func(context.Context) (string, error) {
@@ -64,10 +63,7 @@ func Build(opt Options) provider.Provider {
 		// exactly as it did before the key became lazy, and the server answers.
 		return "", nil
 	}
-	goBase := opt.Config.Provider.OpenCodeGo.BaseURL
-	if goBase == "" {
-		goBase = getenv("NOVA_OPENCODE_GO_BASE_URL")
-	}
+	goBase := cmp.Or(opt.Config.Provider.OpenCodeGo.BaseURL, getenv("NOVA_OPENCODE_GO_BASE_URL"))
 	// Load the cached live model overlay, then refresh it in the background when
 	// it is stale. Discovery never blocks startup and never fails it.
 	cachePath := ""
@@ -123,9 +119,9 @@ func (r *router) withSession(req provider.Request) provider.Request {
 	if id == "" {
 		return req
 	}
-	headers := make(map[string]string, len(req.ExtraHeaders)+1)
-	for k, v := range req.ExtraHeaders {
-		headers[k] = v
+	headers := maps.Clone(req.ExtraHeaders)
+	if headers == nil {
+		headers = map[string]string{}
 	}
 	headers[opencodego.SessionHeader] = id
 	req.ExtraHeaders = headers

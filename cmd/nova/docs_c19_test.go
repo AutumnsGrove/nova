@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/docs"
@@ -27,9 +28,11 @@ func TestDocs_DOC02_PrintTopic(t *testing.T) {
 }
 
 func TestDocs_DOC03_UnknownTopic(t *testing.T) {
-	code, out, _ := runCLI(t, "docs", "nonsense")
-	if code != 0 || !strings.Contains(out, "unknown topic") || !strings.Contains(out, "extensions") {
-		t.Fatalf("exit %d out %q, want the topic list", code, out)
+	code, out, errOut := runCLI(t, "docs", "nonsense")
+	// The styled error wraps lines mid-word, so compare with the spaces removed.
+	flat := strings.ToLower(strings.Join(strings.Fields(errOut), ""))
+	if code == 0 || out != "" || !strings.Contains(flat, "unknowntopic") || !strings.Contains(flat, "extensions") {
+		t.Fatalf("exit %d out %q err %q, want a failure that lists the topics on stderr", code, out, errOut)
 	}
 }
 
@@ -80,6 +83,18 @@ func TestDocs_DOC09_AuthoringContextSize(t *testing.T) {
 	est := compaction.Estimate([]message.Message{{Role: message.RoleUser, Content: docs.AuthoringContext()}})
 	if est >= 40000 {
 		t.Fatalf("authoring context estimates %d tokens, want under 40000", est)
+	}
+}
+
+// A hit's excerpt is cut at 100 bytes; the cut must not land inside a character.
+func TestDocs_DOC10_ExcerptStaysValidUTF8(t *testing.T) {
+	line := strings.Repeat("a", 99) + "é needle"
+	results := docs.Search([]docs.Topic{{Name: "t", Title: "t", Body: line}}, []string{"needle"})
+	if len(results) != 1 {
+		t.Fatalf("results = %+v, want one hit", results)
+	}
+	if !utf8.ValidString(results[0].Excerpt) {
+		t.Fatalf("excerpt %q is not valid UTF-8", results[0].Excerpt)
 	}
 }
 

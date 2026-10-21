@@ -178,6 +178,9 @@ diffMaxLines   = 5000
 | PTH11 | `Roots` set, new file under a symlinked parent that leaves the root | | refused |
 | PTH12 | WorkDir empty | | uses the process directory |
 | PTH13 | spaces and Unicode in path | `dir é/ファイル.txt` | works end to end |
+| PTH14 | `Roots` is the filesystem root `/` | | everything is allowed |
+| PTH15 | `Roots` set, sibling directory sharing the root name as a prefix | `/w/work-secrets` vs root `/w/work` | refused; `..foo` inside the root is allowed |
+| PTH16 | `Roots` set, `read`, `list`, `write` and `edit` given an outside path and an escaping symlink | | each returns the outside-roots error; nothing leaks or changes |
 | RDF01 | read a normal file | 3 lines | `1\ta`, `2\tb`, `3\tc`; no trailer |
 | RDF02 | trailing newline creates no extra line | `"a\nb\n"` | 2 lines |
 | RDF03 | no trailing newline | `"a\nb"` | 2 lines |
@@ -206,11 +209,15 @@ diffMaxLines   = 5000
 | RDF26 | dangling symlink | | error result |
 | RDF27 | symlink loop | | error result, no hang |
 | RDF28 | huge file read is streaming | 200 MiB sparse file, `limit 10` | returns quickly; memory stays small |
-| RDF29 | file shrinks while reading | | no panic; returns what was read |
+| RDF29 | named pipe | a FIFO, also named `.png` | a not-a-regular-file error before any open; never blocks (replaces the old stream-ends-early case, which a FIFO only imitated; that case is now RDF37) |
 | RDF30 | `Details` content | | path, start, end, total, line endings, bom |
 | RDF31 | tool annotations | | `ReadOnly` and `Parallel` true |
 | RDF32 | an image path returns an image part | a PNG file | one `image/png` part and a read-image note |
 | RDF33 | a text path has no parts | a `.txt` file | no parts, text as before |
+| RDF34 | the stream fails mid-file | a reader that errors after some text | the line reader returns that error, not EOF |
+| RDF35 | invalid UTF-8 only on a line before `offset` | `offset: 2` | no invalid-bytes note |
+| RDF36 | cancelled context | | error result; the scan stops |
+| RDF37 | stream ends early | a reader that ends after two lines | the two lines, counted, no panic |
 | WRT01 | create a new file | | file exists; message says `created` |
 | WRT02 | overwrite | | content replaced; says `overwrote` |
 | WRT03 | creates parent directories | `a/b/c.txt` | exists; dirs 0755 |
@@ -228,6 +235,7 @@ diffMaxLines   = 5000
 | WRT15 | `Details` | | path, created, bytes |
 | WRT16 | content with CRLF, NUL, invalid UTF-8 | | written byte for byte |
 | WRT17 | tool annotations | | `Destructive`; not `Parallel` |
+| WRT18 | the final rename fails | target is a non-empty directory (fails for root too) | error; no temporary file left |
 | EDT01 | single edit | | applied; file correct |
 | EDT02 | `oldText` not found | | error naming edit 1; file unchanged |
 | EDT03 | `oldText` appears twice | | error with count; file unchanged |
@@ -261,6 +269,9 @@ diffMaxLines   = 5000
 | EDT31 | unicode `oldText` | | works |
 | EDT32 | `oldText` at the very start and the very end of the file | | works |
 | EDT33 | property: apply then verify | random files and edits | result contains each `newText` once and every other byte unchanged |
+| EDT34 | `oldText` occurs twice with overlapping matches | `aa` in `aaa` | error naming 2 occurrences; file unchanged |
+| EDT35 | edit through a symlink | link to a file | the target is edited; the link stays a link |
+| EDT36 | edit a file that is not regular | a named pipe | error result; does not block |
 | LST01 | list a directory | | rows sorted by name |
 | LST02 | default path `.` | | WorkDir listing |
 | LST03 | pattern filter | `*.go` | matching names only |

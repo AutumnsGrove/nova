@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AutumnsGrove/nova/proc"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
@@ -213,6 +214,47 @@ func TestSupervise_SUP09_CrashRestarted(t *testing.T) {
 	}, 5*time.Second)
 	if _, ok := reg.Get("echo"); !ok {
 		t.Fatal("tool not re-registered after restart")
+	}
+}
+
+// A Shutdown that lands while the supervisor is sleeping out a restart backoff
+// must cancel the restart. Otherwise the supervisor wakes after the shutdown has
+// finished killing and starts a process nothing will ever stop.
+func TestSupervise_SUP12b_ShutdownDuringBackoffDoesNotRespawn(t *testing.T) {
+	clk := testkit.NewFakeClock(time.Unix(0, 0))
+	reg := tool.NewRegistry()
+	dir := echoDir(t, "echo", "")
+	h := rawHost(t, HostOptions{Dirs: []string{dir}, Registry: reg, Clock: clk, Env: envWith("ECHO_EXIT_AFTER=1")})
+	h.Start(context.Background())
+	_ = reg.Execute(context.Background(), "echo", nil, &tool.Context{})
+	waitFor(t, func() bool { return h.Status()[0].State == stateStarting }, "supervisor entered its restart backoff")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- h.Shutdown(ctx) }()
+	for finished := false; !finished; {
+		select {
+		case <-done:
+			finished = true
+		case <-ctx.Done():
+			t.Fatal("Shutdown did not return")
+		default:
+			clk.Advance(500 * time.Millisecond)
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if ctx.Err() != nil {
+		t.Fatal("Shutdown waited out its context instead of finishing")
+	}
+
+	inst := h.insts[0]
+	inst.mu.Lock()
+	pid := inst.cmd.Process.Pid
+	inst.mu.Unlock()
+	if syscall.Kill(pid, 0) == nil {
+		proc.Kill(pid)
+		t.Fatalf("process %d is still running after Shutdown", pid)
 	}
 }
 

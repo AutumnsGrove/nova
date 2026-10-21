@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -102,32 +103,32 @@ func (d *flowDialog) Tick(time.Time) bool { return false }
 func (d *flowDialog) Size(maxW, maxH int) (int, int) {
 	width := max(len(d.url)+8, 52)
 	if d.status != nil {
-		width = max(width, ansi.StringWidth(safe(d.status()))+4)
+		width = max(width, ansi.StringWidth(sanitize.Text(d.status()))+4)
 	}
 	return min(width, maxW), min(12, maxH)
 }
 
 // View renders the framed flow dialog.
 func (d *flowDialog) View(w, h int, st styles.Styles) string {
-	body := []string{safe(d.prompt)}
+	body := []string{sanitize.Text(d.prompt)}
 	if d.url != "" {
 		body = append(body, st.Muted.Render("Approve access in your browser. If it did not open, visit:"))
-		body = append(body, safe(d.url))
+		body = append(body, sanitize.Text(d.url))
 	}
 	if d.code != "" {
-		body = append(body, "code: "+safe(d.code))
+		body = append(body, "code: "+sanitize.Text(d.code))
 	}
 	if d.status != nil {
 		if line := d.status(); line != "" {
-			body = append(body, st.Muted.Render(safe(line)))
+			body = append(body, st.Muted.Render(sanitize.Text(line)))
 		}
 	}
 	if d.paste {
 		body = append(body, st.Muted.Render("If the browser runs on another machine, paste the URL it was redirected to:"))
-		body = append(body, "> "+safe(string(d.input))+"▏")
+		body = append(body, "> "+sanitize.Text(string(d.input))+"▏")
 	}
 	if d.err != "" {
-		body = append(body, st.Error.Render("error: "+safe(d.err)), "enter retry · esc close")
+		body = append(body, st.Error.Render("error: "+sanitize.Text(d.err)), "enter retry · esc close")
 	}
 	return frame("Sign in", body, "esc cancel", w, max(h, 6), st)
 }
@@ -205,9 +206,9 @@ func (l *listPicker) Size(maxW, maxH int) (int, int) {
 	// long note such as "ready (config)" is not cut off; the screen still caps it.
 	widest := 0
 	for _, item := range l.items {
-		row := 2 + ansi.StringWidth(safe(item.label))
+		row := 2 + ansi.StringWidth(sanitize.Text(item.label))
 		if item.note != "" {
-			row += 2 + ansi.StringWidth(safe(item.note))
+			row += 2 + ansi.StringWidth(sanitize.Text(item.note))
 		}
 		widest = max(widest, row)
 	}
@@ -222,9 +223,9 @@ func (l *listPicker) View(w, h int, st styles.Styles) string {
 		if i == l.cursor {
 			marker = "> "
 		}
-		line := marker + safe(item.label)
+		line := marker + sanitize.Text(item.label)
 		if item.note != "" {
-			line += "  " + st.Muted.Render(safe(item.note))
+			line += "  " + st.Muted.Render(sanitize.Text(item.note))
 		}
 		body = append(body, ansi.Truncate(line, max(w-2, 1), "…"))
 	}

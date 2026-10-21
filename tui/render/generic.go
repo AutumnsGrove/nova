@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -15,7 +16,7 @@ import (
 type genericRenderer struct{}
 
 func (genericRenderer) Header(c Call, st styles.Styles, width int) string {
-	left := statusDot(c, st) + " " + st.Bold.Render(c.Name)
+	left := statusDot(c, st) + " " + st.Bold.Render(sanitize.Line(c.Name))
 	if s := Summarize(c.Name, c.Args, width); s != "" {
 		left += "  " + st.Muted.Render(s)
 	}
@@ -32,10 +33,7 @@ func (genericRenderer) Body(c Call, st styles.Styles, width int, expanded bool) 
 // genericBody renders a generic result: pretty arguments when expanded, then
 // the content.
 func genericBody(c Call, st styles.Styles, width int, expanded bool) string {
-	show, limit := bodyLimit(c, expanded)
-	if !show {
-		return ""
-	}
+	limit := bodyLimit(c, expanded)
 	if c.IsError {
 		return errorBody(c, st, width)
 	}
@@ -49,7 +47,7 @@ func genericBody(c Call, st styles.Styles, width int, expanded bool) string {
 	if c.Running {
 		text, limit = lastLines(c.Live, 5), 0
 	}
-	if strings.TrimSpace(ansi.Strip(text)) != "" {
+	if strings.TrimSpace(sanitize.Text(text)) != "" {
 		if !expanded && !c.Running {
 			parts = append(parts, previewText(text, st, width, false, previewCap(c)))
 		} else {

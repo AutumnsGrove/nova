@@ -17,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 )
 
 // Decision is the user's answer to the trust prompt.
@@ -105,18 +106,19 @@ func extensionNames(nova string) []string {
 
 // Prompt shows what would load and reads one choice from in.
 func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error) {
-	fmt.Fprintf(out, "The folder %s is not trusted.\n\n", dir)
+	// Every name below comes from the folder being judged, so none is drawn raw.
+	fmt.Fprintf(out, "The folder %s is not trusted.\n\n", sanitize.Line(dir))
 	if f.Config {
 		fmt.Fprintln(out, "  config:        .nova/config.yaml")
 	}
 	if len(f.Extensions) > 0 {
-		fmt.Fprintf(out, "  extensions:    %s\n", strings.Join(f.Extensions, ", "))
+		fmt.Fprintf(out, "  extensions:    %s\n", joinLines(f.Extensions))
 	}
 	if f.Hooks > 0 {
 		fmt.Fprintf(out, "  hooks:         %d\n", f.Hooks)
 	}
 	if len(f.ContextFiles) > 0 {
-		fmt.Fprintf(out, "  context files: %s\n", strings.Join(f.ContextFiles, ", "))
+		fmt.Fprintf(out, "  context files: %s\n", joinLines(f.ContextFiles))
 	}
 	fmt.Fprintln(out, "\n  1) Trust this folder")
 	fmt.Fprintln(out, "  2) Continue without trusting (once)")
@@ -136,6 +138,15 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error) 
 			return Quit, nil
 		}
 	}
+}
+
+// joinLines cleans each name and joins them for one line of the prompt.
+func joinLines(names []string) string {
+	clean := make([]string, len(names))
+	for i, n := range names {
+		clean[i] = sanitize.Line(n)
+	}
+	return strings.Join(clean, ", ")
 }
 
 // ApplyTrust records the folder, translating a too-broad refusal.

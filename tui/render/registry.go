@@ -8,16 +8,19 @@ package render
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"path"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
-	"github.com/AutumnsGrove/nova/tui/styles"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/AutumnsGrove/nova/tui/sanitize"
+	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
 // Call is everything a renderer knows about one tool call. Now is the render
@@ -180,17 +183,18 @@ func previewCap(c Call) int {
 	return PreviewLines
 }
 
-// bodyLimit reports whether a body is shown and the line cap for it.
-func bodyLimit(c Call, expanded bool) (bool, int) {
+// bodyLimit is the line cap for a body: none when expanded, fewer while running
+// and more for an error.
+func bodyLimit(c Call, expanded bool) int {
 	switch {
 	case expanded:
-		return true, 0
+		return 0
 	case c.Running:
-		return true, 5
+		return 5
 	case c.IsError:
-		return true, 12
+		return 12
 	default:
-		return true, previewCap(c)
+		return previewCap(c)
 	}
 }
 
@@ -208,7 +212,7 @@ func moreHint(n int, earlier bool, st styles.Styles) string {
 // with a hint for the rest. It is the compact view of a finished result; an
 // empty result gives "".
 func previewText(s string, st styles.Styles, width int, tail bool, limit int) string {
-	s = strings.TrimRight(strings.ReplaceAll(ansi.Strip(s), "\r", ""), "\n")
+	s = strings.TrimRight(sanitize.Text(s), "\n")
 	if strings.TrimSpace(s) == "" {
 		return ""
 	}
@@ -231,7 +235,7 @@ func clipPreview(lines []string, st styles.Styles, width int, tail bool, limit i
 // renderText strips control sequences, caps the line count, and wraps to width.
 // A limit of zero means the cap for the body (see bodyLimit) is used, or none.
 func renderText(s string, st styles.Styles, width, limit int) string {
-	s = strings.ReplaceAll(ansi.Strip(s), "\r", "")
+	s = sanitize.Text(s)
 	lines := strings.Split(s, "\n")
 	if limit > 0 && len(lines) > limit {
 		extra := len(lines) - limit
@@ -299,9 +303,9 @@ func detailBool(details json.RawMessage, key string) bool {
 // pathOf returns the title path of a call from Details, then arguments.
 func pathOf(c Call) string {
 	if p := detailString(c.Details, "path"); p != "" {
-		return p
+		return sanitize.Line(p)
 	}
-	return argString(c.Args, "path", "file_path")
+	return sanitize.Line(argString(c.Args, "path", "file_path"))
 }
 
 // Summarize picks the argument that identifies a call and renders it as one
@@ -337,11 +341,7 @@ func pickArg(m map[string]any) (string, string, bool) {
 			return k, v, true
 		}
 	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(m))
 	for _, k := range keys {
 		if v, ok := m[k].(string); ok {
 			return k, v, true

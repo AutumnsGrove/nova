@@ -1,8 +1,8 @@
 ---
 chunk: C16
 title: "TUI rendering: thinking block, tool cards, diffs, themes, splash"
-packages: [./tui/render, ./tui/diff, ./tui/chat, ./tui/styles, ./tui/ui, ./tui/status, ./tui/git]
-budgets: { ./tui/render: 745, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 2900, ./tui/status: 320, ./tui/git: 120 }
+packages: [./tui/render, ./tui/diff, ./tui/chat, ./tui/styles, ./tui/ui, ./tui/status, ./tui/git, ./tui/highlight]
+budgets: { ./tui/render: 750, ./tui/diff: 400, ./tui/chat: 1300, ./tui/styles: 450, ./tui/ui: 3050, ./tui/status: 320, ./tui/git: 120, ./tui/highlight: 80 }
 depends: [C15]
 ---
 
@@ -246,6 +246,8 @@ type Display struct {
 | CRD13 | restored card matches live card | `Load` vs events | same output (ignoring timer) |
 | CRD14 | truncated marker | `Truncated` | shown |
 | CRD15 | `Toggle` expands one card | | only that card expands |
+| CRD16 | a header path has no control bytes | read, write and edit calls whose path holds escapes and a bidi override | the visible path is kept and no escape of the path survives |
+| CRD17 | an unknown tool's name has no control bytes | a call named with escapes | none survive in the header |
 | PNL01 | card panel is tinted by state | running, ok, error | a background on every line; the three differ; each line resets |
 | PNL02 | panel spans the width with side padding | widths 20 to 200 | every line is the full width; one cell on each side |
 | PNL03 | mono has no panel background | `Mono` | no escapes; still padded |
@@ -301,6 +303,7 @@ type Display struct {
 | DFV13 | no colour profile | | markers only; no escapes |
 | DFV14 | syntax highlight by extension | `.go` | tokens coloured over the background |
 | DFV15 | rendering is deterministic | twice | identical |
+| DFV16 | no control bytes in any diff line kind | a hunk header, removed, added and context lines, and non-diff text, each holding escapes | none survive, in colour or without |
 | THM01 | load a valid theme | | colours set |
 | THM02 | missing keys | | fall back to dark; warning |
 | THM03 | invalid colour | `blue`, `#12` | warning; fallback |
@@ -339,6 +342,7 @@ type Display struct {
 | SLN08 | mono has no colour | mono theme, ASCII profile | no escape codes |
 | SLN09 | never exceeds the width | widths 10 to 200 | every line fits |
 | SLN10 | empty separator | separator empty | the default ` · ` is used |
+| SLN11 | hostile values are cleaned | a cwd, branch, model and hint holding escapes, a bidi override and a newline | no control byte survives and no extra line appears |
 | STS03 | style mapping | warn, error, unknown, empty | distinct tokens; unknown and empty fall back to muted |
 | STS05 | status renders usage | a populated state | tokens, cache, cost, context, model, thinking |
 | STS06 | extension status grows the region | default plus two rows | height goes from three to five |
@@ -349,6 +353,10 @@ type Display struct {
 | GIT04 | no commits | diff HEAD fails | falls back to the working-tree diff |
 | GIT05 | no cwd | empty cwd | not ok; git is not run |
 | GIT06 | fake reader | configured info | reports it and counts the call |
+| GIT07 | a repository's config cannot run programs | a repo whose `core.fsmonitor` names a script, read through the real git | the counts are right and the script never ran |
+| HLT01 | one line per input line | Go code, with and without colour | the same line count |
+| HLT02 | file escapes never reach the output | code holding an OSC, a clear-screen and a bidi override, with and without colour | none survive and the visible text stays |
+| HLT03 | `Line` is the first of `Lines` | one line without colour | the input unchanged |
 
 ## Retired rows
 

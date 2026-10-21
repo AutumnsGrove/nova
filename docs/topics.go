@@ -1,10 +1,12 @@
 package docs
 
 import (
+	"cmp"
 	"fmt"
 	"path"
-	"sort"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/AutumnsGrove/nova/examples"
 	"github.com/AutumnsGrove/nova/ext/sdk"
@@ -30,7 +32,7 @@ func Topics() []Topic {
 	out = append(out, Topic{Name: "sdk", Title: "extension sdk", Body: sdk.Markdown()})
 	out = append(out, exampleTopics()...)
 	out = append(out, Topic{Name: "examples", Title: "example extensions", Body: examplesIndex()})
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	slices.SortFunc(out, func(a, b Topic) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
@@ -91,7 +93,7 @@ func examplesIndex() string {
 func firstLine(text string) string {
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "##") {
+		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		return line
@@ -125,11 +127,8 @@ func Search(topics []Topic, terms []string) []Result {
 		}
 		results = append(results, Result{Name: t.Name, Excerpt: excerpt(t.Body, terms), Score: score})
 	}
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].Score != results[j].Score {
-			return results[i].Score > results[j].Score
-		}
-		return results[i].Name < results[j].Name
+	slices.SortFunc(results, func(a, b Result) int {
+		return cmp.Or(b.Score-a.Score, strings.Compare(a.Name, b.Name))
 	})
 	if len(results) > 5 {
 		results = results[:5]
@@ -147,14 +146,22 @@ func excerpt(body string, terms []string) string {
 		lower := strings.ToLower(trimmed)
 		for _, term := range terms {
 			if term != "" && strings.Contains(lower, strings.ToLower(term)) {
-				if len(trimmed) > 100 {
-					return trimmed[:100]
-				}
-				return trimmed
+				return truncateRunes(trimmed, 100)
 			}
 		}
 	}
 	return ""
+}
+
+// truncateRunes cuts s to at most n bytes without splitting a character.
+func truncateRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // AuthoringContext is the whole context `nova docs` can give the model to write

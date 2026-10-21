@@ -4,16 +4,15 @@ package ui
 
 import (
 	"encoding/json"
-	"os"
+	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/AutumnsGrove/nova/auth/providerauth"
-	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/dialog"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/widget"
 )
 
@@ -28,6 +27,7 @@ const (
 	intentHelp        = "help"
 	intentUsage       = "usage"
 	intentCrash       = "crash"
+	intentBash        = "bash"
 	intentLogin       = "login"
 	intentLoginMethod = "login-method"
 	intentLoginKey    = "login-key"
@@ -69,11 +69,11 @@ func (m *Model) handleUIRequest(req proto.UIRequest) tea.Cmd {
 	case "widget":
 		m.applyWidget(req)
 	case "title":
-		m.title = req.Text
+		m.title = sanitize.Line(req.Text)
 	case "set_editor_text":
-		return m.applyEditorText(req.Text)
+		m.applyEditorText(req.Text)
 	case "confirm", "select", "input", "form":
-		return m.enqueueOrPush(req, dialogFor(req))
+		m.enqueueOrPush(req)
 	default:
 		return m.answerUnsupported(req)
 	}
@@ -98,13 +98,12 @@ func dialogFor(req proto.UIRequest) dialog.Dialog {
 }
 
 // enqueueOrPush queues a request while another dialog is open, or shows it.
-func (m *Model) enqueueOrPush(req proto.UIRequest, d dialog.Dialog) tea.Cmd {
+func (m *Model) enqueueOrPush(req proto.UIRequest) {
 	if m.overlay.Len() > 0 {
 		m.queuedReqs = append(m.queuedReqs, req)
-		return nil
+		return
 	}
-	m.pushDialog(d, intentUI)
-	return nil
+	m.pushDialog(dialogFor(req), intentUI)
 }
 
 // pushDialog adds a dialog and remembers why it was opened.
@@ -124,14 +123,13 @@ func (m *Model) popIntent() string {
 }
 
 // showNextQueued opens the next queued protocol request.
-func (m *Model) showNextQueued() tea.Cmd {
+func (m *Model) showNextQueued() {
 	if m.overlay.Len() > 0 || len(m.queuedReqs) == 0 {
-		return nil
+		return
 	}
 	req := m.queuedReqs[0]
 	m.queuedReqs = m.queuedReqs[1:]
 	m.pushDialog(dialogFor(req), intentUI)
-	return nil
 }
 
 // finishDialog routes a closed dialog's result.
@@ -142,7 +140,8 @@ func (m *Model) finishDialog(d dialog.Dialog, intent string, r dialog.Result) te
 	} else {
 		cmd = m.applyLocalIntent(intent, r)
 	}
-	return tea.Batch(cmd, m.showNextQueued())
+	m.showNextQueued()
+	return cmd
 }
 
 // answerUI sends one answer per request id.
@@ -156,7 +155,7 @@ func (m *Model) answerUI(id string, r dialog.Result) tea.Cmd {
 
 // answerUnsupported answers a declared but unknown method at once.
 func (m *Model) answerUnsupported(req proto.UIRequest) tea.Cmd {
-	m.notice = "unsupported UI method: " + req.Method
+	m.setNotice("unsupported UI method: " + req.Method)
 	if req.ID == "" || m.answered[req.ID] {
 		return nil
 	}
@@ -216,42 +215,8 @@ func (m *Model) applyLocalIntent(intent string, r dialog.Result) tea.Cmd {
 				m.client.Send(proto.Command{Type: proto.CmdGetExtensions}),
 			)
 		}
-	case intentLogin:
-		if id, ok := r.Value.(string); ok && !r.Cancelled {
-			return m.beginLogin(id)
-		}
-	case intentLoginMethod:
-		if label, ok := r.Value.(string); ok && !r.Cancelled {
-			if p, found := providerauth.Get(m.loginProvider); found {
-				if method, ok := providerauth.MethodByLabel(p, label); ok {
-					return m.beginMethod(p, method)
-				}
-			}
-		}
-	case intentLoginKey:
-		if key, ok := r.Value.(string); ok && !r.Cancelled && key != "" {
-			return m.saveCredential(m.loginProvider, providerauth.APIKey, key)
-		}
-	case intentLoginFlow:
-		switch {
-		case r.Cancelled:
-			return m.cancelLogin()
-		case r.Retry:
-			if p, found := providerauth.Get(m.loginProvider); found {
-				return m.beginMethod(p, m.loginMethod)
-			}
-		case m.loginSession != nil:
-			if pasted, ok := r.Value.(string); ok && pasted != "" {
-				if err := m.loginSession.Submit(pasted); err != nil {
-					m.loginErr = err.Error()
-					m.pushFlowDialog()
-				}
-			}
-		}
-	case intentLogout:
-		if id, ok := r.Value.(string); ok && !r.Cancelled {
-			return m.logoutCommand(id)
-		}
+	case intentLogin, intentLoginMethod, intentLoginKey, intentLoginFlow, intentLogout:
+		return m.applyLoginIntent(intent, r)
 	}
 	return nil
 }
@@ -276,21 +241,23 @@ func (m *Model) cancelAllDialogs() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// expireDialog closes a dialog whose request timed out.
+// expireDialog closes a dialog whose request timed out, or drops it from the
+// queue, and lets the next queued request take its place. Local dialogs have an
+// empty id and must never match.
 func (m *Model) expireDialog(id string) {
+	if id == "" {
+		return
+	}
 	if top := m.overlay.Top(); top != nil && top.ID() == id {
 		m.overlay.Pop()
 		m.popIntent()
-		m.notice = "the request timed out"
+		m.showNextQueued()
+	} else if i := slices.IndexFunc(m.queuedReqs, func(r proto.UIRequest) bool { return r.ID == id }); i >= 0 {
+		m.queuedReqs = slices.Delete(m.queuedReqs, i, i+1)
+	} else {
 		return
 	}
-	for i, req := range m.queuedReqs {
-		if req.ID == id {
-			m.queuedReqs = append(m.queuedReqs[:i], m.queuedReqs[i+1:]...)
-			m.notice = "the request timed out"
-			return
-		}
-	}
+	m.setNotice("the request timed out")
 }
 
 // applyWidget sets or clears a named widget.
@@ -301,20 +268,19 @@ func (m *Model) applyWidget(req proto.UIRequest) {
 	}
 	var c widget.Content
 	if err := json.Unmarshal(req.Content, &c); err != nil {
-		m.notice = "bad widget content: " + err.Error()
+		m.setNotice("bad widget content: " + err.Error())
 		return
 	}
 	m.widgets.SetWidget(req.Key, req.Placement, &c)
 }
 
 // applyEditorText replaces the editor text unless the user just typed.
-func (m *Model) applyEditorText(text string) tea.Cmd {
+func (m *Model) applyEditorText(text string) {
 	if strings.TrimSpace(m.editor.Value()) != "" && m.clock.Now().Sub(m.lastInput) < editorGrace {
-		m.notice = "an extension wants to replace the editor text; clear it to apply"
-		return nil
+		m.setNotice("an extension wants to replace the editor text; clear it to apply")
+		return
 	}
 	m.setEditorText(text)
-	return nil
 }
 
 // editorGrace is how long after typing a set_editor_text is deferred.
@@ -493,7 +459,7 @@ func (m *Model) openExtensions(resp proto.Response) {
 // requestSessionList asks the server for the session list.
 func (m *Model) requestSessionList() tea.Cmd {
 	if m.runActive {
-		m.notice = "cannot switch sessions while a run is active"
+		m.setNotice("cannot switch sessions while a run is active")
 		return nil
 	}
 	m.await = intentSessions
@@ -503,7 +469,7 @@ func (m *Model) requestSessionList() tea.Cmd {
 // requestTree asks the server for the session tree.
 func (m *Model) requestTree() tea.Cmd {
 	if m.runActive {
-		m.notice = "cannot switch branches while a run is active"
+		m.setNotice("cannot switch branches while a run is active")
 		return nil
 	}
 	m.await = intentTree
@@ -514,46 +480,6 @@ func (m *Model) requestTree() tea.Cmd {
 func (m *Model) requestExtensions() tea.Cmd {
 	m.await = intentExtensions
 	return m.client.Send(proto.Command{Type: proto.CmdGetExtensions})
-}
-
-// openHelp shows the key and command reference.
-func (m *Model) openHelp() tea.Cmd {
-	keys := []dialog.KeyHelp{
-		{Key: "enter", Description: "send prompt"},
-		{Key: "alt+enter", Description: "queue a follow-up"},
-		{Key: "esc", Description: "abort the run / close a dialog"},
-		{Key: "ctrl+o", Description: "expand thinking and tools"},
-		{Key: "click", Description: "expand or collapse one block"},
-		{Key: "ctrl+g", Description: "edit in $EDITOR"},
-		{Key: "ctrl+l", Description: "pick a model"},
-		{Key: "ctrl+r", Description: "resume a session"},
-		{Key: "ctrl+t", Description: "cycle thinking effort"},
-		{Key: "ctrl+c twice", Description: "quit"},
-	}
-	cmds := []string{"log"}
-	for _, c := range m.allCommands() {
-		cmds = append(cmds, c.Name)
-	}
-	m.pushDialog(dialog.NewHelp(keys, cmds), intentHelp)
-	return nil
-}
-
-// showCrashLog opens the most recent crash report in a read-only overlay. It is
-// a local command: the report lives on this machine, beside the TUI.
-func (m *Model) showCrashLog() tea.Cmd {
-	rec := diag.Default()
-	if rec == nil || rec.CrashPath() == "" {
-		m.notice = "no crash reports"
-		return nil
-	}
-	data, err := os.ReadFile(rec.CrashPath())
-	if err != nil {
-		m.notice = "no crash reports"
-		return nil
-	}
-	body := strings.TrimRight(string(diag.LatestReport(data)), "\n")
-	m.pushDialog(dialog.NewInfo("Crash log", strings.Split(body, "\n")), intentCrash)
-	return nil
 }
 
 // cycleThinking advances off -> low -> medium -> high -> off.
@@ -571,6 +497,6 @@ func (m *Model) cycleThinking() tea.Cmd {
 		}
 	}
 	m.state.Thinking = next
-	m.notice = "thinking: " + next
+	m.setNotice("thinking: " + next)
 	return m.client.Send(proto.Command{Type: proto.CmdSetThinking, Level: next})
 }

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/AutumnsGrove/nova/message"
@@ -17,12 +18,7 @@ func (r *run) acceptsImages() bool {
 	if r.cfg.InputModalitiesFunc != nil {
 		mods = r.cfg.InputModalitiesFunc()
 	}
-	for _, kind := range mods {
-		if kind == "image" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(mods, "image")
 }
 
 // gateImages drops image parts from the request when the model cannot take
@@ -34,14 +30,7 @@ func (r *run) gateImages(req provider.Request) provider.Request {
 	if r.acceptsImages() {
 		return req
 	}
-	changed := false
-	for _, m := range req.Messages {
-		if m.HasImages() {
-			changed = true
-			break
-		}
-	}
-	if !changed {
+	if !slices.ContainsFunc(req.Messages, message.Message.HasImages) {
 		return req
 	}
 	msgs := make([]message.Message, len(req.Messages))

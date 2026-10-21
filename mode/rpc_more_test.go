@@ -40,12 +40,6 @@ func startRPC(t *testing.T, s *Server) *rpcHarness {
 	return &rpcHarness{in: inW, outR: outR, out: bufio.NewReader(outR), errCh: errCh}
 }
 
-// disconnect closes both directions of the connection.
-func (h *rpcHarness) disconnect() {
-	_ = h.in.Close()
-	_ = h.outR.Close()
-}
-
 // send writes one JSON frame.
 func (h *rpcHarness) send(t *testing.T, v any) {
 	t.Helper()
@@ -242,6 +236,8 @@ func TestRPC_RPC10_DisconnectMidRun(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("ServeRPC did not return after the client disconnected")
 	}
+	// The disconnect must have cancelled the run, not left it orphaned.
+	waitIdle(t, s)
 }
 
 func TestRPC_RPC12_CorrelationIDs(t *testing.T) {

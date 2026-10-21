@@ -342,11 +342,11 @@ func render(g *grid, p palette) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %.0f %.0f" width="512" height="512">`+"\n", size, size)
 	b.WriteString("<title>Nova</title>\n")
-	scale := 1.0
 	if p.tile != "" {
+		// The artwork shrinks so the companion clears the rounded corner.
+		const tileScale = 0.74
 		fmt.Fprintf(&b, `<rect width="%.0f" height="%.0f" rx="%.0f" fill="%s"/>`+"\n", size, size, size*0.245, p.tile)
-		scale = 0.74 // shrink the artwork so the companion clears the rounded corner
-		fmt.Fprintf(&b, `<g transform="translate(%.1f %.1f) scale(%.2f) translate(%.1f %.1f)">`+"\n", c, c, scale, -c, -c)
+		fmt.Fprintf(&b, `<g transform="translate(%.1f %.1f) scale(%.2f) translate(%.1f %.1f)">`+"\n", c, c, tileScale, -c, -c)
 	}
 	for rl := role(0); rl < numRoles; rl++ {
 		fill := p.fill[rl]

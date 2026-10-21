@@ -493,3 +493,20 @@ func TestSubagent_SUB23_NoUI(t *testing.T) {
 		t.Fatalf("result = %+v err=%v", res, err)
 	}
 }
+
+// TestSubagent_SUB31_MaxTokensInherited checks the parent's output cap reaches
+// the child's requests, so a sub-agent cannot spend more per call than the
+// session allows.
+func TestSubagent_SUB31_MaxTokensInherited(t *testing.T) {
+	prov := testkit.NewProvider(testkit.NewFakeClock(time.Unix(0, 0)), testkit.Turn{Text: "final"})
+	sp := &Spawner{
+		Provider: prov, Model: "m", Registry: tool.NewRegistry(),
+		MaxTokens: 24, Clock: testkit.NewFakeClock(time.Unix(0, 0)),
+	}
+	if _, err := sp.Spawn(context.Background(), ext.SpawnRequest{Task: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := prov.Requests()[0].MaxTokens; got != 24 {
+		t.Fatalf("child request MaxTokens = %d, want 24", got)
+	}
+}

@@ -74,6 +74,7 @@ func (s *Server) spawn(ctx context.Context, r ext.SpawnRequest) (*ext.SpawnResul
 		Complete:   s.complete,
 		Ledger:     s.ledger,
 		MaxDepth:   s.cfg.Subagent.MaxDepth,
+		MaxTokens:  s.cfg.MaxTokens,
 		Emit:       s.emit,
 	}
 	return sp.Spawn(ctx, r)

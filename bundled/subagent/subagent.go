@@ -264,8 +264,10 @@ type Spawner struct {
 	Complete   func(ctx context.Context, req provider.Request) (*provider.Response, error)
 	Ledger     *usage.Ledger
 	MaxDepth   int
-	Clock      agent.Clock
-	Emit       func(proto.Event)
+	// MaxTokens caps each child request; zero leaves the choice to the provider.
+	MaxTokens int
+	Clock     agent.Clock
+	Emit      func(proto.Event)
 }
 
 // Spawn runs one child loop and returns its result.
@@ -318,6 +320,7 @@ func (s *Spawner) Spawn(ctx context.Context, req ext.SpawnRequest) (*ext.SpawnRe
 		Roots:     s.Roots,
 		SessionID: s.SessionID,
 		MaxTurns:  req.MaxTurns,
+		MaxTokens: s.MaxTokens,
 		Clock:     s.Clock,
 		ToolData:  Depth{N: req.Depth + 1},
 		Complete:  s.Complete,

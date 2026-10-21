@@ -357,6 +357,7 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 | SUB28 | nested call under `max_concurrent: 1` | child calls `subagent` | runs; does not wait for its parent's slot |
 | SUB29 | result cap on a character boundary | multi-byte answer | valid UTF-8 |
 | SUB30 | spawner depth cap | configured depth 10 | refused at 3 |
+| SUB31 | the parent's `max_tokens` reaches the child | `Spawner.MaxTokens` 24 | the child request carries 24 |
 | WFT01 | fetch an HTML page | local test server | markdown with header line |
 | WFT02 | plain text, markdown, JSON | | returned; JSON pretty-printed |
 | WFT03 | unsupported content type | `image/png` | error |

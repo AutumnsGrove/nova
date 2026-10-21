@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
@@ -216,5 +217,33 @@ func TestServer_SRV65_MaxTokensReachesRequests(t *testing.T) {
 	}
 	if got := nested.Requests()[1].MaxTokens; got != 7 {
 		t.Fatalf("explicit MaxTokens = %d, want 7", got)
+	}
+}
+
+// TestServer_SRV66_SubagentInheritsMaxTokens checks the server hands its output
+// cap to the subagent spawner, so a child run is capped like its parent.
+func TestServer_SRV66_SubagentInheritsMaxTokens(t *testing.T) {
+	cwd, home := t.TempDir(), t.TempDir()
+	prov := testkit.NewProvider(testkit.RealClock(), testkit.Turn{Text: "final"})
+	cfg := config.Defaults()
+	cfg.Model = "test/model"
+	cfg.MaxTokens = 24
+	cfg.Tools.Active = []string{"read"}
+	cfg.Compaction.Enabled = boolPtr(false)
+	cfg.Extensions.Disable = bundledNames()
+	s, err := New(Options{
+		Config: &cfg, CWD: cwd, Home: home, Provider: prov,
+		Session: filepath.Join(t.TempDir(), "session.jsonl"), Version: "test",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	if _, err := s.spawn(context.Background(), ext.SpawnRequest{Task: "t"}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	if got := prov.Requests()[0].MaxTokens; got != 24 {
+		t.Fatalf("child MaxTokens = %d, want 24", got)
 	}
 }

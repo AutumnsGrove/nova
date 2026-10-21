@@ -85,6 +85,9 @@ func TestValidateResponse_RejectsAMalformedAnswer(t *testing.T) {
 		{"probability outside criteria", &Response{Answers: map[string]Answer{
 			"triage": {Choice: "a", Probabilities: map[string]float64{"a": 0.9, "z": 0.1}, Confidence: 0.9},
 		}}, "probability"},
+		{"probability outside zero to one", &Response{Answers: map[string]Answer{
+			"triage": {Choice: "a", Probabilities: map[string]float64{"a": 1.2, "b": -0.2}, Confidence: 0.9},
+		}}, "outside [0,1]"},
 		{"confidence above one", &Response{Answers: map[string]Answer{"triage": {Choice: "a", Confidence: 1.1}}}, "confidence"},
 		{"confidence below zero", &Response{Answers: map[string]Answer{"triage": {Choice: "a", Confidence: -0.1}}}, "confidence"},
 	}

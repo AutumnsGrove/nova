@@ -40,9 +40,11 @@ func encodeRequest(req decide.Request) ([]byte, error) {
 }
 
 // responseWire is the answer shape shared by the Decisions API and System One.
+// Usage is a pointer so an omitted usage block is distinguishable from a
+// genuine zero, which is a free call.
 type responseWire struct {
 	Answers map[string]answerWire `json:"answers"`
-	Usage   usageWire             `json:"usage"`
+	Usage   *usageWire            `json:"usage"`
 	Model   string                `json:"model,omitempty"`
 }
 
@@ -66,12 +68,12 @@ func decodeResponse(req decide.Request, data []byte) (*decide.Response, error) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return nil, fmt.Errorf("decide: parsing response: %w", err)
 	}
-	if wire.Usage.InputTokens < 0 || wire.Usage.OutputTokens < 0 || wire.Usage.Cost < 0 {
+	if wire.Usage != nil && (wire.Usage.InputTokens < 0 || wire.Usage.OutputTokens < 0 || wire.Usage.Cost < 0) {
 		return nil, errors.New("decide: response has negative usage")
 	}
-	out := &decide.Response{
-		Answers: make(map[string]decide.Answer, len(wire.Answers)),
-		Usage: provider.Usage{
+	usage := provider.Usage{}
+	if wire.Usage != nil {
+		usage = provider.Usage{
 			PromptTokens:     wire.Usage.InputTokens,
 			CompletionTokens: wire.Usage.OutputTokens,
 			TotalTokens:      wire.Usage.InputTokens + wire.Usage.OutputTokens,
@@ -79,8 +81,12 @@ func decodeResponse(req decide.Request, data []byte) (*decide.Response, error) {
 			// The response reports an exact cost, so a zero is a real free
 			// call, not a missing catalog price.
 			CostSource: "provider",
-		},
-		Model: wire.Model,
+		}
+	}
+	out := &decide.Response{
+		Answers: make(map[string]decide.Answer, len(wire.Answers)),
+		Usage:   usage,
+		Model:   wire.Model,
 	}
 	for name, ans := range wire.Answers {
 		out.Answers[name] = decide.Answer{

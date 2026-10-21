@@ -128,9 +128,12 @@ func ValidateResponse(req Request, resp *Response) error {
 		if _, ok := q.Criteria[ans.Choice]; !ok {
 			return fmt.Errorf("decide: answer %q chose %q, which is not one of its criteria", name, ans.Choice)
 		}
-		for option := range ans.Probabilities {
+		for option, p := range ans.Probabilities {
 			if _, ok := q.Criteria[option]; !ok {
 				return fmt.Errorf("decide: answer %q gives a probability for %q, which is not one of its criteria", name, option)
+			}
+			if p < 0 || p > 1 {
+				return fmt.Errorf("decide: answer %q gives probability %v for %q, outside [0,1]", name, p, option)
 			}
 		}
 		if ans.Confidence < 0 || ans.Confidence > 1 {

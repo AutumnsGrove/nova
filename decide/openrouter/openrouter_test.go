@@ -196,6 +196,19 @@ func TestDecide_RejectsMalformedResponses(t *testing.T) {
 	}
 }
 
+func TestDecide_OmittedUsageIsNotAProviderCost(t *testing.T) {
+	srv := testkit.NewDecisionServer(t, testkit.DecisionServerTurn{
+		Body: `{"answers":{"triage":{"choice":"a","confidence":0.8}}}`,
+	})
+	resp, err := New(Config{BaseURL: srv.URL}).Decide(context.Background(), validRequest("vendor/model"))
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if resp.Usage != (provider.Usage{}) {
+		t.Fatalf("Usage = %+v, want the zero value when the server omits it", resp.Usage)
+	}
+}
+
 func TestDecide_CancellationIsNotRetryable(t *testing.T) {
 	srv := testkit.NewDecisionServer(t, testkit.DecisionServerTurn{Hang: true})
 	ctx, cancel := context.WithCancel(context.Background())

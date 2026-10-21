@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
@@ -165,6 +166,10 @@ type Config struct {
 	// Complete is given to tools as tool.Context.Complete, for nested model
 	// calls.
 	Complete func(ctx context.Context, req provider.Request) (*provider.Response, error)
+	// Decide is given to tools as tool.Context.Decide and to hooks as a cheap
+	// typed-answer call. It may be nil. A decision model may make a permission
+	// call stricter, never grant approval (D41).
+	Decide func(ctx context.Context, req decide.Request) (*decide.Response, error)
 }
 
 // Result is the outcome of a run.

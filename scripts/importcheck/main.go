@@ -68,7 +68,7 @@ var layerAllowed = map[string][]string{
 	"usage":      {"message", "provider", "session"},
 	"session":    {"message", "provider", "proto"},
 	"compaction": {"message", "provider", "session"},
-	"agent":      {"message", "provider", "tool", "permission", "proto", "diag"},
+	"agent":      {"message", "provider", "tool", "permission", "proto", "diag", "decide"},
 	"auth":       {"message", "provider", "tool", "proto", "permission", "config", "session", "usage"},
 	"config":     {"message", "provider", "tool", "permission", "proto"},
 	"ext":        {"message", "provider", "tool", "proc", "proto", "permission", "agent", "config", "session", "usage", "compaction", "diag"},

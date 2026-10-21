@@ -211,7 +211,7 @@ func (r *run) checkPermission(call message.ToolCall, args json.RawMessage) (bloc
 // toolContext builds a fresh tool context per call so progress routes to the
 // right call id.
 func (r *run) toolContext() *tool.Context {
-	return &tool.Context{WorkDir: r.cfg.WorkDir, Roots: r.cfg.Roots, Data: r.cfg.ToolData, SessionID: r.cfg.SessionID, Complete: r.cfg.Complete}
+	return &tool.Context{WorkDir: r.cfg.WorkDir, Roots: r.cfg.Roots, Data: r.cfg.ToolData, SessionID: r.cfg.SessionID, Complete: r.cfg.Complete, Decide: r.cfg.Decide}
 }
 
 // progress forwards tool updates as tool_update events without ever blocking

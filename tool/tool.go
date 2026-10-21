@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
 )
@@ -32,6 +33,10 @@ type Context struct {
 	Emit func(Update)
 	// Complete performs a nested model call, for a tool that needs one.
 	Complete func(ctx context.Context, req provider.Request) (*provider.Response, error)
+	// Decide performs a decision-model call, for a tool that needs a cheap typed
+	// answer without a generation round trip. It may be nil. The tool reports
+	// the call's usage with AddUsage, exactly as it does for Complete.
+	Decide func(ctx context.Context, req decide.Request) (*decide.Response, error)
 	// Inject queues a message to append after this tool's batch, for a tool that
 	// needs a message of its own rather than Result.Parts. It is per call and
 	// ordered with the rest of the batch. It may be nil.

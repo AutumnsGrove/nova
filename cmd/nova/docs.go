@@ -45,8 +45,7 @@ func docsCommand(stdout io.Writer) *cobra.Command {
 					return nil
 				}
 			}
-			fmt.Fprintf(stdout, "unknown topic %q; topics: %s\n", name, strings.Join(topicNames(topics), ", "))
-			return nil
+			return fmt.Errorf("unknown topic %q; topics: %s", name, strings.Join(topicNames(topics), ", "))
 		},
 	}
 }

@@ -28,9 +28,11 @@ func TestDocs_DOC02_PrintTopic(t *testing.T) {
 }
 
 func TestDocs_DOC03_UnknownTopic(t *testing.T) {
-	code, out, _ := runCLI(t, "docs", "nonsense")
-	if code != 0 || !strings.Contains(out, "unknown topic") || !strings.Contains(out, "extensions") {
-		t.Fatalf("exit %d out %q, want the topic list", code, out)
+	code, out, errOut := runCLI(t, "docs", "nonsense")
+	// The styled error wraps lines mid-word, so compare with the spaces removed.
+	flat := strings.ToLower(strings.Join(strings.Fields(errOut), ""))
+	if code == 0 || out != "" || !strings.Contains(flat, "unknowntopic") || !strings.Contains(flat, "extensions") {
+		t.Fatalf("exit %d out %q err %q, want a failure that lists the topics on stderr", code, out, errOut)
 	}
 }
 

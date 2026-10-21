@@ -297,7 +297,7 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | CLI07 | `nova logout` | | key removed; second call is fine |
 | CLI08 | `nova models` | | lists the catalog |
 | CLI09 | `nova sessions` | two sessions | listed, newest first |
-| CLI10 | `nova docs` and `nova docs extensions` | | embedded text printed; unknown topic lists topics |
+| CLI10 | `nova docs` and `nova docs extensions` | | embedded text printed; an unknown topic is an error (exit 1) that lists the topics on stderr (changed from exit 0 on stdout, so a script can detect a typo) |
 | CLI11 | no mode and no terminal | | usage; exit 2 |
 | CLI12 | `NO_COLOR` | | no ANSI in any message |
 | CLI13 | `--tools` and `--no-tools` | | the registry matches |

@@ -228,7 +228,7 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | DRX18 | crash log path | no report; a report present | path shown; last crash reported |
 | DOC01 | topic list | | embedded topics |
 | DOC02 | print a topic | `extensions` | the document |
-| DOC03 | unknown topic | | lists topics |
+| DOC03 | unknown topic | | an error (exit 1) listing the topics on stderr |
 | DOC04 | search ranking | a title match and a body match | title match first |
 | DOC05 | top 5 with excerpts | | at most 5 |
 | DOC06 | no results | | message |

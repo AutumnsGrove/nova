@@ -86,6 +86,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `ask` tool shows the model the "Other" text of a multi-choice answer. Sub-agent events and usage stay separate.
 - An `$EDITOR` that carries arguments now runs (and its temp file is cleaned up), a stale file completion is dropped, equal-length pastes merged into one, and a quit timer that
   forked the tick chain are fixed. `!cmd` runs without the bang and shows what it printed.
+- `nova docs <unknown>` now exits 1 and lists the topics on stderr, instead of exiting 0 with the list on stdout.
 - `docs` search excerpts no longer split a multi-byte character.
 
 ### Changed

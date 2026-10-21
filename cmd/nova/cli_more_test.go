@@ -72,9 +72,9 @@ func TestCLI_CLI10_Docs(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "# Nova") {
 		t.Fatalf("exit = %d out = %q", code, out)
 	}
-	code, out, _ = runCLI(t, "docs", "no-such-topic")
-	if code != 0 || !strings.Contains(out, "topics:") {
-		t.Fatalf("unknown topic should list topics: exit=%d out=%q", code, out)
+	code, out, errOut := runCLI(t, "docs", "no-such-topic")
+	if code == 0 || out != "" || !strings.Contains(strings.Join(strings.Fields(errOut), ""), "topics:") {
+		t.Fatalf("unknown topic should fail and list topics on stderr: exit=%d out=%q err=%q", code, out, errOut)
 	}
 }
 
@@ -157,9 +157,10 @@ func TestCLI_CLI16_Completion(t *testing.T) {
 }
 
 func TestCLI_CLI18_DocsAfterDoubleDash(t *testing.T) {
-	code, out, _ := runCLI(t, "docs", "--", "--help")
-	if code != 0 || !strings.Contains(out, "topics:") {
-		t.Fatalf("exit = %d out = %q", code, out)
+	// After "--", "--help" is a topic name like any other, not a flag.
+	code, out, errOut := runCLI(t, "docs", "--", "--help")
+	if code == 0 || out != "" || !strings.Contains(strings.ToLower(strings.Join(strings.Fields(errOut), "")), "unknowntopic") {
+		t.Fatalf("exit = %d out = %q err = %q", code, out, errOut)
 	}
 }
 

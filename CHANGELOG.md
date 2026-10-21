@@ -8,6 +8,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- **`max_tokens`** caps the output of every request, from the config file, `NOVA_MAX_TOKENS`, or
+  `--max-tokens`. It applies to the agent loop and to nested tool calls that set no cap of their own.
+  Without it a gateway assumes the model's maximum output, which a small balance cannot afford
+  (OpenRouter rejects `claude-opus-5.5` for a key that cannot cover 65,536 tokens).
 
 - `/reload` (and the `reload` command) now **re-reads the config**, not only skills, prompts and extensions. It waits
   for an active run, applies the tools, retry policy, limits and system prompt the file now holds, and keeps what was

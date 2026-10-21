@@ -250,7 +250,7 @@ This is a first-class use, so it is designed for.
   signatures, and about ten short examples fit in well under 40,000 tokens.
 - `examples/extensions/` holds one small example per capability: a declarative tool,
   a command hook, a Go tool, a status segment, a widget, a form, a hook that blocks, a
-  provider. Each is under 100 lines and has a test.
+  provider, and a provider-agnostic search adapter. Each is under 100 lines and has a test.
 
 ## Bundled extensions
 

@@ -1,0 +1,7 @@
+name: web-search
+version: 0.1.0
+description: A provider-agnostic web search tool, with a canned backend to start from.
+nova: ">=0.1"
+run: ["./web-search"]
+build: ["go", "build", "-o", "web-search", "."]
+capabilities: [tools]

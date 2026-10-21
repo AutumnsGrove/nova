@@ -136,12 +136,13 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 
 ### Examples
 
-13. `examples/extensions/` holds ten examples, each under 100 lines of code, with a `README.md` (what it shows, how to run it) and a test
+13. `examples/extensions/` holds eleven examples, each under 100 lines of code, with a `README.md` (what it shows, how to run it) and a test
     that runs `ext.Check` and, where meaningful, a scenario against the real binary:
     `hello` (declarative tool), `word-count` (declarative tool with arguments), `block-rm` (command hook that blocks dangerous `rm`),
     `hello-go` (SDK tool and command), `path-guard` (Go hook blocking writes outside the project), `status-segment` (footer segment updated
     on each turn), `clock-widget` (a text widget), `ask-demo` (a command that opens a form), `session-notes` (entries and replay), and
-    `summarize` (a command using `Complete`). Every example passes `nova ext check`.
+    `summarize` (a command using `Complete`), and `web-search` (a provider-agnostic search adapter with a canned
+    backend and a README recipe for a real one). Every example passes `nova ext check`.
 
 ### Favicon
 
@@ -241,7 +242,7 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | SKA03 | body contains the workflow steps | | each step present |
 | SKA04 | body size | | under 1,500 estimated tokens |
 | SKA05 | in the system prompt as name and description only | | no body |
-| EXM01 | ten examples exist | | the ten names |
+| EXM01 | eleven examples exist | | the eleven names |
 | EXM02 | each under 100 lines of code | | verified |
 | EXM03 | each has a README | | present |
 | EXM04 | each passes `ext.Check` | | no problems |
@@ -253,6 +254,7 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | EXM10 | `session-notes` replay | restart | notes restored |
 | EXM11 | `summarize` | | `Complete` used; usage counted |
 | EXM12 | `hello-go` builds with the SDK | | builds |
+| EXM13 | `web-search` answers from its canned backend | query and `limit` 1; then a blank query | one hit mentioning the query; `query is required` |
 | FAV01 | SVG written | | valid SVG; transparent background |
 | FAV02 | PNG sizes | 16, 32, 180, 512 | files with those dimensions |
 | FAV03 | star and one warm cell | decode the 16 px PNG | a warm pixel present; star centre bright |

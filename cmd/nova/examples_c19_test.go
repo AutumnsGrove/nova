@@ -18,10 +18,11 @@ import (
 	"github.com/AutumnsGrove/nova/tool"
 )
 
-// exampleNames are the ten examples the spec requires.
+// exampleNames are the eleven examples the spec requires.
 var exampleNames = []string{
 	"hello", "word-count", "block-rm", "hello-go", "path-guard",
 	"status-segment", "clock-widget", "ask-demo", "session-notes", "summarize",
+	"web-search",
 }
 
 // exampleDir returns the absolute path of one example.
@@ -34,7 +35,7 @@ func exampleDir(t *testing.T, name string) string {
 	return abs
 }
 
-func TestExamples_EXM01_TenExist(t *testing.T) {
+func TestExamples_EXM01_ElevenExist(t *testing.T) {
 	for _, name := range exampleNames {
 		dir := exampleDir(t, name)
 		if _, err := os.Stat(filepath.Join(dir, "extension.yaml")); err != nil {
@@ -288,4 +289,25 @@ func TestExamples_EXM12_HelloGoBuilds(t *testing.T) {
 func quote(s string) string {
 	data, _ := json.Marshal(s)
 	return string(data)
+}
+
+// TestExamples_EXM13_WebSearchAdapter checks the provider-agnostic search
+// example runs as installed: the canned backend answers, limit is honoured, and
+// an empty query is a result the model can read.
+func TestExamples_EXM13_WebSearchAdapter(t *testing.T) {
+	h := startExampleHost(t, []string{"web-search"}, ext.HostOptions{})
+	ctx := context.Background()
+
+	got := h.Registry().Execute(ctx, "web_search", json.RawMessage(`{"query":"nova caching","limit":1}`), &tool.Context{})
+	if got.IsError || !strings.Contains(got.Content, "Example result for nova caching") {
+		t.Fatalf("web_search = %+v, want the canned hit", got)
+	}
+	if strings.Contains(got.Content, "Second example result") {
+		t.Fatalf("limit 1 was ignored: %q", got.Content)
+	}
+
+	empty := h.Registry().Execute(ctx, "web_search", json.RawMessage(`{"query":"  "}`), &tool.Context{})
+	if !strings.Contains(empty.Content, "query is required") {
+		t.Fatalf("empty query = %+v, want a readable error", empty)
+	}
 }

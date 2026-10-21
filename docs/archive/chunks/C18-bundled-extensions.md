@@ -358,6 +358,8 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 | SUB29 | result cap on a character boundary | multi-byte answer | valid UTF-8 |
 | SUB30 | spawner depth cap | configured depth 10 | refused at 3 |
 | SUB31 | the parent's `max_tokens` reaches the child | `Spawner.MaxTokens` 24 | the child request carries 24 |
+| SUB32 | the child keeps the parent's routing | `Spawner.ModelID` set | the child request carries that `ModelID` and the parent's slug |
+| SUB33 | a tool's model override follows the catalog | `model: "<catalog id>"` | the child request uses that id's `ModelID` and slug |
 | WFT01 | fetch an HTML page | local test server | markdown with header line |
 | WFT02 | plain text, markdown, JSON | | returned; JSON pretty-printed |
 | WFT03 | unsupported content type | `image/png` | error |

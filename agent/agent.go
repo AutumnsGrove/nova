@@ -104,6 +104,9 @@ type Config struct {
 	// Provider and Model select the model backend. Both are required.
 	Provider provider.Provider
 	Model    string
+	// ModelID is the stable catalog id Model was derived from, for the router.
+	// Wire providers ignore it; empty means Model is the catalog id.
+	ModelID string
 
 	// System is the system prompt, sent as the leading system message.
 	System string

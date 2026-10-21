@@ -42,7 +42,7 @@ func (r *run) turnRequest() (message.Message, provider.Usage, error) {
 	}
 
 	req := provider.Request{
-		Model:           r.cfg.Model,
+		Model: r.cfg.Model, ModelID: r.cfg.ModelID,
 		Messages:        r.messages,
 		Temperature:     r.cfg.Temperature,
 		MaxTokens:       r.cfg.MaxTokens,

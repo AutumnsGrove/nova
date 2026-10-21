@@ -247,3 +247,30 @@ func TestServer_SRV66_SubagentInheritsMaxTokens(t *testing.T) {
 		t.Fatalf("child MaxTokens = %d, want 24", got)
 	}
 }
+
+// TestServer_SRV67_SubagentKeepsRouting checks the server hands the session's
+// catalog id to the spawner, so a child run stays on the session's provider.
+func TestServer_SRV67_SubagentKeepsRouting(t *testing.T) {
+	cwd, home := t.TempDir(), t.TempDir()
+	prov := testkit.NewProvider(testkit.RealClock(), testkit.Turn{Text: "final"})
+	cfg := config.Defaults()
+	cfg.Model = "opencode-go/deepseek-v4.1-flash"
+	cfg.Tools.Active = []string{"read"}
+	cfg.Compaction.Enabled = boolPtr(false)
+	cfg.Extensions.Disable = bundledNames()
+	s, err := New(Options{
+		Config: &cfg, CWD: cwd, Home: home, Provider: prov,
+		Session: filepath.Join(t.TempDir(), "session.jsonl"), Version: "test",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	if _, err := s.spawn(context.Background(), ext.SpawnRequest{Task: "t"}); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	if got := prov.Requests()[0].ModelID; got != "opencode-go/deepseek-v4.1-flash" {
+		t.Fatalf("child ModelID = %q, want the session's catalog id", got)
+	}
+}

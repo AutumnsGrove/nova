@@ -58,11 +58,12 @@ func (s *Server) buildExtensionHost() *ext.Host {
 func (s *Server) spawn(ctx context.Context, r ext.SpawnRequest) (*ext.SpawnResult, error) {
 	hooks := s.ext.Hooks()
 	s.mu.Lock()
-	model := s.model
+	model, modelID := s.model, s.cfg.Model
 	s.mu.Unlock()
 	sp := &subagent.Spawner{
 		Provider:   s.prov,
 		Model:      model,
+		ModelID:    modelID,
 		Registry:   s.tools,
 		Policy:     &s.policy,
 		Ask:        s.ask,

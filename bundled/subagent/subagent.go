@@ -251,8 +251,11 @@ func (e *Extension) resolveTools(requested []string, depth int) ([]string, error
 // Spawner runs child agent loops. The host builds one and passes its Spawn
 // method to the extension's Env.
 type Spawner struct {
-	Provider   provider.Provider
-	Model      string
+	Provider provider.Provider
+	Model    string
+	// ModelID is the parent's stable catalog id, so the child's requests reach
+	// the same provider. Empty means Model is the catalog id.
+	ModelID    string
 	Registry   *tool.Registry
 	Policy     *permission.Policy
 	Ask        func(ctx context.Context, q agent.Question) (bool, error)
@@ -283,6 +286,14 @@ func (s *Spawner) Spawn(ctx context.Context, req ext.SpawnRequest) (*ext.SpawnRe
 	if model == "" {
 		model = s.Model
 	}
+	// A tool that names another catalog model re-routes the child to it; a slug
+	// the catalog does not know keeps the parent's routing.
+	modelID := s.ModelID
+	if req.Model != "" {
+		if m, ok := provider.GetModel(req.Model); ok {
+			model, modelID = m.Slug, m.ID
+		}
+	}
 	names := req.Tools
 	if len(names) == 0 {
 		names = strings.Split(defaultTools, ",")
@@ -312,6 +323,7 @@ func (s *Spawner) Spawn(ctx context.Context, req ext.SpawnRequest) (*ext.SpawnRe
 	ag := agent.New(agent.Config{
 		Provider:  s.Provider,
 		Model:     model,
+		ModelID:   modelID,
 		System:    req.System,
 		Tools:     child,
 		Policy:    s.Policy,

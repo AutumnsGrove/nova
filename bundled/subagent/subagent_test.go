@@ -510,3 +510,39 @@ func TestSubagent_SUB31_MaxTokensInherited(t *testing.T) {
 		t.Fatalf("child request MaxTokens = %d, want 24", got)
 	}
 }
+
+// TestSubagent_SUB32_ChildKeepsRouting checks the child's requests carry the
+// parent's catalog id, so the router sends them to the session's provider
+// instead of falling back to the default one.
+func TestSubagent_SUB32_ChildKeepsRouting(t *testing.T) {
+	prov := testkit.NewProvider(testkit.NewFakeClock(time.Unix(0, 0)), testkit.Turn{Text: "final"})
+	sp := &Spawner{
+		Provider: prov, Model: "wire-slug", ModelID: "provider/catalog-id",
+		Registry: tool.NewRegistry(), Clock: testkit.NewFakeClock(time.Unix(0, 0)),
+	}
+	if _, err := sp.Spawn(context.Background(), ext.SpawnRequest{Task: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	req := prov.Requests()[0]
+	if req.ModelID != "provider/catalog-id" || req.Model != "wire-slug" {
+		t.Fatalf("child request = %+v, want the parent's catalog id and slug", req)
+	}
+}
+
+// TestSubagent_SUB33_ModelOverrideUsesCatalog checks a tool that names another
+// catalog model re-routes the child to that model rather than the parent's.
+func TestSubagent_SUB33_ModelOverrideUsesCatalog(t *testing.T) {
+	provider.RegisterModel(provider.Model{ID: "sub32-vision", Slug: "vision-slug", Provider: "test"})
+	prov := testkit.NewProvider(testkit.NewFakeClock(time.Unix(0, 0)), testkit.Turn{Text: "final"})
+	sp := &Spawner{
+		Provider: prov, Model: "wire-slug", ModelID: "provider/catalog-id",
+		Registry: tool.NewRegistry(), Clock: testkit.NewFakeClock(time.Unix(0, 0)),
+	}
+	if _, err := sp.Spawn(context.Background(), ext.SpawnRequest{Task: "t", Model: "sub32-vision"}); err != nil {
+		t.Fatal(err)
+	}
+	req := prov.Requests()[0]
+	if req.ModelID != "sub32-vision" || req.Model != "vision-slug" {
+		t.Fatalf("child request = %+v, want the override's catalog id and slug", req)
+	}
+}

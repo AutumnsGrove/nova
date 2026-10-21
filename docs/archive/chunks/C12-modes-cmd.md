@@ -256,6 +256,7 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV64 | compaction forgets the old token count | `compact` after a response that reported prompt tokens | the stored last usage is zero, so the next turn is judged on the new history |
 | SRV65 | max_tokens reaches every request | config `max_tokens: 24` | the loop request and a nested `complete` with no cap both carry 24; an explicit cap wins |
 | SRV66 | a subagent inherits the cap | config `max_tokens: 24` | the spawned child's request carries 24 |
+| SRV67 | a subagent keeps the session's routing | config model `opencode-go/deepseek-v4.1-flash` | the child request's `ModelID` is that catalog id |
 | PRI01 | print mode answer | scripted "42" | stdout is `42\n`; exit 0 |
 | PRI02 | stdout has only the answer | tool calls in the run | tool progress only on stderr |
 | PRI03 | `-p -` reads stdin | | prompt from stdin |

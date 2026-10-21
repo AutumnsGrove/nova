@@ -50,6 +50,62 @@ cfg := agent.Config{
 res, err := agent.Run(ctx, cfg, history)
 ```
 
+## Decision models
+
+A decision model answers typed questions about a shared state; it does not
+generate text. The harness keeps the vendor behind a role, so an app asks for
+`oracle` or `verify` and never names a model.
+
+```yaml
+decide:
+  allow_aliases: false          # -latest / ~ ids are refused by default
+  roles:
+    oracle:
+      model: typesafe/jev-1.14  # pin a version-level id
+      fallback: typesafe/jev-1.13
+      timeout_ms: 2500
+```
+
+Build the client once and pass it to the loop; tools reach it through
+`tool.Context.Decide`, exactly as they reach `Complete`. (`decideor` is an alias
+for `github.com/AutumnsGrove/nova/decide/openrouter`.)
+
+```go
+client := decideor.New(decideor.Config{
+    APIKeyFunc: func(ctx context.Context) (string, error) { return myKey(ctx) },
+})
+decider := decide.NewRoles(decide.RolesConfig{
+    Decider: client,
+    Roles: map[string]decide.Role{
+        "oracle": {Model: "typesafe/jev-1.14", Fallback: "typesafe/jev-1.13", Timeout: 2500 * time.Millisecond},
+    },
+})
+
+cfg := agent.Config{
+    // ...
+    Decide: decider.Decide,
+}
+
+// in a tool:
+resp, err := tctx.Decide(ctx, decide.Request{
+    Model: "oracle",
+    State: evidence, // a string, or []decide.Source
+    Questions: map[string]decide.Question{
+        "done": {Instructions: "is this turn complete?", Criteria: map[string]string{"yes": "...", "no": "..."}},
+    },
+})
+if err == nil {
+    tctx.AddUsage(resp.Usage) // counts in the run's totals
+}
+```
+
+`decide/openrouter` picks the surface from the model id: a Jev id uses
+`{base}/systemone` and every other id uses `{host}/api/alpha/decisions`, so an
+app never chooses a surface. A role timeout is a typed, retryable error; a
+fallback is tried while the caller's context is still live. `decide.List` reads
+the live roster (`output_modalities=decisions`) for a benchmark, and
+`Response.Model` records the build that actually answered.
+
 ## ivy — "Ask Ivy"
 
 Ivy is the best first adopter: greenfield loop, three read-only tools, and a

@@ -98,10 +98,10 @@ Pi's agent core is about 2,500 lines; Crush's UI alone is about 44,000.
 ### Layer rules
 
 ```
-message ← provider ← tool ← proto ← agent ← mode ← cmd
-   ▲         ▲         ▲              ▲
-   │         │         │              └─ permission, usage, compaction, session
-   └─────────┴─────────┴──── auth, config, ext (beside agent; never import tui)
+message ← provider ← decide ← tool ← proto ← agent ← mode ← cmd
+   ▲         ▲         ▲        ▲              ▲
+   │         │         │        │              └─ permission, usage, compaction, session
+   └─────────┴─────────┴────────┴──── auth, config, ext (beside agent; never import tui)
 ```
 
 - `message` imports nothing.
@@ -109,12 +109,13 @@ message ← provider ← tool ← proto ← agent ← mode ← cmd
   oriented, resized, and bounded.
 - `proc` imports nothing. It is the one place a command is put in its own process
   group and signalled, shared by `tools/bash` and `ext`.
-- `provider` imports `message`. `tool` imports `message` and `provider`.
+- `provider` imports `message`. `decide` imports `provider`. `tool` imports
+  `message`, `provider`, and `decide`.
 - `proto` imports `message` and `provider` and nothing above them.
 - `permission` imports `tool`. `usage` imports `provider` and `session`.
 - `tools/*` import `message`, `provider`, `tool`, and (for the shared glob engine)
   `permission`; they never import each other or a higher layer.
-- `agent` imports `message`, `provider`, `tool`, `permission`, `proto`. `config`
+- `agent` imports `message`, `provider`, `tool`, `permission`, `proto`, `decide`. `config`
   imports `permission` because it decodes the policy.
 - `session` imports `message` and `provider`. `compaction` imports `session`, `provider`, `message`.
 - `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.
@@ -352,6 +353,22 @@ request so a key saved by `/login` takes effect mid-run.
 Models are a code-defined catalog (stable id, wire slug, context window, pricing)
 so a stored choice keeps resolving when a provider renames a slug, and cost has a
 fallback when a response reports none.
+
+### Decision models
+
+`decide.Decider` is the decision-model counterpart of `provider.Provider`: one
+request carries a shared state and N typed questions, evaluated in parallel, and
+returns typed answers with calibrated probabilities. `decide/openrouter` speaks
+the Decisions API for every model and the older Jev-only `/systemone` surface for
+a Jev id; the model chooses the surface, never the caller. `decide.Roles` maps an
+application role (`oracle`) to a model, a per-attempt timeout, and an optional
+fallback, so changing the best model is a config edit and no application code
+names a vendor. An id ending in `-latest` or starting with `~` is refused unless
+`decide.allow_aliases` is set, and `Response.Model` records the resolved build.
+`tool.Context.Decide` and `agent.Config.Decide` are the seams, mirroring
+`Complete`; a tool reports the call's `Usage` through `AddUsage`. The Decisions
+API reports one cost per call, not one per question. A decision model may make a
+permission call stricter, never grant approval (D41).
 
 ## 9. Configuration and resources
 

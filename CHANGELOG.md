@@ -8,6 +8,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- **Decision models**: a `decide.Decider` primitive for typed questions answered in parallel with
+  calibrated probabilities, with a `decide/openrouter` client for the Decisions API and the Jev-only
+  `/systemone` surface. Configure roles under `decide.roles` (model, optional fallback, per-attempt
+  timeout); an alias id (`-latest` or `~...`) is refused unless `decide.allow_aliases` is set. Tools
+  reach the model through `tool.Context.Decide` and hooks through `agent.Config.Decide`, mirroring
+  `Complete`; the call's cost is counted through `AddUsage`.
 - A **`web-search` example extension** showing a provider-agnostic search adapter: one `Backend`
   interface, a canned backend that needs no key, and a README recipe for Parallel, Tavily, Brave, or
   Google. It is an example, not a shipped tool — install it, read it with `nova docs example-web-search`,

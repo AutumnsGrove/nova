@@ -16,6 +16,10 @@ type DecisionServerTurn struct {
 	Status int
 	// Body is the raw response body. Empty means "{}".
 	Body string
+	// Headers are added to the response, for a Retry-After or a content type.
+	Headers map[string]string
+	// Hang blocks until the request is cancelled, for a timeout test.
+	Hang bool
 }
 
 // DecisionServer is a local HTTP server that answers the decision-model
@@ -79,6 +83,10 @@ func (s *DecisionServer) serve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":{"message":"testkit: decision script exhausted"}}`, http.StatusInternalServerError)
 		return
 	}
+	if turn.Hang {
+		<-r.Context().Done()
+		return
+	}
 	status := turn.Status
 	if status == 0 {
 		status = http.StatusOK
@@ -86,6 +94,9 @@ func (s *DecisionServer) serve(w http.ResponseWriter, r *http.Request) {
 	text := turn.Body
 	if text == "" {
 		text = "{}"
+	}
+	for name, value := range turn.Headers {
+		w.Header().Set(name, value)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

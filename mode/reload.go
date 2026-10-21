@@ -142,7 +142,7 @@ func (s *Server) applyConfig(fresh *config.Config) (modelChanged bool, err error
 		return false, err
 	}
 	if err := s.agent.Reconfigure(func(c *agent.Config) {
-		c.MaxTurns = fresh.MaxTurns
+		c.MaxTurns, c.MaxTokens = fresh.MaxTurns, fresh.MaxTokens
 		c.Retry = retryPolicy(fresh)
 	}); err != nil {
 		return false, err

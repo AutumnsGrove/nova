@@ -241,3 +241,33 @@ func TestDisplayImageDefaults(t *testing.T) {
 		t.Fatalf("display defaults = %+v, want show_images true and 60 cells", d)
 	}
 }
+
+// TestConfig_CFG31_MaxTokens checks the output cap comes from the file, then
+// the environment, and that a negative value is cleared rather than sent.
+func TestConfig_CFG31_MaxTokens(t *testing.T) {
+	cwd, home := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(home, ".config", "nova", "config.yaml"), "max_tokens: 32\n")
+	cfg, _ := loadAt(t, cwd, home, LoadOptions{Trusted: alwaysTrusted, Env: envFrom(nil)})
+	if cfg.MaxTokens != 32 {
+		t.Fatalf("max_tokens = %d, want 32", cfg.MaxTokens)
+	}
+
+	cfg, _ = loadAt(t, cwd, home, LoadOptions{
+		Trusted: alwaysTrusted,
+		Env:     envFrom(map[string]string{"NOVA_MAX_TOKENS": "64"}),
+	})
+	if cfg.MaxTokens != 64 {
+		t.Fatalf("max_tokens from env = %d, want 64", cfg.MaxTokens)
+	}
+
+	cfg, warnings := loadAt(t, cwd, home, LoadOptions{
+		Trusted: alwaysTrusted,
+		Env:     envFrom(map[string]string{"NOVA_MAX_TOKENS": "-5"}),
+	})
+	if cfg.MaxTokens != 0 {
+		t.Fatalf("negative max_tokens = %d, want 0", cfg.MaxTokens)
+	}
+	if !strings.Contains(warnText(warnings), "max_tokens") {
+		t.Fatalf("no warning for a negative cap: %v", warnings)
+	}
+}

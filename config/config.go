@@ -23,10 +23,14 @@ import (
 
 // Config is the merged, normalised settings for one session.
 type Config struct {
-	Model        string            `yaml:"model"`
-	Thinking     string            `yaml:"thinking"` // off | low | medium | high
-	ContextLimit int               `yaml:"context_limit"`
-	MaxTurns     int               `yaml:"max_turns"`
+	Model        string `yaml:"model"`
+	Thinking     string `yaml:"thinking"` // off | low | medium | high
+	ContextLimit int    `yaml:"context_limit"`
+	MaxTurns     int    `yaml:"max_turns"`
+	// MaxTokens caps the output tokens of each request; zero leaves the choice
+	// to the provider. It is the knob a finite-credit key needs, because an
+	// omitted cap lets a gateway assume the model's maximum.
+	MaxTokens    int               `yaml:"max_tokens"`
 	Provider     ProviderConfig    `yaml:"provider"`
 	Permissions  permission.Policy `yaml:"permissions"`
 	Tools        ToolsConfig       `yaml:"tools"`
@@ -343,6 +347,7 @@ func envMap(env func(string) string, warnings *[]Warning) map[string]any {
 	setString("theme", "NOVA_THEME")
 	setInt("context_limit", "NOVA_CONTEXT_LIMIT")
 	setInt("max_turns", "NOVA_MAX_TURNS")
+	setInt("max_tokens", "NOVA_MAX_TOKENS")
 	return m
 }
 
@@ -397,6 +402,7 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 	}
 	nonNegative(&cfg.ContextLimit, "context_limit", warnings)
 	nonNegative(&cfg.MaxTurns, "max_turns", warnings)
+	nonNegative(&cfg.MaxTokens, "max_tokens", warnings)
 	nonNegative(&cfg.Tools.Bash.TimeoutSeconds, "tools.bash.timeout_seconds", warnings)
 	nonNegative(&cfg.Tools.Bash.MaxOutputBytes, "tools.bash.max_output_bytes", warnings)
 	nonNegative(&cfg.Extensions.CompleteMaxPerRun, "extensions.complete_max_per_run", warnings)

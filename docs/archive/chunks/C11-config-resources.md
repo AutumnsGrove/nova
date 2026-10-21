@@ -256,6 +256,7 @@ type PromptInput struct {
 | CFG28 | very large config | 5 MiB YAML | loads or warns; no panic |
 | CFG29 | YAML anchors and aliases | | work; "billion laughs" input bounded (error or warning, no hang) |
 | CFG30 | duplicate keys | `a: 1` twice | warning |
+| CFG31 | max_tokens from file and environment | `max_tokens: 32`; `NOVA_MAX_TOKENS=64`; `-5` | 32; 64; cleared with a warning |
 | SET01 | display defaults | | `display` is `{8, 6}` |
 | SET02 | display section loads | both keys | applied |
 | SET03 | partial display section | one key | the other keeps its default |

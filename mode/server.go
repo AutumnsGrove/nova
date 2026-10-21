@@ -267,6 +267,7 @@ func New(opt Options) (*Server, error) {
 		Roots:     []string{opt.CWD},
 		SessionID: s.sessionID(),
 		MaxTurns:  cfg.MaxTurns,
+		MaxTokens: cfg.MaxTokens,
 		// Read per request, so a model switch mid-session is honoured.
 		InputModalitiesFunc: func() []string {
 			s.mu.Lock()

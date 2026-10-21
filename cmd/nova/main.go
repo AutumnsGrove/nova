@@ -101,6 +101,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 		cwdFlag      string
 		maxTurns     int
 		contextLimit int
+		maxTokens    int
 		yes          bool
 		debugFlag    bool
 	)
@@ -123,7 +124,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 				prompt: promptFlag, mode: modeFlag, model: modelFlag, thinking: thinkingFlag,
 				session: sessionFlag, noSession: noSession, continueRun: continueFlag, resume: resumeFlag,
 				tools: toolsFlag, noTools: noTools, cwd: cwdFlag, maxTurns: maxTurns,
-				contextLimit: contextLimit, yes: yes, stdin: stdin, stdout: stdout, stderr: stderr, tty: tty,
+				contextLimit: contextLimit, maxTokens: maxTokens, yes: yes, stdin: stdin, stdout: stdout, stderr: stderr, tty: tty,
 				changed: cmd.Flags().Changed,
 			})
 			if err != nil {
@@ -150,6 +151,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 	flags.StringVar(&cwdFlag, "cwd", "", "working directory")
 	flags.IntVar(&maxTurns, "max-turns", 0, "optional maximum agent turns (0 means unlimited)")
 	flags.IntVar(&contextLimit, "context-limit", 0, "context token limit")
+	flags.IntVar(&maxTokens, "max-tokens", 0, "cap output tokens per request (0 means the provider default)")
 	flags.BoolVar(&yes, "yes", false, "auto-approve permission prompts for this run")
 	root.PersistentFlags().BoolVar(&debugFlag, "debug", false, "write routine tracing to the debug log")
 
@@ -177,7 +179,7 @@ type rootOptions struct {
 	noSession, continueRun, resume         bool
 	tools, cwd                             string
 	noTools, yes                           bool
-	maxTurns, contextLimit                 int
+	maxTurns, contextLimit, maxTokens      int
 	stdin                                  io.Reader
 	stdout, stderr                         io.Writer
 	tty                                    bool
@@ -198,17 +200,13 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 		return 0, fmt.Errorf("nova: home directory: %w", err)
 	}
 	flags := map[string]any{}
-	if o.changed("model") {
-		flags["model"] = o.model
-	}
-	if o.changed("thinking") {
-		flags["thinking"] = o.thinking
-	}
-	if o.changed("max-turns") {
-		flags["max_turns"] = o.maxTurns
-	}
-	if o.changed("context-limit") {
-		flags["context_limit"] = o.contextLimit
+	for flag, value := range map[string]any{
+		"model": o.model, "thinking": o.thinking, "max-turns": o.maxTurns,
+		"context-limit": o.contextLimit, "max-tokens": o.maxTokens,
+	} {
+		if o.changed(flag) {
+			flags[strings.ReplaceAll(flag, "-", "_")] = value
+		}
 	}
 	var tools []string
 	if o.tools != "" {

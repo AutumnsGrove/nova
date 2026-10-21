@@ -113,14 +113,15 @@ func extensionDirs(cfg *config.Config, cwd, home string) []string {
 // resolved to that model's slug, so a describe tool can ask for a vision
 // fallback. The usage comes back to the tool, which reports it with AddUsage.
 func (s *Server) complete(ctx context.Context, req provider.Request) (*provider.Response, error) {
+	s.mu.Lock()
 	if req.Model == "" && req.ModelID == "" {
-		s.mu.Lock()
 		req.Model = s.model
 		req.ModelID = s.cfg.Model
-		s.mu.Unlock()
 	} else if req.Model == "" {
 		req.Model = modelSlug(req.ModelID)
 	}
+	req.MaxTokens = cmp.Or(req.MaxTokens, s.cfg.MaxTokens)
+	s.mu.Unlock()
 	return s.prov.Stream(ctx, req, nil)
 }
 

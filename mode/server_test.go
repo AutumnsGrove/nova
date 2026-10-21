@@ -9,6 +9,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
 )
 
@@ -166,5 +167,54 @@ func TestServer_SRV20_GetStateFields(t *testing.T) {
 		if !bytes.Contains(resp.Data, []byte(`"`+field+`"`)) {
 			t.Errorf("get_state data missing %q: %s", field, resp.Data)
 		}
+	}
+}
+
+// TestServer_SRV65_MaxTokensReachesRequests checks the config's output cap on
+// the loop's request and on a nested model call that names no cap of its own.
+func TestServer_SRV65_MaxTokensReachesRequests(t *testing.T) {
+	cwd, home := t.TempDir(), t.TempDir()
+	prov := testkit.NewProvider(testkit.RealClock(), testkit.Turn{Text: "ok"})
+	cfg := config.Defaults()
+	cfg.Model = "test/model"
+	cfg.MaxTokens = 24
+	cfg.Tools.Active = []string{"read"}
+	cfg.Compaction.Enabled = boolPtr(false)
+	cfg.Extensions.Disable = bundledNames()
+	s, err := New(Options{
+		Config: &cfg, CWD: cwd, Home: home, Provider: prov,
+		Session: filepath.Join(t.TempDir(), "session.jsonl"), Version: "test",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	events, cancel := s.Subscribe(64)
+	defer cancel()
+	s.Handle(context.Background(), proto.Command{Type: proto.CmdPrompt, Text: "go"})
+	collect(t, events)
+	reqs := prov.Requests()
+	if len(reqs) == 0 || reqs[0].MaxTokens != 24 {
+		t.Fatalf("loop request MaxTokens = %d, want 24", reqs[0].MaxTokens)
+	}
+
+	// A nested call that asks for nothing inherits the cap; an explicit one
+	// keeps its own value.
+	nested := testkit.NewProvider(testkit.RealClock(), testkit.Turn{Text: "nested"}, testkit.Turn{Text: "nested"})
+	s.mu.Lock()
+	s.prov = nested
+	s.mu.Unlock()
+	if _, err := s.complete(context.Background(), provider.Request{Model: "m"}); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if got := nested.Requests()[0].MaxTokens; got != 24 {
+		t.Fatalf("nested MaxTokens = %d, want 24", got)
+	}
+	if _, err := s.complete(context.Background(), provider.Request{Model: "m", MaxTokens: 7}); err != nil {
+		t.Fatalf("complete explicit: %v", err)
+	}
+	if got := nested.Requests()[1].MaxTokens; got != 7 {
+		t.Fatalf("explicit MaxTokens = %d, want 7", got)
 	}
 }

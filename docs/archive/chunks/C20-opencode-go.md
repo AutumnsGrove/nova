@@ -2,7 +2,7 @@
 chunk: C20
 title: "OpenCode Go, the second launch provider"
 packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./mode/providers, ./auth/opencode, ./mode, ./tui/ui]
-budgets: { ./provider/ssestream: 420, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1460, ./auth: 500, ./mode: 2470, ./tui/ui: 3050 }
+budgets: { ./provider/ssestream: 420, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1460, ./auth: 500, ./mode: 2480, ./tui/ui: 3050 }
 depends: [C02, C03, C12]
 ---
 

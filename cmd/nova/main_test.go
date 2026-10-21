@@ -320,3 +320,17 @@ func TestCLI_RSM02_ResumeNeedsATerminal(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q, want a --resume error that does not say the UI is unbuilt", code, errOut.String())
 	}
 }
+
+// TestCLI_CLI21_MaxTokensFlag checks --max-tokens reaches the wire body, so a
+// finite-credit key can run a model whose default cap it cannot afford.
+func TestCLI_CLI21_MaxTokensFlag(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	withServer(t, srv)
+	code, _, errOut := runCLI(t, "--cwd", t.TempDir(), "--no-session", "--max-tokens", "32", "-p", "go")
+	if code != 0 {
+		t.Fatalf("exit = %d stderr = %q", code, errOut)
+	}
+	if body := string(srv.Requests()[0].Body); !strings.Contains(body, `"max_tokens":32`) {
+		t.Fatalf("request missing the cap: %s", body)
+	}
+}

@@ -2,7 +2,7 @@
 chunk: C12
 title: "The server core, modes, and the nova command"
 packages: [./mode, ./cmd/nova]
-budgets: { ./mode: 2470, ./cmd/nova: 1260 }
+budgets: { ./mode: 2480, ./cmd/nova: 1260 }
 depends: [C09, C10, C11]
 ---
 
@@ -254,6 +254,7 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV62 | an explicit system prompt survives | `Options.SystemPrompt` set, then a reload | the system message is still that prompt |
 | SRV63 | `/reload` is a slash command | `run_command` `reload`, with and without a reloader, and a rejected config | a one-line `text` naming what was reloaded and any config error; `reload` is listed by `get_commands` |
 | SRV64 | compaction forgets the old token count | `compact` after a response that reported prompt tokens | the stored last usage is zero, so the next turn is judged on the new history |
+| SRV65 | max_tokens reaches every request | config `max_tokens: 24` | the loop request and a nested `complete` with no cap both carry 24; an explicit cap wins |
 | PRI01 | print mode answer | scripted "42" | stdout is `42\n`; exit 0 |
 | PRI02 | stdout has only the answer | tool calls in the run | tool progress only on stderr |
 | PRI03 | `-p -` reads stdin | | prompt from stdin |
@@ -309,6 +310,7 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | CLI19 | `logout` names the provider | `logout opencode-go`, a second one, `logout nope` | the OpenCode Go key is removed, a repeat succeeds, an unknown name is an error naming it; no argument still means OpenRouter |
 | RSM02 | `--resume` needs a terminal | `--resume` with no terminal | an error about the interactive UI, not "not built yet" |
 | CLI20 | a damaged lockfile is reported | `ext list` with an unreadable `extensions.lock` | a `warning:` line on stderr, nothing on stdout |
+| CLI21 | `--max-tokens` reaches the wire | `--max-tokens 32` | the request body has `"max_tokens":32` |
 | FUL01 | the whole stack | scripted: read a file, edit it, answer | file changed; events as expected; session file valid |
 | FUL02 | tool permission denied by config | policy denies `write` | tool blocked; file unchanged; model sees the error |
 | FUL03 | compaction in a real run | small limit | compacted; the next request contains the summary |

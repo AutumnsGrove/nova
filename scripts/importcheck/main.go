@@ -60,7 +60,8 @@ var layerAllowed = map[string][]string{
 	"media":      {"message"},
 	"proc":       {},
 	"provider":   {"message"},
-	"tool":       {"message", "provider"},
+	"decide":     {"provider"},
+	"tool":       {"message", "provider", "decide"},
 	"tools":      {"message", "provider", "tool", "permission", "media", "proc"},
 	"proto":      {"message", "provider"},
 	"permission": {"message", "provider", "tool"},
@@ -72,7 +73,7 @@ var layerAllowed = map[string][]string{
 	"config":     {"message", "provider", "tool", "permission", "proto"},
 	"ext":        {"message", "provider", "tool", "proc", "proto", "permission", "agent", "config", "session", "usage", "compaction", "diag"},
 	"bundled":    {"message", "provider", "tool", "proto", "permission", "agent", "ext", "config", "session", "usage", "compaction"},
-	"testkit":    {"message", "provider", "tool", "proto"},
+	"testkit":    {"message", "provider", "tool", "proto", "decide"},
 }
 
 // importRule allows the packages satisfying allow to import an import path.

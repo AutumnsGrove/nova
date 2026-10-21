@@ -8,6 +8,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- A **`web-search` example extension** showing a provider-agnostic search adapter: one `Backend`
+  interface, a canned backend that needs no key, and a README recipe for Parallel, Tavily, Brave, or
+  Google. It is an example, not a shipped tool — install it, read it with `nova docs example-web-search`,
+  or copy it and fill in your own provider.
 - **`max_tokens`** caps the output of every request, from the config file, `NOVA_MAX_TOKENS`, or
   `--max-tokens`. It applies to the agent loop and to nested tool calls that set no cap of their own.
   Without it a gateway assumes the model's maximum output, which a small balance cannot afford

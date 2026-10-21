@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/AutumnsGrove/nova/config"
@@ -272,5 +273,51 @@ func TestServer_SRV67_SubagentKeepsRouting(t *testing.T) {
 	}
 	if got := prov.Requests()[0].ModelID; got != "opencode-go/deepseek-v4.1-flash" {
 		t.Fatalf("child ModelID = %q, want the session's catalog id", got)
+	}
+}
+
+// TestServer_SRV68_ExtensionToolCanBeActivated checks a bundled extension's
+// tool may be named in the active list before the extension has started; the
+// extension registers it itself.
+func TestServer_SRV68_ExtensionToolCanBeActivated(t *testing.T) {
+	cwd, home := t.TempDir(), t.TempDir()
+	prov := testkit.NewProvider(testkit.RealClock(), testkit.Turn{Text: "ok"})
+	cfg := config.Defaults()
+	cfg.Model = "test/model"
+	cfg.Tools.Active = []string{"read", "subagent"}
+	cfg.Compaction.Enabled = boolPtr(false)
+	s, err := New(Options{
+		Config: &cfg, CWD: cwd, Home: home, Provider: prov,
+		Session: filepath.Join(t.TempDir(), "session.jsonl"), Version: "test",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	<-s.extStarted
+	if _, ok := s.tools.Get("subagent"); !ok {
+		t.Fatal("the subagent tool was not registered by its extension")
+	}
+	if _, ok := s.tools.Get("bash"); ok {
+		t.Error("bash is not in the active list but is registered")
+	}
+}
+
+// TestServer_SRV69_DisabledExtensionToolIsUnknown checks the accepted names
+// still come from the enabled set, so a typo or a disabled extension fails.
+func TestServer_SRV69_DisabledExtensionToolIsUnknown(t *testing.T) {
+	cwd, home := t.TempDir(), t.TempDir()
+	cfg := config.Defaults()
+	cfg.Model = "test/model"
+	cfg.Tools.Active = []string{"read", "subagent"}
+	cfg.Compaction.Enabled = boolPtr(false)
+	cfg.Extensions.Disable = []string{"subagent"}
+	_, err := New(Options{
+		Config: &cfg, CWD: cwd, Home: home,
+		Provider: testkit.NewProvider(testkit.RealClock()),
+		Session:  filepath.Join(t.TempDir(), "session.jsonl"), Version: "test",
+	})
+	if err == nil || !strings.Contains(err.Error(), `unknown tool "subagent"`) {
+		t.Fatalf("New error = %v, want unknown tool", err)
 	}
 }

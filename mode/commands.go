@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/AutumnsGrove/nova/bundled"
 	"os"
 	"slices"
 	"strings"
@@ -287,7 +288,7 @@ func (s *Server) handleSetTools(cmd proto.Command) proto.Response {
 	// The lock also serialises two set_tools commands, which would otherwise
 	// interleave their unregister and register steps.
 	s.mu.Lock()
-	err := registerTools(s.tools, s.pool, active)
+	err := registerTools(s.tools, s.pool, active, bundled.ToolNames(s.cfg))
 	if err == nil {
 		s.active = append([]string(nil), active...)
 		s.cfg.Tools.Active = append([]string(nil), active...)

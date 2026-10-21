@@ -257,6 +257,8 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV65 | max_tokens reaches every request | config `max_tokens: 24` | the loop request and a nested `complete` with no cap both carry 24; an explicit cap wins |
 | SRV66 | a subagent inherits the cap | config `max_tokens: 24` | the spawned child's request carries 24 |
 | SRV67 | a subagent keeps the session's routing | config model `opencode-go/deepseek-v4.1-flash` | the child request's `ModelID` is that catalog id |
+| SRV68 | an extension tool can be named as active | `tools.active: [read, subagent]` | `New` succeeds; the running extension registers `subagent`; `bash` stays off |
+| SRV69 | a disabled extension tool is still unknown | the same list with `extensions.disable: [subagent]` | `unknown tool "subagent"` |
 | PRI01 | print mode answer | scripted "42" | stdout is `42\n`; exit 0 |
 | PRI02 | stdout has only the answer | tool calls in the run | tool progress only on stderr |
 | PRI03 | `-p -` reads stdin | | prompt from stdin |
@@ -313,6 +315,7 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | RSM02 | `--resume` needs a terminal | `--resume` with no terminal | an error about the interactive UI, not "not built yet" |
 | CLI20 | a damaged lockfile is reported | `ext list` with an unreadable `extensions.lock` | a `warning:` line on stderr, nothing on stdout |
 | CLI21 | `--max-tokens` reaches the wire | `--max-tokens 32` | the request body has `"max_tokens":32` |
+| CLI22 | `--tools` accepts a bundled extension tool | `--tools read,subagent` | exit 0, no "unknown tool" |
 | FUL01 | the whole stack | scripted: read a file, edit it, answer | file changed; events as expected; session file valid |
 | FUL02 | tool permission denied by config | policy denies `write` | tool blocked; file unchanged; model sees the error |
 | FUL03 | compaction in a real run | small limit | compacted; the next request contains the summary |

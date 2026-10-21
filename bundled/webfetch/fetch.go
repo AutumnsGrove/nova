@@ -351,3 +351,6 @@ func cutLines(s string, n int) (string, int) {
 	}
 	return cut, utf8.RuneCountInString(s[len(cut):])
 }
+
+// ToolNames lists the tool Init registers.
+func (e *Extension) ToolNames() []string { return []string{"web_fetch"} }

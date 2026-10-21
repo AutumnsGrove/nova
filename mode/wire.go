@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"github.com/AutumnsGrove/nova/bundled"
 	"os"
 	"path/filepath"
 	"time"
@@ -72,7 +73,7 @@ func buildTools(cfg *config.Config) (*tool.Registry, map[string]tool.Tool, error
 		active = defaultToolNames
 	}
 	registry := tool.NewRegistry()
-	if err := registerTools(registry, all, active); err != nil {
+	if err := registerTools(registry, all, active, bundled.ToolNames(cfg)); err != nil {
 		return nil, nil, err
 	}
 	return registry, all, nil
@@ -82,18 +83,22 @@ func buildTools(cfg *config.Config) (*tool.Registry, map[string]tool.Tool, error
 // alone any tool outside the pool, such as one an extension registered, and it
 // resolves every name before touching the registry, so a bad list leaves the
 // current set exactly as it was instead of half rebuilt.
-func registerTools(registry *tool.Registry, pool map[string]tool.Tool, active []string) error {
+func registerTools(registry *tool.Registry, pool map[string]tool.Tool, active []string, extNames map[string]bool) error {
 	chosen := make([]tool.Tool, 0, len(active))
 	seen := make(map[string]bool, len(active))
 	for _, name := range active {
-		t, ok := pool[name]
-		if !ok {
-			return fmt.Errorf("unknown tool %q", name)
-		}
 		if seen[name] {
 			return fmt.Errorf("tool %q is listed twice", name)
 		}
 		seen[name] = true
+		t, ok := pool[name]
+		if !ok {
+			if extNames[name] {
+				// The extension registers it at start; nothing to do here.
+				continue
+			}
+			return fmt.Errorf("unknown tool %q", name)
+		}
 		chosen = append(chosen, t)
 	}
 	for name := range pool {

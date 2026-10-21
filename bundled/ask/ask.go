@@ -200,3 +200,6 @@ func toProto(in []question) []proto.UIQuestion {
 	}
 	return out
 }
+
+// ToolNames lists the tool Init registers.
+func (e *Extension) ToolNames() []string { return []string{"ask"} }

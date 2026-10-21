@@ -387,3 +387,6 @@ func (s *Spawner) emit(onEvent func(proto.Event)) func(proto.Event) {
 		}
 	}
 }
+
+// ToolNames lists the tool Init registers.
+func (e *Extension) ToolNames() []string { return []string{toolName} }

@@ -219,7 +219,7 @@ func New(opt Options) (*Server, error) {
 	}
 	s.active = s.activeTools(cfg)
 	s.loaded = knobsOf(cfg)
-	if err := registerTools(s.tools, s.pool, s.active); err != nil {
+	if err := registerTools(s.tools, s.pool, s.active, bundled.ToolNames(cfg)); err != nil {
 		return nil, err
 	}
 	s.policy = cfg.Permissions

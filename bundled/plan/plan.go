@@ -327,3 +327,6 @@ func (e *Extension) publish() {
 func fmtPlan(plan string) string {
 	return fmt.Sprintf("%d characters", utf8.RuneCountInString(plan))
 }
+
+// ToolNames lists the tool Init registers.
+func (e *Extension) ToolNames() []string { return []string{"plan_submit"} }

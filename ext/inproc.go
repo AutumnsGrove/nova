@@ -36,6 +36,14 @@ type Bundled interface {
 	Init(env *Env) error
 }
 
+// ToolNamer is implemented by a bundled extension that can list the tools it
+// registers in Init. The host uses it so a config or flag can name an extension
+// tool before the extension has started; the tool itself is still registered by
+// Init, not by the host.
+type ToolNamer interface {
+	ToolNames() []string
+}
+
 // Env is what a bundled extension is handed at Init. Every function is safe to
 // call; the registration functions may only be called from Init.
 type Env struct {

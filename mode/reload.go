@@ -3,6 +3,7 @@ package mode
 import (
 	"cmp"
 	"context"
+	"github.com/AutumnsGrove/nova/bundled"
 	"maps"
 	"slices"
 	"strings"
@@ -138,7 +139,7 @@ func (s *Server) applyConfig(fresh *config.Config) (modelChanged bool, err error
 	active := s.activeTools(fresh)
 	// Resolve every name against a scratch registry first, so a bad list fails
 	// before anything has changed.
-	if err := registerTools(tool.NewRegistry(), pool, active); err != nil {
+	if err := registerTools(tool.NewRegistry(), pool, active, bundled.ToolNames(fresh)); err != nil {
 		return false, err
 	}
 	if err := s.agent.Reconfigure(func(c *agent.Config) {
@@ -147,7 +148,7 @@ func (s *Server) applyConfig(fresh *config.Config) (modelChanged bool, err error
 	}); err != nil {
 		return false, err
 	}
-	if err := registerTools(s.tools, pool, active); err != nil {
+	if err := registerTools(s.tools, pool, active, bundled.ToolNames(fresh)); err != nil {
 		return false, err
 	}
 	s.pool, s.active = pool, active

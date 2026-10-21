@@ -41,3 +41,18 @@ func Enabled(cfg *config.Config) []ext.Bundled {
 	}
 	return out
 }
+
+// ToolNames lists the tools the enabled bundled extensions register in Init.
+// They are not built-ins, so an active tool list must accept them before the
+// extension has started; the extension still registers the tool itself.
+func ToolNames(cfg *config.Config) map[string]bool {
+	out := map[string]bool{}
+	for _, b := range Enabled(cfg) {
+		if namer, ok := b.(ext.ToolNamer); ok {
+			for _, name := range namer.ToolNames() {
+				out[name] = true
+			}
+		}
+	}
+	return out
+}

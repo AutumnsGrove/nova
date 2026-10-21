@@ -183,3 +183,6 @@ func (e *Extension) publishLocked() {
 	e.env.UI.Notify(proto.UIRequest{Method: "widget", Key: "tasks", Placement: "above_editor", Content: data})
 	e.env.UI.Notify(proto.UIRequest{Method: "status", Key: "tasks", Segments: []proto.UISegment{{Text: fmt.Sprintf("☐ %d of %d", done, len(tasks)), Style: "muted"}}})
 }
+
+// ToolNames lists the tool Init registers.
+func (e *Extension) ToolNames() []string { return []string{"todo"} }

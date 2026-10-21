@@ -30,6 +30,10 @@ type Model struct {
 	// and "image". Empty means text only, the safe default for a model Nova
 	// does not know. It mirrors OpenRouter's input_modalities.
 	InputModalities []string
+	// OutputModalities lists what the model produces, such as "text" or
+	// "decisions". Empty means text only, the safe default for a chat model.
+	// It mirrors OpenRouter's output_modalities.
+	OutputModalities []string
 	// ImplicitCaching reports that the provider caches a repeated request
 	// prefix on its own, so Nova must not send an explicit cache marker.
 	// False is the safe default: an anthropic-style model needs the marker to
@@ -41,6 +45,13 @@ type Model struct {
 // no modalities is text only, so this is false for anything Nova does not know.
 func (m Model) AcceptsImages() bool {
 	return slices.Contains(m.InputModalities, "image")
+}
+
+// SupportsDecisions reports whether the model is a decision model that speaks
+// the Decisions API. A model with no output modalities is a chat model, so this
+// is false for anything Nova does not know.
+func (m Model) SupportsDecisions() bool {
+	return slices.Contains(m.OutputModalities, "decisions")
 }
 
 var (

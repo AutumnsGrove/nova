@@ -106,3 +106,33 @@ func TestProvider_PRV22_ModelKeepsInputModalities(t *testing.T) {
 		t.Errorf("registered model lost its modalities: %+v", got)
 	}
 }
+
+func TestProvider_PRV23_SupportsDecisions(t *testing.T) {
+	cases := []struct {
+		name string
+		out  []string
+		want bool
+	}{
+		{"nil is a chat model", nil, false},
+		{"text only", []string{"text"}, false},
+		{"decisions only", []string{"decisions"}, true},
+		{"text and decisions", []string{"text", "decisions"}, true},
+		{"unrelated kinds", []string{"text", "embedding"}, false},
+	}
+	for _, tc := range cases {
+		if got := (Model{OutputModalities: tc.out}).SupportsDecisions(); got != tc.want {
+			t.Errorf("%s: SupportsDecisions() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestProvider_PRV24_ModelKeepsOutputModalities(t *testing.T) {
+	RegisterModel(Model{ID: "prv24", Provider: "x", OutputModalities: []string{"decisions"}})
+	got, ok := GetModel("prv24")
+	if !ok {
+		t.Fatal("GetModel(prv24) not found")
+	}
+	if !got.SupportsDecisions() {
+		t.Errorf("registered model lost its output modalities: %+v", got)
+	}
+}

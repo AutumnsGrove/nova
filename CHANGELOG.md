@@ -41,6 +41,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   priced at 1.25x input by the cost fallback (#28).
 
 ### Fixed
+- A bundled extension's tool can be named in `tools.active`, `--tools`, or `set_tools`: the list is
+  checked against both the built-in pool and the tools each enabled extension declares, so
+  `--tools read,subagent` no longer fails with `unknown tool "subagent"` before the extension has
+  started. A name from a disabled extension, or a typo, is still an error.
 - A subagent now stays on the session's provider. The child run was given only the wire slug, so a
   session on OpenCode Go quietly sent its subagents to OpenRouter (or failed with "no API key"); the
   child now carries the parent's catalog model id, and a tool's `model` argument that names another

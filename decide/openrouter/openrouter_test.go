@@ -196,6 +196,27 @@ func TestDecide_RejectsMalformedResponses(t *testing.T) {
 	}
 }
 
+func TestDecide_AnswersEveryQuestionInOneCall(t *testing.T) {
+	req := decide.Request{
+		Model: "vendor/model",
+		State: "s",
+		Questions: map[string]decide.Question{
+			"a": {Instructions: "pick", Criteria: map[string]string{"x": "one", "y": "two"}},
+			"b": {Instructions: "pick", Criteria: map[string]string{"p": "one", "q": "two"}},
+		},
+	}
+	srv := testkit.NewDecisionServer(t, testkit.DecisionServerTurn{
+		Body: `{"answers":{"a":{"choice":"x","confidence":0.5},"b":{"choice":"q","confidence":0.6}},"usage":{"input_tokens":1,"output_tokens":2}}`,
+	})
+	resp, err := New(Config{BaseURL: srv.URL}).Decide(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if len(resp.Answers) != 2 || resp.Answers["a"].Choice != "x" || resp.Answers["b"].Choice != "q" {
+		t.Fatalf("answers = %+v, want both questions answered", resp.Answers)
+	}
+}
+
 func TestDecide_OmittedUsageIsNotAProviderCost(t *testing.T) {
 	srv := testkit.NewDecisionServer(t, testkit.DecisionServerTurn{
 		Body: `{"answers":{"triage":{"choice":"a","confidence":0.8}}}`,

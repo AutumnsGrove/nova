@@ -2,7 +2,7 @@
 chunk: C09
 title: "The agent loop"
 packages: [./agent]
-budgets: { ./agent: 1180 }
+budgets: { ./agent: 1280 }
 depends: [C01, C04, C08]
 ---
 

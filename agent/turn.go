@@ -15,8 +15,9 @@ import (
 
 // turnRequest builds the request for one turn, runs the hooks around it, and
 // retries a retryable provider failure. It returns the assistant message and
-// that response's usage.
-func (r *run) turnRequest() (message.Message, provider.Usage, error) {
+// that response's usage. noTools strips every tool after the hooks too, so a
+// wrap-up request can never offer one.
+func (r *run) turnRequest(noTools bool) (message.Message, provider.Usage, error) {
 	if h := r.cfg.Hooks.BeforeTurn; h != nil {
 		type outcome struct {
 			msgs []message.Message
@@ -50,7 +51,7 @@ func (r *run) turnRequest() (message.Message, provider.Usage, error) {
 		ProviderOptions: r.cfg.ProviderOptions,
 		PromptCache:     r.cfg.PromptCache,
 	}
-	if r.cfg.Tools != nil {
+	if r.cfg.Tools != nil && !noTools {
 		req.Tools = r.cfg.Tools.Defs()
 	}
 	if h := r.cfg.Hooks.TransformContext; h != nil {
@@ -71,6 +72,10 @@ func (r *run) turnRequest() (message.Message, provider.Usage, error) {
 		}); ok {
 			req = next
 		}
+	}
+	if noTools {
+		req.Tools = nil
+		req.ToolChoice = nil
 	}
 	return r.callProvider(r.gateImages(req))
 }

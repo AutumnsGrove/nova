@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
@@ -156,6 +157,9 @@ func (r *run) runTurn() (string, error) {
 	// A budget is only in force when a caller set one; zero and negative both
 	// mean unlimited.
 	if r.cfg.MaxTurns > 0 && r.turn >= r.cfg.MaxTurns {
+		if r.cfg.WrapUp != nil {
+			return r.wrapUp()
+		}
 		return "exhausted", nil
 	}
 	if err := r.ctx.Err(); err != nil {
@@ -163,7 +167,7 @@ func (r *run) runTurn() (string, error) {
 	}
 	r.emit(proto.Event{Type: proto.EventTurnStart, Turn: intp(r.turn)})
 
-	assistant, usage, err := r.turnRequest()
+	assistant, usage, err := r.turnRequest(false)
 	if err != nil {
 		if cerr := r.ctx.Err(); cerr != nil {
 			return "aborted", cerr
@@ -214,6 +218,76 @@ func (r *run) runTurn() (string, error) {
 		return "", nil
 	}
 	return "done", nil
+}
+
+// wrapUp is the final request of an exhausted run when Config.WrapUp is set.
+// It appends one synthetic user instruction, offers no tools, and either ends
+// with the model's answer or, when the model still tries a tool (or answers
+// nothing), with the fallback. It returns the run reason: done for a real
+// answer, exhausted for the fallback, error or aborted on failure.
+func (r *run) wrapUp() (string, error) {
+	if err := r.ctx.Err(); err != nil {
+		return "aborted", err
+	}
+	// Copy once: the config is shared with the caller, and a run must see one
+	// stable instruction and fallback even if the pointer is edited mid-turn.
+	wrap := *r.cfg.WrapUp
+	instruction := strings.TrimSpace(wrap.Instruction)
+	if instruction == "" {
+		instruction = DefaultWrapUpInstruction
+	}
+	fallback := strings.TrimSpace(wrap.Fallback)
+	if fallback == "" {
+		fallback = DefaultWrapUpFallback
+	}
+
+	r.emit(proto.Event{Type: proto.EventTurnStart, Turn: intp(r.turn)})
+	wrapped := message.User(instruction)
+	wrapped.Synthetic = true
+	if err := r.record(wrapped, nil); err != nil {
+		return "error", err
+	}
+	assistant, usage, err := r.turnRequest(true)
+	if err != nil {
+		if cerr := r.ctx.Err(); cerr != nil {
+			return "aborted", cerr
+		}
+		r.turns = r.turn + 1
+		return "error", err
+	}
+	r.usage.Add(usage)
+	r.turns = r.turn + 1
+
+	// A real answer ends the run normally. A tool call or an empty answer gets
+	// the honest fallback: the streamed message_end already showed the model's
+	// tool call, but the transcript records the fallback, because an unresolved
+	// tool call would poison a later resume and an empty answer is not an answer.
+	reason := "done"
+	final := assistant
+	if len(assistant.ToolCalls) > 0 || strings.TrimSpace(assistant.Content) == "" {
+		reason = "exhausted"
+		final = message.Assistant(fallback)
+		final.Synthetic = true
+	}
+	if err := r.record(final, &usage); err != nil {
+		return "error", err
+	}
+	r.answer = final.Content
+	r.emit(proto.Event{Type: proto.EventTurnEnd, Turn: intp(r.turn), Usage: &usage})
+	r.runTurnEndForWrapUp(assistant)
+	return reason, nil
+}
+
+// runTurnEndForWrapUp runs the TurnEnd hook for the wrap-up turn but ignores
+// its decision: a hook cannot extend a budget the caller set. The hook still
+// runs so tracking and logging see the final turn.
+func (r *run) runTurnEndForWrapUp(assistant message.Message) {
+	h := r.cfg.Hooks.TurnEnd
+	if h == nil {
+		return
+	}
+	turn := Turn{Index: r.turn, Message: assistant.Clone()}
+	_, _ = runHook(r, "turn_end", func(ctx context.Context) TurnDecision { return h(ctx, turn) })
 }
 
 // turnEndHook runs the TurnEnd hook and records the messages it injects. A hook

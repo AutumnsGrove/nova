@@ -94,6 +94,27 @@ type RetryPolicy struct {
 	Jitter float64       // fraction of the delay added at random; 0 means the default 0.2, negative means none
 }
 
+// WrapUp configures the final request an exhausted run makes. A nil
+// Config.WrapUp leaves the documented behaviour: the run ends immediately with
+// Exhausted=true.
+type WrapUp struct {
+	// Instruction is the final user message. Empty uses
+	// DefaultWrapUpInstruction.
+	Instruction string
+	// Fallback is the answer when the model still tries to call a tool, or
+	// returns no text. Empty uses DefaultWrapUpFallback.
+	Fallback string
+}
+
+const (
+	// DefaultWrapUpInstruction is the final message when WrapUp.Instruction is
+	// empty.
+	DefaultWrapUpInstruction = "Wrap up now with the best answer you can give from what you have gathered. Do not call any more tools."
+	// DefaultWrapUpFallback is the answer when the wrap-up still calls a tool or
+	// returns no text.
+	DefaultWrapUpFallback = "I wasn't able to finish in time."
+)
+
 // Clock is the time seam, so tests can drive time with a fake clock.
 type Clock interface {
 	Now() time.Time
@@ -128,7 +149,11 @@ type Config struct {
 	ToolData  any
 	SessionID string
 
-	MaxTurns        int               // 0 or negative means unlimited; >0 caps provider requests
+	MaxTurns int // 0 or negative means unlimited; >0 caps provider requests
+	// WrapUp, when non-nil, gives an exhausted run one final request with no
+	// tools, so it can answer from what it gathered. Nil keeps the old
+	// behaviour: the run ends with Exhausted=true and no extra request.
+	WrapUp          *WrapUp
 	ToolExecution   ToolExecutionMode // default Parallel
 	MaxParallel     int               // default 8
 	Temperature     *float64

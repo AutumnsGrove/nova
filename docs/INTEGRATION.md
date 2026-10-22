@@ -195,8 +195,9 @@ Polaris has the largest bespoke loop; most of it becomes hooks.
   and charts are app state mutated by tools and read after the run.
 - **Streaming.** `ctx.Emit("token" | "reasoning" | "tool_call" | ...)` maps from
   Nova's `Emit` events (`text_delta`, `thinking_delta`, `tool_call`).
-- **Wrap-up.** Polaris's forced wrap-up at `maxTurns` becomes a `Hooks.TurnEnd`
-  behavior or a core "final answer with no tools" option.
+- **Wrap-up.** Polaris's forced wrap-up at `maxTurns` is `agent.Config.WrapUp`: one synthetic
+  wrap-up instruction, one final request with no tools, and a caller fallback when the model still
+  calls a tool. A `TurnEnd` hook cannot extend the budget.
 
 ## Compatibility checklist
 

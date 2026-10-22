@@ -56,7 +56,7 @@ nova/
   permission/     allow/ask/deny policy                         ≤ 340
   proc/           process-group start, signal, exit status       ≤ 80
   proto/          wire types and JSONL framing                  ≤ 600
-  agent/          the loop, hooks, queues, retry                ≤ 1180
+  agent/          the loop, hooks, queues, retry                ≤ 1280
   session/        JSONL tree store, branches, custom entries    ≤ 900
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
@@ -228,9 +228,12 @@ Rules the loop must keep, each of which has tests in [`TESTING.md`](TESTING.md):
   configured count, and emits `retry` events. This includes a network timeout: a
   connect or idle timeout is a retryable error on every provider dialect, and the
   partial response is kept.
-- **Turn budget.** A caller-set `MaxTurns` ends the run with `Exhausted=true`; it never errors. There
-  is no default cap, so an unbounded run is stopped only by the abort path (user cancel, `esc`, or
-  context cancellation).
+- **Turn budget.** A caller-set `MaxTurns` ends the run with `Exhausted=true`; it never errors. If
+  `Config.WrapUp` is set, the loop instead appends a synthetic wrap-up instruction and makes one final
+  request with no tools, so the model can answer from what it gathered. A tool call or empty answer on
+  that turn records the fallback and ends with `Exhausted=true`; a real answer ends normally. There is
+  no default cap, so an unbounded run is stopped only by the abort path (user cancel, `esc`, or context
+  cancellation).
 - **Hooks never crash the loop.** A hook that panics or exceeds its deadline is
   skipped, logged, and reported as an `extension_error` event.
 

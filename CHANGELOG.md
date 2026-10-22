@@ -8,6 +8,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- **`agent.Config.WrapUp`** gives a run that hits `MaxTurns` one final request with no tools. Nova
+  appends a wrap-up instruction, makes the request, and ends normally with the answer; if the model
+  still calls a tool or returns nothing, the run records a synthetic fallback and ends with
+  `Exhausted=true`. The extra call's usage is in `Result.Usage`, and a `TurnEnd` hook cannot extend the
+  budget. Unset keeps the old behaviour exactly.
 - **Decision models**: a `decide.Decider` primitive for typed questions answered in parallel with
   calibrated probabilities, with a `decide/openrouter` client for the Decisions API and the Jev-only
   `/systemone` surface. Configure roles under `decide.roles` (model, optional fallback, per-attempt

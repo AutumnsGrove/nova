@@ -55,6 +55,7 @@ const (
 	CmdBash            = "bash"
 	CmdShutdown        = "shutdown"
 	CmdListProviders   = "list_providers"
+	CmdDecide          = "decide"
 	CmdLogin           = "login"
 	CmdLoginSubmit     = "login_submit"
 	CmdLoginCancel     = "login_cancel"

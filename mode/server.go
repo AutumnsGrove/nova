@@ -60,12 +60,15 @@ type Options struct {
 	// Reload re-reads the configuration for the reload command, applying the same
 	// files, environment and flags as the first load. It returns warnings to pass
 	// on. nil means reload leaves the configuration as it is.
-	Reload    func() (*config.Config, []string, error)
-	CWD       string
-	Home      string
-	Provider  provider.Provider // nil means build OpenRouter from the config and auth
-	Session   string            // path to open or create; "" means a new default
-	NoSession bool              // keep the transcript in memory only
+	Reload   func() (*config.Config, []string, error)
+	CWD      string
+	Home     string
+	Provider provider.Provider // nil means build OpenRouter from the config and auth
+	// Decider overrides the decision client built from the config. nil means
+	// build one (the normal server); a test or embedder can inject one.
+	Decider   decide.Decider
+	Session   string // path to open or create; "" means a new default
+	NoSession bool   // keep the transcript in memory only
 	Clock     Clock
 	Version   string
 	Mode      string   // tui | print | json | rpc | serve, for extensions
@@ -210,7 +213,10 @@ func New(opt Options) (*Server, error) {
 		s.usesAuth = true
 		s.prov = buildProvider(cfg, home, s.conversationID)
 	}
-	s.decider = buildDecider(cfg, home)
+	s.decider = opt.Decider
+	if s.decider == nil {
+		s.decider = buildDecider(cfg, home)
+	}
 	tools, pool, err := buildTools(cfg)
 	if err != nil {
 		return nil, err

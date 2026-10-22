@@ -83,6 +83,7 @@ var ctxHandlers = map[string]ctxHandler{
 	proto.CmdBash:       (*Server).handleBash,
 	proto.CmdReload:     (*Server).handleReload,
 	proto.CmdRunCommand: (*Server).handleRunCommand,
+	proto.CmdDecide:     (*Server).handleDecide,
 }
 
 // dispatch routes a command to its handler.

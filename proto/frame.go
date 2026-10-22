@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
 )
@@ -50,6 +51,10 @@ type Command struct {
 	Command      string       `json:"command,omitempty"`
 	Queue        bool         `json:"queue,omitempty"`
 	Attachments  []Attachment `json:"attachments,omitempty"`
+	// Decision carries one decision-model request for CmdDecide. It is the
+	// library request shape, so a client sends the same model/state/questions
+	// it would pass to decide.Decider.
+	Decision *decide.Request `json:"decision,omitempty"`
 }
 
 // Response is the outcome of one command.

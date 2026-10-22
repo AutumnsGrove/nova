@@ -56,13 +56,13 @@ type Request struct {
 	// Model is a catalog id or a configured role name. Roles resolves a role;
 	// a direct id must contain a slash so an unknown role is never mistaken for
 	// a model id.
-	Model string
+	Model string `json:"model"`
 	// State is the shared evidence: a string, or []Source for a multi-source
 	// comparison.
-	State any
+	State any `json:"state"`
 	// Questions are keyed by the caller's name for the answer. The map must not
 	// be empty.
-	Questions map[string]Question
+	Questions map[string]Question `json:"questions"`
 }
 
 // Question is one typed question. Kind defaults to KindChoice when empty.
@@ -96,14 +96,14 @@ type Answer struct {
 // Response is one decision call's result.
 type Response struct {
 	// Answers is keyed by the request's question name.
-	Answers map[string]Answer
+	Answers map[string]Answer `json:"answers"`
 	// Usage is the call's token and cost accounting. The Decisions API reports
 	// one cost per call, not per question.
-	Usage provider.Usage
+	Usage provider.Usage `json:"usage"`
 	// Model is the build that actually answered, when the server reports it.
 	// An alias moves silently, so a caller that records a benchmark result
 	// should record this too.
-	Model string
+	Model string `json:"model,omitempty"`
 }
 
 // Validate checks a request before it reaches the wire, so a malformed question

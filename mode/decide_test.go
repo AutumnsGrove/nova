@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +12,8 @@ import (
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
 )
@@ -98,5 +101,89 @@ func TestDecide_ServerWiresTheRoleAndTheToolSeam(t *testing.T) {
 	last := loopReqs[1].Messages[len(loopReqs[1].Messages)-1]
 	if !strings.Contains(last.Content, "chose a") {
 		t.Fatalf("last message = %q, want the tool result", last.Content)
+	}
+}
+
+// fixedDecider runs fn for each Decide call.
+type fixedDecider struct {
+	fn func(context.Context, decide.Request) (*decide.Response, error)
+}
+
+func (f fixedDecider) Decide(ctx context.Context, req decide.Request) (*decide.Response, error) {
+	return f.fn(ctx, req)
+}
+
+func validDecisionCommand() proto.Command {
+	return proto.Command{
+		Type: proto.CmdDecide,
+		Decision: &decide.Request{
+			Model: "vendor/model",
+			State: "the evidence",
+			Questions: map[string]decide.Question{
+				"q": {Kind: decide.KindNoul, Instructions: "is it?"},
+			},
+		},
+	}
+}
+
+func TestDecide_ProtocolCommand(t *testing.T) {
+	s, _ := testServer(t)
+	s.decider = testkit.NewDecider(nil, testkit.DecisionTurn{
+		Model:   "build-1",
+		Answers: map[string]decide.Answer{"q": {Kind: decide.KindNoul, Noul: 0.9}},
+		Usage:   provider.Usage{PromptTokens: 4, CostUSD: 0.01},
+	})
+	resp := s.Handle(context.Background(), validDecisionCommand())
+	if !resp.OK {
+		t.Fatalf("decide = %+v", resp)
+	}
+	var got decide.Response
+	if err := json.Unmarshal(resp.Data, &got); err != nil {
+		t.Fatalf("decode: %v (data=%s)", err, resp.Data)
+	}
+	if got.Model != "build-1" || got.Answers["q"].Noul != 0.9 || got.Usage.PromptTokens != 4 {
+		t.Fatalf("response = %+v", got)
+	}
+}
+
+func TestDecide_ProtocolCommandRejectsABadRequest(t *testing.T) {
+	s, _ := testServer(t)
+	called := false
+	s.decider = fixedDecider{fn: func(context.Context, decide.Request) (*decide.Response, error) {
+		called = true
+		return &decide.Response{}, nil
+	}}
+
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdDecide})
+	if resp.OK || resp.Error == nil || resp.Error.Code != proto.CodeBadRequest {
+		t.Fatalf("missing request: %+v", resp)
+	}
+	cmd := validDecisionCommand()
+	cmd.Decision.Questions["q"] = decide.Question{Kind: decide.KindChoice}
+	resp = s.Handle(context.Background(), cmd)
+	if resp.OK || resp.Error == nil || resp.Error.Code != proto.CodeBadRequest {
+		t.Fatalf("invalid question: %+v", resp)
+	}
+	if called {
+		t.Error("decider was called for an invalid request")
+	}
+}
+
+func TestDecide_ProtocolCommandMapsErrors(t *testing.T) {
+	s, _ := testServer(t)
+	s.decider = fixedDecider{fn: func(context.Context, decide.Request) (*decide.Response, error) {
+		return nil, &provider.Error{Status: 500, Message: "provider down"}
+	}}
+	resp := s.Handle(context.Background(), validDecisionCommand())
+	if resp.OK || resp.Error == nil || resp.Error.Code != proto.CodeProviderError {
+		t.Fatalf("provider error: %+v", resp)
+	}
+
+	s.decider = fixedDecider{fn: func(context.Context, decide.Request) (*decide.Response, error) {
+		return nil, errors.New(`unknown role "oracle"`)
+	}}
+	resp = s.Handle(context.Background(), validDecisionCommand())
+	if resp.OK || resp.Error == nil || resp.Error.Code != proto.CodeBadRequest {
+		t.Fatalf("configuration error: %+v", resp)
 	}
 }

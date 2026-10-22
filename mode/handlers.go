@@ -273,6 +273,26 @@ func (s *Server) handleRunCommand(ctx context.Context, cmd proto.Command) proto.
 	return failResponse(cmd, proto.CodeBadRequest, "unknown command "+cmd.Name)
 }
 
+// handleDecide runs one decision-model request. It blocks on the provider, so
+// it takes the caller's context; a cancelled client cancels the call.
+func (s *Server) handleDecide(ctx context.Context, cmd proto.Command) proto.Response {
+	if cmd.Decision == nil {
+		return failResponse(cmd, proto.CodeBadRequest, "decide: a request is required")
+	}
+	if err := cmd.Decision.Validate(); err != nil {
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	resp, err := s.decideCall(ctx, *cmd.Decision)
+	if err != nil {
+		var pe *provider.Error
+		if errors.As(err, &pe) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return failResponse(cmd, proto.CodeProviderError, err.Error())
+		}
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	return okResponse(cmd, resp)
+}
+
 // handleCompact runs compaction on demand.
 func (s *Server) handleCompact(ctx context.Context, cmd proto.Command) proto.Response {
 	store := s.sessionStore()

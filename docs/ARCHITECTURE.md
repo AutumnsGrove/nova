@@ -236,6 +236,14 @@ Rules the loop must keep, each of which has tests in [`TESTING.md`](TESTING.md):
   cancellation).
 - **Hooks never crash the loop.** A hook that panics or exceeds its deadline is
   skipped, logged, and reported as an `extension_error` event.
+- **Live stream filtering.** `Config.TextFilter` and `Config.ReasoningFilter` build a fresh stateful
+  `StreamFilter` per provider attempt. Its `Delta` returns the text to show (or `""` to hold);
+  `Flush` releases at a successful message end. `Hooks.StreamDelta`, when set, then sees each chunk
+  the filter would show and can pass, rewrite, hold, or drop it. Both are live-only: the final
+  assistant message, `Result.Answer`, and the session keep the original text unless `message_end`
+  changes it. A filter or hook panic is reported as an `extension_error`; a hook deadline passes the
+  chunk through. This is how Polaris hides pseudo-tool-call text while its parser still sees the final
+  content.
 
 ### Hook points
 
@@ -247,7 +255,7 @@ These names are shared by Go callbacks, bundled extensions, and the protocol.
 | `before_agent_start` | add to the system prompt or active tools |
 | `transform_context` | rewrite the message list for one request |
 | `before_provider_request` | mutate the wire payload (pinning, headers) |
-| `provider_stream_event` | observe raw stream events |
+| `stream_delta` | filter, rewrite, hold, or drop live text/reasoning; the extension-facing `provider_stream_event` alias is reserved and not wired yet |
 | `message_end` | replace a finalised assistant message |
 | `tool_call` | block, or rewrite arguments |
 | `tool_result` | replace a result; handlers compose in order |

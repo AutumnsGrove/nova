@@ -176,9 +176,14 @@ Polaris has the largest bespoke loop; most of it becomes hooks.
   gateway contract.
 - **Research nudges.** `trackResearchCall` and `trackSearchQuery` move into
   `Hooks.TurnEnd`; they inject user-role messages and decide when to stop.
-- **Pseudo tool calls.** `parsePseudoToolCalls` runs in `Hooks.ToolResult` /
-  `Hooks.TransformContext`: a text-form tool call is dispatched and a corrective
-  message injected.
+- **Pseudo tool calls.** `Config.TextFilter` is the live half: a stateful filter holds the first
+  chunks until it knows the answer is not a pseudo call, then releases or drops them.
+  `Hooks.StreamDelta` can further pass, rewrite, hold, or drop each chunk the filter shows. Both are
+  live-only, so `Result.Answer` and the session still contain the original text for
+  `parsePseudoToolCalls` to dispatch and correct.
+  ```go
+  cfg.TextFilter = func() agent.StreamFilter { return mySniffer() }
+  ```
 - **Concurrent dispatch.** Replace `dispatchToolCallsConcurrently` with Nova's
   parallel mode (it already preserves order and recovers panics). Keep the
   code-exec serialization rule as a `Hooks.ToolCall`/dispatch policy.

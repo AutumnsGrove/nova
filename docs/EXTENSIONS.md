@@ -40,6 +40,9 @@ gap in the protocol, to be filed and closed, not a permanent privilege.
 | Add a model provider | `providers` | `register.providers` |
 | Add an MCP server | `mcp` | `register.mcp` |
 
+The `provider_stream_event` hook name is reserved for a future extension-facing live-delta hook. The
+in-process equivalent is `agent.Hooks.StreamDelta`; subprocess extensions cannot use it yet.
+
 ### UI available to third-party extensions
 
 Fixed, so the result always fits the look of the TUI and also works in other

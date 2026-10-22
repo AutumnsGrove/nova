@@ -8,6 +8,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- **Live stream filtering**: `agent.Config.TextFilter` and `Config.ReasoningFilter` build a fresh
+  stateful filter per provider attempt, so an app can hold the opening chunks of a pseudo-tool-call and
+  then release or drop them without changing what is stored. `Hooks.StreamDelta` composes after the
+  filter and can pass, rewrite, hold, or drop each chunk. Both control only live `text_delta` /
+  `thinking_delta`; `Result.Answer` and the session keep the original text. A filter panic is reported
+  as `extension_error` and the text passes through; the hook runs under `HookTimeout`.
 - **`agent.Config.WrapUp`** gives a run that hits `MaxTurns` one final request with no tools. Nova
   appends a wrap-up instruction, makes the request, and ends normally with the answer; if the model
   still calls a tool or returns nothing, the run records a synthetic fallback and ends with

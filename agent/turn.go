@@ -115,16 +115,21 @@ func (r *run) callProvider(req provider.Request) (message.Message, provider.Usag
 func (r *run) streamOnce(req provider.Request) (message.Message, provider.Usage, error) {
 	st := &attempt{r: r, seen: map[string]bool{}}
 	r.emit(proto.Event{Type: proto.EventMessageStart, Turn: intp(r.turn), Role: string(message.RoleAssistant)})
+	st.textFilter = r.newStreamFilter(r.cfg.TextFilter, "text_filter")
+	st.reasoningFilter = r.newStreamFilter(r.cfg.ReasoningFilter, "reasoning_filter")
 
 	diag.SetOp(fmt.Sprintf("provider request turn %d", r.turn))
 	resp, err := r.cfg.Provider.Stream(r.ctx, req, st.onEvent)
-	st.endThinking()
 	if err != nil {
+		st.endThinking()
 		return message.Message{}, provider.Usage{}, err
 	}
 	if resp == nil {
+		st.endThinking()
 		return message.Message{}, provider.Usage{}, errors.New("agent: provider returned no response")
 	}
+	st.flushFilters()
+	st.endThinking()
 
 	m := st.message(resp.Message)
 	if h := r.cfg.Hooks.MessageEnd; h != nil {
@@ -148,13 +153,15 @@ func (r *run) streamOnce(req provider.Request) (message.Message, provider.Usage,
 // event and keeps what the final message may need when the provider's response
 // carries less than was streamed.
 type attempt struct {
-	r         *run
-	text      strings.Builder
-	reasoning strings.Builder
-	calls     []message.ToolCall
-	seen      map[string]bool
-	thinkAt   time.Time
-	thinking  bool
+	r               *run
+	text            strings.Builder
+	reasoning       strings.Builder
+	calls           []message.ToolCall
+	seen            map[string]bool
+	thinkAt         time.Time
+	thinking        bool
+	textFilter      StreamFilter
+	reasoningFilter StreamFilter
 }
 
 // onEvent handles one stream event. Reasoning opens a thinking span; the first
@@ -163,17 +170,17 @@ func (st *attempt) onEvent(ev provider.StreamEvent) {
 	r := st.r
 	switch ev.Type {
 	case provider.StreamReasoningDelta:
-		if !st.thinking {
-			st.thinking = true
-			st.thinkAt = r.a.clock.Now()
-			r.emit(proto.Event{Type: proto.EventThinkingStart, Turn: intp(r.turn)})
-		}
 		st.reasoning.WriteString(ev.Text)
-		r.emit(proto.Event{Type: proto.EventThinkingDelta, Turn: intp(r.turn), Text: ev.Text})
+		if shown := st.filter(st.reasoningFilter, "reasoning_filter", ev.Text); shown != "" {
+			st.beginThinking()
+			r.emit(proto.Event{Type: proto.EventThinkingDelta, Turn: intp(r.turn), Text: shown})
+		}
 	case provider.StreamTextDelta:
-		st.endThinking()
 		st.text.WriteString(ev.Text)
-		r.emit(proto.Event{Type: proto.EventTextDelta, Turn: intp(r.turn), Text: ev.Text})
+		if shown := st.filter(st.textFilter, "text_filter", ev.Text); shown != "" {
+			st.endThinking()
+			r.emit(proto.Event{Type: proto.EventTextDelta, Turn: intp(r.turn), Text: shown})
+		}
 	case provider.StreamToolCall:
 		st.endThinking()
 		if ev.ToolCall == nil {
@@ -183,6 +190,77 @@ func (st *attempt) onEvent(ev provider.StreamEvent) {
 		st.calls = append(st.calls, c)
 		r.emitToolCall(c)
 	}
+}
+
+// newStreamFilter builds one attempt's filter. A panicking factory is reported
+// and treated as no filter, so the stream still reaches the client.
+func (r *run) newStreamFilter(factory func() StreamFilter, name string) (f StreamFilter) {
+	if factory == nil {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			r.extensionError(name, "filter factory panicked")
+			f = nil
+		}
+	}()
+	return factory()
+}
+
+// filter runs one delta through the filter. A panic is reported and the original
+// text passes through, so a broken filter cannot lose the answer or crash the
+// loop.
+func (st *attempt) filter(f StreamFilter, name, text string) (shown string) {
+	if f == nil {
+		return text
+	}
+	defer func() {
+		if recover() != nil {
+			st.r.extensionError(name, "filter panicked")
+			shown = text
+		}
+	}()
+	return f.Delta(st.r.ctx, text)
+}
+
+// flushFilter releases whatever a filter held at the end of a successful
+// message. A panic is reported and the held text is dropped; the stream still
+// ends cleanly.
+func (st *attempt) flushFilter(f StreamFilter, name string) (shown string) {
+	if f == nil {
+		return ""
+	}
+	defer func() {
+		if recover() != nil {
+			st.r.extensionError(name, "filter panicked")
+			shown = ""
+		}
+	}()
+	return f.Flush(st.r.ctx)
+}
+
+// flushFilters releases held reasoning then held text, in that order, so a
+// thinking span opened by a late reasoning flush is closed by a late text
+// flush.
+func (st *attempt) flushFilters() {
+	if held := st.flushFilter(st.reasoningFilter, "reasoning_filter"); held != "" {
+		st.beginThinking()
+		st.r.emit(proto.Event{Type: proto.EventThinkingDelta, Turn: intp(st.r.turn), Text: held})
+	}
+	if held := st.flushFilter(st.textFilter, "text_filter"); held != "" {
+		st.endThinking()
+		st.r.emit(proto.Event{Type: proto.EventTextDelta, Turn: intp(st.r.turn), Text: held})
+	}
+}
+
+// beginThinking opens a thinking span at most once.
+func (st *attempt) beginThinking() {
+	if st.thinking {
+		return
+	}
+	st.thinking = true
+	st.thinkAt = st.r.a.clock.Now()
+	st.r.emit(proto.Event{Type: proto.EventThinkingStart, Turn: intp(st.r.turn)})
 }
 
 // endThinking closes an open thinking span with its duration from the clock.

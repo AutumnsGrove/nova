@@ -1,0 +1,89 @@
+[
+  {
+    "type": "run_start",
+    "seq": 1,
+    "ts": "2026-01-02T03:04:05Z",
+    "run": "r_1"
+  },
+  {
+    "type": "turn_start",
+    "seq": 2,
+    "ts": "2026-01-02T03:04:05Z",
+    "run": "r_1",
+    "turn": 0
+  },
+  {
+    "type": "message_start",
+    "seq": 3,
+    "ts": "2026-01-02T03:04:05Z",
+    "run": "r_1",
+    "turn": 0,
+    "role": "assistant"
+  },
+  {
+    "type": "text_delta",
+    "seq": 4,
+    "ts": "2026-01-02T03:04:05Z",
+    "run": "r_1",
+    "turn": 0,
+    "text": "hello"
+  },
+  {
+    "type": "message_end",
+    "seq": 5,
+    "ts": "2026-01-02T03:04:05Z",
+    "run": "r_1",
+    "turn": 0,
+    "message": {
+      "role": "assistant",
+      "content": "hello"
+    },
+    "usage": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "type": "usage",
+    "seq": 6,
+    "ts": "2026-01-02T03:04:05Z",
+    "run": "r_1",
+    "turn": 0,
+    "usage": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    },
+    "total": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "type": "turn_end",
+    "seq": 7,
+    "ts": "2026-01-02T03:04:05Z",
+    "run": "r_1",
+    "turn": 0,
+    "usage": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  {
+    "type": "run_end",
+    "seq": 8,
+    "ts": "2026-01-02T03:04:05Z",
+    "run": "r_1",
+    "turn": 1,
+    "usage": {
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0
+    },
+    "reason": "done"
+  }
+]

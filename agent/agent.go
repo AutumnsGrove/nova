@@ -181,6 +181,13 @@ type Config struct {
 	PromptCache *bool
 
 	Hooks Hooks
+	// TextFilter, when non-nil, builds a fresh filter for each text stream. It
+	// controls only the live text_delta events; the stored message keeps the
+	// original text.
+	TextFilter func() StreamFilter
+	// ReasoningFilter, when non-nil, builds a fresh filter for each reasoning
+	// stream. It controls only the live thinking_delta events.
+	ReasoningFilter func() StreamFilter
 
 	// Emit receives every event, synchronously, in order. Seq, TS, and Run
 	// are filled in; it may be nil.

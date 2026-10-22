@@ -3,6 +3,7 @@ package ext
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -140,7 +141,7 @@ func TestInProc_IPC01b_Decide(t *testing.T) {
 	})
 	err := h.AddBundled(&funcBundled{name: "one", init: func(env *Env) error {
 		if env.Decide == nil {
-			t.Fatal("Env.Decide is nil")
+			return errors.New("Env.Decide is nil")
 		}
 		resp, err := env.Decide(context.Background(), decide.Request{
 			Model:     "x",

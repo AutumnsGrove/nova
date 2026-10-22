@@ -115,8 +115,8 @@ func (r *run) callProvider(req provider.Request) (message.Message, provider.Usag
 func (r *run) streamOnce(req provider.Request) (message.Message, provider.Usage, error) {
 	st := &attempt{r: r, seen: map[string]bool{}}
 	r.emit(proto.Event{Type: proto.EventMessageStart, Turn: intp(r.turn), Role: string(message.RoleAssistant)})
-	st.textFilter = r.newStreamFilter(r.cfg.TextFilter, "text_filter")
-	st.reasoningFilter = r.newStreamFilter(r.cfg.ReasoningFilter, "reasoning_filter")
+	st.textGate.filter = r.newStreamFilter(r.cfg.TextFilter, "text_filter")
+	st.reasoningGate.filter = r.newStreamFilter(r.cfg.ReasoningFilter, "reasoning_filter")
 
 	diag.SetOp(fmt.Sprintf("provider request turn %d", r.turn))
 	resp, err := r.cfg.Provider.Stream(r.ctx, req, st.onEvent)
@@ -153,15 +153,33 @@ func (r *run) streamOnce(req provider.Request) (message.Message, provider.Usage,
 // event and keeps what the final message may need when the provider's response
 // carries less than was streamed.
 type attempt struct {
-	r               *run
-	text            strings.Builder
-	reasoning       strings.Builder
-	calls           []message.ToolCall
-	seen            map[string]bool
-	thinkAt         time.Time
-	thinking        bool
-	textFilter      StreamFilter
-	reasoningFilter StreamFilter
+	r             *run
+	text          strings.Builder
+	reasoning     strings.Builder
+	calls         []message.ToolCall
+	seen          map[string]bool
+	thinkAt       time.Time
+	thinking      bool
+	textGate      streamGate
+	reasoningGate streamGate
+}
+
+// streamGate is one kind's filter plus the text the StreamDelta hook is holding.
+// The filter owns whatever it holds internally; the gate owns only the hook's
+// buffer, so a filter and a hook can both hold without sharing state.
+type streamGate struct {
+	filter StreamFilter
+	held   strings.Builder
+}
+
+// releaseHeld returns and clears the hook's held text.
+func (g *streamGate) releaseHeld() string {
+	if g.held.Len() == 0 {
+		return ""
+	}
+	out := g.held.String()
+	g.held.Reset()
+	return out
 }
 
 // onEvent handles one stream event. Reasoning opens a thinking span; the first
@@ -171,13 +189,13 @@ func (st *attempt) onEvent(ev provider.StreamEvent) {
 	switch ev.Type {
 	case provider.StreamReasoningDelta:
 		st.reasoning.WriteString(ev.Text)
-		if shown := st.filter(st.reasoningFilter, "reasoning_filter", ev.Text); shown != "" {
+		if shown := st.show(&st.reasoningGate, StreamReasoning, "reasoning_filter", ev.Text); shown != "" {
 			st.beginThinking()
 			r.emit(proto.Event{Type: proto.EventThinkingDelta, Turn: intp(r.turn), Text: shown})
 		}
 	case provider.StreamTextDelta:
 		st.text.WriteString(ev.Text)
-		if shown := st.filter(st.textFilter, "text_filter", ev.Text); shown != "" {
+		if shown := st.show(&st.textGate, StreamText, "text_filter", ev.Text); shown != "" {
 			st.endThinking()
 			r.emit(proto.Event{Type: proto.EventTextDelta, Turn: intp(r.turn), Text: shown})
 		}
@@ -189,6 +207,45 @@ func (st *attempt) onEvent(ev provider.StreamEvent) {
 		c := r.normalizeCall(*ev.ToolCall, len(st.calls), st.seen)
 		st.calls = append(st.calls, c)
 		r.emitToolCall(c)
+	}
+}
+
+// show runs one delta through the gate's filter and then the StreamDelta hook.
+// It returns the text to emit now, or "" when either layer is holding it.
+func (st *attempt) show(gate *streamGate, kind StreamKind, filterName, text string) string {
+	shown := st.filter(gate.filter, filterName, text)
+	if shown == "" {
+		return ""
+	}
+	return st.applyHook(gate, kind, shown)
+}
+
+// applyHook runs the StreamDelta hook for one filtered chunk. A hook that
+// panics or exceeds its deadline releases what it held and lets the text
+// through, so a broken hook cannot lose the answer or stall the stream.
+func (st *attempt) applyHook(gate *streamGate, kind StreamKind, text string) string {
+	h := st.r.cfg.Hooks.StreamDelta
+	if h == nil {
+		return text
+	}
+	ev := StreamDelta{Kind: kind, Text: text}
+	decision, ok := runHook(st.r, "stream_delta", func(ctx context.Context) StreamDecision { return h(ctx, ev) })
+	if !ok {
+		return gate.releaseHeld() + text
+	}
+	switch decision.Action {
+	case DeltaHold:
+		gate.held.WriteString(text)
+		return ""
+	case DeltaDrop:
+		gate.held.Reset()
+		return ""
+	default: // DeltaPass, and any action a hand-built decision mistyped.
+		held := gate.releaseHeld()
+		if decision.Text != "" {
+			return held + decision.Text
+		}
+		return held + text
 	}
 }
 
@@ -239,15 +296,27 @@ func (st *attempt) flushFilter(f StreamFilter, name string) (shown string) {
 	return f.Flush(st.r.ctx)
 }
 
+// flushGate releases a filter's held text through the hook, then releases
+// anything the hook itself held. The hook is applied to the filter's flush so
+// the composition stays filter-then-hook even at the end of a message.
+func (st *attempt) flushGate(gate *streamGate, kind StreamKind, filterName string) string {
+	var out strings.Builder
+	if held := st.flushFilter(gate.filter, filterName); held != "" {
+		out.WriteString(st.applyHook(gate, kind, held))
+	}
+	out.WriteString(gate.releaseHeld())
+	return out.String()
+}
+
 // flushFilters releases held reasoning then held text, in that order, so a
 // thinking span opened by a late reasoning flush is closed by a late text
 // flush.
 func (st *attempt) flushFilters() {
-	if held := st.flushFilter(st.reasoningFilter, "reasoning_filter"); held != "" {
+	if held := st.flushGate(&st.reasoningGate, StreamReasoning, "reasoning_filter"); held != "" {
 		st.beginThinking()
 		st.r.emit(proto.Event{Type: proto.EventThinkingDelta, Turn: intp(st.r.turn), Text: held})
 	}
-	if held := st.flushFilter(st.textFilter, "text_filter"); held != "" {
+	if held := st.flushGate(&st.textGate, StreamText, "text_filter"); held != "" {
 		st.endThinking()
 		st.r.emit(proto.Event{Type: proto.EventTextDelta, Turn: intp(st.r.turn), Text: held})
 	}

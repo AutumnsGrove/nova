@@ -78,12 +78,17 @@ type Question struct {
 type Hooks struct {
 	BeforeProviderRequest func(ctx context.Context, req *provider.Request)
 	TransformContext      func(ctx context.Context, msgs []message.Message) []message.Message
-	BeforeTurn            func(ctx context.Context, msgs []message.Message) ([]message.Message, error)
-	MessageEnd            func(ctx context.Context, m message.Message) message.Message
-	ToolCall              func(ctx context.Context, c ToolCall) *CallDecision
-	ToolResult            func(ctx context.Context, c ToolCall, r tool.Result) tool.Result
-	TurnEnd               func(ctx context.Context, t Turn) TurnDecision
-	AgentEnd              func(ctx context.Context, r *Result)
+	// StreamDelta sees each live text or reasoning delta after the configured
+	// StreamFilter, and may pass, rewrite, hold, or drop it. It runs under
+	// HookTimeout. The final assistant message and the session keep the
+	// original text; this controls what is shown live (D146).
+	StreamDelta func(ctx context.Context, ev StreamDelta) StreamDecision
+	BeforeTurn  func(ctx context.Context, msgs []message.Message) ([]message.Message, error)
+	MessageEnd  func(ctx context.Context, m message.Message) message.Message
+	ToolCall    func(ctx context.Context, c ToolCall) *CallDecision
+	ToolResult  func(ctx context.Context, c ToolCall, r tool.Result) tool.Result
+	TurnEnd     func(ctx context.Context, t Turn) TurnDecision
+	AgentEnd    func(ctx context.Context, r *Result)
 }
 
 // RetryPolicy configures how a retryable provider failure is retried.

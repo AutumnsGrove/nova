@@ -282,6 +282,16 @@ func (h *Host) Complete(ctx context.Context, req any) (json.RawMessage, error) {
 	return h.request(ctx, map[string]any{"type": "complete", "request": json.RawMessage(raw)})
 }
 
+// Decide makes a decision-model call. The request is a decide.Request-shaped
+// object; the raw result is the decide_result frame.
+func (h *Host) Decide(ctx context.Context, req any) (json.RawMessage, error) {
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	return h.request(ctx, map[string]any{"type": "decide", "request": json.RawMessage(raw)})
+}
+
 // Run reads init, calls fn, registers, and serves until shutdown or EOF.
 func Run(fn func(*Host) error) {
 	if err := run(fn, os.Stdin, os.Stdout); err != nil {
@@ -366,7 +376,7 @@ func (h *Host) serve(r *bufio.Reader) error {
 		switch probe.Type {
 		case "shutdown":
 			return nil
-		case "ui_response", "complete_result", "error":
+		case "ui_response", "complete_result", "decide_result", "error":
 			h.deliver(probe.ID, line)
 		case "replay":
 			var f struct {

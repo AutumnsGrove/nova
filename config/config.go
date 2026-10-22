@@ -148,6 +148,7 @@ type ExtensionsConfig struct {
 	ScrubEnv          []string `yaml:"scrub_env"`            // extra variables hidden from extension processes
 	PassEnv           []string `yaml:"pass_env"`             // variables explicitly passed through
 	CompleteMaxPerRun int      `yaml:"complete_max_per_run"` // default 20
+	DecideMaxPerRun   int      `yaml:"decide_max_per_run"`   // default 20
 }
 
 // HookConfig is one declarative hook.
@@ -194,7 +195,7 @@ func Defaults() Config {
 	enabled := true
 	return Config{
 		Compaction: CompactionConfig{Enabled: &enabled},
-		Extensions: ExtensionsConfig{CompleteMaxPerRun: 20},
+		Extensions: ExtensionsConfig{CompleteMaxPerRun: 20, DecideMaxPerRun: 20},
 		Retry:      RetryConfig{Max: 3, BaseMS: 500, CapMS: 30000},
 		Display:    DisplayConfig{ThinkingLines: 8, ToolLines: 6, ShowImages: true, ImageWidthCells: 60},
 	}
@@ -425,6 +426,7 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 	nonNegative(&cfg.Tools.Bash.TimeoutSeconds, "tools.bash.timeout_seconds", warnings)
 	nonNegative(&cfg.Tools.Bash.MaxOutputBytes, "tools.bash.max_output_bytes", warnings)
 	nonNegative(&cfg.Extensions.CompleteMaxPerRun, "extensions.complete_max_per_run", warnings)
+	nonNegative(&cfg.Extensions.DecideMaxPerRun, "extensions.decide_max_per_run", warnings)
 	nonNegative(&cfg.Compaction.Reserve, "compaction.reserve", warnings)
 	nonNegative(&cfg.Compaction.KeepRecent, "compaction.keep_recent", warnings)
 	nonNegative(&cfg.Retry.Max, "retry.max", warnings)

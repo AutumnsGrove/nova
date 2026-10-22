@@ -67,3 +67,15 @@ decide:
 		t.Fatalf("warnings = %s, want the misspelled key named", got)
 	}
 }
+
+func TestLoad_DecideMaxPerRun(t *testing.T) {
+	home, cwd := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(home, ".config", "nova", "config.yaml"), "extensions:\n  decide_max_per_run: -1\n")
+	cfg, warnings := loadAt(t, cwd, home, LoadOptions{})
+	if got := cfg.Extensions.DecideMaxPerRun; got != 0 {
+		t.Errorf("decide_max_per_run = %d, want 0", got)
+	}
+	if got := warnText(warnings); !strings.Contains(got, "extensions.decide_max_per_run") {
+		t.Fatalf("warnings = %s, want the negative cap named", got)
+	}
+}

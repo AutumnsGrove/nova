@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
@@ -124,6 +125,44 @@ func TestInProc_IPC01_RegisterToolCommandHooks(t *testing.T) {
 	_ = h2.Hooks().ToolCall(context.Background(), agent.ToolCall{Name: "x"})
 	if !ran {
 		t.Fatal("bundled hook did not run")
+	}
+}
+
+func TestInProc_IPC01b_Decide(t *testing.T) {
+	var got decide.Request
+	h := NewHost(HostOptions{
+		Registry: tool.NewRegistry(),
+		Session:  &fakeSession{},
+		Decide: func(_ context.Context, req decide.Request) (*decide.Response, error) {
+			got = req
+			return &decide.Response{Answers: map[string]decide.Answer{"q": {Kind: decide.KindNoul, Noul: 0.9}}, Model: "build"}, nil
+		},
+	})
+	err := h.AddBundled(&funcBundled{name: "one", init: func(env *Env) error {
+		if env.Decide == nil {
+			t.Fatal("Env.Decide is nil")
+		}
+		resp, err := env.Decide(context.Background(), decide.Request{
+			Model:     "x",
+			State:     "s",
+			Questions: map[string]decide.Question{"q": {Kind: decide.KindNoul}},
+		})
+		if err != nil {
+			return err
+		}
+		if resp.Answers["q"].Noul != 0.9 || resp.Model != "build" {
+			t.Errorf("response = %+v", resp)
+		}
+		return nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := h.Start(context.Background()); len(errs) != 0 {
+		t.Fatalf("Start: %v", errs)
+	}
+	if got.Model != "x" {
+		t.Fatalf("decider request = %+v", got)
 	}
 }
 

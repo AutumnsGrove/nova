@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
@@ -393,6 +394,77 @@ func TestHost_HST26_CompleteCapResetsEachRun(t *testing.T) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if got := h.complete["echo"]; got != 0 {
+		t.Fatalf("count after run_start = %d, want 0", got)
+	}
+}
+
+func TestHost_HST27_Decide(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	var calls atomic.Int32
+	dir := rawEchoDir(t, "echo", "capabilities: [model:decide]\n")
+	startHost(t, []string{dir}, HostOptions{
+		Env: envWith("ECHO_DECIDE_COUNT=1", "ECHO_TRACE="+trace),
+		Decide: func(context.Context, decide.Request) (*decide.Response, error) {
+			calls.Add(1)
+			return &decide.Response{
+				Answers: map[string]decide.Answer{"q": {Kind: decide.KindNoul, Noul: 0.9}},
+				Model:   "build-1",
+			}, nil
+		},
+	})
+	waitContains(t, trace, "decide_result", 3*time.Second)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("Decide called %d times, want 1", n)
+	}
+}
+
+func TestHost_HST28_DecideCap(t *testing.T) {
+	var calls atomic.Int32
+	trace := t.TempDir() + "/trace"
+	dir := rawEchoDir(t, "echo", "capabilities: [model:decide]\n")
+	startHost(t, []string{dir}, HostOptions{
+		DecideMax: 1,
+		Env:       envWith("ECHO_DECIDE_COUNT=2", "ECHO_TRACE="+trace),
+		Decide: func(context.Context, decide.Request) (*decide.Response, error) {
+			calls.Add(1)
+			return &decide.Response{}, nil
+		},
+	})
+	waitContains(t, trace, "error:d1", 3*time.Second)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("Decide called %d times, want 1", n)
+	}
+}
+
+func TestHost_HST29_DecideNeedsCapability(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	var calls atomic.Int32
+	dir := rawEchoDir(t, "echo", "") // no model:decide
+	startHost(t, []string{dir}, HostOptions{
+		Env: envWith("ECHO_DECIDE_COUNT=1", "ECHO_TRACE="+trace),
+		Decide: func(context.Context, decide.Request) (*decide.Response, error) {
+			calls.Add(1)
+			return &decide.Response{}, nil
+		},
+	})
+	waitContains(t, trace, "error", 3*time.Second)
+	if n := calls.Load(); n != 0 {
+		t.Fatalf("Decide called %d times without the capability", n)
+	}
+}
+
+// The decision cap is per extension per run, like the completion cap.
+func TestHost_HST30_DecideCapResetsEachRun(t *testing.T) {
+	h := NewHost(HostOptions{})
+	h.mu.Lock()
+	h.decide["echo"] = 5
+	h.mu.Unlock()
+
+	h.Observe(proto.Event{Type: proto.EventRunStart})
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if got := h.decide["echo"]; got != 0 {
 		t.Fatalf("count after run_start = %d, want 0", got)
 	}
 }

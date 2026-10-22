@@ -120,6 +120,12 @@ func main() {
 			for i := 0; i < envInt("ECHO_COMPLETE_COUNT", 0); i++ {
 				send(map[string]any{"type": "complete", "id": "m" + strconv.Itoa(i), "request": map[string]any{"Model": "x"}})
 			}
+			for i := 0; i < envInt("ECHO_DECIDE_COUNT", 0); i++ {
+				send(map[string]any{"type": "decide", "id": "d" + strconv.Itoa(i), "request": map[string]any{
+					"model": "x", "state": "s",
+					"questions": map[string]any{"q": map[string]any{"kind": "noul"}},
+				}})
+			}
 			if env("ECHO_BIG_FRAME") {
 				sendRaw(strings.Repeat("a", 17<<20))
 			}

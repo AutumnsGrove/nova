@@ -214,6 +214,36 @@ func TestSDK_SDK09_Complete(t *testing.T) {
 	}
 }
 
+func TestSDK_SDK09b_Decide(t *testing.T) {
+	p := startSDK(t, func(h *Host) error {
+		h.Tool(Tool{Name: "d"}, func(c *Call) (Result, error) {
+			raw, err := h.Decide(c.Context(), map[string]any{
+				"model": "x", "state": "s",
+				"questions": map[string]any{"q": map[string]any{"kind": "noul"}},
+			})
+			if err != nil {
+				return Result{}, err
+			}
+			return Text("%s", raw), nil
+		})
+		return nil
+	})
+	p.send(map[string]any{"type": "tool_call", "id": "t1", "name": "d"})
+	frame := p.recv()
+	if frame["type"] != "decide" {
+		t.Fatalf("frame = %+v", frame)
+	}
+	request, _ := frame["request"].(map[string]any)
+	if request["model"] != "x" {
+		t.Fatalf("request = %+v", request)
+	}
+	id, _ := frame["id"].(string)
+	p.send(map[string]any{"type": "decide_result", "id": id, "answers": map[string]any{"q": map[string]any{"noul": 0.9}}})
+	if got := p.recv(); got["type"] != "tool_result" {
+		t.Fatalf("result = %+v", got)
+	}
+}
+
 func TestSDK_SDK10_CleanExit(t *testing.T) {
 	p := startSDK(t, func(*Host) error { return nil })
 	p.send(map[string]any{"type": "shutdown"})

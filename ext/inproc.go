@@ -11,6 +11,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
@@ -71,6 +72,8 @@ type Env struct {
 	Events func(fn func(proto.Event))
 	// Complete performs one nested model call.
 	Complete func(ctx context.Context, req provider.Request) (*provider.Response, error)
+	// Decide performs one decision-model call.
+	Decide func(ctx context.Context, req decide.Request) (*decide.Response, error)
 	// Spawn runs a fresh agent loop as a sub-agent.
 	Spawn func(ctx context.Context, r SpawnRequest) (*SpawnResult, error)
 	// HasUI reports whether the attached client declared a capability.
@@ -179,6 +182,7 @@ func (h *Host) newEnv(inst *instance) *Env {
 		Ledger:   h.opt.Ledger,
 		Extra:    h.opt.Extra,
 		Complete: h.opt.Complete,
+		Decide:   h.opt.Decide,
 		Spawn:    h.opt.Spawn,
 		HasUI:    h.hasUI,
 	}
@@ -379,7 +383,8 @@ func (h *Host) runBundledCommand(ctx context.Context, inst *instance, cmd InProc
 func (h *Host) Observe(ev proto.Event) {
 	h.mu.Lock()
 	if ev.Type == proto.EventRunStart {
-		clear(h.complete) // the completion cap is per run
+		clear(h.complete) // the completion and decision caps are per run
+		clear(h.decide)
 	}
 	insts := append([]*instance(nil), h.insts...)
 	h.mu.Unlock()

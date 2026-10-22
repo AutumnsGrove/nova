@@ -129,7 +129,7 @@ func TestManifest_MAN11_KnownCapabilities(t *testing.T) {
 	caps := []string{
 		"tools", "commands", "hooks:turn_end", "ui:notify", "ui:confirm",
 		"ui:select", "ui:input", "ui:form", "ui:status", "ui:widget",
-		"session:append_entry", "session:read", "model:complete", "providers",
+		"session:append_entry", "session:read", "model:complete", "model:decide", "providers",
 		"mcp", "network", "fs", "exec",
 	}
 	for _, c := range caps {

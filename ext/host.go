@@ -3,6 +3,7 @@ package ext
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
@@ -18,6 +20,9 @@ import (
 
 // defaultCompleteMax caps nested model calls per extension per run.
 const defaultCompleteMax = 20
+
+// defaultDecideMax caps decision-model calls per extension per run.
+const defaultDecideMax = 20
 
 // defaultToolCallTimeout bounds one protocol tool call.
 const defaultToolCallTimeout = 120 * time.Second
@@ -65,6 +70,8 @@ type HostOptions struct {
 	UI          UIBridge
 	Complete    func(ctx context.Context, req provider.Request) (*provider.Response, error)
 	CompleteMax int
+	Decide      func(ctx context.Context, req decide.Request) (*decide.Response, error)
+	DecideMax   int
 	Emit        func(proto.Event)
 	NovaVersion string
 	CWD         string
@@ -131,6 +138,7 @@ type Host struct {
 	insts          []*instance
 	byName         map[string]*instance
 	complete       map[string]int
+	decide         map[string]int
 	hookErrAt      map[string]time.Time
 	entryKinds     map[string][]string
 	manifestHashes map[string]string
@@ -159,6 +167,7 @@ func NewHost(opt HostOptions) *Host {
 		reg:            reg,
 		byName:         map[string]*instance{},
 		complete:       map[string]int{},
+		decide:         map[string]int{},
 		hookErrAt:      map[string]time.Time{},
 		entryKinds:     map[string][]string{},
 		manifestHashes: map[string]string{},
@@ -290,6 +299,8 @@ func (h *Host) handleFrame(inst *instance, c *conn, typ string, line []byte, r r
 		h.handleAppend(inst, c, line)
 	case "complete":
 		h.handleComplete(inst, c, line)
+	case "decide":
+		h.handleDecide(inst, c, line)
 	case "log":
 		var f struct {
 			Level string `json:"level"`
@@ -571,6 +582,64 @@ func (h *Host) handleComplete(inst *instance, c *conn, line []byte) {
 			frame.Message = resp.Message
 			frame.Usage = resp.Usage
 		}
+		_ = c.notify(frame)
+	}) {
+		h.deny(inst, c, f.ID, proto.CodeBusy, "too many requests in flight")
+	}
+}
+
+// handleDecide performs a decision-model call under the per-run cap, on its own
+// goroutine so a slow model does not stop the extension's other frames from
+// being read.
+func (h *Host) handleDecide(inst *instance, c *conn, line []byte) {
+	if !inst.manifest.hasCapability("model:decide") {
+		h.deny(inst, c, "", proto.CodePermissionDenied, "model:decide capability not declared")
+		return
+	}
+	var f struct {
+		ID      string         `json:"id"`
+		Request decide.Request `json:"request"`
+	}
+	if err := json.Unmarshal(line, &f); err != nil {
+		h.deny(inst, c, "", proto.CodeBadRequest, "malformed decide frame")
+		return
+	}
+	if err := f.Request.Validate(); err != nil {
+		h.deny(inst, c, f.ID, proto.CodeBadRequest, err.Error())
+		return
+	}
+	if h.opt.Decide == nil {
+		h.deny(inst, c, f.ID, proto.CodeUnsupported, "no decision function is attached")
+		return
+	}
+	limit := h.opt.DecideMax
+	if limit <= 0 {
+		limit = defaultDecideMax
+	}
+	h.mu.Lock()
+	h.decide[inst.manifest.Name]++
+	over := h.decide[inst.manifest.Name] > limit
+	h.mu.Unlock()
+	if over {
+		h.deny(inst, c, f.ID, proto.CodeBadRequest, fmt.Sprintf("decide cap of %d reached for this run", limit))
+		return
+	}
+	if !c.async(func(ctx context.Context) {
+		resp, err := h.opt.Decide(ctx, f.Request)
+		if err != nil {
+			code := proto.CodeBadRequest
+			var pe *provider.Error
+			if errors.As(err, &pe) {
+				code = proto.CodeProviderError
+			}
+			h.deny(inst, c, f.ID, code, err.Error())
+			return
+		}
+		if resp == nil {
+			h.deny(inst, c, f.ID, proto.CodeInternal, "decider returned no response")
+			return
+		}
+		frame := &outFrame{Type: "decide_result", ID: f.ID, Answers: resp.Answers, Usage: resp.Usage, Model: resp.Model}
 		_ = c.notify(frame)
 	}) {
 		h.deny(inst, c, f.ID, proto.CodeBusy, "too many requests in flight")

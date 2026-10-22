@@ -74,7 +74,7 @@ var uiMethods = map[string]bool{
 // simpleCapabilities are capabilities that name a whole feature.
 var simpleCapabilities = map[string]bool{
 	"tools": true, "commands": true, "session:append_entry": true,
-	"session:read": true, "model:complete": true, "providers": true,
+	"session:read": true, "model:complete": true, "model:decide": true, "providers": true,
 	"mcp": true, "network": true, "fs": true, "exec": true,
 }
 

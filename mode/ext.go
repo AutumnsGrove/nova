@@ -38,6 +38,8 @@ func (s *Server) buildExtensionHost() *ext.Host {
 		UI:          uiBridge{s},
 		Complete:    s.complete,
 		CompleteMax: s.cfg.Extensions.CompleteMaxPerRun,
+		Decide:      s.decideCall,
+		DecideMax:   s.cfg.Extensions.DecideMaxPerRun,
 		Emit:        s.emit,
 		NovaVersion: s.opt.Version,
 		CWD:         s.cwd,

@@ -592,16 +592,16 @@ func (h *Host) handleComplete(inst *instance, c *conn, line []byte) {
 // goroutine so a slow model does not stop the extension's other frames from
 // being read.
 func (h *Host) handleDecide(inst *instance, c *conn, line []byte) {
-	if !inst.manifest.hasCapability("model:decide") {
-		h.deny(inst, c, "", proto.CodePermissionDenied, "model:decide capability not declared")
-		return
-	}
 	var f struct {
 		ID      string         `json:"id"`
 		Request decide.Request `json:"request"`
 	}
 	if err := json.Unmarshal(line, &f); err != nil {
 		h.deny(inst, c, "", proto.CodeBadRequest, "malformed decide frame")
+		return
+	}
+	if !inst.manifest.hasCapability("model:decide") {
+		h.deny(inst, c, f.ID, proto.CodePermissionDenied, "model:decide capability not declared")
 		return
 	}
 	if err := f.Request.Validate(); err != nil {

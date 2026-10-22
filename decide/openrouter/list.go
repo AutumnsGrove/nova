@@ -8,16 +8,18 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/provider"
 )
 
-// List reads OpenRouter's live decision-model roster
-// (GET {base}/models?output_modalities=decisions), so a benchmark never
-// hardcodes candidates while the lineup moves. The catalog is public, so an
-// empty API key still works. A non-200 or unparseable body is an error, never an
-// empty slice: an outage must not look like "no candidates".
-func List(ctx context.Context, cfg Config) ([]provider.Model, error) {
-	c := New(cfg)
+// Client is an OpenRouter decision backend and a decision-model catalog.
+var _ decide.Decider = (*Client)(nil)
+var _ decide.Catalog = (*Client)(nil)
+
+// List reads OpenRouter's live decision-model roster for this client's base URL
+// and key. It is the decide.Catalog implementation, so a benchmark can accept a
+// catalog without naming a vendor.
+func (c *Client) List(ctx context.Context) ([]provider.Model, error) {
 	key, err := c.key(ctx)
 	if err != nil {
 		return nil, err
@@ -43,6 +45,12 @@ func List(ctx context.Context, cfg Config) ([]provider.Model, error) {
 		return nil, statusError(resp, data)
 	}
 	return decodeModels(data)
+}
+
+// List reads OpenRouter's live decision-model roster with a one-shot config. It
+// is the convenient form; a caller that already holds a Client uses its List.
+func List(ctx context.Context, cfg Config) ([]provider.Model, error) {
+	return New(cfg).List(ctx)
 }
 
 // modelWire is the subset of OpenRouter's model entry the decision roster needs.

@@ -472,3 +472,20 @@ func TestList_ErrorsAreNotAnEmptyRoster(t *testing.T) {
 		})
 	}
 }
+
+func TestList_ClientSatisfiesCatalog(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"data":[{"id":"typesafe/jev-1.14","name":"Jev 1.14","context_length":262144}]}`)
+	}))
+	defer srv.Close()
+
+	var catalog decide.Catalog = New(Config{BaseURL: srv.URL})
+	models, err := catalog.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(models) != 1 || !models[0].SupportsDecisions() {
+		t.Fatalf("models = %+v, want one decision model", models)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 )
 
 // builtinCommands are the slash commands handled in-process.
-var builtinCommands = []string{"model", "thinking", "context", "compact", "new", "clear", "name", "cost", "help", "reload", "quit", "exit"}
+var builtinCommands = []string{"model", "thinking", "decide", "context", "compact", "new", "clear", "name", "cost", "help", "reload", "quit", "exit"}
 
 // handleGetMessages returns the active branch as model messages. Without a
 // session store the transcript is the in-memory one, which has no branches, so
@@ -232,6 +233,8 @@ func (s *Server) handleRunCommand(ctx context.Context, cmd proto.Command) proto.
 			return okResponse(cmd, map[string]any{"text": level})
 		}
 		return s.handleSetThinking(proto.Command{Type: proto.CmdSetThinking, ID: cmd.ID, Level: args})
+	case "decide":
+		return s.handleDecideCommand(ctx, cmd)
 	case "name":
 		return s.handleSessionName(proto.Command{Type: proto.CmdSessionName, ID: cmd.ID, Name: cmd.Args})
 	case "compact":
@@ -291,6 +294,80 @@ func (s *Server) handleDecide(ctx context.Context, cmd proto.Command) proto.Resp
 		return failResponse(cmd, proto.CodeBadRequest, err.Error())
 	}
 	return okResponse(cmd, resp)
+}
+
+// handleDecideCommand lists the configured decision roles or the live roster.
+// Asking a question needs a state and typed questions, so that stays on the
+// decide protocol command and the tool seam.
+func (s *Server) handleDecideCommand(ctx context.Context, cmd proto.Command) proto.Response {
+	switch strings.ToLower(strings.TrimSpace(cmd.Args)) {
+	case "", "roles":
+		return s.decideRoles(cmd)
+	case "models":
+		return s.decideModels(ctx, cmd)
+	default:
+		return failResponse(cmd, proto.CodeBadRequest, "usage: /decide [roles|models]")
+	}
+}
+
+// decideRoles renders the configured role table, sorted by role name.
+func (s *Server) decideRoles(cmd proto.Command) proto.Response {
+	s.mu.Lock()
+	roles := make(map[string]config.DecideRole, len(s.cfg.Decide.Roles))
+	for name, role := range s.cfg.Decide.Roles {
+		roles[name] = role
+	}
+	s.mu.Unlock()
+	if len(roles) == 0 {
+		return okResponse(cmd, map[string]any{"text": "no decision roles configured; add decide.roles to the config"})
+	}
+	names := make([]string, 0, len(roles))
+	for name := range roles {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var b strings.Builder
+	for _, name := range names {
+		role := roles[name]
+		fmt.Fprintf(&b, "%s -> %s", name, role.Model)
+		if role.Fallback != "" {
+			fmt.Fprintf(&b, " (fallback %s)", role.Fallback)
+		}
+		if role.TimeoutMS > 0 {
+			fmt.Fprintf(&b, " [%dms]", role.TimeoutMS)
+		}
+		b.WriteString("\n")
+	}
+	return okResponse(cmd, map[string]any{"text": strings.TrimRight(b.String(), "\n")})
+}
+
+// decideModels renders the live decision-model roster.
+func (s *Server) decideModels(ctx context.Context, cmd proto.Command) proto.Response {
+	s.mu.Lock()
+	catalog := s.catalog
+	s.mu.Unlock()
+	if catalog == nil {
+		return failResponse(cmd, proto.CodeUnsupported, "no decision catalog is configured")
+	}
+	models, err := catalog.List(ctx)
+	if err != nil {
+		return failResponse(cmd, proto.CodeProviderError, err.Error())
+	}
+	if len(models) == 0 {
+		return okResponse(cmd, map[string]any{"text": "no decision models in the live roster"})
+	}
+	var b strings.Builder
+	for _, m := range models {
+		fmt.Fprintf(&b, "%s", m.ID)
+		if m.Name != "" {
+			fmt.Fprintf(&b, "  %s", m.Name)
+		}
+		if m.ContextWindow > 0 {
+			fmt.Fprintf(&b, "  %d tokens", m.ContextWindow)
+		}
+		b.WriteString("\n")
+	}
+	return okResponse(cmd, map[string]any{"text": strings.TrimRight(b.String(), "\n")})
 }
 
 // handleCompact runs compaction on demand.

@@ -2,7 +2,7 @@
 chunk: C22b
 title: "Login over the protocol (serve/rpc)"
 packages: [./proto, ./mode]
-budgets: { ./proto: 700, ./mode: 2540 }
+budgets: { ./proto: 700, ./mode: 2640 }
 depends: [C22]
 ---
 

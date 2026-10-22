@@ -158,6 +158,9 @@ func (s *Server) applyConfig(fresh *config.Config) (modelChanged bool, err error
 	if s.opt.Decider == nil {
 		s.decider = buildDecider(fresh, s.home)
 	}
+	if s.opt.Catalog == nil {
+		s.catalog = buildDecisionCatalog(fresh, s.home)
+	}
 	s.loaded = file
 	s.model, s.think, s.limit = modelSlug(fresh.Model), fresh.Thinking, fresh.ContextLimit
 	s.policy = fresh.Permissions

@@ -58,6 +58,17 @@ func buildDecider(cfg *config.Config, home string) decide.Decider {
 	})
 }
 
+// buildDecisionCatalog builds the live decision-model roster reader from the
+// config. It shares the OpenRouter credential with the chat provider.
+func buildDecisionCatalog(cfg *config.Config, home string) decide.Catalog {
+	return providers.BuildDecisionCatalog(providers.Options{
+		Config: cfg,
+		Home:   home,
+		Getenv: os.Getenv,
+		Store:  auth.NewFileStore(keyPath(home)),
+	})
+}
+
 // defaultToolNames is the built-in set when the config does not choose one.
 var defaultToolNames = []string{"read", "write", "edit", "list", "glob", "grep", "bash"}
 

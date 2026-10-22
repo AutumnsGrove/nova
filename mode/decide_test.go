@@ -187,3 +187,66 @@ func TestDecide_ProtocolCommandMapsErrors(t *testing.T) {
 		t.Fatalf("configuration error: %+v", resp)
 	}
 }
+
+// fakeCatalog plays a live decision roster.
+type fakeCatalog struct {
+	models []provider.Model
+	err    error
+}
+
+func (f fakeCatalog) List(context.Context) ([]provider.Model, error) { return f.models, f.err }
+
+// commandText decodes the text of a run_command response.
+func commandText(t *testing.T, resp proto.Response) string {
+	t.Helper()
+	if !resp.OK {
+		t.Fatalf("command = %+v", resp)
+	}
+	var out struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(resp.Data, &out); err != nil {
+		t.Fatalf("decode: %v (data=%s)", err, resp.Data)
+	}
+	return out.Text
+}
+
+func TestDecide_SlashListsRoles(t *testing.T) {
+	s, _ := testServer(t)
+	s.cfg.Decide.Roles = map[string]config.DecideRole{
+		"verify": {Model: "vendor/verify"},
+		"oracle": {Model: "typesafe/jev-1.14", Fallback: "typesafe/jev-1.13", TimeoutMS: 2500},
+	}
+	text := commandText(t, s.Handle(context.Background(), proto.Command{Type: proto.CmdRunCommand, Name: "decide"}))
+	for _, want := range []string{"oracle -> typesafe/jev-1.14", "fallback typesafe/jev-1.13", "[2500ms]", "verify -> vendor/verify"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text = %q, want it to contain %q", text, want)
+		}
+	}
+	if strings.Index(text, "oracle") > strings.Index(text, "verify") {
+		t.Errorf("roles are not sorted: %q", text)
+	}
+}
+
+func TestDecide_SlashListsLiveModels(t *testing.T) {
+	s, _ := testServer(t)
+	s.catalog = fakeCatalog{models: []provider.Model{
+		{ID: "typesafe/jev-1.14", Name: "Jev 1.14", ContextWindow: 262144},
+		{ID: "openai/gpt-6-luna-decisions"},
+	}}
+	text := commandText(t, s.Handle(context.Background(), proto.Command{Type: proto.CmdRunCommand, Name: "decide", Args: "models"}))
+	want := []string{"typesafe/jev-1.14", "Jev 1.14", "262144 tokens", "openai/gpt-6-luna-decisions"}
+	for _, w := range want {
+		if !strings.Contains(text, w) {
+			t.Errorf("text = %q, want it to contain %q", text, w)
+		}
+	}
+}
+
+func TestDecide_SlashRejectsUnknownArguments(t *testing.T) {
+	s, _ := testServer(t)
+	resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdRunCommand, Name: "decide", Args: "ask"})
+	if resp.OK || resp.Error == nil || resp.Error.Code != proto.CodeBadRequest {
+		t.Fatalf("response = %+v", resp)
+	}
+}

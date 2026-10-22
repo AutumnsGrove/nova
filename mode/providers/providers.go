@@ -131,23 +131,29 @@ func (r *router) withSession(req provider.Request) provider.Request {
 	return req
 }
 
-// BuildDecider returns a decision client over OpenRouter, wrapped in the roles
-// from the config. A role's timeout is per attempt; a fallback model is tried
-// when the primary fails and the caller's context is still live.
-func BuildDecider(opt Options) decide.Decider {
+// decisionClient builds the shared OpenRouter decision client. The chat
+// provider and the decision catalog use the same base URL and credential.
+func decisionClient(opt Options) *decideor.Client {
 	getenv := opt.Getenv
 	if getenv == nil {
 		getenv = func(string) string { return "" }
 	}
 	store := opt.Store
 	orBase := cmp.Or(opt.Config.Provider.OpenRouter.BaseURL, getenv("NOVA_OPENROUTER_BASE_URL"))
-	client := decideor.New(decideor.Config{
+	return decideor.New(decideor.Config{
 		BaseURL: orBase,
 		APIKeyFunc: func(context.Context) (string, error) {
 			key, _, err := auth.Resolve("", getenv, store)
 			return key, err
 		},
 	})
+}
+
+// BuildDecider returns a decision client over OpenRouter, wrapped in the roles
+// from the config. A role's timeout is per attempt; a fallback model is tried
+// when the primary fails and the caller's context is still live.
+func BuildDecider(opt Options) decide.Decider {
+	client := decisionClient(opt)
 	roles := make(map[string]decide.Role, len(opt.Config.Decide.Roles))
 	for name, role := range opt.Config.Decide.Roles {
 		roles[name] = decide.Role{
@@ -161,6 +167,12 @@ func BuildDecider(opt Options) decide.Decider {
 		Roles:        roles,
 		AllowAliases: opt.Config.Decide.AllowAliases,
 	})
+}
+
+// BuildDecisionCatalog returns the live decision-model roster reader. It shares
+// the decision client, so the roster needs no separate sign-in.
+func BuildDecisionCatalog(opt Options) decide.Catalog {
+	return decisionClient(opt)
 }
 
 // ResolveOpenCodeGoKey resolves the Go key from config, then the environment.

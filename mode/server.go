@@ -66,7 +66,9 @@ type Options struct {
 	Provider provider.Provider // nil means build OpenRouter from the config and auth
 	// Decider overrides the decision client built from the config. nil means
 	// build one (the normal server); a test or embedder can inject one.
-	Decider   decide.Decider
+	Decider decide.Decider
+	// Catalog overrides the live decision-model roster. nil means build one.
+	Catalog   decide.Catalog
 	Session   string // path to open or create; "" means a new default
 	NoSession bool   // keep the transcript in memory only
 	Clock     Clock
@@ -100,6 +102,7 @@ type Server struct {
 
 	prov      provider.Provider
 	decider   decide.Decider
+	catalog   decide.Catalog
 	usesAuth  bool
 	tools     *tool.Registry
 	pool      map[string]tool.Tool
@@ -216,6 +219,10 @@ func New(opt Options) (*Server, error) {
 	s.decider = opt.Decider
 	if s.decider == nil {
 		s.decider = buildDecider(cfg, home)
+	}
+	s.catalog = opt.Catalog
+	if s.catalog == nil {
+		s.catalog = buildDecisionCatalog(cfg, home)
 	}
 	tools, pool, err := buildTools(cfg)
 	if err != nil {

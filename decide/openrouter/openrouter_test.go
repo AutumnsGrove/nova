@@ -99,15 +99,48 @@ func TestDecide_GoldenRequestBodies(t *testing.T) {
 			want: `{"model":"vendor/model","state":"s","questions":{"q":{"type":"choice","instructions":"pick","criteria":{"a":"one"}}}}`,
 		},
 		{
+			name: "noul with true/false criteria",
+			req: decide.Request{
+				Model: "vendor/model",
+				State: "s",
+				Questions: map[string]decide.Question{
+					"q": {Kind: decide.KindNoul, Instructions: "is it?", Criteria: map[string]string{"true": "yes", "false": "no"}},
+				},
+			},
+			want: `{"model":"vendor/model","state":"s","questions":{"q":{"type":"noul","instructions":"is it?","criteria":{"false":"no","true":"yes"}}}}`,
+		},
+		{
+			name: "score sends its levels as criteria",
+			req: decide.Request{
+				Model: "vendor/model",
+				State: "s",
+				Questions: map[string]decide.Question{
+					"q": {Kind: decide.KindScore, Instructions: "how urgent?", Levels: []string{"low", "mid", "high"}},
+				},
+			},
+			want: `{"model":"vendor/model","state":"s","questions":{"q":{"type":"score","instructions":"how urgent?","criteria":["low","mid","high"]}}}`,
+		},
+		{
+			name: "structured instructions",
+			req: decide.Request{
+				Model: "vendor/model",
+				State: "s",
+				Questions: map[string]decide.Question{
+					"q": {Kind: decide.KindNoul, Instructions: map[string]any{"task": "is it?"}},
+				},
+			},
+			want: `{"model":"vendor/model","state":"s","questions":{"q":{"type":"noul","instructions":{"task":"is it?"}}}}`,
+		},
+		{
 			name: "unknown kind passes through",
 			req: decide.Request{
 				Model: "vendor/model",
 				State: "s",
 				Questions: map[string]decide.Question{
-					"q": {Kind: "score", Instructions: "rate"},
+					"q": {Kind: "rank", Instructions: "rate"},
 				},
 			},
-			want: `{"model":"vendor/model","state":"s","questions":{"q":{"type":"score","instructions":"rate"}}}`,
+			want: `{"model":"vendor/model","state":"s","questions":{"q":{"type":"rank","instructions":"rate"}}}`,
 		},
 	}
 	for _, tc := range cases {
@@ -214,6 +247,58 @@ func TestDecide_AnswersEveryQuestionInOneCall(t *testing.T) {
 	}
 	if len(resp.Answers) != 2 || resp.Answers["a"].Choice != "x" || resp.Answers["b"].Choice != "q" {
 		t.Fatalf("answers = %+v, want both questions answered", resp.Answers)
+	}
+}
+
+func TestDecide_DecodesChoiceNoulAndScore(t *testing.T) {
+	req := decide.Request{
+		Model: "vendor/model",
+		State: "s",
+		Questions: map[string]decide.Question{
+			"team":    {Kind: decide.KindChoice, Criteria: map[string]string{"payments": "billing", "frontend": "rendering"}},
+			"is_bug":  {Kind: decide.KindNoul, Instructions: "is it a defect?"},
+			"urgency": {Kind: decide.KindScore, Levels: []string{"low", "mid", "high"}},
+		},
+	}
+	body := `{"answers":{
+		"team":{"type":"choice","choice":"payments","probabilities":{"payments":0.78,"frontend":0.22},"confidence":0.67},
+		"is_bug":{"type":"noul","noul":0.96},
+		"urgency":{"type":"score","score":1.99,"legend":{"0":"low","1":"mid","2":"high"},"probabilities":{"0":0,"1":0.01,"2":0.99},"confidence":0.99}
+	},"usage":{"input_tokens":476,"output_tokens":70,"cost":0.000019992},"model":"typesafe/jev-1.13-20260917"}`
+	srv := testkit.NewDecisionServer(t, testkit.DecisionServerTurn{Body: body})
+	resp, err := New(Config{BaseURL: srv.URL}).Decide(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if got := resp.Answers["team"]; got.Kind != decide.KindChoice || got.Choice != "payments" || got.Confidence != 0.67 {
+		t.Errorf("choice answer = %+v", got)
+	}
+	if got := resp.Answers["is_bug"]; got.Kind != decide.KindNoul || got.Noul != 0.96 {
+		t.Errorf("noul answer = %+v", got)
+	}
+	urgency := resp.Answers["urgency"]
+	if urgency.Kind != decide.KindScore || urgency.Score != 1.99 || urgency.Legend["1"] != "mid" || urgency.Probabilities["2"] != 0.99 {
+		t.Errorf("score answer = %+v", urgency)
+	}
+	if resp.Model != "typesafe/jev-1.13-20260917" || resp.Usage.TotalTokens != 546 {
+		t.Errorf("response = %+v", resp)
+	}
+}
+
+func TestDecide_RejectsAMalformedScoreAnswer(t *testing.T) {
+	req := decide.Request{
+		Model: "vendor/model",
+		State: "s",
+		Questions: map[string]decide.Question{
+			"q": {Kind: decide.KindScore, Levels: []string{"low", "high"}},
+		},
+	}
+	srv := testkit.NewDecisionServer(t, testkit.DecisionServerTurn{
+		Body: `{"answers":{"q":{"type":"score","score":2.5}},"usage":{"input_tokens":1,"output_tokens":1}}`,
+	})
+	_, err := New(Config{BaseURL: srv.URL}).Decide(context.Background(), req)
+	if err == nil || !strings.Contains(err.Error(), "score") {
+		t.Fatalf("error = %v, want an out-of-range score error", err)
 	}
 }
 

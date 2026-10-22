@@ -7,6 +7,8 @@ import "testing"
 func FuzzDecodeResponse(f *testing.F) {
 	f.Add([]byte(validBody))
 	f.Add([]byte(`{"answers":{"triage":{"choice":"z","confidence":2}}}`))
+	f.Add([]byte(`{"answers":{"triage":{"type":"noul","noul":1.5}}}`))
+	f.Add([]byte(`{"answers":{"triage":{"type":"score","score":9,"legend":{"0":"low"}}}}`))
 	f.Add([]byte(`{"answers":null,"usage":{"input_tokens":-1}}`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		_, _ = decodeResponse(validRequest("vendor/model"), data)

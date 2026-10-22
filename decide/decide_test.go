@@ -53,9 +53,59 @@ func TestRequestValidate_RejectsMalformedRequests(t *testing.T) {
 
 func TestRequestValidate_AllowsAnUnknownKindWithoutChoiceCriteria(t *testing.T) {
 	req := validRequest()
-	req.Questions["score"] = Question{Kind: "score", Instructions: "how good"}
+	req.Questions["rank"] = Question{Kind: "rank", Instructions: "how good"}
 	if err := req.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
+	}
+}
+
+func TestRequestValidate_NoulCriteria(t *testing.T) {
+	req := validRequest()
+
+	// Noul criteria are optional.
+	req.Questions["q"] = Question{Kind: KindNoul, Instructions: "is it?"}
+	if err := req.Validate(); err != nil {
+		t.Fatalf("noul without criteria: %v", err)
+	}
+
+	req.Questions["q"] = Question{Kind: KindNoul, Criteria: map[string]string{"true": "yes", "false": "no"}}
+	if err := req.Validate(); err != nil {
+		t.Fatalf("noul with true/false criteria: %v", err)
+	}
+
+	for _, criteria := range []map[string]string{
+		{"true": "yes"},
+		{"true": "yes", "false": "no", "maybe": "perhaps"},
+		{"yes": "yes", "no": "no"},
+	} {
+		req.Questions["q"] = Question{Kind: KindNoul, Criteria: criteria}
+		if err := req.Validate(); err == nil {
+			t.Errorf("noul criteria %v was accepted, want an error", criteria)
+		}
+	}
+
+	req.Questions["q"] = Question{Kind: KindNoul, Levels: []string{"low", "high"}}
+	if err := req.Validate(); err == nil {
+		t.Error("noul with levels was accepted, want an error")
+	}
+}
+
+func TestRequestValidate_ScoreLevels(t *testing.T) {
+	req := validRequest()
+
+	req.Questions["q"] = Question{Kind: KindScore, Instructions: "how urgent?"}
+	if err := req.Validate(); err == nil || !strings.Contains(err.Error(), "levels") {
+		t.Fatalf("score without levels: %v, want a levels error", err)
+	}
+
+	req.Questions["q"] = Question{Kind: KindScore, Levels: []string{"low", "mid", "high"}}
+	if err := req.Validate(); err != nil {
+		t.Fatalf("score with levels: %v", err)
+	}
+
+	req.Questions["q"] = Question{Kind: KindScore, Levels: []string{"low"}, Criteria: map[string]string{"a": "b"}}
+	if err := req.Validate(); err == nil || !strings.Contains(err.Error(), "criteria") {
+		t.Fatalf("score with criteria: %v, want a criteria error", err)
 	}
 }
 
@@ -101,10 +151,73 @@ func TestValidateResponse_RejectsAMalformedAnswer(t *testing.T) {
 
 func TestValidateResponse_SkipsAKindItDoesNotKnow(t *testing.T) {
 	req := Request{Model: "m/x", State: "s", Questions: map[string]Question{
-		"score": {Kind: "score"},
+		"rank": {Kind: "rank"},
 	}}
-	resp := &Response{Answers: map[string]Answer{"score": {}}}
+	resp := &Response{Answers: map[string]Answer{"rank": {}}}
 	if err := ValidateResponse(req, resp); err != nil {
 		t.Fatalf("ValidateResponse: %v", err)
+	}
+}
+
+func TestValidateResponse_Noul(t *testing.T) {
+	req := Request{Model: "m/x", State: "s", Questions: map[string]Question{
+		"q": {Kind: KindNoul},
+	}}
+	resp := &Response{Answers: map[string]Answer{"q": {Kind: KindNoul, Noul: 0.96}}}
+	if err := ValidateResponse(req, resp); err != nil {
+		t.Fatalf("ValidateResponse: %v", err)
+	}
+
+	for _, noul := range []float64{-0.1, 1.1} {
+		resp.Answers["q"] = Answer{Kind: KindNoul, Noul: noul}
+		if err := ValidateResponse(req, resp); err == nil || !strings.Contains(err.Error(), "noul") {
+			t.Errorf("noul %v: error = %v, want an out-of-range error", noul, err)
+		}
+	}
+
+	resp.Answers["q"] = Answer{Kind: KindChoice, Noul: 0.5}
+	if err := ValidateResponse(req, resp); err == nil || !strings.Contains(err.Error(), "answer") {
+		t.Errorf("wrong kind: error = %v, want a kind-mismatch error", err)
+	}
+}
+
+func scoreRequest() Request {
+	return Request{Model: "m/x", State: "s", Questions: map[string]Question{
+		"q": {Kind: KindScore, Levels: []string{"low", "mid", "high"}},
+	}}
+}
+
+func TestValidateResponse_Score(t *testing.T) {
+	valid := Answer{
+		Kind:          KindScore,
+		Score:         1.99,
+		Legend:        map[string]string{"0": "low", "1": "mid", "2": "high"},
+		Probabilities: map[string]float64{"0": 0, "1": 0.01, "2": 0.99},
+		Confidence:    0.99,
+	}
+	resp := &Response{Answers: map[string]Answer{"q": valid}}
+	if err := ValidateResponse(scoreRequest(), resp); err != nil {
+		t.Fatalf("ValidateResponse: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		ans  Answer
+		want string
+	}{
+		{"score above the levels", Answer{Kind: KindScore, Score: 2.1}, "score"},
+		{"score below zero", Answer{Kind: KindScore, Score: -0.1}, "score"},
+		{"legend index outside", Answer{Kind: KindScore, Legend: map[string]string{"3": "high"}}, "legend index"},
+		{"legend value does not match", Answer{Kind: KindScore, Legend: map[string]string{"0": "LOW"}}, "legend"},
+		{"probability index outside", Answer{Kind: KindScore, Probabilities: map[string]float64{"3": 0.5}}, "probability index"},
+		{"probability outside zero to one", Answer{Kind: KindScore, Probabilities: map[string]float64{"0": 1.5}}, "probability"},
+		{"confidence outside zero to one", Answer{Kind: KindScore, Confidence: 1.1}, "confidence"},
+	}
+	for _, tc := range cases {
+		resp := &Response{Answers: map[string]Answer{"q": tc.ans}}
+		err := ValidateResponse(scoreRequest(), resp)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error = %v, want it to name %q", tc.name, err, tc.want)
+		}
 	}
 }

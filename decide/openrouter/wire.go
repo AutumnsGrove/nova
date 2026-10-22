@@ -18,12 +18,12 @@ type requestWire struct {
 	Questions map[string]questionWire `json:"questions"`
 }
 
-// questionWire is one typed question. Criteria's keys are the option set for a
-// choice question.
+// questionWire is one typed question. Criteria is an option map for choice and
+// noul, and an ordered level list for score, so it is carried as any.
 type questionWire struct {
-	Type         string            `json:"type"`
-	Instructions string            `json:"instructions"`
-	Criteria     map[string]string `json:"criteria,omitempty"`
+	Type         string `json:"type"`
+	Instructions any    `json:"instructions,omitempty"`
+	Criteria     any    `json:"criteria,omitempty"`
 }
 
 // encodeRequest turns a decide.Request into the wire body.
@@ -34,9 +34,32 @@ func encodeRequest(req decide.Request) ([]byte, error) {
 		if kind == "" {
 			kind = decide.KindChoice
 		}
-		questions[name] = questionWire{Type: kind, Instructions: q.Instructions, Criteria: q.Criteria}
+		questions[name] = questionWire{
+			Type:         kind,
+			Instructions: q.Instructions,
+			Criteria:     wireCriteria(q, kind),
+		}
 	}
 	return json.Marshal(requestWire{Model: req.Model, State: req.State, Questions: questions})
+}
+
+// wireCriteria picks the field the kind sends: a level list for score, and the
+// option map otherwise. A caller that uses the wrong field for its kind is
+// caught by Request.Validate before this runs.
+func wireCriteria(q decide.Question, kind string) any {
+	if kind == decide.KindScore {
+		if len(q.Levels) == 0 {
+			return nil
+		}
+		return q.Levels
+	}
+	if len(q.Criteria) > 0 {
+		return q.Criteria
+	}
+	if len(q.Levels) > 0 {
+		return q.Levels
+	}
+	return nil
 }
 
 // responseWire is the answer shape shared by the Decisions API and System One.
@@ -50,9 +73,12 @@ type responseWire struct {
 
 type answerWire struct {
 	Type          string             `json:"type,omitempty"`
-	Choice        string             `json:"choice"`
+	Choice        string             `json:"choice,omitempty"`
+	Noul          float64            `json:"noul,omitempty"`
+	Score         float64            `json:"score,omitempty"`
+	Legend        map[string]string  `json:"legend,omitempty"`
 	Probabilities map[string]float64 `json:"probabilities,omitempty"`
-	Confidence    float64            `json:"confidence"`
+	Confidence    float64            `json:"confidence,omitempty"`
 }
 
 type usageWire struct {
@@ -90,7 +116,11 @@ func decodeResponse(req decide.Request, data []byte) (*decide.Response, error) {
 	}
 	for name, ans := range wire.Answers {
 		out.Answers[name] = decide.Answer{
+			Kind:          ans.Type,
 			Choice:        ans.Choice,
+			Noul:          ans.Noul,
+			Score:         ans.Score,
+			Legend:        ans.Legend,
 			Probabilities: ans.Probabilities,
 			Confidence:    ans.Confidence,
 		}

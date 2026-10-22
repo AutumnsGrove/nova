@@ -106,6 +106,13 @@ fallback is tried while the caller's context is still live. `decide.List` reads
 the live roster (`output_modalities=decisions`) for a benchmark, and
 `Response.Model` records the build that actually answered.
 
+The same request covers `noul` (a probability) and `score` (an ordered set of
+`Levels`), not only `choice`. A bundled extension gets `Env.Decide`; a
+subprocess extension declares `model:decide` and calls `sdk.Host.Decide` (the
+`decide` frame). Print, serve, and rpc clients use the `decide` command, which
+carries the same request; `/decide` shows the configured roles and
+`/decide models` reads the live roster.
+
 ## ivy — "Ask Ivy"
 
 Ivy is the best first adopter: greenfield loop, three read-only tools, and a

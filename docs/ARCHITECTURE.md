@@ -370,6 +370,14 @@ names a vendor. An id ending in `-latest` or starting with `~` is refused unless
 API reports one cost per call, not one per question. A decision model may make a
 permission call stricter, never grant approval (D41).
 
+The three kinds are `choice`, `noul`, and `score`; `Question.Levels` is the
+ordered score set and `Instructions` may be structured. `decide.Catalog` is the
+live roster and `decide/openrouter.Client` is both a `Decider` and a `Catalog`;
+no decision model is added to the static chat catalog. The `decide` protocol
+command carries one request, `/decide` and `/decide models` show the role table
+and the live roster, and a subprocess extension with `model:decide` calls it
+through the `decide` frame, capped by `extensions.decide_max_per_run`.
+
 ## 9. Configuration and resources
 
 | Resource | Where | Loaded |

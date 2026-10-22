@@ -14,6 +14,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   timeout); an alias id (`-latest` or `~...`) is refused unless `decide.allow_aliases` is set. Tools
   reach the model through `tool.Context.Decide` and hooks through `agent.Config.Decide`, mirroring
   `Complete`; the call's cost is counted through `AddUsage`.
+- Decision questions cover all three documented kinds: `choice`, `noul` (a probability), and `score`
+  (an ordered set of levels with an optional legend). `Instructions` may be structured, and a score
+  keeps its levels in `Question.Levels`.
+- Extensions can call decisions too: a `model:decide` capability, a `decide`/`decide_result` frame,
+  `ext/sdk.Decide`, and `ext.Env.Decide`. `extensions.decide_max_per_run` (default 20) caps a run. A
+  `decide` protocol command carries one request, and `/decide` / `/decide models` show the configured
+  roles and the live roster.
 - A **`web-search` example extension** showing a provider-agnostic search adapter: one `Backend`
   interface, a canned backend that needs no key, and a README recipe for Parallel, Tavily, Brave, or
   Google. It is an example, not a shipped tool — install it, read it with `nova docs example-web-search`,

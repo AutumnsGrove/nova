@@ -47,6 +47,7 @@ func main() {
 - `h.Entries(kind)` — the session's entries of one kind: those replayed at start
   and those appended since.
 - `h.Complete(ctx, req)` — ask the model to complete a request.
+- `h.Decide(ctx, req)` — ask a decision model a typed question.
 
 ## UI
 

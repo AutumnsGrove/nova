@@ -72,6 +72,7 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 | `set_context_limit` | `tokens` | `0` clears it |
 | `set_tools` | `active: []string` | replace the active built-in tools. An unknown or repeated name is `bad_request` and changes nothing |
 | `compact` | `instructions?` | run compaction now |
+| `decide` | `decision` | one decision-model call. `decision` is `{model, state, questions}`, where a question is `{kind, instructions, criteria?, levels?}` and `kind` is `choice`, `noul`, or `score` (`levels` is the ordered set for `score`). Answers come back as `{answers, usage, model}`. A malformed request is `bad_request`; a role or provider failure is `provider_error`. It blocks until the model answers, so it is not a run and emits no run events |
 | `session.new` | | start a fresh session file; answers `{id, path}`. Refused with `busy` during a run; forgets the previous conversation's token counts |
 | `session.resume` | `session` | open an existing session by id or path; answers `{id, path}`. `busy` during a run; forgets the token counts |
 | `session.fork` | `entry?` | copy the branch ending at `entry` (default: the active leaf) into a new session. `busy` during a run; forgets the token counts |
@@ -217,6 +218,8 @@ ext  → host  {"type":"ui_request",…}   // same UI methods as above
 ext  → host  {"type":"append_entry","kind":"todo.state","data":{…},"keep":true}
 ext  → host  {"type":"complete","id":"m1","request":{…}}   // nested model call
 host → ext   {"type":"complete_result","id":"m1","message":{…},"usage":{…}}
+ext  → host  {"type":"decide","id":"d1","request":{…}}   // decision-model call
+host → ext   {"type":"decide_result","id":"d1","answers":{…},"usage":{…},"model":"…"}
 ext  → host  {"type":"log","level":"info","text":"…"}
 host → ext   {"type":"shutdown"}
 ```
@@ -237,9 +240,12 @@ Rules:
   must be an object schema, and an extension may register at most 128 tools and
   128 commands. A tool that fails a check is refused with `bad_request` and the
   extension's other registrations proceed.
-- A `ui_request` that needs an answer and a `complete` are served on their own, so
+- A `ui_request` that needs an answer, a `complete`, and a `decide` are served on their own, so
   a slow answer does not delay the extension's other frames. At most eight such
   requests per extension may be in flight; more are refused with `busy`.
+- A `decide` frame needs the `model:decide` capability and is capped by
+  `extensions.decide_max_per_run` (default 20) per extension per run. A malformed
+  request is refused with `bad_request` on the frame's `id`.
 - `append_entry` data is stored in the session and replayed to the extension on
   `init` after a reload, in order, so it can rebuild its state.
 - If the extension process exits, the host unregisters its tools, emits

@@ -102,6 +102,7 @@ wheel.
 | [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | The one JSONL protocol every front door speaks. |
 | [`docs/EXTENSIONS.md`](docs/EXTENSIONS.md) | Extension tiers, manifest, install over git, bundled and suggested extensions. |
 | [`docs/TUI.md`](docs/TUI.md) | The terminal UI: stack, layout, components, themes, splash. |
+| [`docs/IDE.md`](docs/IDE.md) | Proposal: a graphical IDE front door, the protocol additions it needs, and a milestone plan. |
 | [`docs/IMAGE.md`](docs/IMAGE.md) | Images: the content part, where it is legal on the wire, normalization and bounds, every front door, inline TUI rendering. |
 | [`docs/TESTING.md`](docs/TESTING.md) | Test layers, the failure-mode catalog, the matrix rule, definition of done. |
 | [`AGENTS.md`](AGENTS.md) | The guide for working on Nova: workflow, test-driven rules, repo map, hard rules, definition of done. |

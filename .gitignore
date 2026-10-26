@@ -1,6 +1,9 @@
 # Binaries
 /nova
 /nova-*
+# `make build` runs `go build ./...`, which writes a binary for every main
+# package; the embed example is one.
+/embed
 *.exe
 
 # Test / coverage output

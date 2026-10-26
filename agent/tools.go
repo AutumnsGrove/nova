@@ -140,7 +140,7 @@ func (r *run) runCall(call message.ToolCall) (out callOutcome) {
 	progress := newProgress(r, call.ID)
 	// Closed explicitly below so updates precede tool_end; this covers a panic.
 	defer progress.close()
-	tctx := r.toolContext()
+	tctx := r.toolContext(call.ID)
 	tctx.Emit = progress.emit
 	tctx.Inject = func(m message.Message) { injected = append(injected, m) }
 	tctx.AddUsage = func(u provider.Usage) { usage.Add(u) }
@@ -209,9 +209,9 @@ func (r *run) checkPermission(call message.ToolCall, args json.RawMessage) (bloc
 }
 
 // toolContext builds a fresh tool context per call so progress routes to the
-// right call id.
-func (r *run) toolContext() *tool.Context {
-	return &tool.Context{WorkDir: r.cfg.WorkDir, Roots: r.cfg.Roots, Data: r.cfg.ToolData, SessionID: r.cfg.SessionID, Complete: r.cfg.Complete, Decide: r.cfg.Decide}
+// right call id, which it also hands to the tool as CallID.
+func (r *run) toolContext(callID string) *tool.Context {
+	return &tool.Context{WorkDir: r.cfg.WorkDir, Roots: r.cfg.Roots, Data: r.cfg.ToolData, SessionID: r.cfg.SessionID, CallID: callID, Complete: r.cfg.Complete, Decide: r.cfg.Decide}
 }
 
 // progress forwards tool updates as tool_update events without ever blocking

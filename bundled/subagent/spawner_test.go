@@ -150,3 +150,31 @@ func TestSubagent_SUB30_SpawnerCapsDepth(t *testing.T) {
 		t.Fatalf("a configured depth above %d should still stop at %d", maxDepthCap, maxDepthCap)
 	}
 }
+
+// TestSubagent_SUB34_ChildDataCarriesPrimitiveDepth pins the seam between the
+// primitive and the extension: a spawned child's tool data is the primitive's
+// Depth, so a nested subagent tool reads the depth it is really at. Before the
+// two shared one type, the extension's reader saw a value it did not recognise
+// and believed every nested child was top level, which silently disabled the
+// depth cap.
+func TestSubagent_SUB34_ChildDataCarriesPrimitiveDepth(t *testing.T) {
+	var childData any
+	reg := tool.NewRegistry()
+	reg.MustRegister(tool.New(tool.Info{Name: "peek"}, func(_ context.Context, _ json.RawMessage, tctx *tool.Context) (tool.Result, error) {
+		childData = tctx.Data
+		return tool.Text("ok"), nil
+	}))
+	prov := testkit.NewProvider(fakeClock(),
+		testkit.Turn{ToolCalls: []testkit.Call{{ID: "1", Name: "peek", Args: "{}"}}},
+		testkit.Turn{Text: "done"},
+	)
+	sp := &Spawner{Provider: prov, Model: "m", Registry: reg, Clock: fakeClock(), MaxDepth: 3}
+	if _, err := sp.Spawn(context.Background(), ext.SpawnRequest{
+		Task: "t", Tools: []string{"peek"}, MaxTurns: 3, Depth: 1,
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if got := depthOf(&tool.Context{Data: childData}); got != 2 {
+		t.Fatalf("child depth read back as %d, want 2 (parent at 1 plus one)", got)
+	}
+}

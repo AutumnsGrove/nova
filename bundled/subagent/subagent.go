@@ -8,13 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/AutumnsGrove/nova/agent"
+	"github.com/AutumnsGrove/nova/agent/sub"
 	"github.com/AutumnsGrove/nova/ext"
-	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
@@ -32,17 +31,18 @@ const (
 	toolName      = "subagent"
 )
 
-// Depth is the child depth carried through tool.Context.Data.
-type Depth struct{ N int }
+// Depth is the child depth carried through tool.Context.Data. It is the
+// primitive's type rather than a copy: a child spawned through agent/sub is
+// stamped with sub.Depth, so a second type here would make the extension read a
+// value it does not recognise and treat every nested child as top level.
+type Depth = sub.Depth
 
 // depthOf reads the depth a parent stamped on the call, or 0.
 func depthOf(tctx *tool.Context) int {
-	if tctx != nil {
-		if d, ok := tctx.Data.(Depth); ok {
-			return d.N
-		}
+	if tctx == nil {
+		return 0
 	}
-	return 0
+	return sub.DepthOf(tctx.Data)
 }
 
 // toolRegistry is the piece of the registry the extension validates against.
@@ -273,84 +273,69 @@ type Spawner struct {
 	Emit      func(proto.Event)
 }
 
-// Spawn runs one child loop and returns its result.
+// Spawn runs one child loop and returns its result. The child-config assembly,
+// tool scoping, event tagging, depth check, and usage folding live in
+// agent/sub; this method only maps the extension's request onto it.
 func (s *Spawner) Spawn(ctx context.Context, req ext.SpawnRequest) (*ext.SpawnResult, error) {
 	if s.Provider == nil {
 		return nil, errors.New("subagent: no provider")
-	}
-	maxDepth := min(max(s.MaxDepth, 1), maxDepthCap)
-	if req.Depth >= maxDepth {
-		return nil, fmt.Errorf("subagent: depth limit of %d reached", maxDepth)
-	}
-	model := req.Model
-	if model == "" {
-		model = s.Model
-	}
-	// A tool that names another catalog model re-routes the child to it; a slug
-	// the catalog does not know keeps the parent's routing.
-	modelID := s.ModelID
-	if req.Model != "" {
-		if m, ok := provider.GetModel(req.Model); ok {
-			model, modelID = m.Slug, m.ID
-		}
 	}
 	names := req.Tools
 	if len(names) == 0 {
 		names = strings.Split(defaultTools, ",")
 	}
-	child := tool.NewRegistry()
-	if s.Registry != nil {
-		child = s.Registry.View(names...)
-	}
-	var mu sync.Mutex
-	used := []string{}
-	seen := map[string]bool{}
-	hooks := agent.Hooks{
-		ToolCall: func(ctx context.Context, c agent.ToolCall) *agent.CallDecision {
-			mu.Lock()
-			if !seen[c.Name] {
-				seen[c.Name] = true
-				used = append(used, c.Name)
-			}
-			mu.Unlock()
-			if s.ToolCall != nil {
-				return s.ToolCall(ctx, c)
-			}
-			return nil
-		},
+	// The host builds a Spawner per call so the child inherits the current model,
+	// which means the primitive's own cap would be per call and never bind. The
+	// extension's configured cap, held on the Extension across calls, is the one
+	// that applies (SUB14, SUB28).
+	res, err := sub.New(sub.Parent{
+		Provider:   s.Provider,
+		Model:      s.Model,
+		ModelID:    s.ModelID,
+		Tools:      s.Registry,
+		Policy:     s.Policy,
+		Ask:        s.prefixedAsk(),
+		ToolCall:   s.ToolCall,
 		ToolResult: s.ToolResult,
-	}
-	ag := agent.New(agent.Config{
-		Provider:  s.Provider,
-		Model:     model,
-		ModelID:   modelID,
-		System:    req.System,
-		Tools:     child,
-		Policy:    s.Policy,
-		Ask:       s.prefixedAsk(),
-		WorkDir:   s.WorkDir,
-		Roots:     s.Roots,
-		SessionID: s.SessionID,
-		MaxTurns:  req.MaxTurns,
-		MaxTokens: s.MaxTokens,
-		Clock:     s.Clock,
-		ToolData:  Depth{N: req.Depth + 1},
-		Complete:  s.Complete,
-		Hooks:     hooks,
-		Emit:      s.emit(req.OnEvent),
+		WorkDir:    s.WorkDir,
+		Roots:      s.Roots,
+		SessionID:  s.SessionID,
+		Complete:   s.Complete,
+		MaxTokens:  s.MaxTokens,
+		Clock:      s.Clock,
+		Emit:       s.Emit,
+	}, sub.Options{
+		// A configured depth above the hard cap still stops at the cap.
+		MaxDepth: min(max(s.MaxDepth, 1), maxDepthCap),
+		// Only events that stand on their own join the parent's stream: its
+		// subscribers treat run_end as the end of the whole request, and the
+		// child's streaming text belongs to the child, not the parent's answer
+		// (SUB25).
+		HostEvents: hostVisible,
+	}).Spawn(ctx, sub.Task{
+		System:   req.System,
+		Prompt:   req.Task,
+		Tools:    names,
+		Model:    req.Model,
+		MaxTurns: req.MaxTurns,
+		Depth:    req.Depth,
+		OnEvent:  req.OnEvent,
 	})
-	res, err := ag.Run(ctx, nil, message.User(req.Task))
 	if res == nil {
 		return nil, err
 	}
+	// A failed or aborted child still spent tokens; price them before reporting.
 	if s.Ledger != nil {
-		s.Ledger.Add(model, res.Usage)
+		s.Ledger.Add(res.Model, res.Usage)
 	}
-	mu.Lock()
-	tools := append([]string(nil), used...)
-	mu.Unlock()
-	// A failed run still returns what it spent, so the caller can account for it.
-	return &ext.SpawnResult{Answer: res.Answer, Turns: res.Turns, Usage: res.Usage, Reason: res.Reason, Tools: tools}, err
+	// The result is returned even on error, so the caller can account for it.
+	return &ext.SpawnResult{
+		Answer: res.Answer,
+		Turns:  res.Turns,
+		Usage:  res.Usage,
+		Reason: res.Reason,
+		Tools:  res.Tools,
+	}, err
 }
 
 // prefixedAsk marks a child's permission question as coming from a sub-agent.
@@ -370,22 +355,6 @@ func (s *Spawner) prefixedAsk() func(context.Context, agent.Question) (bool, err
 // only events that stand on their own are passed on.
 func hostVisible(typ string) bool {
 	return typ == proto.EventPermission || typ == proto.EventExtensionError
-}
-
-// emit forwards every child event to the caller's observer, and the events that
-// make sense on their own to the host's stream.
-func (s *Spawner) emit(onEvent func(proto.Event)) func(proto.Event) {
-	if onEvent == nil && s.Emit == nil {
-		return nil
-	}
-	return func(ev proto.Event) {
-		if onEvent != nil {
-			onEvent(ev)
-		}
-		if s.Emit != nil && hostVisible(ev.Type) {
-			s.Emit(ev)
-		}
-	}
 }
 
 // ToolNames lists the tool Init registers.

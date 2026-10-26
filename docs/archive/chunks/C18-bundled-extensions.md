@@ -360,6 +360,7 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 | SUB31 | the parent's `max_tokens` reaches the child | `Spawner.MaxTokens` 24 | the child request carries 24 |
 | SUB32 | the child keeps the parent's routing | `Spawner.ModelID` set | the child request carries that `ModelID` and the parent's slug |
 | SUB33 | a tool's model override follows the catalog | `model: "<catalog id>"` | the child request uses that id's `ModelID` and slug |
+| SUB34 | a nested child reads the depth it is really at | a spawn at depth 1, read back through the extension | depth 2, so the depth cap applies to nesting |
 | WFT01 | fetch an HTML page | local test server | markdown with header line |
 | WFT02 | plain text, markdown, JSON | | returned; JSON pretty-printed |
 | WFT03 | unsupported content type | `image/png` | error |

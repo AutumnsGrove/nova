@@ -63,6 +63,7 @@ func (r *run) turnRequest(noTools bool) (message.Message, provider.Usage, error)
 			req.Messages = msgs
 		}
 	}
+	req.Messages = withoutEmptyAssistant(req.Messages)
 	if h := r.cfg.Hooks.BeforeProviderRequest; h != nil {
 		next := req
 		next.Messages = cloneMessages(req.Messages)
@@ -78,6 +79,34 @@ func (r *run) turnRequest(noTools bool) (message.Message, provider.Usage, error)
 		req.ToolChoice = nil
 	}
 	return r.callProvider(r.gateImages(req))
+}
+
+// withoutEmptyAssistant drops assistant messages that carry no content, no
+// parts and no tool calls. A model that returns only reasoning leaves one in the
+// transcript, and a provider can reject it (an empty text block, or neither
+// content nor tool_calls). The transcript keeps it, because the caller owns
+// that; only the request omits it. It runs after TransformContext, so that hook
+// still sees the message. The input slice is never modified.
+func withoutEmptyAssistant(msgs []message.Message) []message.Message {
+	empty := func(m message.Message) bool {
+		return m.Role == message.RoleAssistant && m.Content == "" && len(m.Parts) == 0 && len(m.ToolCalls) == 0
+	}
+	n := 0
+	for _, m := range msgs {
+		if empty(m) {
+			n++
+		}
+	}
+	if n == 0 {
+		return msgs
+	}
+	out := make([]message.Message, 0, len(msgs)-n)
+	for _, m := range msgs {
+		if !empty(m) {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // callProvider performs the request and retries a retryable provider error,
@@ -119,7 +148,13 @@ func (r *run) streamOnce(req provider.Request) (message.Message, provider.Usage,
 	st.reasoningGate.filter = r.newStreamFilter(r.cfg.ReasoningFilter, "reasoning_filter")
 
 	diag.SetOp(fmt.Sprintf("provider request turn %d", r.turn))
-	resp, err := r.cfg.Provider.Stream(r.ctx, req, st.onEvent)
+	ctx := r.ctx
+	if r.cfg.RequestTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.cfg.RequestTimeout)
+		defer cancel()
+	}
+	resp, err := r.cfg.Provider.Stream(ctx, req, st.onEvent)
 	if err != nil {
 		st.endThinking()
 		return message.Message{}, provider.Usage{}, err

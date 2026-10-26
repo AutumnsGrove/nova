@@ -175,8 +175,17 @@ type Config struct {
 	// mid-session uses it so the gate follows the switch.
 	InputModalitiesFunc func() []string
 	Retry               RetryPolicy
-	HookTimeout         time.Duration // default 5s
-	Clock               Clock         // default real; tests inject a fake
+	// RequestTimeout bounds one provider attempt, from the request to the end of
+	// its stream. Zero, the default, means no deadline beyond the run's own
+	// context. Hitting it fails that attempt with a deadline error and ends the
+	// run in "error"; it is not an abort, and it is not retried, because a call
+	// that stalled for the whole budget is unlikely to recover on the spot. A
+	// retryable provider error still retries, and each attempt gets a fresh
+	// deadline. ConnectTimeout and IdleTimeout on the provider cover a stalled
+	// connection; this covers a stream that keeps trickling.
+	RequestTimeout time.Duration
+	HookTimeout    time.Duration // default 5s
+	Clock          Clock         // default real; tests inject a fake
 
 	// PromptCache overrides whether requests carry an explicit prompt-cache
 	// marker. Nil means decide from the model catalog (see
@@ -215,8 +224,16 @@ type Result struct {
 	Messages []message.Message
 	// New is only the messages produced by this run.
 	New []message.Message
-	// Answer is the last non-empty assistant text.
+	// Answer is the last non-empty assistant text of the whole run. That can be
+	// an earlier remark ("Let me look") when the run's closing message was empty
+	// or the run ended on a tool batch, so a caller that must know whether the
+	// run actually closed with an answer reads Final instead.
 	Answer string
+	// Final is the text of the run's closing assistant message: Answer when the
+	// run ended on a plain assistant message, the wrap-up fallback after an
+	// exhausted run's wrap-up, and empty when the last message was empty, a
+	// tool call, a tool result, or anything else.
+	Final string
 	// Turns is the number of turns this run completed, plus the one whose
 	// request failed when the run ends in error; an abort does not count.
 	Turns int

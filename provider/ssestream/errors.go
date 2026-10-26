@@ -24,6 +24,7 @@ func httpError(status int, header http.Header, body []byte, secrets []string) *p
 		Status:     status,
 		Code:       truncateUTF8(scrub(code), maxErrorMessage),
 		Message:    truncateUTF8(scrub(message), maxErrorMessage),
+		Body:       truncateUTF8(scrub(string(body)), maxErrorBodyKept),
 		Retryable:  retryable,
 		RetryAfter: retryAfter,
 	}

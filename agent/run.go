@@ -381,10 +381,17 @@ func (r *run) record(m message.Message, u *provider.Usage) error {
 func (r *run) result(reason string) *Result {
 	start := min(r.startLen, len(r.messages))
 	newMsgs := append([]message.Message(nil), r.messages[start:]...)
+	final := ""
+	if n := len(r.messages); n > r.startLen {
+		if last := r.messages[n-1]; last.Role == message.RoleAssistant && len(last.ToolCalls) == 0 {
+			final = last.Content
+		}
+	}
 	return &Result{
 		Messages: append([]message.Message(nil), r.messages...),
 		New:      newMsgs,
 		Answer:   r.answer,
+		Final:    final,
 		Turns:    r.turns,
 		Usage:    r.usage,
 		Reason:   reason,

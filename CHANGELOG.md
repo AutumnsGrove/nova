@@ -8,6 +8,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- Six gaps found by Polaris's adoption (nova#22), each small and opt-in or additive: `provider.Error.Body`
+  keeps the scrubbed, bounded raw response body of a failed request (#40); `provider.Request.ParallelToolCalls`
+  sends `parallel_tool_calls` on a chat-completions request that has tools (#41);
+  `openaicompat.Config.EmptyToolCallContent` (and the same field on `openrouter.Config`) sends
+  `"content": ""` on a tool-call-only assistant message instead of omitting it (#42); an assistant
+  message with no content, parts or tool calls stays in the transcript but is no longer sent (#43);
+  `agent.Config.RequestTimeout` bounds one provider attempt (#44); and `agent.Result.Final` is the
+  closing assistant message's text, with `Answer` documented as the last non-empty text of the run (#45).
 - `tool.Context.CallID`: the loop now tells a tool which call it is serving, the same id the
   `tool_start`, `tool_update`, and `tool_end` events and the assistant message's `tool_calls` carry, so
   an embedding application can tag the events a tool emits itself (#38, LPI09–LPI12). It is empty when

@@ -1491,3 +1491,85 @@ func TestStream_OAI69_CacheWriteTokensMapped(t *testing.T) {
 		t.Fatalf("usage = %+v, want 3 read and 7 written", resp.Usage)
 	}
 }
+
+// --- parallel_tool_calls (#41) ----------------------------------------------
+
+func TestStream_ParallelToolCalls(t *testing.T) {
+	yes, no := true, false
+	tools := []provider.ToolDef{{Type: "function", Function: provider.ToolFunction{Name: "read"}}}
+	cases := []struct {
+		name     string
+		tools    []provider.ToolDef
+		parallel *bool
+		want     any // nil means the key must be absent
+	}{
+		{"unset sends nothing", tools, nil, nil},
+		{"true with tools", tools, &yes, true},
+		{"false with tools", tools, &no, false},
+		{"set without tools sends nothing", nil, &yes, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p, srv := served(t, Config{}, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+			req := textRequest("m")
+			req.Tools, req.ParallelToolCalls = c.tools, c.parallel
+			if _, err := p.Stream(context.Background(), req, nil); err != nil {
+				t.Fatalf("Stream: %v", err)
+			}
+			got, present := bodyOf(t, srv)["parallel_tool_calls"]
+			if c.want == nil {
+				if present {
+					t.Fatalf("parallel_tool_calls = %v, want it absent", got)
+				}
+				return
+			}
+			if got != c.want {
+				t.Fatalf("parallel_tool_calls = %v (present %v), want %v", got, present, c.want)
+			}
+		})
+	}
+}
+
+// --- empty tool-call content (#42) ------------------------------------------
+
+func TestStream_EmptyToolCallContent(t *testing.T) {
+	call := message.ToolCall{ID: "c1", Type: "function", Function: message.FunctionCall{Name: "read", Arguments: "{}"}}
+	history := []message.Message{
+		message.User("hi"),
+		{Role: message.RoleAssistant, ToolCalls: []message.ToolCall{call}},
+		message.ToolResult("c1", "result"),
+		{Role: message.RoleAssistant, Content: "with text", ToolCalls: []message.ToolCall{call}},
+		message.Assistant("plain"),
+	}
+	messagesOf := func(t *testing.T, cfg Config) []map[string]any {
+		t.Helper()
+		p, srv := served(t, cfg, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+		if _, err := p.Stream(context.Background(), provider.Request{Model: "m", Messages: history}, nil); err != nil {
+			t.Fatalf("Stream: %v", err)
+		}
+		var out []map[string]any
+		for _, m := range bodyOf(t, srv)["messages"].([]any) {
+			out = append(out, m.(map[string]any))
+		}
+		return out
+	}
+
+	t.Run("default omits", func(t *testing.T) {
+		msgs := messagesOf(t, Config{})
+		if _, ok := msgs[1]["content"]; ok {
+			t.Errorf("tool-call-only message has content %v, want it omitted", msgs[1]["content"])
+		}
+	})
+	t.Run("opt-in sends an empty string", func(t *testing.T) {
+		msgs := messagesOf(t, Config{EmptyToolCallContent: true})
+		if got, ok := msgs[1]["content"]; !ok || got != "" {
+			t.Errorf("tool-call-only content = %v (present %v), want \"\"", got, ok)
+		}
+		if msgs[3]["content"] != "with text" || msgs[4]["content"] != "plain" || msgs[2]["content"] != "result" {
+			t.Errorf("opt-in touched messages that already had text: %v", msgs)
+		}
+		if _, ok := msgs[0]["tool_calls"]; ok {
+			t.Errorf("user message grew tool_calls")
+		}
+	})
+}

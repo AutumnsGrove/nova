@@ -261,6 +261,22 @@ Polaris has the largest bespoke loop; most of it becomes hooks.
   wrap-up instruction, one final request with no tools, and a caller fallback when the model still
   calls a tool. A `TurnEnd` hook cannot extend the budget.
 
+### What Polaris's adoption needed (nova#22)
+
+Wire and failure behaviour an adopter with a working loop usually has to keep, and the seam for each:
+
+- **`tool_choice` and `parallel_tool_calls`.** `Request.ToolChoice` and `Request.ParallelToolCalls`, set in
+  a `BeforeProviderRequest` hook only when `len(req.Tools) > 0` (the wrap-up request has none).
+- **Empty `content` on tool-call messages.** Omitted by default; `EmptyToolCallContent` on
+  `openaicompat.Config` and `openrouter.Config` sends `""`, so an existing transcript's bytes (and the
+  provider's prompt cache) survive the switch.
+- **A model that answers nothing.** The empty assistant message stays in the transcript and is not sent.
+- **Provider error bodies.** `provider.Error.Body` is the scrubbed raw body, for an application that
+  parses its provider's own error JSON.
+- **A stalled call.** `Config.RequestTimeout` bounds one attempt; a trickling stream is not caught by
+  the provider's connect and idle timeouts.
+- **Did the run close with an answer?** `Result.Final`, not `Result.Answer`.
+
 ## Compatibility checklist
 
 Before a project switches, confirm Nova preserves:

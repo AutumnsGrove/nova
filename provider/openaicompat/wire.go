@@ -59,6 +59,7 @@ type chatRequest struct {
 	Messages        []wireMessage          `json:"messages"`
 	Tools           []provider.ToolDef     `json:"tools,omitempty"`
 	ToolChoice      any                    `json:"tool_choice,omitempty"`
+	ParallelTools   *bool                  `json:"parallel_tool_calls,omitempty"`
 	Temperature     *float64               `json:"temperature,omitempty"`
 	MaxTokens       *int                   `json:"max_tokens,omitempty"`
 	Stop            []string               `json:"stop,omitempty"`

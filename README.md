@@ -80,7 +80,8 @@ One day, a **full coding harness on par with pi** — our own, same principles. 
 is reached in two pieces: the **backend** grows into a complete primitive layer
 (loop, tools, sessions, compaction, extensions), and the **frontend** grows into
 a polished daily coding agent on the charm.land stack. Any Go program can embed
-the backend; only the frontend pays for the UI.
+the backend; only the frontend pays for the UI. `examples/embed/` is a
+standalone, tested program that does exactly that.
 
 ## Why
 

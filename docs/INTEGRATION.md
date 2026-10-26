@@ -2,6 +2,8 @@
 
 How `her-go`, `polaris`, and `ivy` adopt Nova, and the migration strategy for
 each. Integration begins at M8; this document is the target, not current work.
+`examples/embed/` is the compiling, tested proof that the harness layer works
+on its own; read it first, then this document for the per-project mapping.
 
 ## Strategy
 
@@ -25,21 +27,31 @@ The loop is `agent.New(cfg).Run(...)` (see `docs/archive/chunks/C09-agent-loop.m
 
 ## Shared integration shape
 
+A compiling, tested version of everything below lives in **`examples/embed/`**. It imports only the
+harness layer (`agent`, `tool`, `provider/*`, `message`, `proto`) and `scripts/importcheck` fails if
+it ever reaches into the application shell (`mode`, `config`, `session`, `tui`, `bundled`), so it cannot
+rot into a sample nobody builds. Read it before writing an adapter; this section is the summary.
+
+The shape, roughly:
+
 ```go
-provider := openrouter.New("")            // or the app's own Provider
+// 1. A provider the app builds from a key it holds. No config.Config, no nova login.
+p := openrouter.New(openrouter.Config{APIKey: os.Getenv("OPENROUTER_API_KEY")})
 
+// 2. A registry the app fills, with its own domain tools.
 reg := tool.NewRegistry()
-for _, t := range myDomainTools { reg.MustRegister(t) }
-reg.MustRegister(fs.Read()); reg.MustRegister(bash.Bash())
+reg.MustRegister(mySearchTool); reg.MustRegister(fs.Read())
 
+// 3. The app's dependency bundle rides on ToolData and is type-asserted back
+//    inside a tool. Nova never imports the app's types.
 cfg := agent.Config{
-    Provider: provider,
-    Model:    chosenModel,
-    System:   mySystemPrompt,
-    Tools:    reg,
-    WorkDir:  workDir,
-    ToolData: myDeps,                     // the app's dependency bundle
-    Emit:     func(e proto.Event) { myEventBus.Publish(e) },
+    Provider:  p,
+    Model:     chosenModel,
+    System:    mySystemPrompt,
+    Tools:     reg.View("my_search", "read"), // per-run subset
+    ToolData:  myDeps,
+    Emit:      func(e proto.Event) { myEventBus.Publish(mapEvent(e)) },
+    OnMessage: myStore.Append,                 // the app owns history
     Hooks: agent.Hooks{
         ToolCall:   func(ctx context.Context, c agent.ToolCall) *agent.CallDecision { return myPermission(c) },
         ToolResult: func(ctx context.Context, c agent.ToolCall, r tool.Result) tool.Result { return myRedact(r) },
@@ -47,8 +59,23 @@ cfg := agent.Config{
     },
 }
 
-res, err := agent.Run(ctx, cfg, history)
+// 4. The app keeps history itself; Run takes it and returns what is new.
+res, err := agent.New(cfg).Run(ctx, myHistory, message.Message{Role: message.RoleUser, Content: prompt})
+fmt.Println(res.Answer, res.Usage.PromptTokens+res.Usage.CompletionTokens, res.Usage.CostUSD)
 ```
+
+Notes the example makes concrete:
+
+- **History is the caller's.** `OnMessage` fires once per message the run produces (not for the history
+  you passed in and not for the system prompt), so appending in the callback and passing the slice back
+  never doubles a message.
+- **Events are mapped, not leaked.** `Emit` hands over `proto.Event`; the app translates to its own type
+  in one small function so its UI does not depend on the wire shape.
+- **Control lives in hooks.** Ending a run early, injecting a nudge after a tool batch, and blocking a
+  call are `TurnEnd` and `ToolCall`, not edits to the loop. `examples/embed` ends a run on a pending
+  question recorded by a tool, the Polaris pattern.
+- **Tool scoping is `Registry.View`.** It returns a registry sharing the tool values but with its own
+  registration state, so two concurrent runs can offer different tools without racing.
 
 ## Decision models
 
@@ -188,8 +215,8 @@ Polaris has the largest bespoke loop; most of it becomes hooks.
   parallel mode (it already preserves order and recovers panics). Keep the
   code-exec serialization rule as a `Hooks.ToolCall`/dispatch policy.
 - **Tool gating.** Polaris gates tools by configured API keys (`catalog.go`'s
-  `offered(ctx)`). Nova needs a per-run tool filter — add `Config.FilterTools` or
-  let the app build a per-run registry view. (Tracked as an M1 item.)
+  `offered(ctx)`). A per-run tool filter is `Registry.View`: build the registry once and pass
+  `reg.View(names...)` as `agent.Config.Tools` for each run, as `examples/embed` does.
 - **Images.** Polaris's `ChatMessage.ImageURLs` maps to `message.Message.Parts`,
   `ctx.AddPendingImageMessage` to `tool.Context.Inject` (or `tool.Result.Parts`),
   and `ModelConfig.Multimodal` to `provider.Model.InputModalities`. The contract,

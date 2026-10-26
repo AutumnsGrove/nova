@@ -8,6 +8,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- **`examples/embed/`**, a standalone program that uses Nova as a library: it builds a provider from a
+  key it holds, registers two domain tools whose dependencies ride on `tool.Context.Data`, keeps its own
+  history through `OnMessage`, maps `proto.Event` to its own event type, scopes tools per run with
+  `Registry.View`, ends a run early from a `TurnEnd` hook, and reports usage and cost from `Result`.
+  It imports the harness layer only, and `scripts/importcheck` now fails if it imports `mode`, `config`,
+  `session`, `tui`, or `bundled`, so the embedding story is guarded rather than asserted (#31).
 - **Live stream filtering**: `agent.Config.TextFilter` and `Config.ReasoningFilter` build a fresh
   stateful filter per provider attempt, so an app can hold the opening chunks of a pseudo-tool-call and
   then release or drop them without changing what is stored. `Hooks.StreamDelta` composes after the

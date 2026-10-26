@@ -64,3 +64,51 @@ func TestSSEStream_TMO19_ErrorBodyNeverEchoesTheKey(t *testing.T) {
 		t.Fatalf("error leaks the key: %v", perr)
 	}
 }
+
+// The raw body is kept for callers that parse it themselves (#40). It is
+// scrubbed like Message and bounded, but never tag-stripped, because the whole
+// point is that the caller sees what the server sent.
+func TestSSEStream_ErrorKeepsTheRawBody(t *testing.T) {
+	body := `{"error":{"message":"rate limited","metadata":{"provider_name":"Baidu"}}}`
+	perr := errorFor(t, http.StatusTooManyRequests, body, http.Header{})
+	if perr.Body != body {
+		t.Fatalf("Body = %q, want the response verbatim", perr.Body)
+	}
+	if strings.Contains(perr.Error(), "Baidu") {
+		t.Errorf("Error() = %q: the body must not leak into the error text", perr.Error())
+	}
+}
+
+func TestSSEStream_ErrorBodyIsNotTagStripped(t *testing.T) {
+	body := `<html><body><h1>Bad gateway</h1></body></html>`
+	perr := errorFor(t, http.StatusBadGateway, body, http.Header{})
+	if perr.Body != body {
+		t.Errorf("Body = %q, want the HTML kept raw", perr.Body)
+	}
+	if strings.Contains(perr.Message, "<") {
+		t.Errorf("Message = %q, want tags stripped as before", perr.Message)
+	}
+}
+
+func TestSSEStream_ErrorBodyNeverEchoesTheKey(t *testing.T) {
+	const key = "sk-test-0123456789abcdef"
+	headers := http.Header{}
+	headers.Set("Authorization", "Bearer "+key)
+	perr := errorFor(t, http.StatusUnauthorized, `{"error":{"message":"invalid key `+key+`"}}`, headers)
+	if !strings.Contains(perr.Body, "invalid key") {
+		t.Fatalf("Body = %q, want the rest of the body kept", perr.Body)
+	}
+	if strings.Contains(perr.Body, key) {
+		t.Fatalf("Body leaks the key: %q", perr.Body)
+	}
+}
+
+func TestSSEStream_ErrorBodyIsBoundedAndValidUTF8(t *testing.T) {
+	perr := errorFor(t, http.StatusBadGateway, strings.Repeat("é", maxErrorBodyKept), http.Header{})
+	if !utf8.ValidString(perr.Body) {
+		t.Errorf("Body is not valid UTF-8")
+	}
+	if len(perr.Body) == 0 || len(perr.Body) > maxErrorBodyKept {
+		t.Errorf("Body is %d bytes, want 1 to %d", len(perr.Body), maxErrorBodyKept)
+	}
+}

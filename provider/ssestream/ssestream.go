@@ -33,6 +33,8 @@ const (
 	readBufferBytes = 64 << 10
 	// maxErrorBody caps how much of a failed response body is read.
 	maxErrorBody = 1 << 20
+	// maxErrorBodyKept caps the raw body kept on provider.Error.Body.
+	maxErrorBodyKept = 8 << 10
 	// maxErrorMessage caps the prose kept from an error body.
 	maxErrorMessage = 500
 )

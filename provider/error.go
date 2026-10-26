@@ -14,9 +14,13 @@ const maxRetryAfter = 5 * time.Minute
 // Error is what a provider returns for a failed request. Retryable and
 // RetryAfter tell the agent loop whether and when to try again.
 type Error struct {
-	Status     int
-	Code       string
-	Message    string
+	Status  int
+	Code    string
+	Message string
+	// Body is the response body of a failed HTTP request, scrubbed of the
+	// request's credentials and cut to a fixed bound but otherwise verbatim, for
+	// a caller that parses the provider's own error JSON. Error() never prints it.
+	Body       string
 	Retryable  bool
 	RetryAfter time.Duration
 	Err        error

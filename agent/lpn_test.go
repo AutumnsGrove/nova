@@ -181,3 +181,49 @@ type instantClock struct{}
 
 func (instantClock) Now() time.Time                             { return time.Now() }
 func (instantClock) Sleep(context.Context, time.Duration) error { return nil }
+
+// --- Result.Final (#45) -----------------------------------------------------
+
+func Test_LPN08_FinalIsTheClosingAssistantText(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	res, _ := runCollect(t, Config{Provider: testkit.NewProvider(clock, textTurn("hello")), Model: "m", Clock: clock}, nil, message.User("go"))
+	if res.Final != "hello" || res.Answer != "hello" {
+		t.Errorf("Final = %q, Answer = %q, want both hello", res.Final, res.Answer)
+	}
+}
+
+func Test_LPN09_FinalIsEmptyWhenTheLastMessageIsEmptyButAnswerIsStale(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	p := testkit.NewProvider(clock,
+		testkit.Turn{Text: "Let me look.", ToolCalls: []testkit.Call{toolCall("c1", "echo", `{}`)}},
+		testkit.Turn{}, // the model then says nothing at all
+	)
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Tools: registry(echoTool())}
+	res, _ := runCollect(t, cfg, nil, message.User("go"))
+	if res.Answer != "Let me look." {
+		t.Fatalf("Answer = %q, want the earlier remark (the documented behaviour)", res.Answer)
+	}
+	if res.Final != "" {
+		t.Errorf("Final = %q, want empty: the run ended on an empty message", res.Final)
+	}
+}
+
+func Test_LPN10_FinalIsEmptyWhenTheRunEndsOnAToolBatch(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	cfg := Config{Provider: testkit.NewProvider(clock, alwaysTool(3)...), Model: "m", Clock: clock, Tools: registry(echoTool()), MaxTurns: 2}
+	res, _ := runCollect(t, cfg, nil, message.User("go"))
+	if !res.Exhausted || res.Final != "" {
+		t.Errorf("Exhausted = %v, Final = %q, want exhausted with no final text", res.Exhausted, res.Final)
+	}
+}
+
+func Test_LPN11_FinalIsTheWrapUpFallback(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	turns := append(alwaysTool(2), testkit.Turn{ToolCalls: []testkit.Call{toolCall("w", "echo", `{}`)}})
+	cfg := Config{Provider: testkit.NewProvider(clock, turns...), Model: "m", Clock: clock, Tools: registry(echoTool()), MaxTurns: 2,
+		WrapUp: &WrapUp{Fallback: "gave up"}}
+	res, _ := runCollect(t, cfg, nil, message.User("go"))
+	if res.Final != "gave up" {
+		t.Errorf("Final = %q, want the wrap-up fallback", res.Final)
+	}
+}

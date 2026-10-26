@@ -224,8 +224,16 @@ type Result struct {
 	Messages []message.Message
 	// New is only the messages produced by this run.
 	New []message.Message
-	// Answer is the last non-empty assistant text.
+	// Answer is the last non-empty assistant text of the whole run. That can be
+	// an earlier remark ("Let me look") when the run's closing message was empty
+	// or the run ended on a tool batch, so a caller that must know whether the
+	// run actually closed with an answer reads Final instead.
 	Answer string
+	// Final is the text of the run's closing assistant message: Answer when the
+	// run ended on a plain assistant message, the wrap-up fallback after an
+	// exhausted run's wrap-up, and empty when the last message was empty, a
+	// tool call, a tool result, or anything else.
+	Final string
 	// Turns is the number of turns this run completed, plus the one whose
 	// request failed when the run ends in error; an abort does not count.
 	Turns int

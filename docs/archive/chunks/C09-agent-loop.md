@@ -1,8 +1,8 @@
 ---
 chunk: C09
 title: "The agent loop"
-packages: [./agent]
-budgets: { ./agent: 1420 }
+packages: [./agent, ./agent/sub]
+budgets: { ./agent: 1420, ./agent/sub: 340 }
 depends: [C01, C04, C08]
 ---
 
@@ -421,6 +421,16 @@ history as given, as before.
 | LPI06 | `Context.Inject` queues a message after the batch | an injected user message with an image | recorded after the tool result, image intact |
 | LPI07 | a tool's nested usage is counted | `Context.AddUsage` with 12 tokens and a cost | run usage and a `usage` event include it |
 | LPI08 | a steered message keeps its image | steer a user message with an image during a tool turn | the next request carries the image |
+| LPY01 | a child runs with only its scoped tools | a child offered `alpha` calls `beta` | the request offers `alpha` only; the call is an unknown-tool error result |
+| LPY02 | child events are tagged and run-level ones stay out | a child that streams text and calls a tool | parent's stream carries them with the child run id; no run_start, run_end, message_end, or usage |
+| LPY03 | a narrowed host filter is honoured | the extension's permission-only policy | only permission and extension_error reach the parent's stream |
+| LPY04 | child usage is folded exactly once | `Parent.AddUsage` | called once with the child's usage |
+| LPY05 | a failed child still folds its usage | provider error on turn 2 | `AddUsage` once with turn 1's usage |
+| LPY06 | child usage reaches the parent's run total once | parent tool spawns a child | parent `Result.Usage` is its own plus the child's, and exactly one run_end |
+| LPY07 | the depth cap refuses with an error | max depth 2, parent at depth 2 | `ErrDepth`, no panic |
+| LPY08 | the concurrency cap holds per depth | 5 children, cap 2, a blocking tool | exactly 2 in flight; every answer independent of order |
+| LPY09 | cancelling the parent stops the children | cancel while a child's tool blocks | `Spawn` returns promptly; no goroutines leak |
+| LPY10 | a panicking child tool is an error result | a tool that panics | the child's run continues and answers |
 
 ## Fuzz and property tests
 

@@ -57,6 +57,7 @@ nova/
   proc/           process-group start, signal, exit status       ≤ 80
   proto/          wire types and JSONL framing                  ≤ 600
   agent/          the loop, hooks, queues, retry                ≤ 1420
+    sub/          child agent runs: scoping, tagging, limits   ≤ 340
   session/        JSONL tree store, branches, custom entries    ≤ 900
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
@@ -115,7 +116,9 @@ message ← provider ← decide ← tool ← proto ← agent ← mode ← cmd
 - `permission` imports `tool`. `usage` imports `provider` and `session`.
 - `tools/*` import `message`, `provider`, `tool`, and (for the shared glob engine)
   `permission`; they never import each other or a higher layer.
-- `agent` imports `message`, `provider`, `tool`, `permission`, `proto`, `decide`. `config`
+- `agent` imports `message`, `provider`, `tool`, `permission`, `proto`, `decide`. `agent/sub`
+  adds the child-run primitive (`sub.Spawner`): it imports `agent` and the same layers, and
+  `bundled/subagent` is a wrapper over it. `config`
   imports `permission` because it decodes the policy.
 - `session` imports `message` and `provider`. `compaction` imports `session`, `provider`, `message`.
 - `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.

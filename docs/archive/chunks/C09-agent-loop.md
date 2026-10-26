@@ -421,6 +421,10 @@ history as given, as before.
 | LPI06 | `Context.Inject` queues a message after the batch | an injected user message with an image | recorded after the tool result, image intact |
 | LPI07 | a tool's nested usage is counted | `Context.AddUsage` with 12 tokens and a cost | run usage and a `usage` event include it |
 | LPI08 | a steered message keeps its image | steer a user message with an image during a tool turn | the next request carries the image |
+| LPI09 | a tool sees its own call id | a scripted call `call-abc` | `Context.CallID` is `call-abc`, equal to the `tool_start` frame's id |
+| LPI10 | parallel calls each see their own id | three parallel-capable calls in one batch, under `-race` | each id seen exactly once |
+| LPI11 | a hand-built context has an empty id | `tool.Context{}` outside a loop | `CallID` is `""`; no panic |
+| LPI12 | a panicking tool keeps its id | a tool that reads `CallID` then panics | the error result and `tool_end` are recorded under the same id |
 | LPY01 | a child runs with only its scoped tools | a child offered `alpha` calls `beta` | the request offers `alpha` only; the call is an unknown-tool error result |
 | LPY02 | child events are tagged and run-level ones stay out | a child that streams text and calls a tool | parent's stream carries them with the child run id; no run_start, run_end, message_end, or usage |
 | LPY03 | a narrowed host filter is honoured | the extension's permission-only policy | only permission and extension_error reach the parent's stream |

@@ -8,6 +8,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- `tool.Context.CallID`: the loop now tells a tool which call it is serving, the same id the
+  `tool_start`, `tool_update`, and `tool_end` events and the assistant message's `tool_calls` carry, so
+  an embedding application can tag the events a tool emits itself (#38, LPI09–LPI12). It is empty when
+  a tool runs outside a loop.
 - **`agent/sub`**, an in-process primitive for child agent runs, so a program that embeds Nova can fan
   out sub-agents without rewriting the hard parts: a scoped `Registry.View`, fresh `tool.Context.Data`
   (`sub.Depth`), event tagging, usage folded into the parent exactly once through `Parent.AddUsage`, a

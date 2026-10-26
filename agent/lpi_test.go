@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -238,4 +239,105 @@ func Test_LPI08_SteerCarriesImage(t *testing.T) {
 		}
 	}
 	t.Fatalf("steered image not in the next request: %+v", reqs[1].Messages)
+}
+
+// callIDRecorder returns a tool that records the call id each invocation saw.
+func callIDRecorder(name string, parallel bool, mu *sync.Mutex, seen *[]string) tool.Tool {
+	return toolOf(name, parallel, func(_ context.Context, _ json.RawMessage, tc *tool.Context) (tool.Result, error) {
+		mu.Lock()
+		*seen = append(*seen, tc.CallID)
+		mu.Unlock()
+		return tool.Text("ok"), nil
+	})
+}
+
+func Test_LPI09_ToolSeesCallID(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	var mu sync.Mutex
+	var seen []string
+	p := testkit.NewProvider(clock,
+		testkit.Turn{ToolCalls: []testkit.Call{toolCall("call-abc", "rec", `{}`)}},
+		textTurn("done"))
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Tools: registry(callIDRecorder("rec", false, &mu, &seen))}
+
+	_, events := runCollect(t, cfg, nil, message.User("go"))
+
+	if len(seen) != 1 || seen[0] != "call-abc" {
+		t.Fatalf("tool saw call ids %v, want [call-abc]", seen)
+	}
+	// The id the tool saw must be the one tool_start carried, so a client can
+	// correlate the tool's own events with the card.
+	for _, ev := range events {
+		if ev.Type == proto.EventToolStart && ev.CallID != seen[0] {
+			t.Errorf("tool_start call id = %q, tool saw %q", ev.CallID, seen[0])
+		}
+	}
+}
+
+func Test_LPI10_ParallelCallsSeeOwnIDs(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	var mu sync.Mutex
+	var seen []string
+	p := testkit.NewProvider(clock,
+		testkit.Turn{ToolCalls: []testkit.Call{
+			toolCall("c1", "rec", `{}`), toolCall("c2", "rec", `{}`), toolCall("c3", "rec", `{}`),
+		}},
+		textTurn("done"))
+	cfg := Config{Provider: p, Model: "m", Clock: clock, MaxParallel: 3, Tools: registry(callIDRecorder("rec", true, &mu, &seen))}
+
+	runCollect(t, cfg, nil, message.User("go"))
+
+	sort.Strings(seen)
+	if strings.Join(seen, ",") != "c1,c2,c3" {
+		t.Fatalf("tools saw call ids %v, want each of c1, c2, c3 once", seen)
+	}
+}
+
+func Test_LPI11_ZeroContextHasNoCallID(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	tl := callIDRecorder("rec", false, &mu, &seen)
+
+	res, err := tl.Run(context.Background(), json.RawMessage(`{}`), &tool.Context{})
+
+	if err != nil || res.IsError || len(seen) != 1 || seen[0] != "" {
+		t.Fatalf("result %+v, err %v, saw %q; want a clean run with an empty call id", res, err, seen)
+	}
+}
+
+func Test_LPI12_PanicKeepsCallID(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	var got string
+	boom := toolOf("boom", false, func(_ context.Context, _ json.RawMessage, tc *tool.Context) (tool.Result, error) {
+		got = tc.CallID
+		panic("kaboom")
+	})
+	p := testkit.NewProvider(clock,
+		testkit.Turn{ToolCalls: []testkit.Call{toolCall("call-panic", "boom", `{}`)}},
+		textTurn("done"))
+	cfg := Config{Provider: p, Model: "m", Clock: clock, Tools: registry(boom)}
+
+	res, events := runCollect(t, cfg, nil, message.User("go"))
+
+	if got != "call-panic" {
+		t.Errorf("tool saw call id %q before panicking, want call-panic", got)
+	}
+	recorded := false
+	for _, m := range res.Messages {
+		if m.Role == message.RoleTool && m.ToolCallID == "call-panic" {
+			recorded = true
+		}
+	}
+	if !recorded {
+		t.Error("no tool result recorded under call-panic after the panic")
+	}
+	ended := false
+	for _, ev := range events {
+		if ev.Type == proto.EventToolEnd && ev.CallID == "call-panic" {
+			ended = true
+		}
+	}
+	if !ended {
+		t.Error("no tool_end carried call-panic after the panic")
+	}
 }

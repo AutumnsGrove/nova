@@ -190,8 +190,9 @@ boundary. The target event type is plain data. It is defined in `proto` and
 
 `tool.Result` gains `Details json.RawMessage` (structured data for renderers, not
 sent to the model) and `Truncated bool`. `tool.Context` gains `Emit func(Update)`
-so a long-running tool can stream progress, `SessionID`, and `Complete` for nested
-model calls (D29). Annotations (`ReadOnly`, `Destructive`, `OpenWorld`,
+so a long-running tool can stream progress, `SessionID`, `CallID` (the id of the
+call being served, empty outside a loop, so a tool can tag its own events), and
+`Complete` for nested model calls (D29). Annotations (`ReadOnly`, `Destructive`, `OpenWorld`,
 `Parallel`) stay and feed the permission policy.
 
 ## 4. The agent loop

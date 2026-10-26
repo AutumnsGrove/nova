@@ -8,6 +8,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Added
+- **`agent/sub`**, an in-process primitive for child agent runs, so a program that embeds Nova can fan
+  out sub-agents without rewriting the hard parts: a scoped `Registry.View`, fresh `tool.Context.Data`
+  (`sub.Depth`), event tagging, usage folded into the parent exactly once through `Parent.AddUsage`, a
+  depth cap and a per-depth concurrency cap, and cancellation inherited from the parent's context with
+  no goroutine of its own. `bundled/subagent` is now a wrapper over it. A child's events reach the
+  parent's stream with `run` rewritten to a child id, and the events that address a run (`run_start`,
+  `run_end`, `usage`, `message_end`, and the rest) never cross, so a client's answer and totals stay
+  the parent's (D149, LPY01–LPY10).
+- A nested sub-agent now honours the depth cap. The extension and the primitive had separate `Depth`
+  types, so every nested child looked top level and the cap was effectively off (SUB34).
+
 - **`examples/embed/`**, a standalone program that uses Nova as a library: it builds a provider from a
   key it holds, registers two domain tools whose dependencies ride on `tool.Context.Data`, keeps its own
   history through `OnMessage`, maps `proto.Event` to its own event type, scopes tools per run with

@@ -148,6 +148,29 @@ model catalog; `cost_source` (`provider` or `catalog`) says which.
 
 A run always ends with exactly one `run_end`, even on error or abort.
 
+### Child agent events
+
+A sub-agent run ([`agent/sub`](../agent/sub)) is a nested run inside a tool call. Its
+events reach the same stream with `run` set to a child id (`c1`, `c2`, …) rather than the
+parent's run id, so a client groups them by `run` and never confuses them with the
+parent's own work.
+
+The events that address a run rather than an agent's work never cross: a child's
+`run_start`, `run_end`, `turn_start`, `turn_end`, `message_start`, `message_end`,
+`usage`, `error`, `queue_update`, `session_changed`, and `state_changed` are dropped.
+That is load-bearing. A client treats the first `run_end` as the end of the whole
+request, a child's `usage` would overwrite the parent's running total, and a child's
+`message_end` would replace the parent's answer. What does cross is the work:
+`text_delta`, `thinking_*`, `tool_call`, `tool_start`, `tool_update`, `tool_end`,
+`permission`, and `extension_error`, each tagged with the child's `run`.
+
+A host may narrow this further. The bundled `subagent` extension forwards only
+`permission` and `extension_error`, so a sub-agent's streaming text never interleaves
+with the parent's answer; a client must not assume it will see every child event.
+
+A child's cost is not a `usage` event. It is folded into the parent's totals once,
+and shows up in the parent's next `usage`/`turn_end` and in `run_end`.
+
 ## UI requests
 
 When the server needs the user it sends a `ui_request` and waits for the matching

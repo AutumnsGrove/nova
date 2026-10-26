@@ -77,6 +77,36 @@ Notes the example makes concrete:
 - **Tool scoping is `Registry.View`.** It returns a registry sharing the tool values but with its own
   registration state, so two concurrent runs can offer different tools without racing.
 
+## Sub-agents
+
+Fanning out child agents is a primitive, not something each adopter rewrites. `agent/sub` runs a
+child loop from a `sub.Parent` (the seams a child inherits) and a `sub.Task` (the prompt, the tool
+view, an optional model, and the depth):
+
+```go
+pool := sub.New(sub.Parent{
+    Provider: p, Model: model, ModelID: modelID, Tools: reg,
+    Policy: policy, Ask: ask, ToolCall: dropBash, ToolResult: redact,
+    Emit: s.emit, AddUsage: tctx.AddUsage,   // cost lands in the parent's run total
+}, sub.Options{MaxDepth: 3, MaxConcurrent: 4})
+
+res, err := pool.Spawn(ctx, sub.Task{
+    System: myResearcherPrompt,
+    Prompt: task,
+    Tools:  []string{"search", "fetch"},      // the child sees nothing else
+    Depth:  sub.DepthOf(tctx.Data),            // 0 for a tool the user called
+})
+```
+
+The primitive owns the six things that are easy to get wrong: the scoped tool view, a fresh
+`tool.Context.Data` per child (`sub.Depth{N+1}` unless a task supplies its own), event tagging, usage
+folded into the parent exactly once, the depth and concurrency caps, and cancellation that follows
+the parent's `ctx` with no leaked goroutine. A child's events arrive on `Parent.Emit` tagged with a
+child `run` id; the run-level events do not (see [`PROTOCOL.md`](PROTOCOL.md#child-agent-events)).
+
+`bundled/subagent` is a thin wrapper over it, so the in-process and extension paths share one
+implementation.
+
 ## Decision models
 
 A decision model answers typed questions about a shared state; it does not

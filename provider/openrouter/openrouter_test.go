@@ -113,3 +113,27 @@ func TestNew_ORT10_RoutingOnTheWire(t *testing.T) {
 		t.Errorf("provider.order = %#v, want [a b]", providerObj["order"])
 	}
 }
+
+// TestNew_EmptyToolCallContentPassesThrough checks the preset forwards the
+// option, so an adopter does not have to build the inner provider by hand (#42).
+func TestNew_EmptyToolCallContentPassesThrough(t *testing.T) {
+	call := message.ToolCall{ID: "c1", Type: "function", Function: message.FunctionCall{Name: "read", Arguments: "{}"}}
+	for _, on := range []bool{false, true} {
+		srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+		p := New(Config{APIKey: "k", BaseURL: srv.URL, EmptyToolCallContent: on})
+		req := provider.Request{Model: "m", Messages: []message.Message{
+			message.User("hi"), {Role: message.RoleAssistant, ToolCalls: []message.ToolCall{call}}, message.ToolResult("c1", "r"),
+		}}
+		stream(t, p, req)
+		var body struct {
+			Messages []map[string]any `json:"messages"`
+		}
+		if err := json.Unmarshal(srv.Requests()[0].Body, &body); err != nil {
+			t.Fatal(err)
+		}
+		_, has := body.Messages[1]["content"]
+		if has != on {
+			t.Errorf("EmptyToolCallContent=%v: content present = %v", on, has)
+		}
+	}
+}

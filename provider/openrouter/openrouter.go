@@ -39,6 +39,9 @@ type Config struct {
 	Title string
 	// HTTPClient overrides the default client.
 	HTTPClient *http.Client
+	// EmptyToolCallContent sends `"content": ""` on a tool-call-only assistant
+	// message instead of omitting it; see openaicompat.Config.
+	EmptyToolCallContent bool
 }
 
 // New builds an OpenRouter provider with the attribution headers and the key
@@ -62,6 +65,7 @@ func New(cfg Config) *openaicompat.Provider {
 			"HTTP-Referer": cfg.Referer,
 			"X-Title":      cfg.Title,
 		},
-		HTTPClient: cfg.HTTPClient,
+		HTTPClient:           cfg.HTTPClient,
+		EmptyToolCallContent: cfg.EmptyToolCallContent,
 	})
 }

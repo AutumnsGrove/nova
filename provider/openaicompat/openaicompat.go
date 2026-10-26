@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/ssestream"
 )
@@ -43,6 +44,12 @@ type Config struct {
 	// SendReasoning re-sends Message.Reasoning to the provider. Default false,
 	// because most providers reject a reasoning field they did not send.
 	SendReasoning bool
+	// EmptyToolCallContent sends `"content": ""` for an assistant message that
+	// carries tool calls and no text, instead of omitting the field. Omitting is
+	// valid and the default; this exists for an adopter whose existing transcripts
+	// were sent with the empty string, so switching does not re-key the provider's
+	// prompt cache, and for gateways that expect the field.
+	EmptyToolCallContent bool
 }
 
 // Provider is an OpenAI-compatible chat-completions provider.
@@ -107,9 +114,13 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 	msgs := make([]wireMessage, len(req.Messages))
 	for i, m := range req.Messages {
+		content := wireContent(m)
+		if content == nil && p.cfg.EmptyToolCallContent && m.Role == message.RoleAssistant && len(m.ToolCalls) > 0 {
+			content = ""
+		}
 		wm := wireMessage{
 			Role:       m.Role,
-			Content:    wireContent(m),
+			Content:    content,
 			ToolCalls:  m.ToolCalls,
 			ToolCallID: m.ToolCallID,
 			Name:       m.Name,
@@ -133,6 +144,9 @@ func (p *Provider) buildBody(req provider.Request) ([]byte, error) {
 	}
 	if req.MaxTokens > 0 {
 		cr.MaxTokens = &req.MaxTokens
+	}
+	if len(req.Tools) > 0 {
+		cr.ParallelTools = req.ParallelToolCalls
 	}
 	raw, err := json.Marshal(cr)
 	if err != nil {

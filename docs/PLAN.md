@@ -98,7 +98,8 @@ run on Nova with no bespoke loop code".
 1. **Ori and OpenRouter OAuth specifics** are read from their documentation in C03, not assumed.
 2. **Multi-user `serve`.** Out of scope now. Needed only if a website wants one Nova serving many users.
 3. **Web fetch and search.** Bundled `webfetch` is keyless; search is the suggested `parallel` extension.
-4. **Image and document content parts.** Deferred; the session format reserves room.
+4. **Document content parts.** Images are built (D115 to D130, [`IMAGE.md`](IMAGE.md)); documents
+   are still deferred, and the session format reserves room for them.
 5. **MCP client.** The manifest accepts the `mcp` capability; the client is a later chunk.
 6. **A `bash` sandbox.** Possibly later, Landlock-based, `bash` only (D39). A command classifier is
    later still (D41). Neither is on the roadmap.

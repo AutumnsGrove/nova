@@ -265,16 +265,35 @@ Polaris has the largest bespoke loop; most of it becomes hooks.
 
 Before a project switches, confirm Nova preserves:
 
-- [ ] Streaming to the existing transport, with reasoning deltas.
-- [ ] Model fallback and per-call token/cost accounting.
-- [ ] `ctx` cancellation aborting in-flight provider and tool work.
-- [ ] Per-agent / per-run tool scoping and deferred loading.
-- [ ] Tool output transformation (redaction, rewrites).
-- [ ] Image content parts end to end: prompt attachments, tool-produced images,
-      model capability gating, and inline TUI rendering (`IMAGE.md`).
-- [ ] Trace output equivalent to the current `tool.yaml` trace specs.
-- [ ] Session/context behavior equal to the current compaction.
-- [ ] No new required config for the app's existing providers.
+- [x] **Streaming, with reasoning deltas.** `text_delta` and `thinking_delta` are in the
+      protocol (`proto/codes.go`), all three dialects stream them (the C02 stream tests), and
+      an RPC client consumes them (`mode/rpc_conc_test.go`). An adopter still maps
+      `proto.Event` to its own transport; `examples/embed` shows the shape.
+- [x] **Per-call token and cost accounting.** `provider.Usage` (prompt, completion,
+      reasoning, cached, cache write, provider cost) reaches `Result.Usage` and the `usage`
+      event, and a nested `Context.Complete` reports through `AddUsage` (LPI07, D117).
+- [x] **`ctx` cancellation aborting provider and tool work.** The run's context reaches every
+      request and tool, a call cancelled before it starts still records a "cancelled"
+      result, and `agent/sub` cancels children with the parent (LPY09).
+- [x] **Per-run tool scoping.** `Registry.View` shares the tool values and holds its own
+      registration state, so concurrent runs can offer different subsets (LPY01,
+      `examples/embed`).
+- [x] **Tool output transformation.** `Hooks.ToolResult` rewrites a result before it is
+      recorded (LPH04), and a policy-denied call still passes through it (LPH20).
+- [x] **Image content parts end to end.** Prompt attachments, tool-produced images, capability
+      gating, and inline TUI rendering (D115 to D130, [`IMAGE.md`](IMAGE.md); SVA13 to SVA15,
+      LPI04 to LPI08, IMG01 to IMG10).
+- [ ] **Deferred tool loading** (her-go's `use_tools`). Not built; a per-run `View` is the
+      current answer.
+- [ ] **Model fallback as a harness policy.** A request routes to the provider its model names,
+      and provider-level fallback passes through `ProviderOptions` (`openrouter.Routing`); a
+      model-level fallback is the application's policy today.
+- [ ] **Trace output equivalent to the current `tool.yaml` trace specs.** Not built;
+      `tool.Context.Progress` is what a tool has.
+- [ ] **Session/context behaviour equal to the current compaction.** Compared per adopter;
+      Nova summarises at a cut point and never prunes the request (D134).
+- [ ] **No new required config for the app's existing providers.** Only an adapter can answer
+      this; it is the first Polaris workstream.
 
 ## Migration order
 

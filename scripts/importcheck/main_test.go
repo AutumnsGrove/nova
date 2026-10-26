@@ -247,6 +247,40 @@ func TestImportcheck_ICK11_BundledImportedByCore(t *testing.T) {
 	}
 }
 
+// TestImportcheck_ICK16_ExampleImportsAppShell pins the guard behind issue #31:
+// examples/embed exists to prove the harness layer works without the app shell,
+// so importing mode (or config, session, tui, bundled) must fail the check.
+func TestImportcheck_ICK16_ExampleImportsAppShell(t *testing.T) {
+	for _, shell := range []string{"mode", "config", "session", "bundled"} {
+		root := fixtureModule(t, map[string]string{
+			"examples/embed/main.go":    "package main\n\nimport _ \"example.com/m/" + shell + "\"\n",
+			shell + "/" + shell + ".go": "package " + shell + "\n",
+		})
+		code, out := runImportcheck(t, root)
+		if code != 1 {
+			t.Fatalf("%s: exit = %d, want 1\n%s", shell, code, out)
+		}
+		if !strings.Contains(out, "examples/embed") || !strings.Contains(out, shell) {
+			t.Errorf("%s: output should name the importer and the shell package:\n%s", shell, out)
+		}
+	}
+}
+
+// TestImportcheck_ICK17_ExampleImportsHarness is the positive half of ICK16:
+// the harness layers the example does depend on stay allowed.
+func TestImportcheck_ICK17_ExampleImportsHarness(t *testing.T) {
+	root := fixtureModule(t, map[string]string{
+		"examples/embed/main.go": "package main\n\nimport (\n\t\"context\"\n\n\t\"example.com/m/agent\"\n\t\"example.com/m/message\"\n\t\"example.com/m/provider\"\n\t\"example.com/m/tool\"\n)\n\nvar _ = context.Background\nvar _ = agent.Config{}\nvar _ = message.Message{}\nvar _ = provider.Usage{}\nvar _ tool.Tool\n",
+		"agent/agent.go":         "package agent\n\ntype Config struct{}\n",
+		"message/message.go":     "package message\n\ntype Message struct{}\n",
+		"provider/provider.go":   "package provider\n\ntype Usage struct{}\n",
+		"tool/tool.go":           "package tool\n\ntype Tool interface{ Info() }\n",
+	})
+	if code, out := runImportcheck(t, root); code != 0 {
+		t.Fatalf("harness-only example: exit = %d, want 0\n%s", code, out)
+	}
+}
+
 // TestImportcheck_TestkitAllowedOnlyInTests pins the D48 exception: testkit is
 // test support, so a package's _test.go may import it even when the layer table
 // does not list it, but production code may not.
@@ -270,5 +304,19 @@ func TestImportcheck_TestkitAllowedOnlyInTests(t *testing.T) {
 	}
 	if !strings.Contains(out, "layer rule") {
 		t.Errorf("output should cite the layer rule:\n%s", out)
+	}
+}
+
+// TestImportcheck_ExampleTestMayUseTestkit is the ICK17 counterpart for a test
+// file: the embed example's end-to-end test drives a scripted provider, and
+// testkit is test-only support, not app shell.
+func TestImportcheck_ExampleTestMayUseTestkit(t *testing.T) {
+	root := fixtureModule(t, map[string]string{
+		"examples/embed/main.go":      "package main\n",
+		"examples/embed/main_test.go": "package main\n\nimport _ \"example.com/m/testkit\"\n",
+		"testkit/testkit.go":          "package testkit\n",
+	})
+	if code, out := runImportcheck(t, root); code != 0 {
+		t.Fatalf("test-only testkit import: exit = %d, want 0\n%s", code, out)
 	}
 }

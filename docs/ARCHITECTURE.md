@@ -127,6 +127,11 @@ message ← provider ← decide ← tool ← proto ← agent ← mode ← cmd
 - **`tui/` and `bundled/*` are the only packages allowed to import `charm.land/*`.**
   `scripts/importcheck` (C00) walks the import graph and fails if any other package does
   (D15), and also enforces the layer rules above.
+- **`examples/embed` may import the harness layer only.** It exists to prove the harness is usable
+  without the application shell, so `scripts/importcheck` allows it `agent`, `message`, `provider`,
+  `tool`, `proto`, `permission`, `decide`, and `media`, and fails on `mode`, `config`, `session`,
+  `usage`, `proc`, `tui`, or `bundled`. A new import there is a question about where the harness
+  boundary sits, not a convenience.
 - Dependencies follow the policy in `DECISIONS.md` D46: an allow-list in `scripts/importcheck`, each
   module tied to the packages that may import it. The core uses `gopkg.in/yaml.v3`; `cmd/nova` uses
   `cobra`; only `tui/`, `tui/cli`, and `bundled/` use UI libraries.

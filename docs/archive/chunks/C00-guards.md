@@ -156,6 +156,8 @@ accept <CNN> [-from step]          exit 0 all steps pass; exit 1 a step failed; 
 | ICK13 | a core package other than `cmd/nova` imports cobra | | exit 1 |
 | ICK14 | `tui/cli` imports fang; `cmd/nova` imports fang directly | | exit 0; exit 1 |
 | ICK15 | a module allowed only for one package is imported by another | `x/net/html` in `tool` | exit 1 |
+| ICK16 | `examples/embed` imports the app shell | `mode`, `config`, `session`, `bundled` | exit 1; names the importer and the package |
+| ICK17 | `examples/embed` imports the harness layer | `agent`, `message`, `provider`, `tool` | exit 0; a test file may still import `testkit` |
 | ICK08 | package reachable only via `tui` | core package imported solely by `tui` | exit 0 |
 | ICK09 | `-tags notui` build breaks | core file referencing a `tui` symbol | exit 1 |
 | ICK10 | `bundled` imports charm | | exit 0 |

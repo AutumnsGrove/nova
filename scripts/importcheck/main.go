@@ -76,6 +76,20 @@ var layerAllowed = map[string][]string{
 	"testkit":    {"message", "provider", "tool", "proto", "decide"},
 }
 
+// constrainedPackages narrows the free-for-all that applies to wiring packages
+// to a specific subtree. examples/embed exists to prove the harness layer works
+// without the app shell (issue #31), so its imports are an allow-list: a new
+// one there is a design question about where the harness boundary sits, not a
+// convenience. A test file may still import testkit.
+var constrainedPackages = map[string][]string{"examples/embed": harnessLayers}
+
+// harnessLayers are the packages an embedder depends on: the loop, the tool
+// contract, the provider contract, and the wire types they exchange, plus the
+// permission policy the loop consults and the media decoder a tool uses for
+// images. Everything else (mode, config, session, usage, proc, tui, bundled) is
+// the application shell.
+var harnessLayers = []string{"agent", "message", "provider", "tool", "proto", "permission", "decide", "media"}
+
 // importRule allows the packages satisfying allow to import an import path.
 type importRule struct {
 	path  string
@@ -217,6 +231,9 @@ func (c *checker) checkLayer(importer, imported string) {
 	if from == to {
 		return
 	}
+	if c.checkConstrained(importer, imported) {
+		return
+	}
 	allowed, known := layerAllowed[from]
 	if !known {
 		return
@@ -229,6 +246,38 @@ func (c *checker) checkLayer(importer, imported string) {
 	c.violations = append(c.violations, fmt.Sprintf(
 		"layer rule (ARCHITECTURE.md section 2): %s imports %s, but %s may only import [%s]",
 		importer, imported, from, strings.Join(allowed, " ")))
+}
+
+// checkConstrained applies a constrainedPackages rule when one covers the
+// importer, and reports whether one applied so the caller does not fall through
+// to the free-for-all that a wiring package normally gets.
+func (c *checker) checkConstrained(importer, imported string) bool {
+	allowed, ok := constrainedFor(importer)
+	if !ok {
+		return false
+	}
+	// A same-layer import (another package under examples/) already returned
+	// above, so only the top-level layer is left to check.
+	for _, a := range allowed {
+		if a == layerOf(imported) {
+			return true
+		}
+	}
+	c.violations = append(c.violations, fmt.Sprintf(
+		"layer rule (issue #31): %s imports %s, but the embed example may only import the harness layer [%s]",
+		importer, imported, strings.Join(allowed, " ")))
+	return true
+}
+
+// constrainedFor returns the allowed layers for the constrained package covering
+// importer, or false when none does.
+func constrainedFor(importer string) ([]string, bool) {
+	for prefix, allowed := range constrainedPackages {
+		if importer == prefix || strings.HasPrefix(importer, prefix+"/") {
+			return allowed, true
+		}
+	}
+	return nil, false
 }
 
 func (c *checker) checkAllowed(importer, imp string) {

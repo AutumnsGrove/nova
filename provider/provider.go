@@ -34,16 +34,21 @@ type Request struct {
 	// ModelID is the stable catalog id that Model (the wire slug) was derived
 	// from. A router uses it to pick the provider, because a slug alone does not
 	// name one; wire providers ignore it. Empty means Model is the catalog id.
-	ModelID         string
-	Messages        []message.Message
-	Tools           []ToolDef
-	ToolChoice      any
-	Temperature     *float64
-	MaxTokens       int
-	Stop            []string
-	ReasoningEffort string         // "", "low", "medium", or "high"
-	ProviderOptions map[string]any // merged into the wire body by the provider
-	ExtraHeaders    map[string]string
+	ModelID    string
+	Messages   []message.Message
+	Tools      []ToolDef
+	ToolChoice any
+	// ParallelToolCalls asks a chat-completions provider to allow (true) or
+	// forbid (false) several tool calls in one message. Nil sends nothing. It is
+	// only meaningful with tools, so the wire omits it from a request that has
+	// none, such as the wrap-up request. Dialects without the notion ignore it.
+	ParallelToolCalls *bool
+	Temperature       *float64
+	MaxTokens         int
+	Stop              []string
+	ReasoningEffort   string         // "", "low", "medium", or "high"
+	ProviderOptions   map[string]any // merged into the wire body by the provider
+	ExtraHeaders      map[string]string
 	// PromptCache overrides whether the request carries an explicit prompt
 	// cache marker. Nil means decide from the catalog; see
 	// RequestCacheControl. A pointer, so true and false are both meaningful.

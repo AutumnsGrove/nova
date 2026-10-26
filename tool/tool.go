@@ -29,6 +29,12 @@ type Context struct {
 	Roots     []string
 	Data      any
 	SessionID string
+	// CallID is the id of the tool call this context was built for: the same
+	// id the loop's tool_start/tool_update/tool_end events and the assistant
+	// message's tool_calls entry carry. A tool uses it to tag its own events so
+	// a client can correlate them with the call. It is empty when a tool runs
+	// outside a loop, such as in a unit test with a hand-built Context.
+	CallID string
 	// Emit receives progress updates; it may be nil.
 	Emit func(Update)
 	// Complete performs a nested model call, for a tool that needs one.

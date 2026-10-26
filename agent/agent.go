@@ -175,8 +175,17 @@ type Config struct {
 	// mid-session uses it so the gate follows the switch.
 	InputModalitiesFunc func() []string
 	Retry               RetryPolicy
-	HookTimeout         time.Duration // default 5s
-	Clock               Clock         // default real; tests inject a fake
+	// RequestTimeout bounds one provider attempt, from the request to the end of
+	// its stream. Zero, the default, means no deadline beyond the run's own
+	// context. Hitting it fails that attempt with a deadline error and ends the
+	// run in "error"; it is not an abort, and it is not retried, because a call
+	// that stalled for the whole budget is unlikely to recover on the spot. A
+	// retryable provider error still retries, and each attempt gets a fresh
+	// deadline. ConnectTimeout and IdleTimeout on the provider cover a stalled
+	// connection; this covers a stream that keeps trickling.
+	RequestTimeout time.Duration
+	HookTimeout    time.Duration // default 5s
+	Clock          Clock         // default real; tests inject a fake
 
 	// PromptCache overrides whether requests carry an explicit prompt-cache
 	// marker. Nil means decide from the model catalog (see

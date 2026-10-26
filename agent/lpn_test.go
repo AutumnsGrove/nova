@@ -2,10 +2,13 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/AutumnsGrove/nova/message"
+	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
 )
 
@@ -95,3 +98,86 @@ func Test_LPN03_TransformContextStillSeesTheEmptyAssistantMessage(t *testing.T) 
 		t.Fatal("the hook did not see the empty assistant message: the filter must run after it")
 	}
 }
+
+// --- RequestTimeout (#44) ---------------------------------------------------
+
+func Test_LPN04_RequestTimeoutFailsAStalledCall(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	p := testkit.NewProvider(clock, testkit.Turn{Hang: true})
+	cfg := Config{Provider: p, Model: "m", Clock: clock, RequestTimeout: 20 * time.Millisecond}
+	res, _, err := runCollectErr(t, cfg, nil, message.User("go"))
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want a deadline error", err)
+	}
+	if res.Reason != "error" {
+		t.Errorf("Reason = %q, want error (a stalled call is a failure, not an abort)", res.Reason)
+	}
+}
+
+func Test_LPN05_RequestTimeoutLeavesAFastCallAlone(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	p := testkit.NewProvider(clock, textTurn("quick"))
+	cfg := Config{Provider: p, Model: "m", Clock: clock, RequestTimeout: time.Minute}
+	res, _ := runCollect(t, cfg, nil, message.User("go"))
+	if res.Reason != "done" || res.Answer != "quick" {
+		t.Errorf("Reason = %q, Answer = %q", res.Reason, res.Answer)
+	}
+}
+
+func Test_LPN06_RunCancellationIsStillAnAbortWithATimeoutSet(t *testing.T) {
+	clock := testkit.NewFakeClock(baseTime)
+	p := testkit.NewProvider(clock, testkit.Turn{Hang: true})
+	cfg := Config{Provider: p, Model: "m", Clock: clock, RequestTimeout: time.Hour}
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(20*time.Millisecond, cancel)
+	res, err := New(cfg).Run(ctx, nil, message.User("go"))
+	if res.Reason != "aborted" || !errors.Is(err, context.Canceled) {
+		t.Errorf("Reason = %q, err = %v, want aborted/canceled", res.Reason, err)
+	}
+}
+
+// Every attempt gets its own deadline: a retryable failure that took most of
+// one budget must not leave the retry with the remainder.
+func Test_LPN07_EachAttemptGetsItsOwnDeadline(t *testing.T) {
+	var deadlines []time.Time
+	p := &deadlineProvider{record: func(d time.Time, ok bool) {
+		if ok {
+			deadlines = append(deadlines, d)
+		}
+	}}
+	cfg := Config{Provider: p, Model: "m", Clock: instantClock{}, RequestTimeout: time.Hour, Retry: RetryPolicy{Max: 1, Base: time.Millisecond, Jitter: -1}}
+	res, _ := runCollect(t, cfg, nil, message.User("go"))
+	if res.Reason != "done" {
+		t.Fatalf("Reason = %q", res.Reason)
+	}
+	if len(deadlines) != 2 {
+		t.Fatalf("saw %d deadlines, want one per attempt (2)", len(deadlines))
+	}
+	if !deadlines[1].After(deadlines[0]) {
+		t.Errorf("second attempt reused the first deadline: %v then %v", deadlines[0], deadlines[1])
+	}
+}
+
+type deadlineProvider struct {
+	n      int
+	record func(time.Time, bool)
+}
+
+func (p *deadlineProvider) Name() string { return "deadline" }
+
+func (p *deadlineProvider) Stream(ctx context.Context, _ provider.Request, _ func(provider.StreamEvent)) (*provider.Response, error) {
+	d, ok := ctx.Deadline()
+	p.record(d, ok)
+	p.n++
+	if p.n == 1 {
+		return nil, &provider.Error{Status: 503, Message: "busy", Retryable: true}
+	}
+	return &provider.Response{Message: message.Assistant("ok")}, nil
+}
+
+// instantClock reads the wall clock but never waits, so a retry's backoff costs
+// no real time.
+type instantClock struct{}
+
+func (instantClock) Now() time.Time                             { return time.Now() }
+func (instantClock) Sleep(context.Context, time.Duration) error { return nil }

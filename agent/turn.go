@@ -148,7 +148,13 @@ func (r *run) streamOnce(req provider.Request) (message.Message, provider.Usage,
 	st.reasoningGate.filter = r.newStreamFilter(r.cfg.ReasoningFilter, "reasoning_filter")
 
 	diag.SetOp(fmt.Sprintf("provider request turn %d", r.turn))
-	resp, err := r.cfg.Provider.Stream(r.ctx, req, st.onEvent)
+	ctx := r.ctx
+	if r.cfg.RequestTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.cfg.RequestTimeout)
+		defer cancel()
+	}
+	resp, err := r.cfg.Provider.Stream(ctx, req, st.onEvent)
 	if err != nil {
 		st.endThinking()
 		return message.Message{}, provider.Usage{}, err

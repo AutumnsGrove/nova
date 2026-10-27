@@ -7,6 +7,23 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-27
+
+The first release a Go program can depend on by tag: Polaris is adopting Nova as a library (#22), and this
+release carries what that adoption needed (the agent loop primitives, `agent/sub`, `tool.Context.CallID`, the
+embedding example, and the six gaps in #40 to #45).
+
+Nova is `v0.x`, so a minor release may break callers. **Read these before upgrading from v0.1.0:**
+
+- `mode.Options.Out`, `In` and `Interactive` are removed.
+- No turn cap is on by default anywhere (agent runs, subagents, the GitHub Action); set `MaxTurns` /
+  `max_turns` if you relied on the old default (#21).
+- The GitHub Action's `--max-cost` now defaults to unlimited instead of `$1.00`, and its review no longer stops
+  at a turn count (#21).
+- `compaction.PruneToolOutput` is removed; compaction is the only thing that shrinks the context (D134).
+- An assistant message with no content, parts or tool calls stays in the transcript but is no longer sent to
+  the provider (#43).
+
 ### Added
 - Six gaps found by Polaris's adoption (nova#22), each small and opt-in or additive: `provider.Error.Body`
   keeps the scrubbed, bounded raw response body of a failed request (#40); `provider.Request.ParallelToolCalls`
@@ -301,5 +318,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - The first release: the agent loop, tools, sessions, config, the TUI, the
   extension host, the bundled extensions, serve mode, and the GitHub Action.
 
-[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.2.0
 [0.1.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.1.0

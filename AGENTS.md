@@ -159,6 +159,38 @@ The contract part is live. `make ci` still runs `matrixcheck` and `linecount` ov
 
 Design decisions, with the reasons, are in `docs/DECISIONS.md`. Check it before reversing something that looks odd.
 
+## Releasing and bumping versions
+
+A version is a git tag `vX.Y.Z` on `main`. There is no version constant to edit: the release workflow stamps the
+binary from the tag (`-ldflags -X main.version`), and Go programs that import Nova resolve the tag through the
+module proxy. A release is therefore a **changelog edit, a PR, and a tag**, in that order. When the user asks to
+bump, release, or tag a version:
+
+1. **Settle the number.** If the user gave one, use it. If not, propose one from `[Unreleased]` and ask. Nova is
+   `v0.x`: a minor bump (`0.2.0` to `0.3.0`) carries new API and any breaking change; a patch bump (`0.2.0` to
+   `0.2.1`) is fixes only. Do not go to `v1.0.0` unless told to: it is a compatibility promise.
+2. **Branch** `release/vX.Y.Z` from an up-to-date `main`. Never release from another branch.
+3. **Edit `CHANGELOG.md`**: rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` (today's date), leave a new empty
+   `[Unreleased]` above it, and fix the link references at the bottom. Read every entry in the section you are
+   releasing. If any changes behaviour for an existing caller (a removed field, a changed default, a stricter
+   check), say so in a short **upgrade notes** paragraph at the top of the section, listing each one with its
+   issue. Never write "nothing breaks" without having checked.
+4. **Run `make ci`**, then open a PR titled `release: vX.Y.Z` and wait for CI to pass. Merge with a **merge
+   commit** (not squash), so the per-issue commits survive, and only when the user has asked you to merge.
+5. **Tag the merge commit on `main`**: `git checkout main && git pull`, then
+   `git tag -a vX.Y.Z -m "nova vX.Y.Z" && git push origin vX.Y.Z`. Pushing the tag starts the release workflow
+   (it re-runs every chunk's acceptance, builds four binaries, and publishes a GitHub release), so push it only
+   when the user has asked for the release.
+6. **Verify.** Watch the `release` workflow to success, and check the module resolves:
+   `go list -m github.com/AutumnsGrove/nova@vX.Y.Z` from a scratch module.
+7. **Tell the consumers.** Polaris (and any other importer) moves with `go get github.com/AutumnsGrove/nova@vX.Y.Z`
+   and `go mod tidy`; say so, and say what its upgrade notes require.
+
+Never move, delete, or re-push a published tag: the Go module proxy caches it permanently and a changed tag
+breaks every consumer's checksum. To fix a bad release, ship the next patch version. Do not edit the version in
+docs examples (`docs/PROTOCOL.md`'s sample `hello`, `docs/EXTENSIONS.md`): they illustrate a format and are not
+the current version.
+
 ## Filing an issue
 
 Work arrives as issues, and agents file them too: when you find a bug or a gap outside your task, write it up

@@ -122,22 +122,17 @@ func (r *Registry) Bundled() {
 	r.Renderer("ask", funcRenderer{header: func(c render.Call) string {
 		labels := questionLabels(details(c))
 		if len(labels) == 0 {
-			labels = questionLabels(argObject(c.Args))
+			// While the tool runs there are no result Details yet, but the
+			// arguments already name the questions.
+			var args map[string]any
+			if json.Unmarshal(c.Args, &args) == nil {
+				labels = questionLabels(args)
+			}
 		}
 		return "ask: " + ask.Card(labels)
 	}})
 	r.Dialog("todos", func(string, any) dialog.Dialog { return dialog.NewInput(inputRequest("Todos")) })
 	r.Dialog("plan", func(string, any) dialog.Dialog { return dialog.NewInput(inputRequest("Plan mode")) })
-}
-
-// argObject decodes a call's arguments, for the running state where the result
-// Details do not exist yet.
-func argObject(raw json.RawMessage) map[string]any {
-	out := map[string]any{}
-	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &out)
-	}
-	return out
 }
 
 // questionLabels reads the question ids from an ask call's Details and turns

@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/status, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
-budgets: { ./tui/sanitize: 60, ./tui/dialog: 2050, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 160,  ./mode: 2640, ./mode/attach: 160, ./tui/ui: 3050, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
+budgets: { ./tui/sanitize: 100, ./tui/dialog: 2050, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 160,  ./mode: 2640, ./mode/attach: 160, ./tui/ui: 3050, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -241,6 +241,8 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | DLG08 | `ui_expired` closes the dialog | | closed; notice |
 | DLG09 | closing the program answers all as cancelled | | each answered once |
 | DLG10 | `Compose` output size | | exactly the screen size; no line wider than `w` |
+| DLG11 | `Compose` keeps the base's styling | a styled transcript with a dialog over it | the SGR outside the dialog's rectangle survives |
+| DLG12 | a framed dialog draws its body's styling | a bold and a faint body line | both SGR sequences reach the output |
 | CNF01 | yes and no keys | `y`, `n`, `enter`, arrows | each works; default pre-selected |
 | CNF02 | countdown | `timeout_ms` 5000, fake clock | counts down; closes with the default at zero |
 | CNF03 | answer shape | | `{ok}` |
@@ -283,6 +285,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | FRD15 | answers in question order | | order kept |
 | FRD16 | long prompt and option text | | wrapped; no overflow |
 | FRD17 | golden at three widths | | matches |
+| FRD18 | styling survives the frame | truecolor styles | the rendered form contains SGR |
 | DGS01 | settings save | arrow edits | enter returns both rows with the edited values |
 | DGS02 | settings typed digits | `12` | value 12 |
 | DGS03 | settings clamp | 999, many lefts | clamped to 50 and 1 |

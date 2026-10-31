@@ -7,6 +7,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+- Dialogs draw the styling they already asked for, and opening one no longer flattens the colours of the
+  transcript behind it. The clipping that every dialog line goes through was running the line through the
+  untrusted-text sanitiser, which stripped the SGR sequences along with everything else (#54).
+
 ## [0.2.0] - 2026-10-27
 
 The first release a Go program can depend on by tag: Polaris is adopting Nova as a library (#22), and this

@@ -77,7 +77,7 @@ nova/
   tui/            the terminal UI                               ≤ 9850
     ui/           the Bubble Tea model and its views           ≤ 3050
     status/       the multi-line status region                 ≤ 320
-    sanitize/     make untrusted text safe to draw              ≤ 60
+    sanitize/     make untrusted text safe to draw              ≤ 100
     git/          branch and working-tree counts for status    ≤ 120
     highlight/    chroma syntax colouring, cleaning its input  ≤ 80
     image/        inline image capability and Kitty encoding   ≤ 260

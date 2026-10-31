@@ -531,3 +531,44 @@ func TestForm_FRD30_TabStripWindows(t *testing.T) {
 		t.Fatalf("the active tab or Submit is not visible:\n%s", out)
 	}
 }
+
+// Space is the keystroke "space", not a rune, so every text buffer has to
+// accept it explicitly. It must never be mistaken for the multi-select toggle
+// while the user is typing.
+func TestForm_FRD31_SpaceInText(t *testing.T) {
+	typeKeys := func(d Dialog, text string) {
+		for _, r := range text {
+			if r == ' ' {
+				d.HandleKey(spaceKey)
+				continue
+			}
+			d.HandleKey(runeKey(r))
+		}
+	}
+	t.Run("text answer", func(t *testing.T) {
+		d := NewForm(formReq(q("a", "Say", "text")))
+		typeKeys(d, "hello world")
+		if got := submit(t, d)[0].Text; got != "hello world" {
+			t.Fatalf("text = %q", got)
+		}
+	})
+	t.Run("free-text row on a multi-select", func(t *testing.T) {
+		d := NewForm(formReq(q("a", "Pick", "multi", opt("x", "X"))))
+		d.HandleKey(downKey)  // Other
+		d.HandleKey(enterKey) // start typing
+		typeKeys(d, "a b")
+		if got := submit(t, d)[0].Text; got != "a b" {
+			t.Fatalf("other = %q", got)
+		}
+	})
+	t.Run("note", func(t *testing.T) {
+		d := NewForm(formReq(q("a", "Pick", "single", opt("x", "X"))))
+		d.HandleKey(ctrlNKey)
+		typeKeys(d, "a b")
+		d.HandleKey(enterKey) // save the note
+		d.HandleKey(enterKey) // select X
+		if got := submit(t, d)[0].Note; got != "a b" {
+			t.Fatalf("note = %q", got)
+		}
+	})
+}

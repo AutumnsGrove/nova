@@ -263,6 +263,10 @@ func (f *form) textKey(st *qstate, k tea.KeyPressMsg) {
 		if len(st.text) > 0 {
 			st.text = st.text[:len(st.text)-1]
 		}
+	case "space":
+		// Space is the keystroke "space", not a rune, and here it is text:
+		// the multi-select toggle only applies outside a text buffer.
+		st.text = append(st.text, ' ')
 	default:
 		if r := k.Keystroke(); len([]rune(r)) == 1 && r >= " " {
 			st.text = append(st.text, []rune(r)...)
@@ -280,6 +284,8 @@ func (f *form) noteKey(k tea.KeyPressMsg) {
 		if len(st.note) > 0 {
 			st.note = st.note[:len(st.note)-1]
 		}
+	case "space":
+		st.note = append(st.note, ' ')
 	default:
 		if r := k.Keystroke(); len([]rune(r)) == 1 && r >= " " {
 			st.note = append(st.note, []rune(r)...)

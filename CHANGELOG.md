@@ -22,6 +22,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - A UI request from an extension reaches the client with an id, so a form, select, or input dialog
   can actually answer it. Before this, `ask` opened the form and then hung when it was submitted,
   because the TUI dropped an answer for an empty id (#55).
+- Space works in the ask form's text answer, its free-text row, and a note. The text buffers only
+  accepted single-rune keystrokes, and Space arrives as `space`, so a multi-word answer could only be
+  pasted (#54).
 - The `ask` tool card reports the call's questions (`ask: 3 questions (Ambiguity, Explanations,
   Off-topic)`) instead of always `asked 0 question(s)`; while the tool is running, before any result
   details exist, it names them from the call's arguments (#54).

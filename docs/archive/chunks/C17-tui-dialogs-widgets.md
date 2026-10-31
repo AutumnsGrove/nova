@@ -299,6 +299,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | FRD27 | note key | `n`, then `ctrl+n` | `n` types; `ctrl+n` opens the note |
 | FRD28 | skip row on a text question | | visible; moving to it and Enter skips |
 | FRD29 | recommended suffix | a label ending `(Recommended)` | shown in the success colour |
+| FRD30 | the tab strip windows | 8 questions at width 50 | every line is `w`; the active tab and Submit are visible, with a `◀` marker |
 | DGS01 | settings save | arrow edits | enter returns both rows with the edited values |
 | DGS02 | settings typed digits | `12` | value 12 |
 | DGS03 | settings clamp | 999, many lefts | clamped to 50 and 1 |

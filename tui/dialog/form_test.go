@@ -507,3 +507,27 @@ func TestForm_FRD29_Recommended(t *testing.T) {
 		t.Fatalf("(Recommended) is not in the success colour:\n%q", out)
 	}
 }
+
+func TestForm_FRD30_TabStripWindows(t *testing.T) {
+	var qs []proto.UIQuestion
+	for i := 0; i < maxQuestions; i++ {
+		qs = append(qs, q("question-"+strconv.Itoa(i+1), "Q", "single", opt("x", "X")))
+	}
+	d := NewForm(formReq(qs...))
+	for i := 0; i < maxQuestions-1; i++ {
+		d.HandleKey(tabKey)
+	}
+	out, lines := content(t, d, 50)
+	for i, l := range lines {
+		if got := ansi.StringWidth(l); got != 50 {
+			t.Fatalf("line %d width = %d: %q", i, got, l)
+		}
+	}
+	tab := lines[1]
+	if !strings.Contains(tab, "◀") {
+		t.Fatalf("the strip hides earlier questions with no marker:\n%s", out)
+	}
+	if !strings.Contains(tab, "Q8") || !strings.Contains(tab, "Submit") {
+		t.Fatalf("the active tab or Submit is not visible:\n%s", out)
+	}
+}

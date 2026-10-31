@@ -254,11 +254,8 @@ func (f *form) textKey(st *qstate, k tea.KeyPressMsg) {
 	case "enter":
 		st.free = false
 		f.moveTab(1)
-	case "up":
-		if st.textQuestion() && st.allowSkip {
-			st.cursor = st.skipRow()
-		}
 	case "down":
+		// From the input line, down reaches the visible skip row.
 		if st.textQuestion() && st.allowSkip {
 			st.cursor = st.skipRow()
 		}
@@ -277,7 +274,7 @@ func (f *form) textKey(st *qstate, k tea.KeyPressMsg) {
 func (f *form) noteKey(k tea.KeyPressMsg) {
 	st := f.current()
 	switch k.Keystroke() {
-	case "enter", "esc":
+	case "enter":
 		st.noteMode = false
 	case "backspace":
 		if len(st.note) > 0 {

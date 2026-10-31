@@ -311,6 +311,7 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 | ASK14 | answers in question order | | yes |
 | ASK15 | no timeout | wait 10 minutes (fake clock) | still waiting |
 | ASK16 | abort while waiting | | returns a cancelled result; the dialog closes |
+| ASK18 | the card names the questions | one, three, and no labels | `3 questions (Ambiguity, …)`, `1 question (…)`, `no questions` |
 | ASK17 | Other text on a multi-choice question | a `multi` answer with `value` only, with `values` and `value`, and with ids only | the text is shown as `Other: ...` after any chosen labels; never an empty answer |
 | PLN01 | `/plan` toggles | | on and off; footer segment |
 | PLN02 | state persisted | | rebuilt on resume |

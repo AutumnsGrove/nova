@@ -20,7 +20,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   transcript behind it. The clipping that every dialog line goes through was running the line through the
   untrusted-text sanitiser, which stripped the SGR sequences along with everything else (#54).
 - The `ask` tool card reports the call's questions (`ask: 3 questions (Ambiguity, Explanations,
-  Off-topic)`) instead of always `asked 0 question(s)` (#54).
+  Off-topic)`) instead of always `asked 0 question(s)`; while the tool is running, before any result
+  details exist, it names them from the call's arguments (#54).
 
 ## [0.2.0] - 2026-10-27
 

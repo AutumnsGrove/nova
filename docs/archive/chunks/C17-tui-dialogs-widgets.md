@@ -244,7 +244,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | DLG11 | `Compose` keeps the base's styling | a styled transcript with a dialog over it | the SGR outside the dialog's rectangle survives |
 | DLG12 | a framed dialog draws its body's styling | a bold and a faint body line | both SGR sequences reach the output |
 | DLG13 | a sheet is full width and bottom anchored | the ask form over a transcript | no box; every row `w`; the sheet starts at `h-bh` |
-| REG01 | the ask card reports its questions | a call whose `Details` carry three question ids | header names them from `Details`, and a hostile id is cleaned |
+| REG01 | the ask card reports its questions | a call whose `Details` carry three question ids; a running call with only `Args` | header names them from `Details`, falls back to `Args` while running, and cleans a hostile id |
 | CNF01 | yes and no keys | `y`, `n`, `enter`, arrows | each works; default pre-selected |
 | CNF02 | countdown | `timeout_ms` 5000, fake clock | counts down; closes with the default at zero |
 | CNF03 | answer shape | | `{ok}` |

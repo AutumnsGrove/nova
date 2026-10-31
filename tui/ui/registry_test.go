@@ -44,18 +44,23 @@ func TestRegistry_REG01_AskCardFromDetails(t *testing.T) {
 	}
 	cases := []struct {
 		name    string
+		args    string
 		details string
 		want    string
 	}{
-		{"three questions", `{"questions":[{"id":"ambiguity"},{"id":"explanations"},{"id":"off-topic"}],"answers":[]}`,
+		{"three questions", "", `{"questions":[{"id":"ambiguity"},{"id":"explanations"},{"id":"off-topic"}],"answers":[]}`,
 			"ask: 3 questions (Ambiguity, Explanations, Off-topic)"},
-		{"one question", `{"questions":[{"id":"scope"}]}`, "ask: 1 question (Scope)"},
-		{"no details", `{}`, "ask: no questions"},
-		{"hostile id is cleaned", `{"questions":[{"id":"\u001b]0;pwned\u0007bad"}]}`, "ask: 1 question (Bad)"},
+		{"one question", "", `{"questions":[{"id":"scope"}]}`, "ask: 1 question (Scope)"},
+		{"no details", "", `{}`, "ask: no questions"},
+		{"hostile id is cleaned", "", `{"questions":[{"id":"\u001b]0;pwned\u0007bad"}]}`, "ask: 1 question (Bad)"},
+		// While the tool is running there are no Details yet; the arguments
+		// already name the questions, so the open form's card is not a lie.
+		{"running call from its arguments", `{"questions":[{"id":"ambiguity"},{"id":"explanations"}]}`, `{}`,
+			"ask: 2 questions (Ambiguity, Explanations)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			call := render.Call{Name: "ask", Details: json.RawMessage(tc.details)}
+			call := render.Call{Name: "ask", Args: json.RawMessage(tc.args), Details: json.RawMessage(tc.details)}
 			if got := rd.Header(call, m.st, 100); got != tc.want {
 				t.Fatalf("header = %q, want %q", got, tc.want)
 			}

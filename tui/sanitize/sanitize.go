@@ -9,6 +9,7 @@ package sanitize
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -31,6 +32,75 @@ func Text(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// Styled is Text for a line that already carries trusted styling: it keeps
+// SGR sequences (colour, bold, faint, reverse) so a rendered line survives
+// clipping, and drops every other escape sequence and control character. A
+// caller must have cleaned its untrusted text already, or run it through Text
+// first; Styled exists so the clipping in a dialog does not throw away the
+// styles the dialog built.
+func Styled(s string) string {
+	s = strings.ToValidUTF8(s, "")
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			n := seqLen(s[i:])
+			if ok := n > 0 && s[i+n-1] == 'm' && n > 2 && s[i+1] == '['; ok {
+				b.WriteString(s[i : i+n])
+			}
+			i += max(n, 1)
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+		if r == utf8.RuneError && size == 1 {
+			continue
+		}
+		if r != '\n' && r != '\t' && (unicode.IsControl(r) || isBidiOrSeparator(r)) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// seqLen reports the length of the escape sequence at the start of s, or 0.
+func seqLen(s string) int {
+	if len(s) < 2 || s[0] != 0x1b {
+		return 0
+	}
+	switch s[1] {
+	case '[':
+		i := 2
+		for i < len(s) && s[i] >= 0x20 && s[i] <= 0x3f {
+			i++
+		}
+		if i < len(s) && s[i] >= 0x40 && s[i] <= 0x7e {
+			return i + 1
+		}
+		return i
+	case ']', 'P', '^', '_', 'X': // OSC, DCS, PM, APC, SOS: end at BEL or ST
+		for i := 2; i < len(s); i++ {
+			if s[i] == 0x07 {
+				return i + 1
+			}
+			if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+				return i + 2
+			}
+		}
+		return len(s)
+	default: // ESC with intermediates and one final byte
+		i := 1
+		for i < len(s) && s[i] >= 0x20 && s[i] <= 0x2f {
+			i++
+		}
+		if i < len(s) {
+			return i + 1
+		}
+		return i
+	}
 }
 
 // Line is Text for a name shown inside one line, such as a folder in a prompt:

@@ -119,7 +119,7 @@ func (o *Overlay) Compose(base string, w, h int, st styles.Styles) string {
 	}
 	top := o.Top()
 	if top == nil {
-		return strings.Join(normalizeKeep(base, w, h), "\n")
+		return strings.Join(normalize(base, w, h), "\n")
 	}
 	lines := normalize(base, w, h)
 	if w < minScreenW || h < minScreenH {
@@ -148,23 +148,11 @@ func (o *Overlay) Compose(base string, w, h int, st styles.Styles) string {
 	return strings.Join(lines, "\n")
 }
 
-// normalizeKeep is normalize without stripping ANSI, for a base with no dialog.
-func normalizeKeep(s string, w, h int) []string {
-	lines := strings.Split(s, "\n")
-	if len(lines) > h {
-		lines = lines[:h]
-	}
-	for len(lines) < h {
-		lines = append(lines, "")
-	}
-	for i := range lines {
-		line := ansi.Truncate(lines[i], max(w, 0), "")
-		lines[i] = line + strings.Repeat(" ", max(w-ansi.StringWidth(line), 0))
-	}
-	return lines
-}
-
-// normalize returns exactly h lines, each padded or clipped to width w.
+// normalize returns exactly h lines, each padded or clipped to width w. It
+// keeps the SGR sequences a rendered line carries: stripping them made a
+// dialog flatten the transcript behind it, and made every dialog draw with the
+// styling thrown away. Other escape sequences are still removed, so a line is
+// as safe as sanitize.Text would make it.
 func normalize(s string, w, h int) []string {
 	lines := strings.Split(s, "\n")
 	if len(lines) > h {
@@ -186,12 +174,13 @@ func splice(line string, x int, box string, w int) string {
 	return clipPad(left+box+right, w)
 }
 
-// clipPad clips s to width cells and pads it with spaces.
+// clipPad clips s to width cells and pads it with spaces. It keeps trusted SGR
+// styling (sanitize.Styled) so a styled line is not flattened on the way in.
 func clipPad(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	s = ansi.Truncate(sanitize.Text(s), width, "")
+	s = ansi.Truncate(sanitize.Styled(s), width, "")
 	return s + strings.Repeat(" ", max(width-ansi.StringWidth(s), 0))
 }
 

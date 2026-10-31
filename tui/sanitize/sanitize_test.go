@@ -49,3 +49,26 @@ func TestLine(t *testing.T) {
 		}
 	}
 }
+
+// A rendered line carries trusted SGR; clipping must keep it and must still
+// drop anything else the terminal would act on.
+func TestStyled(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"sgr is kept", "\x1b[1mbold\x1b[0m", "\x1b[1mbold\x1b[0m"},
+		{"truecolor is kept", "\x1b[38;2;98;198;255mx\x1b[m", "\x1b[38;2;98;198;255mx\x1b[m"},
+		{"osc is dropped", "a\x1b]0;title\x07b", "ab"},
+		{"cursor move is dropped", "a\x1b[2Jb", "ab"},
+		{"hyperlink is dropped", "\x1b]8;;http://x\x07text\x1b]8;;\x07", "text"},
+		{"control chars are dropped", "a\x07b\x00c\rd", "abcd"},
+		{"newline and tab are kept", "a\nb\tc", "a\nb\tc"},
+		{"bidi override is dropped", "safe \u202etxt.exe", "safe txt.exe"},
+		{"unicode is kept", "日本語 👍🏽", "日本語 👍🏽"},
+		{"invalid utf-8 is dropped", "a\xffb", "ab"},
+		{"empty", "", ""},
+	}
+	for _, c := range cases {
+		if got := Styled(c.in); got != c.want {
+			t.Errorf("%s: Styled(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}

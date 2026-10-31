@@ -193,12 +193,14 @@ A stack of overlays. Each is a struct with `Draw` and a key handler.
 | Permission | the `ask` outcome of the permission policy: shows the tool, its arguments, and the matched rule; allow once, allow for the session, deny |
 | Select / input / confirm | `ui_request` methods from extensions |
 | Sign-in | `/login` and `/logout`: a provider picker (readiness comes from the server, so a key in the config counts), a method picker, a masked key input, and the OAuth/device flow dialog. The OAuth dialog shows the callback status (waiting on the loopback address, then received) and keeps a pasted-redirect fallback for remote machines. After a login the model picker opens only if the current model has no signed-in provider; after a logout from the provider serving the current model, the model switches to another signed-in provider's default, or the notice says to run `/login` |
-| **Form** | the `ask` tool: tabs per question, single and multi select, free text, a note per answer, skip, a review screen |
+| **Form** | the `ask` tool: a borderless, full-width sheet sized to its content and anchored to the bottom. A tab strip shows each question as `☑` answered, `⊘` skipped, or `☐` unvisited, with `✓ Submit →` at the end; options are numbered `1`-`9` hotkeys with the cursor in the gutter and descriptions dim on their own line; typing anywhere jumps to the free-text row; `ctrl+n` adds a note; `Skip this question` is a visible row; the last tab reviews everything and submits |
 | Model picker | filterable list from the catalog, with context window and price |
 | Session list and tree | resume, fork, navigate branches |
 
 A dialog opened while a run is streaming does not interrupt the stream; the transcript
-keeps updating underneath.
+keeps updating underneath. The form is the one sheet: every other dialog is a centred
+box, while the form takes the full width, asks for only the rows it needs, and grows
+upward from the bottom of the screen.
 
 ## Widgets and status
 

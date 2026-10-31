@@ -7,6 +7,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+- The `ask` form is a borderless, full-width sheet sized to its content instead of a large empty box: a
+  tab strip that shows answered (`☑`), skipped (`⊘`), and unvisited (`☐`) questions with `✓ Submit →` at
+  the end; numbered options with `1`-`9` hotkeys and a visible cursor on multi-select; descriptions on
+  their own dim line, wrapped or clipped with an ellipsis; type-to-answer from anywhere on a choice
+  question; a `Notes: ctrl+n` affordance; and a visible `Skip this question` row, so `s` is no longer a
+  hidden shortcut (#54).
+
 ### Fixed
 - Dialogs draw the styling they already asked for, and opening one no longer flattens the colours of the
   transcript behind it. The clipping that every dialog line goes through was running the line through the

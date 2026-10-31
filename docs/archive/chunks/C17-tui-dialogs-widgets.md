@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/status, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
-budgets: { ./tui/sanitize: 100, ./tui/dialog: 2050, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 160,  ./mode: 2640, ./mode/attach: 160, ./tui/ui: 3050, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
+budgets: { ./tui/sanitize: 100, ./tui/dialog: 2400, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 160,  ./mode: 2640, ./mode/attach: 160, ./tui/ui: 3050, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1260 }
 depends: [C15, C13]
 ---
 
@@ -243,6 +243,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | DLG10 | `Compose` output size | | exactly the screen size; no line wider than `w` |
 | DLG11 | `Compose` keeps the base's styling | a styled transcript with a dialog over it | the SGR outside the dialog's rectangle survives |
 | DLG12 | a framed dialog draws its body's styling | a bold and a faint body line | both SGR sequences reach the output |
+| DLG13 | a sheet is full width and bottom anchored | the ask form over a transcript | no box; every row `w`; the sheet starts at `h-bh` |
 | CNF01 | yes and no keys | `y`, `n`, `enter`, arrows | each works; default pre-selected |
 | CNF02 | countdown | `timeout_ms` 5000, fake clock | counts down; closes with the default at zero |
 | CNF03 | answer shape | | `{ok}` |
@@ -273,8 +274,8 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | FRD03 | multi select answer | | several ids |
 | FRD04 | free text | | text |
 | FRD05 | `Other` row | | free text entry; answer marked other |
-| FRD06 | note on an answer | `n` | note returned verbatim, including newlines and Unicode |
-| FRD07 | skip | `s` | `Skipped` true |
+| FRD06 | note on an answer | `ctrl+n` | note returned verbatim, including newlines and Unicode |
+| FRD07 | skip | the `Skip this question` row | `Skipped` true |
 | FRD08 | partial submit | some unanswered | allowed; the unanswered are skipped |
 | FRD09 | review lists everything | | answers, notes, `skipped` |
 | FRD10 | `esc` cancels the form | | `cancelled:true`, every question skipped |
@@ -286,6 +287,17 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | FRD16 | long prompt and option text | | wrapped; no overflow |
 | FRD17 | golden at three widths | | matches |
 | FRD18 | styling survives the frame | truecolor styles | the rendered form contains SGR |
+| FRD19 | height follows content | 100x40, three questions | no taller than body plus hint; no blank filler rows |
+| FRD20 | width invariant | 50, 80, 120, with and without a preview | every line is exactly `w` cells |
+| FRD21 | multi-select cursor | select one, move down | the view changes; cursor and `[x]` are visible on one row |
+| FRD22 | number hotkeys | `1`-`9` | picks or toggles without moving the cursor first |
+| FRD23 | ellipsis | an unbreakable description at 50 | clipped with `…`, never past the width |
+| FRD24 | the hint is whole | width 50 | wraps by whole items; every key is present |
+| FRD25 | skip is not a letter | `s` on a choice question, then the skip row | `s` does not skip; the row does |
+| FRD26 | tab strip states | answered, skipped, unvisited | `☑`, `⊘`, `☐`; Submit is reachable |
+| FRD27 | note key | `n`, then `ctrl+n` | `n` types; `ctrl+n` opens the note |
+| FRD28 | skip row on a text question | | visible; moving to it and Enter skips |
+| FRD29 | recommended suffix | a label ending `(Recommended)` | shown in the success colour |
 | DGS01 | settings save | arrow edits | enter returns both rows with the edited values |
 | DGS02 | settings typed digits | `12` | value 12 |
 | DGS03 | settings clamp | 999, many lefts | clamped to 50 and 1 |

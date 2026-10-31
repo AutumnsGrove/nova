@@ -162,3 +162,18 @@ func TestInput_INP05_WideChars(t *testing.T) {
 		t.Fatalf("cursor = %d, want 2 after one left", got)
 	}
 }
+
+func TestInput_INP06_Space(t *testing.T) {
+	d := NewInput(proto.UIRequest{Type: proto.FrameUIRequest, ID: "i"})
+	for _, r := range "two words" {
+		if r == ' ' {
+			d.HandleKey(spaceKey)
+			continue
+		}
+		d.HandleKey(runeKey(r))
+	}
+	r := d.HandleKey(enterKey)
+	if r.Value != "two words" {
+		t.Fatalf("value = %q, want the space typed", r.Value)
+	}
+}

@@ -270,6 +270,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | INP03 | paste with newlines | | joined with spaces |
 | INP04 | `esc` | | cancelled |
 | INP05 | wide characters | | cursor and widths correct |
+| INP06 | space | typed input | the space is inserted |
 | FRD01 | tabs per question plus Review | 3 questions | 4 tabs |
 | FRD02 | single select answer | | one id |
 | FRD03 | multi select answer | | several ids |

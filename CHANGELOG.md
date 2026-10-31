@@ -22,6 +22,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - A UI request from an extension reaches the client with an id, so a form, select, or input dialog
   can actually answer it. Before this, `ask` opened the form and then hung when it was submitted,
   because the TUI dropped an answer for an empty id (#55).
+- The generic text input dialog (`/todos`, `/plan`, extension `input` requests) accepts a typed
+  space; it had the same single-rune filter and dropped it (#54).
 - Space works in the ask form's text answer, its free-text row, and a note. The text buffers only
   accepted single-rune keystrokes, and Space arrives as `space`, so a multi-word answer could only be
   pasted (#54).

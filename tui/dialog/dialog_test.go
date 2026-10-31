@@ -29,6 +29,7 @@ var (
 	pgdownKey   = tea.KeyPressMsg{Code: tea.KeyPgDown}
 	spaceKey    = tea.KeyPressMsg{Code: tea.KeySpace}
 	shiftTabKey = tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+	ctrlNKey    = tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl}
 )
 
 // confirmReq builds a confirm request for tests.

@@ -42,6 +42,11 @@ type Dialog interface {
 // smallScreener lets a confirm keep working on a screen too small for a box.
 type smallScreener interface{ smallScreen() string }
 
+// sheet marks a dialog that draws its own full-width surface. Compose gives it
+// the whole width and anchors it to the bottom of the screen instead of
+// centring a box; its Size reports the rows the content needs.
+type sheet interface{ sheet() }
+
 // screen minimums below which the box layout gives way.
 const (
 	minScreenW = 30
@@ -134,10 +139,18 @@ func (o *Overlay) Compose(base string, w, h int, st styles.Styles) string {
 	}
 	bw := min(max(w*4/5, minScreenW), w)
 	bh := min(h*4/5, h)
-	bw, bh = top.Size(bw, bh)
+	_, fullWidth := top.(sheet)
+	if fullWidth {
+		bw, bh = top.Size(w, h)
+	} else {
+		bw, bh = top.Size(bw, bh)
+	}
 	bw, bh = min(bw, w), min(bh, h)
 	box := strings.Split(top.View(bw, bh, st), "\n")
 	ox, oy := (w-bw)/2, (h-bh)/2
+	if fullWidth {
+		ox, oy = 0, h-bh
+	}
 	for i := 0; i < bh && i < len(box); i++ {
 		y := oy + i
 		if y < 0 || y >= len(lines) {

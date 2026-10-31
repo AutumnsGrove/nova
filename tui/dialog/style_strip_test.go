@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/styles"
@@ -49,3 +50,38 @@ func TestForm_FRD18_StyleSurvivesTheFrame(t *testing.T) {
 }
 
 var _ = proto.FrameUIRequest
+
+// The form is a bottom sheet: full width, content height, no box.
+func TestDialog_DLG13_SheetPlacement(t *testing.T) {
+	st := truecolor()
+	base := st.Bold.Render("transcript stays here") + "\nsecond line"
+	o := NewOverlay()
+	d := NewForm(formReq(
+		q("Ambiguity", "Which approach?", "single", opt("x", "Fix now"), opt("y", "Defer")),
+		q("Explanations", "How much?", "text"),
+	))
+	o.Push(d)
+	out := o.Compose(base, 60, 24, st)
+	lines := strings.Split(out, "\n")
+	if len(lines) != 24 {
+		t.Fatalf("lines = %d, want 24", len(lines))
+	}
+	for i, l := range lines {
+		if got := ansi.StringWidth(l); got != 60 {
+			t.Fatalf("line %d width = %d: %q", i, got, l)
+		}
+	}
+	if strings.Contains(out, "┌") || strings.Contains(out, "└") {
+		t.Fatalf("the sheet drew a box:\n%s", out)
+	}
+	_, bh := d.Size(60, 24)
+	if bh >= 24 {
+		t.Fatalf("sheet height = %d, want content height", bh)
+	}
+	if !strings.Contains(lines[24-bh], "Questions") {
+		t.Fatalf("the sheet is not anchored to the bottom:\n%s", out)
+	}
+	if !strings.Contains(lines[0], "transcript stays here") {
+		t.Fatalf("the transcript above the sheet was lost:\n%s", out)
+	}
+}

@@ -4,6 +4,9 @@ package ui
 
 import (
 	"encoding/json"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/AutumnsGrove/nova/bundled/ask"
 	"github.com/AutumnsGrove/nova/bundled/plan"
@@ -13,6 +16,7 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/tui/dialog"
 	"github.com/AutumnsGrove/nova/tui/render"
+	"github.com/AutumnsGrove/nova/tui/sanitize"
 	"github.com/AutumnsGrove/nova/tui/styles"
 )
 
@@ -115,11 +119,41 @@ func (r *Registry) Bundled() {
 	r.Renderer("plan_submit", funcRenderer{header: func(c render.Call) string {
 		return "plan_submit: " + plan.Card(c.Live)
 	}})
-	r.Renderer("ask", funcRenderer{header: func(render.Call) string {
-		return "ask: " + ask.Card(0)
+	r.Renderer("ask", funcRenderer{header: func(c render.Call) string {
+		return "ask: " + ask.Card(questionLabels(details(c)))
 	}})
 	r.Dialog("todos", func(string, any) dialog.Dialog { return dialog.NewInput(inputRequest("Todos")) })
 	r.Dialog("plan", func(string, any) dialog.Dialog { return dialog.NewInput(inputRequest("Plan mode")) })
+}
+
+// questionLabels reads the question ids from an ask call's Details and turns
+// them into the short names the card shows. The ids come from the model, so
+// they are cleaned like every other line before they are drawn.
+func questionLabels(d map[string]any) []string {
+	raw, ok := d["questions"].([]any)
+	if !ok {
+		return nil
+	}
+	labels := make([]string, 0, len(raw))
+	for i, item := range raw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(sanitize.Line(str(m["id"])))
+		if name == "" {
+			name = "Q" + strconv.Itoa(i+1)
+		}
+		labels = append(labels, upperFirst(name))
+	}
+	return labels
+}
+
+// upperFirst capitalises an id for the card: "off-topic" becomes "Off-topic".
+func upperFirst(s string) string {
+	r := []rune(s)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
 }
 
 // inputRequest builds a minimal input request for a local command dialog.

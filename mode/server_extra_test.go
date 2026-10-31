@@ -435,3 +435,34 @@ func TestServer_SRV64_CompactionForgetsTheOldTokenCount(t *testing.T) {
 		t.Fatalf("lastUse.PromptTokens = %d after compaction, want it forgotten", got.PromptTokens)
 	}
 }
+
+// An extension's UI request carries no id of its own; the server must give it
+// one, or the client cannot answer it and the extension waits forever.
+func TestUI_SRV70_RequestGetsAnID(t *testing.T) {
+	s, _ := testServer(t)
+	c := NewPipe(s, "ui.form")
+	defer c.Close()
+	done := make(chan proto.UIResponse, 1)
+	go func() {
+		resp, _ := s.callUI(context.Background(), proto.UIRequest{Type: proto.FrameUIRequest, Method: "form", Title: "Questions"})
+		done <- resp
+	}()
+	var req proto.UIRequest
+	select {
+	case req = <-c.Requests():
+	case <-time.After(2 * time.Second):
+		t.Fatal("the request never reached the client")
+	}
+	if req.ID == "" {
+		t.Fatal("the request reached the client with no id")
+	}
+	c.Answer(proto.UIResponse{Type: proto.FrameUIResponse, ID: req.ID, OK: true, Answers: []proto.UIAnswer{{ID: "a", Value: "yes"}}})
+	select {
+	case resp := <-done:
+		if !resp.OK || len(resp.Answers) != 1 || resp.Answers[0].Value != "yes" {
+			t.Fatalf("response = %+v", resp)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("an answered request never returned")
+	}
+}

@@ -57,6 +57,12 @@ func (s *Server) allowSession(tool string) { s.sessionAllow.Store(tool, true) }
 // synchronously; a transport that answers with a separate ui_response frame
 // leaves the handler's response empty and AnswerUI delivers instead.
 func (s *Server) callUI(ctx context.Context, req proto.UIRequest) (proto.UIResponse, error) {
+	// An extension builds its request without an id because it only sees the
+	// answer. The client needs one to match its reply, so the server names the
+	// request here, for permission prompts and extension UI alike.
+	if req.ID == "" {
+		req.ID = s.newUIID()
+	}
 	ch := make(chan proto.UIResponse, 1)
 	s.uiMu.Lock()
 	s.uiPending[req.ID] = ch

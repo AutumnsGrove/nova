@@ -174,8 +174,9 @@ and shows up in the parent's next `usage`/`turn_end` and in `run_end`.
 ## UI requests
 
 When the server needs the user it sends a `ui_request` and waits for the matching
-`ui_response`. If the request has `timeout_ms` and nothing arrives, the server
-resolves it with the stated `default`. A client that cannot answer a method says so in
+`ui_response`. Every request carries a unique `id`: the server assigns one even when the caller
+(an extension, or the ask tool) did not, and the client must echo it. If the request has
+`timeout_ms` and nothing arrives, the server resolves it with the stated `default`. A client that cannot answer a method says so in
 `hello`, and the server will not send it.
 
 | Method | Fields | Answer |

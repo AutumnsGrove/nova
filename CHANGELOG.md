@@ -19,6 +19,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Dialogs draw the styling they already asked for, and opening one no longer flattens the colours of the
   transcript behind it. The clipping that every dialog line goes through was running the line through the
   untrusted-text sanitiser, which stripped the SGR sequences along with everything else (#54).
+- A UI request from an extension reaches the client with an id, so a form, select, or input dialog
+  can actually answer it. Before this, `ask` opened the form and then hung when it was submitted,
+  because the TUI dropped an answer for an empty id (#55).
 - The `ask` tool card reports the call's questions (`ask: 3 questions (Ambiguity, Explanations,
   Off-topic)`) instead of always `asked 0 question(s)`; while the tool is running, before any result
   details exist, it names them from the call's arguments (#54).

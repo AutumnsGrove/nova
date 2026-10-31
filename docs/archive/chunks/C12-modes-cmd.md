@@ -228,6 +228,7 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | SRV36 | `ui_response` for an unknown id | | ignored |
 | SRV43 | `ui_request` expiry | `timeout_ms` elapses | resolves to the default; `ui_expired` event with the id |
 | SRV44 | pipe capabilities | `NewPipe(s, "ui.confirm")` | the server sends only methods the client declared |
+| SRV70 | an extension's request is named | a `ui_request` with no id | it reaches the client with an id, and the answer returns to `callUI` |
 | SRV37 | `shutdown` mid-run | | run aborted; store closed; response ok |
 | SRV38 | `Close` twice | | nil |
 | SRV39 | provider error surfaces | server returns 401 | `provider_error`; `run_end(error)` |

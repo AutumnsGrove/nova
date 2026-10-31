@@ -6,6 +6,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
@@ -568,6 +571,49 @@ func TestForm_FRD31_SpaceInText(t *testing.T) {
 		d.HandleKey(enterKey) // save the note
 		d.HandleKey(enterKey) // select X
 		if got := submit(t, d)[0].Note; got != "a b" {
+			t.Fatalf("note = %q", got)
+		}
+	})
+}
+
+// shiftKey is a letter typed with shift held: the terminal reports the
+// unshifted code with the shifted text, so Keystroke is "shift+a" and Text is
+// "A". The text buffers must use the text.
+func shiftKey(r rune) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: unicode.ToLower(r), ShiftedCode: r, Text: string(r), Mod: tea.ModShift}
+}
+
+func TestForm_FRD32_ShiftedInput(t *testing.T) {
+	typeShifted := func(d Dialog, text string) {
+		for _, r := range text {
+			d.HandleKey(shiftKey(r))
+		}
+	}
+	t.Run("text answer", func(t *testing.T) {
+		d := NewForm(formReq(q("a", "Say", "text")))
+		typeShifted(d, "HELLO")
+		d.HandleKey(spaceKey)
+		typeShifted(d, "WORLD")
+		if got := submit(t, d)[0].Text; got != "HELLO WORLD" {
+			t.Fatalf("text = %q", got)
+		}
+	})
+	t.Run("first character of the free-text row", func(t *testing.T) {
+		d := NewForm(formReq(q("a", "Pick", "single", opt("x", "X"))))
+		d.HandleKey(downKey)  // Other
+		d.HandleKey(enterKey) // start typing
+		typeShifted(d, "Cap")
+		if got := submit(t, d)[0].Text; got != "Cap" {
+			t.Fatalf("other = %q", got)
+		}
+	})
+	t.Run("note", func(t *testing.T) {
+		d := NewForm(formReq(q("a", "Pick", "single", opt("x", "X"))))
+		d.HandleKey(ctrlNKey)
+		typeShifted(d, "Note")
+		d.HandleKey(enterKey)
+		d.HandleKey(enterKey)
+		if got := submit(t, d)[0].Note; got != "Note" {
 			t.Fatalf("note = %q", got)
 		}
 	})

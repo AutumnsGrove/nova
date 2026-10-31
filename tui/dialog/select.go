@@ -122,8 +122,8 @@ func (s *selectDialog) HandleKey(k tea.KeyPressMsg) Result {
 			s.cursor = 0
 		}
 	default:
-		if r := k.Keystroke(); len([]rune(r)) == 1 && r >= " " {
-			s.filter += r
+		if text := typed(k); text != "" {
+			s.filter += text
 			s.cursor = 0
 		}
 	}

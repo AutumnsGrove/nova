@@ -235,14 +235,14 @@ func (f *form) HandleKey(k tea.KeyPressMsg) Result {
 	case "backspace":
 		// Nothing to delete outside a text buffer.
 	default:
-		if r := k.Keystroke(); len([]rune(r)) == 1 && r >= " " {
-			if r[0] >= '1' && r[0] <= '9' && !st.textQuestion() {
-				if i := int(r[0] - '1'); i < len(st.opts) {
+		if text := typed(k); text != "" {
+			if len([]rune(text)) == 1 && text[0] >= '1' && text[0] <= '9' && !st.textQuestion() {
+				if i := int(text[0] - '1'); i < len(st.opts) {
 					f.pick(st, i)
 					return Result{}
 				}
 			}
-			f.typeRune(st, []rune(r)[0])
+			f.typeText(st, text)
 		}
 	}
 	return Result{}
@@ -263,13 +263,9 @@ func (f *form) textKey(st *qstate, k tea.KeyPressMsg) {
 		if len(st.text) > 0 {
 			st.text = st.text[:len(st.text)-1]
 		}
-	case "space":
-		// Space is the keystroke "space", not a rune, and here it is text:
-		// the multi-select toggle only applies outside a text buffer.
-		st.text = append(st.text, ' ')
 	default:
-		if r := k.Keystroke(); len([]rune(r)) == 1 && r >= " " {
-			st.text = append(st.text, []rune(r)...)
+		if text := typed(k); text != "" {
+			st.text = append(st.text, []rune(text)...)
 		}
 	}
 }
@@ -284,11 +280,9 @@ func (f *form) noteKey(k tea.KeyPressMsg) {
 		if len(st.note) > 0 {
 			st.note = st.note[:len(st.note)-1]
 		}
-	case "space":
-		st.note = append(st.note, ' ')
 	default:
-		if r := k.Keystroke(); len([]rune(r)) == 1 && r >= " " {
-			st.note = append(st.note, []rune(r)...)
+		if text := typed(k); text != "" {
+			st.note = append(st.note, []rune(text)...)
 		}
 	}
 }
@@ -339,17 +333,17 @@ func (f *form) skip(st *qstate) {
 	f.moveTab(1)
 }
 
-// typeRune starts free-text entry from anywhere on a choice question.
-func (f *form) typeRune(st *qstate, r rune) {
+// typeText starts free-text entry from anywhere on a choice question.
+func (f *form) typeText(st *qstate, text string) {
 	switch {
 	case st.textQuestion():
 		st.cursor = 0
-		st.text = append(st.text, r)
+		st.text = append(st.text, []rune(text)...)
 	case st.other >= 0:
 		st.cursor = st.other
 		st.free = true
 		st.skipped = false
-		st.text = append(st.text, r)
+		st.text = append(st.text, []rune(text)...)
 	}
 }
 

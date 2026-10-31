@@ -90,12 +90,9 @@ func (d *inputDialog) HandleKey(k tea.KeyPressMsg) Result {
 		d.cursor = 0
 	case "end":
 		d.cursor = len(d.buf)
-	case "space":
-		// Space is the keystroke "space", not a rune.
-		d.insert(" ")
 	default:
-		if r := k.Keystroke(); len([]rune(r)) == 1 && r >= " " {
-			d.insert(r)
+		if text := typed(k); text != "" {
+			d.insert(text)
 		}
 	}
 	return Result{}

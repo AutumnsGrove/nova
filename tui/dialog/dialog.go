@@ -222,6 +222,22 @@ func centerLine(s string, width int) string {
 	return strings.Repeat(" ", left) + s + strings.Repeat(" ", max(width-left-ansi.StringWidth(s), 0))
 }
 
+// typed is the text a key press produces, or "" for a key that only acts.
+// Bubble Tea reports a shifted letter as Code 'a' with Text "A" and Keystroke
+// "shift+a", and Space as the keystroke "space"; Text is the field that carries
+// what the user actually typed, running the keymap or the input method.
+func typed(k tea.KeyPressMsg) string {
+	if k.Text != "" {
+		if r := []rune(k.Text); r[0] >= ' ' {
+			return k.Text
+		}
+	}
+	if k.Keystroke() == "space" {
+		return " "
+	}
+	return ""
+}
+
 // frame draws a bordered box with a title in the top edge and a hint in the
 // bottom-left. body is clipped to the inner height.
 func frame(title string, body []string, hint string, w, h int, st styles.Styles) string {

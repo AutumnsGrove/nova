@@ -89,8 +89,8 @@ func (d *flowDialog) HandleKey(k tea.KeyPressMsg) Result {
 	case "ctrl+u":
 		d.input = nil
 	default:
-		if r := []rune(key); len(r) == 1 && r[0] >= ' ' {
-			d.input = append(d.input, r[0])
+		if text := typed(k); text != "" {
+			d.input = append(d.input, []rune(text)...)
 		}
 	}
 	return Result{}

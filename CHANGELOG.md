@@ -22,6 +22,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - A UI request from an extension reaches the client with an id, so a form, select, or input dialog
   can actually answer it. Before this, `ask` opened the form and then hung when it was submitted,
   because the TUI dropped an answer for an empty id (#55).
+- Capital letters and shifted symbols are typed in the ask form and in every text input dialog. The
+  buffers were reading `Keystroke`, which spells a shifted letter `shift+a`, so only lowercase (and
+  only pasting for anything else) worked. The model picker filter also accepts a space now (#54, #56).
 - The generic text input dialog (`/todos`, `/plan`, extension `input` requests) accepts a typed
   space; it had the same single-rune filter and dropped it (#54).
 - Space works in the ask form's text answer, its free-text row, and a note. The text buffers only

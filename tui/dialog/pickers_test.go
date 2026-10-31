@@ -211,3 +211,17 @@ func TestHelp_HLP01_ListsAndScrolls(t *testing.T) {
 		t.Fatal("pgdown did not scroll help")
 	}
 }
+
+func TestModels_MPK06_SpaceInFilter(t *testing.T) {
+	d := NewModelPicker([]ModelInfo{{ID: "a", Name: "Alpha Beta"}, {ID: "c", Name: "Gamma"}}, "")
+	for _, r := range "alpha beta" {
+		if r == ' ' {
+			d.HandleKey(spaceKey)
+			continue
+		}
+		d.HandleKey(runeKey(r))
+	}
+	if vis := d.(*modelPicker).visible(); len(vis) != 1 || vis[0].ID != "a" {
+		t.Fatalf("visible = %+v", vis)
+	}
+}

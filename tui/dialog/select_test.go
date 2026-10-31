@@ -177,3 +177,13 @@ func TestInput_INP06_Space(t *testing.T) {
 		t.Fatalf("value = %q, want the space typed", r.Value)
 	}
 }
+
+func TestInput_INP07_Shifted(t *testing.T) {
+	d := NewInput(proto.UIRequest{Type: proto.FrameUIRequest, ID: "i"})
+	d.HandleKey(shiftKey('H'))
+	d.HandleKey(runeKey('i'))
+	r := d.HandleKey(enterKey)
+	if r.Value != "Hi" {
+		t.Fatalf("value = %q", r.Value)
+	}
+}

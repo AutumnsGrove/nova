@@ -98,8 +98,8 @@ func (m *modelPicker) HandleKey(k tea.KeyPressMsg) Result {
 			m.cursor = 0
 		}
 	default:
-		if len([]rune(key)) == 1 && key >= " " {
-			m.filter += key
+		if text := typed(k); text != "" {
+			m.filter += text
 			m.cursor = 0
 		}
 	}

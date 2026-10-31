@@ -271,6 +271,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | INP04 | `esc` | | cancelled |
 | INP05 | wide characters | | cursor and widths correct |
 | INP06 | space | typed input | the space is inserted |
+| INP07 | shifted input | `H` then `i` | `Hi` |
 | FRD01 | tabs per question plus Review | 3 questions | 4 tabs |
 | FRD02 | single select answer | | one id |
 | FRD03 | multi select answer | | several ids |
@@ -302,6 +303,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | FRD29 | recommended suffix | a label ending `(Recommended)` | shown in the success colour |
 | FRD30 | the tab strip windows | 8 questions at width 50 | every line is `w`; the active tab and Submit are visible, with a `◀` marker |
 | FRD31 | space in every text buffer | a text answer, the free-text row, and a note | the space is typed; the multi-select toggle does not fire while typing |
+| FRD32 | shifted input | a capital in a text answer, the free-text row, and a note | the capital is typed, not dropped |
 | DGS01 | settings save | arrow edits | enter returns both rows with the edited values |
 | DGS02 | settings typed digits | `12` | value 12 |
 | DGS03 | settings clamp | 999, many lefts | clamped to 50 and 1 |
@@ -311,6 +313,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | MPK03 | choose | `enter` | `set_model` sent |
 | MPK04 | prices and windows formatted | | `128k`, `$0.27/M` style |
 | MPK05 | empty catalog | | message |
+| MPK06 | a space in the filter | `alpha beta` | the matching model remains |
 | SSL01 | list newest first | | order |
 | SSL02 | resume | `enter` | `session.resume` |
 | SSL03 | fork | `ctrl+f` | fork choice |

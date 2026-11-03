@@ -9,6 +9,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
 )
@@ -21,6 +22,7 @@ func FuzzHostFrames(f *testing.F) {
 	f.Add("append_entry", []byte(`{"kind":"k","data":{},"keep":true}`))
 	f.Add("complete", []byte(`{"id":"m","request":{}}`))
 	f.Add("decide", []byte(`{"id":"d","request":{"model":"x","state":"s","questions":{"q":{"kind":"noul"}}}}`))
+	f.Add("embed", []byte(`{"id":"e","request":{"model":"x","input":["a"]}}`))
 	f.Add("tool_result", []byte(`{"id":"t"}`))
 	f.Add("log", []byte(`{"level":"info","text":"hi"}`))
 	f.Add("", []byte(`not json`))
@@ -31,10 +33,11 @@ func FuzzHostFrames(f *testing.F) {
 			UI:       &fakeUI{},
 			Complete: func(context.Context, provider.Request) (*provider.Response, error) { return nil, nil },
 			Decide:   func(context.Context, decide.Request) (*decide.Response, error) { return nil, nil },
+			Embed:    func(context.Context, embed.Request) (*embed.Response, error) { return nil, nil },
 		})
 		inst := newInstance(h, &Manifest{
 			Name:         "fuzz",
-			Capabilities: []string{"tools", "ui:confirm", "session:append_entry", "model:complete", "model:decide"},
+			Capabilities: []string{"tools", "ui:confirm", "session:append_entry", "model:complete", "model:decide", "model:embed"},
 		})
 		// The peer's stdout is empty, so the connection closes at once, and its
 		// stdin is discarded: replies are written but never read.

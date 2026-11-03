@@ -126,6 +126,11 @@ func main() {
 					"questions": map[string]any{"q": map[string]any{"kind": "noul"}},
 				}})
 			}
+			for i := 0; i < envInt("ECHO_EMBED_COUNT", 0); i++ {
+				send(map[string]any{"type": "embed", "id": "e" + strconv.Itoa(i), "request": map[string]any{
+					"model": "x", "input": []string{"a"},
+				}})
+			}
 			if env("ECHO_BIG_FRAME") {
 				sendRaw(strings.Repeat("a", 17<<20))
 			}

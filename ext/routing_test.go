@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
@@ -465,6 +466,78 @@ func TestHost_HST30_DecideCapResetsEachRun(t *testing.T) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if got := h.decide["echo"]; got != 0 {
+		t.Fatalf("count after run_start = %d, want 0", got)
+	}
+}
+
+// TestHost_EMB16_Embed performs one embeddings call and returns its frame.
+func TestHost_EMB16_Embed(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	var calls atomic.Int32
+	dir := rawEchoDir(t, "echo", "capabilities: [model:embed]\n")
+	startHost(t, []string{dir}, HostOptions{
+		Env: envWith("ECHO_EMBED_COUNT=1", "ECHO_TRACE="+trace),
+		Embed: func(context.Context, embed.Request) (*embed.Response, error) {
+			calls.Add(1)
+			return &embed.Response{Vectors: [][]float32{{1, 2, 3}}, Model: "vendor/model", Dims: 3}, nil
+		},
+	})
+	waitContains(t, trace, "embed_result", 3*time.Second)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("Embed called %d times, want 1", n)
+	}
+}
+
+// TestHost_EMB16_Cap refuses the call past the per-run limit as an error frame,
+// not a crash.
+func TestHost_EMB16_Cap(t *testing.T) {
+	var calls atomic.Int32
+	trace := t.TempDir() + "/trace"
+	dir := rawEchoDir(t, "echo", "capabilities: [model:embed]\n")
+	startHost(t, []string{dir}, HostOptions{
+		EmbedMax: 1,
+		Env:      envWith("ECHO_EMBED_COUNT=2", "ECHO_TRACE="+trace),
+		Embed: func(context.Context, embed.Request) (*embed.Response, error) {
+			calls.Add(1)
+			return &embed.Response{Dims: 1, Vectors: [][]float32{{1}}}, nil
+		},
+	})
+	waitContains(t, trace, "error:e1", 3*time.Second)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("Embed called %d times, want 1", n)
+	}
+}
+
+// TestHost_EMB16_NeedsCapability refuses a call without model:embed.
+func TestHost_EMB16_NeedsCapability(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	var calls atomic.Int32
+	dir := rawEchoDir(t, "echo", "")
+	startHost(t, []string{dir}, HostOptions{
+		Env: envWith("ECHO_EMBED_COUNT=1", "ECHO_TRACE="+trace),
+		Embed: func(context.Context, embed.Request) (*embed.Response, error) {
+			calls.Add(1)
+			return &embed.Response{}, nil
+		},
+	})
+	waitContains(t, trace, "error", 3*time.Second)
+	if n := calls.Load(); n != 0 {
+		t.Fatalf("Embed called %d times without the capability", n)
+	}
+}
+
+// TestHost_EMB16_CapResetsEachRun keeps the cap per run, like the others.
+func TestHost_EMB16_CapResetsEachRun(t *testing.T) {
+	h := NewHost(HostOptions{})
+	h.mu.Lock()
+	h.embed["echo"] = 5
+	h.mu.Unlock()
+
+	h.Observe(proto.Event{Type: proto.EventRunStart})
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if got := h.embed["echo"]; got != 0 {
 		t.Fatalf("count after run_start = %d, want 0", got)
 	}
 }

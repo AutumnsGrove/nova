@@ -244,6 +244,33 @@ func TestSDK_SDK09b_Decide(t *testing.T) {
 	}
 }
 
+func TestSDK_EMB16_Embed(t *testing.T) {
+	p := startSDK(t, func(h *Host) error {
+		h.Tool(Tool{Name: "e"}, func(c *Call) (Result, error) {
+			raw, err := h.Embed(c.Context(), map[string]any{"model": "x", "input": []string{"a"}})
+			if err != nil {
+				return Result{}, err
+			}
+			return Text("%s", raw), nil
+		})
+		return nil
+	})
+	p.send(map[string]any{"type": "tool_call", "id": "t1", "name": "e"})
+	frame := p.recv()
+	if frame["type"] != "embed" {
+		t.Fatalf("frame = %+v", frame)
+	}
+	request, _ := frame["request"].(map[string]any)
+	if request["model"] != "x" {
+		t.Fatalf("request = %+v", request)
+	}
+	id, _ := frame["id"].(string)
+	p.send(map[string]any{"type": "embed_result", "id": id, "model": "x", "dims": 2, "vectors": [][]float32{{1, 2}}})
+	if got := p.recv(); got["type"] != "tool_result" {
+		t.Fatalf("result = %+v", got)
+	}
+}
+
 func TestSDK_SDK10_CleanExit(t *testing.T) {
 	p := startSDK(t, func(*Host) error { return nil })
 	p.send(map[string]any{"type": "shutdown"})

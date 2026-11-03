@@ -136,3 +136,22 @@ func TestProvider_PRV24_ModelKeepsOutputModalities(t *testing.T) {
 		t.Errorf("registered model lost its output modalities: %+v", got)
 	}
 }
+
+func TestProvider_EMB18_SupportsEmbeddings(t *testing.T) {
+	cases := []struct {
+		name string
+		out  []string
+		want bool
+	}{
+		{"nil is a chat model", nil, false},
+		{"text only", []string{"text"}, false},
+		{"embeddings only", []string{"embeddings"}, true},
+		{"text and embeddings", []string{"text", "embeddings"}, true},
+		{"decisions only", []string{"decisions"}, false},
+	}
+	for _, tc := range cases {
+		if got := (Model{OutputModalities: tc.out}).SupportsEmbeddings(); got != tc.want {
+			t.Errorf("%s: SupportsEmbeddings() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

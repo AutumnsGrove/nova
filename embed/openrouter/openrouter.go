@@ -11,6 +11,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/embed/openai"
@@ -59,7 +60,7 @@ func New(cfg Config) *Client {
 	}
 	client := cfg.HTTPClient
 	if client == nil {
-		client = &http.Client{}
+		client = &http.Client{Timeout: 90 * time.Second}
 	}
 	embedder := openai.New(openai.Config{
 		APIKey:     cfg.APIKey,

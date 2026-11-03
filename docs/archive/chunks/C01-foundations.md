@@ -2,7 +2,7 @@
 chunk: C01
 title: "Message, provider contract, testkit"
 packages: [./message, ./provider, ./testkit, ./media]
-budgets: { ./message: 250, ./provider: 500, ./testkit: 1200, ./media: 320, ./roles: 200, ./decide: 400, ./decide/openrouter: 400 }
+budgets: { ./message: 250, ./provider: 500, ./testkit: 1200, ./media: 320, ./roles: 200, ./decide: 400, ./decide/openrouter: 400, ./embed: 260, ./embed/openai: 360, ./embed/ollama: 180, ./embed/openrouter: 220 }
 depends: [C00]
 ---
 

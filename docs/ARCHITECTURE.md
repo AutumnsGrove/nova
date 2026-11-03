@@ -48,6 +48,10 @@ nova/
     openrouter/   preset: routing options, headers, usage       ≤ 300
   roles/          role table, fallback chain, per-attempt timeout ≤ 200
   decide/         decision-model contract                      ≤ 400
+  embed/          embeddings contract, batching, role table   ≤ 260
+    openai/       OpenAI-compatible /embeddings                ≤ 360
+    ollama/       local /api/embed                              ≤ 180
+    openrouter/   preset: embeddings and live roster            ≤ 220
     openrouter/   Decisions API and System One client           ≤ 400
   auth/           OAuth PKCE login, key store                   ≤ 500
   tool/           Tool contract, registry, schema validation    ≤ 660
@@ -111,6 +115,9 @@ message ← provider ← roles ← decide ← tool ← proto ← agent ← mode 
   oriented, resized, and bounded.
 - `proc` imports nothing. It is the one place a command is put in its own process
   group and signalled, shared by `tools/bash` and `ext`.
+- `embed` imports `provider` and `roles`; its adapters import only `embed`, so a
+  dialect never needs the harness. `embed` is the embeddings counterpart of
+  `decide`: a contract, wire adapters, and a role table.
 - `provider` imports `message`. `roles` imports `provider`; it owns the role table,
   the alias rule, the fallback order, and the per-attempt timeout so every primitive
   shares one resolver. `decide` imports `roles`. `tool` imports `message`,

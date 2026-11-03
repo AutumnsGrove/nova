@@ -46,7 +46,8 @@ nova/
     ssestream/    shared POST + SSE transport, timeouts         ≤ 420
     opencodego/   preset: catalog, endpoint routing             ≤ 560
     openrouter/   preset: routing options, headers, usage       ≤ 300
-  decide/         decision-model contract and role resolver     ≤ 400
+  roles/          role table, fallback chain, per-attempt timeout ≤ 200
+  decide/         decision-model contract                      ≤ 400
     openrouter/   Decisions API and System One client           ≤ 400
   auth/           OAuth PKCE login, key store                   ≤ 500
   tool/           Tool contract, registry, schema validation    ≤ 660
@@ -99,7 +100,7 @@ Pi's agent core is about 2,500 lines; Crush's UI alone is about 44,000.
 ### Layer rules
 
 ```
-message ← provider ← decide ← tool ← proto ← agent ← mode ← cmd
+message ← provider ← roles ← decide ← tool ← proto ← agent ← mode ← cmd
    ▲         ▲         ▲        ▲              ▲
    │         │         │        │              └─ permission, usage, compaction, session
    └─────────┴─────────┴────────┴──── auth, config, ext (beside agent; never import tui)
@@ -110,8 +111,10 @@ message ← provider ← decide ← tool ← proto ← agent ← mode ← cmd
   oriented, resized, and bounded.
 - `proc` imports nothing. It is the one place a command is put in its own process
   group and signalled, shared by `tools/bash` and `ext`.
-- `provider` imports `message`. `decide` imports `provider`. `tool` imports
-  `message`, `provider`, and `decide`.
+- `provider` imports `message`. `roles` imports `provider`; it owns the role table,
+  the alias rule, the fallback order, and the per-attempt timeout so every primitive
+  shares one resolver. `decide` imports `roles`. `tool` imports `message`,
+  `provider`, and `decide`.
 - `proto` imports `message` and `provider` and nothing above them.
 - `permission` imports `tool`. `usage` imports `provider` and `session`.
 - `tools/*` import `message`, `provider`, `tool`, and (for the shared glob engine)

@@ -139,7 +139,7 @@ func (t *Table) Do(ctx context.Context, name string, attempt func(ctx context.Co
 	var firstErr error
 	var usage provider.Usage
 	for _, model := range chain.Models {
-		u, err := t.attempt(ctx, model, chain.Timeout, attempt)
+		u, err := t.Attempt(ctx, model, chain.Timeout, attempt)
 		usage.Add(u)
 		if err == nil {
 			return usage, nil
@@ -157,6 +157,16 @@ func (t *Table) Do(ctx context.Context, name string, attempt func(ctx context.Co
 		firstErr = fmt.Errorf("%s: no model resolved", t.subsystem)
 	}
 	return usage, firstErr
+}
+
+// Attempt runs one model under a per-attempt timeout. It is the single-model
+// half of Do, for a caller that needs its own stop rule between attempts (the
+// embeddings decorator must not fall back after a dimension mismatch).
+func (t *Table) Attempt(ctx context.Context, model string, timeout time.Duration, attempt func(ctx context.Context, model string) (provider.Usage, error)) (provider.Usage, error) {
+	if attempt == nil {
+		return provider.Usage{}, fmt.Errorf("%s: no attempt function", t.subsystem)
+	}
+	return t.attempt(ctx, model, timeout, attempt)
 }
 
 // checkModel refuses an alias unless the caller explicitly allowed one.

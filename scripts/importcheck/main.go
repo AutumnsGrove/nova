@@ -62,6 +62,7 @@ var layerAllowed = map[string][]string{
 	"provider":   {"message"},
 	"roles":      {"provider"},
 	"decide":     {"provider", "roles"},
+	"embed":      {"provider", "roles"},
 	"tool":       {"message", "provider", "decide"},
 	"tools":      {"message", "provider", "tool", "permission", "media", "proc"},
 	"proto":      {"message", "provider", "decide"},

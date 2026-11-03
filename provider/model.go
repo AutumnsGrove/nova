@@ -54,6 +54,13 @@ func (m Model) SupportsDecisions() bool {
 	return slices.Contains(m.OutputModalities, "decisions")
 }
 
+// SupportsEmbeddings reports whether the model is an embedding model. The live
+// roster marks one with the "embeddings" output modality; a model with no
+// modalities is a chat model, so this is false for anything Nova does not know.
+func (m Model) SupportsEmbeddings() bool {
+	return slices.Contains(m.OutputModalities, "embeddings")
+}
+
 var (
 	modelMu sync.RWMutex
 	models  = map[string]Model{}

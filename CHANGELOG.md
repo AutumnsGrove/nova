@@ -52,6 +52,14 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
   the provider (#43).
 
 ### Added
+- An embeddings primitive, `embed`, with a role table on the shared resolver: `embed.Embedder` (text in,
+  vectors plus cost and provenance out), OpenAI-compatible and Ollama adapters that batch and remap by
+  index, an OpenRouter preset with the live embeddings roster, and a `embed.Roles` decorator that refuses
+  a fallback whose dimensions disagree instead of corrupting a stored index. It reaches tools
+  (`tool.Context.Embed`), the loop (`agent.Config.Embed`), print/json/rpc/serve (the `embed` command),
+  extensions (`model:embed`, capped by `extensions.embed_max_per_run`), and the TUI (`/embed`). There is
+  no vector store (#49).
+- The role resolver is a shared package, `roles`; `decide.Roles` delegates to it unchanged (#48).
 - Six gaps found by Polaris's adoption (nova#22), each small and opt-in or additive: `provider.Error.Body`
   keeps the scrubbed, bounded raw response body of a failed request (#40); `provider.Request.ParallelToolCalls`
   sends `parallel_tool_calls` on a chat-completions request that has tools (#41);

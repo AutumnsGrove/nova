@@ -37,6 +37,7 @@ gap in the protocol, to be filed and closed, not a permanent privilege.
 | Keep state in the session | `session:append_entry` | `append_entry` |
 | Call the model | `model:complete` | `complete` |
 | Call a decision model | `model:decide` | `decide` |
+| Embed text | `model:embed` | `embed` |
 | Add a model provider | `providers` | `register.providers` |
 | Add an MCP server | `mcp` | `register.mcp` |
 

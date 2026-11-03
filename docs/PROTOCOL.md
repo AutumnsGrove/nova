@@ -73,6 +73,7 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 | `set_tools` | `active: []string` | replace the active built-in tools. An unknown or repeated name is `bad_request` and changes nothing |
 | `compact` | `instructions?` | run compaction now |
 | `decide` | `decision` | one decision-model call. `decision` is `{model, state, questions}`, where a question is `{kind, instructions, criteria?, levels?}` and `kind` is `choice`, `noul`, or `score` (`levels` is the ordered set for `score`). Answers come back as `{answers, usage, model}`. A malformed request is `bad_request`; a role or provider failure is `provider_error`. It blocks until the model answers, so it is not a run and emits no run events |
+| `embed` | `embedding` | one embeddings call. `embedding` is `{model, input, truncate?}`, where `input` is the text batch and `truncate` embeds a prefix of an over-long input instead of refusing it. Answers come back as `{vectors, model, dims, usage}`, with the vectors in input order. A malformed request is `bad_request`; a role or provider failure is `provider_error`. It blocks until the provider answers, so it is not a run and emits no run events |
 | `session.new` | | start a fresh session file; answers `{id, path}`. Refused with `busy` during a run; forgets the previous conversation's token counts |
 | `session.resume` | `session` | open an existing session by id or path; answers `{id, path}`. `busy` during a run; forgets the token counts |
 | `session.fork` | `entry?` | copy the branch ending at `entry` (default: the active leaf) into a new session. `busy` during a run; forgets the token counts |
@@ -244,6 +245,8 @@ ext  → host  {"type":"complete","id":"m1","request":{…}}   // nested model c
 host → ext   {"type":"complete_result","id":"m1","message":{…},"usage":{…}}
 ext  → host  {"type":"decide","id":"d1","request":{…}}   // decision-model call
 host → ext   {"type":"decide_result","id":"d1","answers":{…},"usage":{…},"model":"…"}
+ext  → host  {"type":"embed","id":"e1","request":{…}}   // embeddings call
+host → ext   {"type":"embed_result","id":"e1","vectors":[[…]],"dims":1024,"usage":{…},"model":"…"}
 ext  → host  {"type":"log","level":"info","text":"…"}
 host → ext   {"type":"shutdown"}
 ```
@@ -264,12 +267,15 @@ Rules:
   must be an object schema, and an extension may register at most 128 tools and
   128 commands. A tool that fails a check is refused with `bad_request` and the
   extension's other registrations proceed.
-- A `ui_request` that needs an answer, a `complete`, and a `decide` are served on their own, so
+- A `ui_request` that needs an answer, a `complete`, a `decide`, and an `embed` are served on their own, so
   a slow answer does not delay the extension's other frames. At most eight such
   requests per extension may be in flight; more are refused with `busy`.
 - A `decide` frame needs the `model:decide` capability and is capped by
   `extensions.decide_max_per_run` (default 20) per extension per run. A malformed
   request is refused with `bad_request` on the frame's `id`.
+- An `embed` frame needs the `model:embed` capability and is capped by
+  `extensions.embed_max_per_run` (default 20) per extension per run. A refused
+  call past the cap is an `error` frame on its `id`, not a crash.
 - `append_entry` data is stored in the session and replayed to the extension on
   `init` after a reload, in order, so it can rebuild its state.
 - If the extension process exits, the host unregisters its tools, emits

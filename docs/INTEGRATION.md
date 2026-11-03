@@ -170,6 +170,57 @@ subprocess extension declares `model:decide` and calls `sdk.Host.Decide` (the
 carries the same request; `/decide` shows the configured roles and
 `/decide models` reads the live roster.
 
+## Embedding models
+
+Embeddings turn text into vectors without a generation round trip, so they use
+their own small contract rather than a tool call on the chat provider. A role
+hides the vendor and pins the dimension count, and a fallback that answers in
+another vector space is refused rather than stored.
+
+```yaml
+embed:
+  allow_aliases: false          # -latest / ~ ids are refused by default
+  roles:
+    index:
+      model: perplexity/pplx-embed-v1-0.6b
+      fallback: perplexity/pplx-embed-v1-4b
+      timeout_ms: 5000
+      dims: 1024                # a different answer is a typed error, not a swap
+```
+
+```go
+client := embedor.New(embedor.Config{
+    APIKeyFunc: func(ctx context.Context) (string, error) { return myKey(ctx) },
+})
+embedder := embed.NewRoles(embed.RolesConfig{
+    Embedder: client,
+    Roles: map[string]embed.Role{
+        "index": {Model: "perplexity/pplx-embed-v1-0.6b", Fallback: "perplexity/pplx-embed-v1-4b", Timeout: 5 * time.Second, Dims: 1024},
+    },
+})
+
+cfg := agent.Config{
+    // ...
+    Embed: embedder.Embed,
+}
+
+// in a tool:
+resp, err := tctx.Embed(ctx, embed.Request{Model: "index", Input: []string{"one", "two"}})
+if err == nil {
+    tctx.AddUsage(resp.Usage) // counts in the run's totals
+    _ = resp.Vectors        // in input order, resp.Dims components each
+}
+```
+
+One `Embed` call carries up to `embed.MaxBatch` inputs; the adapter chunks a
+larger slice and never reorders, and one failed chunk discards the whole call.
+`embed/openai` serves OpenAI, OpenRouter and any compatible gateway;
+`embed/ollama` serves a local model and reports no cost. `embed.List` reads the
+live roster. A bundled extension gets `Env.Embed`; a subprocess extension
+declares `model:embed` and calls `sdk.Host.Embed` (the `embed` frame). Print,
+serve, and rpc clients use the `embed` command, and `/embed` shows the configured
+roles.
+
 ## ivy — "Ask Ivy"
 
 Ivy is the best first adopter: greenfield loop, three read-only tools, and a

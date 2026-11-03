@@ -66,8 +66,8 @@ nova/
   session/        JSONL tree store, branches, custom entries    ≤ 900
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
-  config/         YAML config, trust, context files, skills     ≤ 1460
-  mode/           server core, print, json, rpc                 ≤ 2640
+  config/         YAML config, trust, context files, skills     ≤ 1540
+  mode/           server core, print, json, rpc                 ≤ 2800
     attach/       protocol attachments to content parts         ≤ 160
     serve/        the protocol over HTTP and SSE                ≤ 440
     action/       the GitHub review action                      ≤ 750
@@ -407,6 +407,23 @@ no decision model is added to the static chat catalog. The `decide` protocol
 command carries one request, `/decide` and `/decide models` show the role table
 and the live roster, and a subprocess extension with `model:decide` calls it
 through the `decide` frame, capped by `extensions.decide_max_per_run`.
+
+### Embeddings
+
+`embed.Embedder` is the embeddings counterpart: text in, vectors out, with the
+call's cost and provenance. `embed/openai` speaks the OpenAI-compatible
+`/embeddings` shape for OpenAI, OpenRouter and any gateway; `embed/ollama` speaks
+a local `/api/embed`; `embed/openrouter` is the preset and the live roster
+(`output_modalities=embeddings`, because the unfiltered list omits embedding
+models). Batching lives in the adapter: one call carries up to `embed.MaxBatch`
+(128) inputs and maps the response by its index, refusing a missing, duplicate,
+or out-of-range one. `embed.Roles` puts the role table from `roles` under a
+dimension count: a response whose `Dims` disagree with the role is a typed error
+and stops the chain, because a fallback in another vector space would corrupt a
+stored index. Truncating an over-long input is an explicit opt-in, never silent.
+There is no store, no index and no chunking here; the caller owns its data plane.
+`tool.Context.Embed`, `agent.Config.Embed`, the `embed` protocol command,
+`/embed`, and the `model:embed` extension frame are the same seams `decide` has.
 
 ## 9. Configuration and resources
 

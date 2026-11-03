@@ -65,6 +65,8 @@ type outFrame struct {
 	Message      any               `json:"message,omitempty"`
 	Usage        any               `json:"usage,omitempty"`
 	Answers      any               `json:"answers,omitempty"`
+	Vectors      any               `json:"vectors,omitempty"`
+	Dims         int               `json:"dims,omitempty"`
 	Model        string            `json:"model,omitempty"`
 	Error        *proto.Error      `json:"error,omitempty"`
 }

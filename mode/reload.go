@@ -161,6 +161,12 @@ func (s *Server) applyConfig(fresh *config.Config) (modelChanged bool, err error
 	if s.opt.Catalog == nil {
 		s.catalog = buildDecisionCatalog(fresh, s.home)
 	}
+	if s.opt.Embedder == nil {
+		s.embedder = buildEmbedder(fresh, s.home)
+	}
+	if s.opt.EmbedCatalog == nil {
+		s.embedCatalog = buildEmbeddingCatalog(fresh, s.home)
+	}
 	s.loaded = file
 	s.model, s.think, s.limit = modelSlug(fresh.Model), fresh.Thinking, fresh.ContextLimit
 	s.policy = fresh.Permissions

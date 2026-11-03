@@ -19,6 +19,7 @@ import (
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/diag"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
@@ -68,14 +69,19 @@ type Options struct {
 	// build one (the normal server); a test or embedder can inject one.
 	Decider decide.Decider
 	// Catalog overrides the live decision-model roster. nil means build one.
-	Catalog   decide.Catalog
-	Session   string // path to open or create; "" means a new default
-	NoSession bool   // keep the transcript in memory only
-	Clock     Clock
-	Version   string
-	Mode      string   // tui | print | json | rpc | serve, for extensions
-	Tools     []string // explicit active tool set; nil means use the config
-	NoTools   bool     // register no tools at all
+	Catalog decide.Catalog
+	// Embedder overrides the embeddings client built from the config. nil means
+	// build one (the normal server); a test or embedder can inject one.
+	Embedder embed.Embedder
+	// EmbedCatalog overrides the live embeddings roster. nil means build one.
+	EmbedCatalog embed.Catalog
+	Session      string // path to open or create; "" means a new default
+	NoSession    bool   // keep the transcript in memory only
+	Clock        Clock
+	Version      string
+	Mode         string   // tui | print | json | rpc | serve, for extensions
+	Tools        []string // explicit active tool set; nil means use the config
+	NoTools      bool     // register no tools at all
 
 	// ExtraTools are added to the tool pool before the active set is resolved,
 	// so a caller (the GitHub Action) can register mode-specific tools. A
@@ -100,20 +106,22 @@ type Server struct {
 	cwd, home string
 	clock     Clock
 
-	prov      provider.Provider
-	decider   decide.Decider
-	catalog   decide.Catalog
-	usesAuth  bool
-	tools     *tool.Registry
-	pool      map[string]tool.Tool
-	active    []string
-	policy    permission.Policy
-	agent     *agent.Agent
-	store     *session.Store
-	compactor *compaction.Compactor
-	system    string
-	ext       *ext.Host
-	ledger    *usage.Ledger
+	prov         provider.Provider
+	decider      decide.Decider
+	catalog      decide.Catalog
+	embedder     embed.Embedder
+	embedCatalog embed.Catalog
+	usesAuth     bool
+	tools        *tool.Registry
+	pool         map[string]tool.Tool
+	active       []string
+	policy       permission.Policy
+	agent        *agent.Agent
+	store        *session.Store
+	compactor    *compaction.Compactor
+	system       string
+	ext          *ext.Host
+	ledger       *usage.Ledger
 
 	// loaded is what the last config load read, to tell it from a runtime override.
 	loaded knobs
@@ -224,6 +232,14 @@ func New(opt Options) (*Server, error) {
 	if s.catalog == nil {
 		s.catalog = buildDecisionCatalog(cfg, home)
 	}
+	s.embedder = opt.Embedder
+	if s.embedder == nil {
+		s.embedder = buildEmbedder(cfg, home)
+	}
+	s.embedCatalog = opt.EmbedCatalog
+	if s.embedCatalog == nil {
+		s.embedCatalog = buildEmbeddingCatalog(cfg, home)
+	}
 	tools, pool, err := buildTools(cfg)
 	if err != nil {
 		return nil, err
@@ -296,6 +312,7 @@ func New(opt Options) (*Server, error) {
 		OnMessage:     s.onMessage,
 		Complete:      s.complete,
 		Decide:        s.decideCall,
+		Embed:         s.embedCall,
 		Hooks: agent.Hooks{
 			BeforeProviderRequest: func(ctx context.Context, req *provider.Request) {
 				s.beforeProviderRequest(ctx, req)

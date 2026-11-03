@@ -45,6 +45,7 @@ type Config struct {
 	Subagent     SubagentConfig    `yaml:"subagent"`
 	Display      DisplayConfig     `yaml:"display"`
 	Decide       DecideConfig      `yaml:"decide"`
+	Embed        EmbedConfig       `yaml:"embed"`
 }
 
 // DisplayConfig holds the TUI's rendering preferences. Both line counts are
@@ -103,6 +104,26 @@ type DecideRole struct {
 	TimeoutMS int    `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
 }
 
+// EmbedConfig maps application roles to embedding models. A role such as
+// "index" hides the vendor and pins the dimension count, so a stored index
+// cannot be corrupted by a fallback that answers in another vector space.
+type EmbedConfig struct {
+	// AllowAliases permits ids that end in "-latest" or start with "~". Off by
+	// default, and stricter than decisions: an alias can move to a model with
+	// different dimensions without anything in the request naming it.
+	AllowAliases bool                 `yaml:"allow_aliases"`
+	Roles        map[string]EmbedRole `yaml:"roles"`
+}
+
+// EmbedRole is one configured role. Dims is the component count the role's
+// vectors must have; 0 means unset.
+type EmbedRole struct {
+	Model     string `yaml:"model"`
+	Fallback  string `yaml:"fallback"`
+	TimeoutMS int    `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
+	Dims      int    `yaml:"dims"`
+}
+
 // ProviderConfig holds per-provider settings.
 type ProviderConfig struct {
 	OpenRouter OpenRouterConfig `yaml:"openrouter"`
@@ -149,6 +170,7 @@ type ExtensionsConfig struct {
 	PassEnv           []string `yaml:"pass_env"`             // variables explicitly passed through
 	CompleteMaxPerRun int      `yaml:"complete_max_per_run"` // default 20
 	DecideMaxPerRun   int      `yaml:"decide_max_per_run"`   // default 20
+	EmbedMaxPerRun    int      `yaml:"embed_max_per_run"`    // default 20
 }
 
 // HookConfig is one declarative hook.
@@ -195,7 +217,7 @@ func Defaults() Config {
 	enabled := true
 	return Config{
 		Compaction: CompactionConfig{Enabled: &enabled},
-		Extensions: ExtensionsConfig{CompleteMaxPerRun: 20, DecideMaxPerRun: 20},
+		Extensions: ExtensionsConfig{CompleteMaxPerRun: 20, DecideMaxPerRun: 20, EmbedMaxPerRun: 20},
 		Retry:      RetryConfig{Max: 3, BaseMS: 500, CapMS: 30000},
 		Display:    DisplayConfig{ThinkingLines: 8, ToolLines: 6, ShowImages: true, ImageWidthCells: 60},
 	}
@@ -427,6 +449,7 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 	nonNegative(&cfg.Tools.Bash.MaxOutputBytes, "tools.bash.max_output_bytes", warnings)
 	nonNegative(&cfg.Extensions.CompleteMaxPerRun, "extensions.complete_max_per_run", warnings)
 	nonNegative(&cfg.Extensions.DecideMaxPerRun, "extensions.decide_max_per_run", warnings)
+	nonNegative(&cfg.Extensions.EmbedMaxPerRun, "extensions.embed_max_per_run", warnings)
 	nonNegative(&cfg.Compaction.Reserve, "compaction.reserve", warnings)
 	nonNegative(&cfg.Compaction.KeepRecent, "compaction.keep_recent", warnings)
 	nonNegative(&cfg.Retry.Max, "retry.max", warnings)
@@ -436,6 +459,7 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 	displayLines(&cfg.Display.ToolLines, Defaults().Display.ToolLines, "display.tool_lines", warnings)
 	displayCells(&cfg.Display.ImageWidthCells, Defaults().Display.ImageWidthCells, "display.image_width_cells", warnings)
 	normaliseDecide(cfg, warnings)
+	normaliseEmbed(cfg, warnings)
 	if err := cfg.Permissions.Validate(); err != nil {
 		*warnings = append(*warnings, Warning{Source: "config", Message: "invalid permissions: " + err.Error()})
 		cfg.Permissions = Defaults().Permissions
@@ -452,6 +476,20 @@ func normaliseDecide(cfg *Config, warnings *[]Warning) {
 			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("decide role %q has no model", name)})
 		}
 		cfg.Decide.Roles[name] = role
+	}
+}
+
+// normaliseEmbed clamps a negative timeout or dimension count and names a role
+// with no model at load time, so a typo is visible before the first call.
+func normaliseEmbed(cfg *Config, warnings *[]Warning) {
+	for _, name := range slices.Sorted(maps.Keys(cfg.Embed.Roles)) {
+		role := cfg.Embed.Roles[name]
+		nonNegative(&role.TimeoutMS, "embed.roles."+name+".timeout_ms", warnings)
+		nonNegative(&role.Dims, "embed.roles."+name+".dims", warnings)
+		if role.Model == "" {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("embed role %q has no model", name)})
+		}
+		cfg.Embed.Roles[name] = role
 	}
 }
 

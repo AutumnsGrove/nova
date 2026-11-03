@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
 )
@@ -55,6 +56,10 @@ type Command struct {
 	// library request shape, so a client sends the same model/state/questions
 	// it would pass to decide.Decider.
 	Decision *decide.Request `json:"decision,omitempty"`
+	// Embedding carries one embeddings request for CmdEmbed. It is the library
+	// request shape, so a client sends the same model/input/truncate it would
+	// pass to embed.Embedder.
+	Embedding *embed.Request `json:"embedding,omitempty"`
 }
 
 // Response is the outcome of one command.

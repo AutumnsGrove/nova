@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
 )
@@ -43,6 +44,10 @@ type Context struct {
 	// answer without a generation round trip. It may be nil. The tool reports
 	// the call's usage with AddUsage, exactly as it does for Complete.
 	Decide func(ctx context.Context, req decide.Request) (*decide.Response, error)
+	// Embed performs an embedding call, for a tool that needs vectors without a
+	// generation round trip. It may be nil. The tool reports the call's usage
+	// with AddUsage, exactly as it does for Complete and Decide.
+	Embed func(ctx context.Context, req embed.Request) (*embed.Response, error)
 	// Inject queues a message to append after this tool's batch, for a tool that
 	// needs a message of its own rather than Result.Parts. It is per call and
 	// ordered with the rest of the batch. It may be nil.

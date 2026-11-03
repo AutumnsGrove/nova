@@ -16,6 +16,7 @@ import (
 	"github.com/AutumnsGrove/nova/compaction"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/mode/providers"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
@@ -51,6 +52,28 @@ func buildProvider(cfg *config.Config, home string, sessionID func() string) pro
 // separate sign-in.
 func buildDecider(cfg *config.Config, home string) decide.Decider {
 	return providers.BuildDecider(providers.Options{
+		Config: cfg,
+		Home:   home,
+		Getenv: os.Getenv,
+		Store:  auth.NewFileStore(keyPath(home)),
+	})
+}
+
+// buildEmbedder builds the role-resolving embeddings client from the config. It
+// shares the OpenRouter credential with chat and decisions.
+func buildEmbedder(cfg *config.Config, home string) embed.Embedder {
+	return providers.BuildEmbedder(providers.Options{
+		Config: cfg,
+		Home:   home,
+		Getenv: os.Getenv,
+		Store:  auth.NewFileStore(keyPath(home)),
+	})
+}
+
+// buildEmbeddingCatalog builds the live embeddings roster reader from the
+// config.
+func buildEmbeddingCatalog(cfg *config.Config, home string) embed.Catalog {
+	return providers.BuildEmbeddingCatalog(providers.Options{
 		Config: cfg,
 		Home:   home,
 		Getenv: os.Getenv,

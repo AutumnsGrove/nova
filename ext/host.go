@@ -12,6 +12,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
@@ -23,6 +24,9 @@ const defaultCompleteMax = 20
 
 // defaultDecideMax caps decision-model calls per extension per run.
 const defaultDecideMax = 20
+
+// defaultEmbedMax caps embeddings calls per extension per run.
+const defaultEmbedMax = 20
 
 // defaultToolCallTimeout bounds one protocol tool call.
 const defaultToolCallTimeout = 120 * time.Second
@@ -72,6 +76,8 @@ type HostOptions struct {
 	CompleteMax int
 	Decide      func(ctx context.Context, req decide.Request) (*decide.Response, error)
 	DecideMax   int
+	Embed       func(ctx context.Context, req embed.Request) (*embed.Response, error)
+	EmbedMax    int
 	Emit        func(proto.Event)
 	NovaVersion string
 	CWD         string
@@ -139,6 +145,7 @@ type Host struct {
 	byName         map[string]*instance
 	complete       map[string]int
 	decide         map[string]int
+	embed          map[string]int
 	hookErrAt      map[string]time.Time
 	entryKinds     map[string][]string
 	manifestHashes map[string]string
@@ -168,6 +175,7 @@ func NewHost(opt HostOptions) *Host {
 		byName:         map[string]*instance{},
 		complete:       map[string]int{},
 		decide:         map[string]int{},
+		embed:          map[string]int{},
 		hookErrAt:      map[string]time.Time{},
 		entryKinds:     map[string][]string{},
 		manifestHashes: map[string]string{},
@@ -301,6 +309,8 @@ func (h *Host) handleFrame(inst *instance, c *conn, typ string, line []byte, r r
 		h.handleComplete(inst, c, line)
 	case "decide":
 		h.handleDecide(inst, c, line)
+	case "embed":
+		h.handleEmbed(inst, c, line)
 	case "log":
 		var f struct {
 			Level string `json:"level"`
@@ -640,6 +650,63 @@ func (h *Host) handleDecide(inst *instance, c *conn, line []byte) {
 			return
 		}
 		frame := &outFrame{Type: "decide_result", ID: f.ID, Answers: resp.Answers, Usage: resp.Usage, Model: resp.Model}
+		_ = c.notify(frame)
+	}) {
+		h.deny(inst, c, f.ID, proto.CodeBusy, "too many requests in flight")
+	}
+}
+
+// handleEmbed performs an embeddings call under the per-run cap, on its own
+// goroutine so a slow model does not stop the extension's other frames.
+func (h *Host) handleEmbed(inst *instance, c *conn, line []byte) {
+	var f struct {
+		ID      string        `json:"id"`
+		Request embed.Request `json:"request"`
+	}
+	if err := json.Unmarshal(line, &f); err != nil {
+		h.deny(inst, c, "", proto.CodeBadRequest, "malformed embed frame")
+		return
+	}
+	if !inst.manifest.hasCapability("model:embed") {
+		h.deny(inst, c, f.ID, proto.CodePermissionDenied, "model:embed capability not declared")
+		return
+	}
+	if err := f.Request.Validate(); err != nil {
+		h.deny(inst, c, f.ID, proto.CodeBadRequest, err.Error())
+		return
+	}
+	if h.opt.Embed == nil {
+		h.deny(inst, c, f.ID, proto.CodeUnsupported, "no embedding function is attached")
+		return
+	}
+	limit := h.opt.EmbedMax
+	if limit <= 0 {
+		limit = defaultEmbedMax
+	}
+	h.mu.Lock()
+	h.embed[inst.manifest.Name]++
+	over := h.embed[inst.manifest.Name] > limit
+	h.mu.Unlock()
+	if over {
+		h.deny(inst, c, f.ID, proto.CodeBadRequest, fmt.Sprintf("embed cap of %d reached for this run", limit))
+		return
+	}
+	if !c.async(func(ctx context.Context) {
+		resp, err := h.opt.Embed(ctx, f.Request)
+		if err != nil {
+			code := proto.CodeBadRequest
+			var pe *provider.Error
+			if errors.As(err, &pe) {
+				code = proto.CodeProviderError
+			}
+			h.deny(inst, c, f.ID, code, err.Error())
+			return
+		}
+		if resp == nil {
+			h.deny(inst, c, f.ID, proto.CodeInternal, "embedder returned no response")
+			return
+		}
+		frame := &outFrame{Type: "embed_result", ID: f.ID, Vectors: resp.Vectors, Dims: resp.Dims, Usage: resp.Usage, Model: resp.Model}
 		_ = c.notify(frame)
 	}) {
 		h.deny(inst, c, f.ID, proto.CodeBusy, "too many requests in flight")

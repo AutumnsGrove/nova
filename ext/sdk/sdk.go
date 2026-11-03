@@ -292,6 +292,16 @@ func (h *Host) Decide(ctx context.Context, req any) (json.RawMessage, error) {
 	return h.request(ctx, map[string]any{"type": "decide", "request": json.RawMessage(raw)})
 }
 
+// Embed makes an embeddings call. The request is an embed.Request-shaped object;
+// the raw result is the embed_result frame.
+func (h *Host) Embed(ctx context.Context, req any) (json.RawMessage, error) {
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	return h.request(ctx, map[string]any{"type": "embed", "request": json.RawMessage(raw)})
+}
+
 // Run reads init, calls fn, registers, and serves until shutdown or EOF.
 func Run(fn func(*Host) error) {
 	if err := run(fn, os.Stdin, os.Stdout); err != nil {
@@ -376,7 +386,7 @@ func (h *Host) serve(r *bufio.Reader) error {
 		switch probe.Type {
 		case "shutdown":
 			return nil
-		case "ui_response", "complete_result", "decide_result", "error":
+		case "ui_response", "complete_result", "decide_result", "embed_result", "error":
 			h.deliver(probe.ID, line)
 		case "replay":
 			var f struct {

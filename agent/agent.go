@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
@@ -216,6 +217,9 @@ type Config struct {
 	// typed-answer call. It may be nil. A decision model may make a permission
 	// call stricter, never grant approval (D41).
 	Decide func(ctx context.Context, req decide.Request) (*decide.Response, error)
+	// Embed is given to tools as tool.Context.Embed, for vectors from text. It
+	// may be nil. A tool reports the call's usage with AddUsage.
+	Embed func(ctx context.Context, req embed.Request) (*embed.Response, error)
 }
 
 // Result is the outcome of a run.

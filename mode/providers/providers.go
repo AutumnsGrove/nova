@@ -15,6 +15,8 @@ import (
 	"github.com/AutumnsGrove/nova/decide"
 	decideor "github.com/AutumnsGrove/nova/decide/openrouter"
 	"github.com/AutumnsGrove/nova/diag"
+	"github.com/AutumnsGrove/nova/embed"
+	embedor "github.com/AutumnsGrove/nova/embed/openrouter"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/opencodego"
 	"github.com/AutumnsGrove/nova/provider/openrouter"
@@ -167,6 +169,53 @@ func BuildDecider(opt Options) decide.Decider {
 		Roles:        roles,
 		AllowAliases: opt.Config.Decide.AllowAliases,
 	})
+}
+
+// embeddingClient builds the shared OpenRouter embeddings client. It uses the
+// same base URL and credential as chat and decisions, so there is no third
+// sign-in.
+func embeddingClient(opt Options) *embedor.Client {
+	getenv := opt.Getenv
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	store := opt.Store
+	orBase := cmp.Or(opt.Config.Provider.OpenRouter.BaseURL, getenv("NOVA_OPENROUTER_BASE_URL"))
+	return embedor.New(embedor.Config{
+		BaseURL: orBase,
+		APIKeyFunc: func(context.Context) (string, error) {
+			key, _, err := auth.Resolve("", getenv, store)
+			return key, err
+		},
+	})
+}
+
+// BuildEmbedder returns an OpenRouter embeddings client wrapped in the roles
+// from the config. A role carries the dimension count its vectors must have, so
+// a fallback that answers in another vector space is refused rather than
+// silently stored.
+func BuildEmbedder(opt Options) embed.Embedder {
+	client := embeddingClient(opt)
+	roleTable := make(map[string]embed.Role, len(opt.Config.Embed.Roles))
+	for name, role := range opt.Config.Embed.Roles {
+		roleTable[name] = embed.Role{
+			Model:    role.Model,
+			Fallback: role.Fallback,
+			Timeout:  time.Duration(role.TimeoutMS) * time.Millisecond,
+			Dims:     role.Dims,
+		}
+	}
+	return embed.NewRoles(embed.RolesConfig{
+		Embedder:     client,
+		Roles:        roleTable,
+		AllowAliases: opt.Config.Embed.AllowAliases,
+	})
+}
+
+// BuildEmbeddingCatalog returns the live embeddings roster reader. It shares the
+// embeddings client, so the roster needs no separate sign-in.
+func BuildEmbeddingCatalog(opt Options) embed.Catalog {
+	return embeddingClient(opt)
 }
 
 // BuildDecisionCatalog returns the live decision-model roster reader. It shares

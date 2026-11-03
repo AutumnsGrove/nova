@@ -56,6 +56,7 @@ const (
 	CmdShutdown        = "shutdown"
 	CmdListProviders   = "list_providers"
 	CmdDecide          = "decide"
+	CmdEmbed           = "embed"
 	CmdLogin           = "login"
 	CmdLoginSubmit     = "login_submit"
 	CmdLoginCancel     = "login_cancel"

@@ -16,6 +16,7 @@ import (
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/diag"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
@@ -40,6 +41,8 @@ func (s *Server) buildExtensionHost() *ext.Host {
 		CompleteMax: s.cfg.Extensions.CompleteMaxPerRun,
 		Decide:      s.decideCall,
 		DecideMax:   s.cfg.Extensions.DecideMaxPerRun,
+		Embed:       s.embedCall,
+		EmbedMax:    s.cfg.Extensions.EmbedMaxPerRun,
 		Emit:        s.emit,
 		NovaVersion: s.opt.Version,
 		CWD:         s.cwd,
@@ -140,6 +143,18 @@ func (s *Server) decideCall(ctx context.Context, req decide.Request) (*decide.Re
 		return nil, errors.New("mode: no decision model is configured")
 	}
 	return d.Decide(ctx, req)
+}
+
+// embedCall is the embedding call a tool gets. It reads the embedder under the
+// lock, so a reload can swap the role table between runs.
+func (s *Server) embedCall(ctx context.Context, req embed.Request) (*embed.Response, error) {
+	s.mu.Lock()
+	e := s.embedder
+	s.mu.Unlock()
+	if e == nil {
+		return nil, errors.New("mode: no embedder is configured")
+	}
+	return e.Embed(ctx, req)
 }
 
 // sessionBridge adapts the server's session store to ext.SessionAPI.

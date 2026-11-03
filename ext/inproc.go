@@ -13,6 +13,7 @@ import (
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/decide"
 	"github.com/AutumnsGrove/nova/diag"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
@@ -74,6 +75,8 @@ type Env struct {
 	Complete func(ctx context.Context, req provider.Request) (*provider.Response, error)
 	// Decide performs one decision-model call.
 	Decide func(ctx context.Context, req decide.Request) (*decide.Response, error)
+	// Embed performs one embeddings call.
+	Embed func(ctx context.Context, req embed.Request) (*embed.Response, error)
 	// Spawn runs a fresh agent loop as a sub-agent.
 	Spawn func(ctx context.Context, r SpawnRequest) (*SpawnResult, error)
 	// HasUI reports whether the attached client declared a capability.
@@ -183,6 +186,7 @@ func (h *Host) newEnv(inst *instance) *Env {
 		Extra:    h.opt.Extra,
 		Complete: h.opt.Complete,
 		Decide:   h.opt.Decide,
+		Embed:    h.opt.Embed,
 		Spawn:    h.opt.Spawn,
 		HasUI:    h.hasUI,
 	}
@@ -383,8 +387,9 @@ func (h *Host) runBundledCommand(ctx context.Context, inst *instance, cmd InProc
 func (h *Host) Observe(ev proto.Event) {
 	h.mu.Lock()
 	if ev.Type == proto.EventRunStart {
-		clear(h.complete) // the completion and decision caps are per run
+		clear(h.complete) // the completion, decision and embedding caps are per run
 		clear(h.decide)
+		clear(h.embed)
 	}
 	insts := append([]*instance(nil), h.insts...)
 	h.mu.Unlock()

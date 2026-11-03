@@ -23,7 +23,7 @@ import (
 )
 
 // builtinCommands are the slash commands handled in-process.
-var builtinCommands = []string{"model", "thinking", "decide", "context", "compact", "new", "clear", "name", "cost", "help", "reload", "quit", "exit"}
+var builtinCommands = []string{"model", "thinking", "decide", "embed", "context", "compact", "new", "clear", "name", "cost", "help", "reload", "quit", "exit"}
 
 // handleGetMessages returns the active branch as model messages. Without a
 // session store the transcript is the in-memory one, which has no branches, so
@@ -235,6 +235,8 @@ func (s *Server) handleRunCommand(ctx context.Context, cmd proto.Command) proto.
 		return s.handleSetThinking(proto.Command{Type: proto.CmdSetThinking, ID: cmd.ID, Level: args})
 	case "decide":
 		return s.handleDecideCommand(ctx, cmd)
+	case "embed":
+		return s.handleEmbedCommand(ctx, cmd)
 	case "name":
 		return s.handleSessionName(proto.Command{Type: proto.CmdSessionName, ID: cmd.ID, Name: cmd.Args})
 	case "compact":
@@ -294,6 +296,106 @@ func (s *Server) handleDecide(ctx context.Context, cmd proto.Command) proto.Resp
 		return failResponse(cmd, proto.CodeBadRequest, err.Error())
 	}
 	return okResponse(cmd, resp)
+}
+
+// handleEmbed runs one embeddings request. It blocks on the provider, so it
+// takes the caller's context; a cancelled client cancels the call.
+func (s *Server) handleEmbed(ctx context.Context, cmd proto.Command) proto.Response {
+	if cmd.Embedding == nil {
+		return failResponse(cmd, proto.CodeBadRequest, "embed: a request is required")
+	}
+	if err := cmd.Embedding.Validate(); err != nil {
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	resp, err := s.embedCall(ctx, *cmd.Embedding)
+	if err != nil {
+		var pe *provider.Error
+		if errors.As(err, &pe) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return failResponse(cmd, proto.CodeProviderError, err.Error())
+		}
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	return okResponse(cmd, resp)
+}
+
+// handleEmbedCommand lists the configured embedding roles or the live roster.
+// Embedding text needs a model and input, so that stays on the embed protocol
+// command and the tool seam.
+func (s *Server) handleEmbedCommand(ctx context.Context, cmd proto.Command) proto.Response {
+	switch strings.ToLower(strings.TrimSpace(cmd.Args)) {
+	case "", "roles":
+		return s.embedRoles(cmd)
+	case "models":
+		return s.embedModels(ctx, cmd)
+	default:
+		return failResponse(cmd, proto.CodeBadRequest, "usage: /embed [roles|models]")
+	}
+}
+
+// embedRoles renders the configured role table, sorted by role name.
+func (s *Server) embedRoles(cmd proto.Command) proto.Response {
+	s.mu.Lock()
+	roles := make(map[string]config.EmbedRole, len(s.cfg.Embed.Roles))
+	for name, role := range s.cfg.Embed.Roles {
+		roles[name] = role
+	}
+	s.mu.Unlock()
+	if len(roles) == 0 {
+		return okResponse(cmd, map[string]any{"text": "no embedding roles configured; add embed.roles to the config"})
+	}
+	names := make([]string, 0, len(roles))
+	for name := range roles {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var b strings.Builder
+	for _, name := range names {
+		role := roles[name]
+		fmt.Fprintf(&b, "%s -> %s", name, role.Model)
+		if role.Fallback != "" {
+			fmt.Fprintf(&b, " (fallback %s)", role.Fallback)
+		}
+		if role.Dims > 0 {
+			fmt.Fprintf(&b, " [%d dims]", role.Dims)
+		}
+		if role.TimeoutMS > 0 {
+			fmt.Fprintf(&b, " [%dms]", role.TimeoutMS)
+		}
+		b.WriteString("\n")
+	}
+	return okResponse(cmd, map[string]any{"text": strings.TrimRight(b.String(), "\n")})
+}
+
+// embedModels renders the live embeddings roster.
+func (s *Server) embedModels(ctx context.Context, cmd proto.Command) proto.Response {
+	s.mu.Lock()
+	catalog := s.embedCatalog
+	s.mu.Unlock()
+	if catalog == nil {
+		return failResponse(cmd, proto.CodeUnsupported, "no embedding catalog is configured")
+	}
+	models, err := catalog.List(ctx)
+	if err != nil {
+		return failResponse(cmd, proto.CodeProviderError, err.Error())
+	}
+	if len(models) == 0 {
+		return okResponse(cmd, map[string]any{"text": "no embedding models in the live roster"})
+	}
+	var b strings.Builder
+	for _, m := range models {
+		fmt.Fprintf(&b, "%s", m.ID)
+		if m.Name != "" {
+			fmt.Fprintf(&b, "  %s", m.Name)
+		}
+		if m.ContextWindow > 0 {
+			fmt.Fprintf(&b, "  %d tokens", m.ContextWindow)
+		}
+		if m.InPerM > 0 {
+			fmt.Fprintf(&b, "  $%g/M", m.InPerM)
+		}
+		b.WriteString("\n")
+	}
+	return okResponse(cmd, map[string]any{"text": strings.TrimRight(b.String(), "\n")})
 }
 
 // handleDecideCommand lists the configured decision roles or the live roster.

@@ -172,8 +172,8 @@ func TestAccept_ACC06_StepsRunInOrder(t *testing.T) {
 		"go vet ./...",
 		"go build ./...",
 		"go build -tags notui ./...",
-		"go test -short -race -p 2 ./p",
-		"go test -race -p 2 ./p",
+		"go test -short -race -p 2 -timeout 10m ./p",
+		"go test -race -p 2 -timeout 10m ./p",
 		"go run ./scripts/matrixcheck docs/archive/chunks/C00-fixture.md ./p",
 		"go run ./scripts/linecount docs/archive/chunks/C00-fixture.md",
 		"go run ./scripts/importcheck",
@@ -207,5 +207,39 @@ budgets: { ./missing: 100 }
 	}
 	if !strings.Contains(out.String()+errOut.String(), "./missing") {
 		t.Errorf("output should name the missing package:\n%s%s", out.String(), errOut.String())
+	}
+}
+
+// A chunk that owns the splash GIF package needs the budget the Makefile gives
+// `race-splash`. The package rasterises 150 frames per test, and Go's 10m
+// default killed the release gate at C21.
+func TestAccept_ACC08_SplashPackageGetsTheLongTimeout(t *testing.T) {
+	spec := `---
+chunk: C00
+packages: [./tui/splash/splashgif]
+budgets: { ./tui/splash/splashgif: 100 }
+---
+
+## Matrix
+
+| ID | Case |
+|---|---|
+| AA01 | a case |
+`
+	dir := fixture(t, spec, map[string]string{"tui/splash/splashgif/x.go": "package splashgif\n"})
+	record := stubBin(t, okGo, okGofmt)
+	t.Chdir(dir)
+	var out, errOut bytes.Buffer
+	if code := run([]string{"C00"}, &out, &errOut, nil); code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s%s", code, out.String(), errOut.String())
+	}
+	log, _ := os.ReadFile(record)
+	for _, want := range []string{
+		"go test -short -race -p 2 -timeout 25m ./tui/splash/splashgif",
+		"go test -race -p 2 -timeout 25m ./tui/splash/splashgif",
+	} {
+		if !strings.Contains(string(log), want) {
+			t.Errorf("command log is missing %q:\n%s", want, log)
+		}
 	}
 }

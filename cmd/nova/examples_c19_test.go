@@ -199,6 +199,9 @@ func TestExamples_EXM06_BlockRm(t *testing.T) {
 }
 
 func TestExamples_EXM07_PathGuard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the examples build")
+	}
 	h := startExampleHost(t, []string{"path-guard"}, ext.HostOptions{})
 	ctx := context.Background()
 	blocked := h.Hooks().ToolCall(ctx, agent.ToolCall{Name: "write", Arguments: json.RawMessage(`{"path":"/etc/passwd"}`)})
@@ -212,6 +215,9 @@ func TestExamples_EXM07_PathGuard(t *testing.T) {
 }
 
 func TestExamples_EXM08_StatusAndWidget(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the examples build")
+	}
 	ui := &fakeUI{}
 	h := startExampleHost(t, []string{"status-segment", "clock-widget"}, ext.HostOptions{UI: ui})
 	h.Hooks().TurnEnd(context.Background(), agent.Turn{Index: 1})
@@ -222,6 +228,9 @@ func TestExamples_EXM08_StatusAndWidget(t *testing.T) {
 }
 
 func TestExamples_EXM09_AskDemo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the examples build")
+	}
 	ui := &fakeUI{selectIDs: []string{"bugs"}, inputText: "hello"}
 	h := startExampleHost(t, []string{"ask-demo"}, ext.HostOptions{UI: ui})
 	out, err := h.RunCommand(context.Background(), "ask", "")
@@ -234,6 +243,9 @@ func TestExamples_EXM09_AskDemo(t *testing.T) {
 }
 
 func TestExamples_EXM10_SessionNotesReplay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the examples build")
+	}
 	sess := &fakeSession{}
 	ctx := context.Background()
 	kinds := map[string][]string{"session-notes": {"session-notes.note"}}
@@ -256,6 +268,9 @@ func TestExamples_EXM10_SessionNotesReplay(t *testing.T) {
 }
 
 func TestExamples_EXM11_Summarize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the examples build")
+	}
 	calls := 0
 	complete := func(_ context.Context, _ provider.Request) (*provider.Response, error) {
 		calls++
@@ -295,6 +310,9 @@ func quote(s string) string {
 // example runs as installed: the canned backend answers, limit is honoured, and
 // an empty query is a result the model can read.
 func TestExamples_EXM13_WebSearchAdapter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the examples build")
+	}
 	h := startExampleHost(t, []string{"web-search"}, ext.HostOptions{})
 	ctx := context.Background()
 

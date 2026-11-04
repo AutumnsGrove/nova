@@ -7,6 +7,28 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-04
+
+An embeddings primitive and the shared role resolver it sits on, plus a rebuilt `ask` form. Nova is
+`v0.x`, so this release may break callers. **Read these before upgrading from v0.2.0:**
+
+- `bundled/ask.Card` takes the call's question labels (`[]string`) instead of a count (#54).
+- Every `ui_request` now carries an `id` (#55). The server assigns one whether or not the caller set it,
+  so a client that used to answer by an empty id must echo the id it is given.
+- In the `ask` form, `s` is no longer a skip shortcut; skipping is the visible `Skip this question` row,
+  and the tab strip shows answered, skipped and unvisited questions (#54).
+
+### Added
+- An embeddings primitive, `embed`, with a role table on the shared resolver: `embed.Embedder` (text in,
+  vectors plus cost and provenance out), OpenAI-compatible and Ollama adapters that batch and remap by
+  index, an OpenRouter preset with the live embeddings roster, and a `embed.Roles` decorator that refuses
+  a fallback whose dimensions disagree instead of corrupting a stored index. It reaches tools
+  (`tool.Context.Embed`), the loop (`agent.Config.Embed`), print/json/rpc/serve (the `embed` command),
+  extensions (`model:embed`, capped by `extensions.embed_max_per_run`), and the TUI (`/embed`). There is
+  no vector store (#49).
+- The role resolver is a shared package, `roles`; `decide.Roles` delegates to it unchanged, and
+  `decide.Role` and `decide.Clock` are now aliases of the shared types (#48).
+
 ### Changed
 - The `ask` form is a borderless, full-width sheet sized to its content instead of a large empty box: a
   tab strip that shows answered (`☑`), skipped (`⊘`), and unvisited (`☐`) questions with `✓ Submit →` at
@@ -52,14 +74,6 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
   the provider (#43).
 
 ### Added
-- An embeddings primitive, `embed`, with a role table on the shared resolver: `embed.Embedder` (text in,
-  vectors plus cost and provenance out), OpenAI-compatible and Ollama adapters that batch and remap by
-  index, an OpenRouter preset with the live embeddings roster, and a `embed.Roles` decorator that refuses
-  a fallback whose dimensions disagree instead of corrupting a stored index. It reaches tools
-  (`tool.Context.Embed`), the loop (`agent.Config.Embed`), print/json/rpc/serve (the `embed` command),
-  extensions (`model:embed`, capped by `extensions.embed_max_per_run`), and the TUI (`/embed`). There is
-  no vector store (#49).
-- The role resolver is a shared package, `roles`; `decide.Roles` delegates to it unchanged (#48).
 - Six gaps found by Polaris's adoption (nova#22), each small and opt-in or additive: `provider.Error.Body`
   keeps the scrubbed, bounded raw response body of a failed request (#40); `provider.Request.ParallelToolCalls`
   sends `parallel_tool_calls` on a chat-completions request that has tools (#41);
@@ -353,6 +367,7 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
 - The first release: the agent loop, tools, sessions, config, the TUI, the
   extension host, the bundled extensions, serve mode, and the GitHub Action.
 
-[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.0
 [0.2.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.2.0
 [0.1.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.1.0

@@ -7,6 +7,24 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-04
+
+**Install this, not v0.3.0.** The v0.3.0 tag exists and the Go module resolves, but its release
+workflow died in the acceptance gate, so no GitHub release and no binaries were published — the same
+failure that hit v0.2.0. This release is the v0.3.0 tree plus the two gate fixes, so a v0.2.0 user
+should upgrade straight to `0.3.1` and read the v0.3.0 notes below. Nothing here changes behaviour for
+a caller: the diff from `v0.3.0` is `scripts/accept`, its test, one `cmd/nova` test file, and the C00
+spec that documents the gate.
+
+### Fixed
+- A tag publishes its binaries again. `scripts/accept` ran its test steps with no `-timeout` and
+  inherited Go's ten-minute default, so the chunk that owns `tui/splash/splashgif` was killed there
+  while the same package needs about eight minutes under `-race`; every chunk now states its budget,
+  25m for the chunk that owns that package and 10m otherwise (#62).
+- The `-short` step passes on a clean checkout. Six example-extension tests started a binary that only
+  a `-short`-skipped test builds, so the gate failed at C19 on any fresh clone; they skip under `-short`
+  now, as their siblings already did (#60).
+
 ## [0.3.0] - 2026-11-04
 
 An embeddings primitive and the shared role resolver it sits on, plus a rebuilt `ask` form. Nova is
@@ -367,7 +385,8 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
 - The first release: the agent loop, tools, sessions, config, the TUI, the
   extension host, the bundled extensions, serve mode, and the GitHub Action.
 
-[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.1
 [0.3.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.0
 [0.2.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.2.0
 [0.1.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.1.0

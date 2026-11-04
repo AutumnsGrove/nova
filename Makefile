@@ -1,4 +1,4 @@
-.PHONY: test test-full race race-splash fmt vet build build-notui accept ci importcheck matrixcheck-all linecount-all
+.PHONY: test test-full race race-splash splash fmt vet build build-notui accept ci importcheck matrixcheck-all linecount-all
 
 test:
 	go test -short -p 2 ./...
@@ -16,6 +16,12 @@ race:
 
 race-splash:
 	go test -race -timeout 25m -p 2 ./tui/splash/splashgif
+
+# The pull request gate runs the same package without -race: the renderer takes
+# 25s that way and seven minutes with the detector, which finds nothing in a
+# package that starts no goroutine. Use race-splash when you touched tui/splash.
+splash:
+	go test -p 2 ./tui/splash/splashgif
 
 # gofmt -l exits 0 even when it lists files, so fail on any output.
 fmt:

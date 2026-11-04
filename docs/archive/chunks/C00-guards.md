@@ -105,6 +105,9 @@ accept <CNN> [-from step]          exit 0 all steps pass; exit 1 a step failed; 
 7. **accept** runs, in order, stopping at the first failure and printing the failing
    command's output: `gofmt -l`, `go vet`, `go build ./...`, `go build -tags notui ./...`,
    `go test -short -race -p 2` on the spec's packages, `go test -race -p 2` on the same,
+   both with an explicit `-timeout`: 25m when the chunk owns `./tui/splash/splashgif`
+   (the budget `make race-splash` gives it), 10m otherwise, so the gate never inherits the
+   toolchain's default,
    `matrixcheck`, `linecount`, `importcheck`. A step whose package does not exist yet is
    an error, not a skip.
 8. `accept` prints a one-line summary per step (`ok`/`FAIL`, duration).
@@ -169,6 +172,7 @@ accept <CNN> [-from step]          exit 0 all steps pass; exit 1 a step failed; 
 | ACC05 | `-from step` | `accept C01 -from matrixcheck` | earlier steps skipped, later ones run |
 | ACC06 | steps run in the documented order | recorded command log | matches the order in Behaviour 7 |
 | ACC07 | package listed in spec does not exist | | exit 1 naming the package |
+| ACC08 | a chunk that owns `./tui/splash/splashgif` | a spec listing that package | both test steps carry `-timeout 25m`; any other chunk gets `-timeout 10m` |
 
 Test strategy: each program has a `run(args, stdout, stderr, env) int` function so tests
 call it directly. Fixtures for `matrixcheck`, `importcheck`, and `accept` are small Go

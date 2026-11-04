@@ -275,7 +275,10 @@ This turns "did you test the edge cases" from a judgement into a check.
   application (apply, then check the result contains `new_text` exactly once and nothing
   else changed), compaction cut points (never splits a tool pair), the session tree
   (the active branch is always a path from root to leaf).
-- **`-race`** on every package, always.
+- **`-race`** on every package, always (`make race`). The splash renderer is the one exception: it
+  starts no goroutine, and the detector turns its 25 seconds into seven minutes, so the pull request
+  gate runs it plain (`make splash`), `make race-splash` covers it when `tui/splash` changes, and the
+  release gate runs it with `-race` on every tag.
 - **Leak checks** (`testkit.NoLeaks`) on anything that starts goroutines or processes.
 - **Golden files** for TUI views and for the protocol event sequence of each scenario.
 - **Coverage floor**: 85% for core packages, 70% for `tui/`, measured with
@@ -298,6 +301,7 @@ make ci
   matrixcheck-all  # every row in docs/archive/chunks has a test
   linecount-all    # every package is within its budget
 make race-splash   # when tui/splash changed: the GIF tests are slow under -race, so CI runs them apart
+make splash        # what the pull request gate runs for tui/splash: the same tests, without -race
 ```
 
 `make test` (`go test -short`) is the fast loop while you work; it is not the gate.

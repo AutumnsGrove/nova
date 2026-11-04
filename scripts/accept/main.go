@@ -77,6 +77,24 @@ func run(args []string, stdout, stderr io.Writer, env []string) int {
 	return 0
 }
 
+// splashPkg costs minutes under -race: it rasterises 150 frames per test. The
+// Makefile keeps it out of the fast gate and gives `race-splash` 25m, so a
+// chunk that owns it needs the same budget here or the gate dies on Go's 10m
+// default, which is exactly how C21 failed on every release run.
+const splashPkg = "./tui/splash/splashgif"
+
+// testTimeout is the `-timeout` for a chunk's test steps: the splash budget
+// when the chunk owns that package, the ordinary one otherwise. It is always
+// explicit, so the gate never inherits whatever default the toolchain carries.
+func testTimeout(pkgs []string) string {
+	for _, p := range pkgs {
+		if p == splashPkg {
+			return "25m"
+		}
+	}
+	return "10m"
+}
+
 // parseArgs reads the chunk and the optional -from step, in either order.
 func parseArgs(args []string) (chunk, from string, ok bool) {
 	var positional []string
@@ -102,13 +120,14 @@ func parseArgs(args []string) (chunk, from string, ok bool) {
 
 // buildSteps is the documented order from docs/TESTING.md section 6.
 func buildSteps(specPath string, pkgs []string) []step {
+	timeout := testTimeout(pkgs)
 	return []step{
 		{name: "gofmt", argv: []string{"gofmt", "-l", "."}, dirty: true},
 		{name: "vet", argv: []string{"go", "vet", "./..."}},
 		{name: "build", argv: []string{"go", "build", "./..."}},
 		{name: "build-notui", argv: []string{"go", "build", "-tags", "notui", "./..."}},
-		{name: "test-short", argv: append([]string{"go", "test", "-short", "-race", "-p", "2"}, pkgs...)},
-		{name: "test", argv: append([]string{"go", "test", "-race", "-p", "2"}, pkgs...)},
+		{name: "test-short", argv: append([]string{"go", "test", "-short", "-race", "-p", "2", "-timeout", timeout}, pkgs...)},
+		{name: "test", argv: append([]string{"go", "test", "-race", "-p", "2", "-timeout", timeout}, pkgs...)},
 		{name: "matrixcheck", argv: append([]string{"go", "run", "./scripts/matrixcheck", specPath}, pkgs...)},
 		{name: "linecount", argv: []string{"go", "run", "./scripts/linecount", specPath}},
 		{name: "importcheck", argv: []string{"go", "run", "./scripts/importcheck"}},

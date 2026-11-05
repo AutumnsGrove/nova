@@ -428,6 +428,43 @@ func TestRouter_RT12_AttributionIsTheServingAttempt(t *testing.T) {
 	}
 }
 
+func TestRouter_RT14_UnknownHookResolvesDynamicIDs(t *testing.T) {
+	goSrv := testkit.NewGoServer(t, testkit.GoConfig{RequireSession: true},
+		testkit.ServerTurn{Turn: testkit.Turn{Text: "go"}})
+	orSrv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "or"}})
+	dynamic := map[string]Attempt{"dyn/model": {Provider: "opencode-go", Model: "dyn-slug"}}
+	r := New(Config{
+		Providers: []ProviderDecl{
+			{Name: "openrouter", Kind: OpenRouter, BaseURL: orSrv.URL, APIKeyFunc: keyFunc("k-or")},
+			{Name: "opencode-go", Kind: OpenCodeGo, BaseURL: goSrv.URL, APIKeyFunc: keyFunc("k-go")},
+		},
+		DefaultProvider: "openrouter",
+		SessionID:       func() string { return session },
+		Unknown: func(id string) (Attempt, bool) {
+			a, ok := dynamic[id]
+			return a, ok
+		},
+	})
+	if _, err := r.Stream(context.Background(), chatRequest("dyn/model", "dyn/model"), nil); err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	goReqs := goSrv.Requests()
+	if len(goReqs) != 1 || wireModel(t, goReqs[0].Body) != "dyn-slug" {
+		t.Fatalf("Go requests = %v, want one for the hook's slug", goReqs)
+	}
+	resp, err := r.Stream(context.Background(), chatRequest("other/model", "other-slug"), nil)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Provider != "openrouter" {
+		t.Errorf("Provider = %q, want the default for a declined id", resp.Provider)
+	}
+	orReqs := orSrv.Requests()
+	if len(orReqs) != 1 || wireModel(t, orReqs[0].Body) != "other-slug" {
+		t.Fatalf("OpenRouter requests = %v, want the caller's slug unrewritten", orReqs)
+	}
+}
+
 func TestRouter_RT13_ForceProviderPinsEverything(t *testing.T) {
 	fx := newFixture(t,
 		[]testkit.ServerTurn{{Turn: testkit.Turn{Text: "go"}}},

@@ -495,6 +495,7 @@ type OpenCodeGoConfig struct {
 | RT11 | the router stays in the harness layer | a fixture module importing `provider/route` from shell layers | `importcheck` fails; the harness-only fixture passes |
 | RT12 | attribution is the serving attempt | `Name()` and a spilled response | `Name()` is stable; `Response.Provider` names the attempt that answered |
 | RT13 | `ForceProvider` pins everything | the pin set with a Go-first route | OpenRouter serves; Go is never called |
+| RT14 | `Unknown` resolves dynamic ids | a hook serving an unconfigured id, then declining one | the hook's attempt runs with its slug; a declined id falls to the default unrewritten |
 
 | USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |
 | USG02 | percent clamped | used over limit | percent 100 |

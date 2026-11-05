@@ -483,6 +483,7 @@ type OpenCodeGoConfig struct {
 | OPG35 | catalog says which models cache implicitly | every baseline entry | Claude false; the rest true, and a discovered override keeps the baseline flag |
 | OPG36 | catalog id stripped for the wire | `Model` `opencode-go/glm-5.3`, then the bare slug | the wire model is `glm-5.3` both times |
 | OPG37 | Nova's routes are single attempts | a Go 500 with both backends up | the error returns; OpenRouter is never called |
+| OPG38 | the baseline carries picker fields | the deepseek and haiku entries | efforts, tool choice, tiers, multiplier, and monthly limit |
 | RT01 | a Go route reaches Go | a catalog id routed Go-first | the Go base URL sees the wire slug, `Authorization`, the app `User-Agent`, and `x-opencode-session` |
 | RT02 | no session id still sends | `SessionID` nil on an OpenRouter route | success; no `x-opencode-session` header goes out |
 | RT03 | a limit spills exactly once | Go 429, then OpenRouter success | one OpenRouter call; the response `Provider` is the OpenRouter name |

@@ -179,6 +179,42 @@ func TestOpencodego_OPG09_CatalogEntriesValid(t *testing.T) {
 	}
 }
 
+// TestOpencodego_OPG38_BaselinePickerFields checks the baseline carries the
+// picker fields from the live catalog (captured 2026-11-05) and the Go-plan
+// monthly allowances from the Go docs page (#59).
+func TestOpencodego_OPG38_BaselinePickerFields(t *testing.T) {
+	deepseek, ok := provider.GetModel("opencode-go/deepseek-v4.1-flash")
+	if !ok {
+		t.Fatal("deepseek entry missing")
+	}
+	if len(deepseek.ReasoningEfforts) != 3 || deepseek.ReasoningEfforts[2] != "max" {
+		t.Errorf("deepseek efforts = %v", deepseek.ReasoningEfforts)
+	}
+	if len(deepseek.ToolChoice) != 4 || deepseek.ToolChoice[3] != "tool" {
+		t.Errorf("deepseek tool choice = %v", deepseek.ToolChoice)
+	}
+	if len(deepseek.CostMultipliers) != 1 || deepseek.CostMultipliers[0].Factor != 2 {
+		t.Errorf("deepseek multipliers = %v", deepseek.CostMultipliers)
+	}
+	if deepseek.MonthlyLimitUSD != 100 {
+		t.Errorf("deepseek monthly limit = %v, want 100", deepseek.MonthlyLimitUSD)
+	}
+	haiku, ok := provider.GetModel("opencode-go/claude-haiku-5-5")
+	if !ok {
+		t.Fatal("haiku entry missing")
+	}
+	if len(haiku.PriceTiers) != 1 || haiku.PriceTiers[0].AboveTokens != 100000 {
+		t.Errorf("haiku tiers = %v, want the 100K cliff", haiku.PriceTiers)
+	}
+	kimi, ok := provider.GetModel("opencode-go/kimi-k3")
+	if !ok {
+		t.Fatal("kimi entry missing")
+	}
+	if len(kimi.ReasoningEfforts) != 1 || kimi.ReasoningEfforts[0] != "max" {
+		t.Errorf("kimi efforts = %v, want max only", kimi.ReasoningEfforts)
+	}
+}
+
 func TestOpencodego_OPG10_EndpointMatchesRouting(t *testing.T) {
 	for _, m := range Catalog {
 		if APIFor(m.ID) != EndpointTable[m.ID] {

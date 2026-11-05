@@ -288,6 +288,7 @@ func NoLeaks(t testing.TB)                  // registers a cleanup that checks g
 | PRV24 | `PromptCache` overrides the catalog | true on an implicit model; false on a non-implicit one; true on an unknown one | marker; nil; marker |
 | PRV25 | `Usage.Add` sums allowance and list cost | allowance, list cost and billing source on both sides | sums; billing source kept when one side is empty |
 | PRV26 | `CostSource` treats allowance as provider-reported | provider+allowance, allowance+catalog, allowance+allowance, allowance+empty | provider, allowance, allowance, allowance |
+| PRV27 | a model keeps its picker fields | every new field set | `GetModel` returns them all |
 | TKC01 | `FakeClock` does not read real time | `Now()` after `Advance(1h)` | start + 1h, instantly |
 | TKC02 | `Advance` fires timers in deadline order | timers at 3s, 1s, 2s | fire 1s, 2s, 3s |
 | TKC03 | `Sleep` returns on advance | | returns nil |

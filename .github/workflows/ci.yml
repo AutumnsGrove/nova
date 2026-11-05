@@ -1,7 +1,11 @@
 name: ci
 
 on:
+  # A pull request already runs this workflow. Running it on every branch push
+  # as well meant one commit cost two identical pipelines, so the push trigger
+  # is limited to main, where a merged commit is checked once.
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -14,8 +18,11 @@ jobs:
           go-version-file: go.mod
       - run: make ci
 
-  # The splash GIF tests render every frame, so -race takes minutes. They run
-  # in parallel so the fast gate above reports quickly.
+  # The splash GIF package renders 150 frames per test, which costs seven
+  # minutes under -race and finds nothing (it starts no goroutine). The pull
+  # request gate runs it plain in under a minute; `make race-splash` is for a
+  # change to tui/splash, and the release workflow's accept gate still runs the
+  # same package with -race on every tag.
   splash:
     runs-on: ubuntu-latest
     steps:
@@ -23,4 +30,4 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: make race-splash
+      - run: make splash

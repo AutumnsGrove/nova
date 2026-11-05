@@ -39,13 +39,15 @@ nova/
   message/        transcript types                              ≤ 250 lines
   media/          image decode, resize, bounds                  ≤ 320
   clipboard/      OS clipboard image reader (TUI support)        ≤ 180
-  provider/       Provider interface, registry, model catalog   ≤ 500
+  provider/       Provider interface, registry, model catalog   ≤ 600
     openaicompat/ chat-completions + SSE                        ≤ 600
     responses/    OpenAI Responses API + SSE                    ≤ 480
     messages/     Anthropic Messages API + SSE                  ≤ 480
     ssestream/    shared POST + SSE transport, timeouts         ≤ 420
     opencodego/   preset: catalog, endpoint routing             ≤ 560
     openrouter/   preset: routing options, headers, usage       ≤ 300
+    route/        library-consumer router, fallback policy      ≤ 340
+    chat/         one-shot completion seam                     ≤ 160
   roles/          role table, fallback chain, per-attempt timeout ≤ 200
   decide/         decision-model contract                      ≤ 400
   embed/          embeddings contract, batching, role table   ≤ 260

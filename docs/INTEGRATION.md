@@ -77,6 +77,62 @@ Notes the example makes concrete:
 - **Tool scoping is `Registry.View`.** It returns a registry sharing the tool values but with its own
   registration state, so two concurrent runs can offer different tools without racing.
 
+## Two providers behind one switch
+
+An app with an OpenRouter key and an OpenCode Go subscription routes each
+model to one or the other with `provider/route`, built from values — no
+`mode`, no `config`, no Nova credential store. `examples/embed`'s
+`routedProvider` is the compiling, tested shape:
+
+```go
+p := route.New(route.Config{
+    Providers: []route.ProviderDecl{
+        {Name: "openrouter", Kind: route.OpenRouter, APIKeyFunc: orKey},
+        {Name: "opencode-go", Kind: route.OpenCodeGo, APIKeyFunc: goKey},
+    },
+    Routes: map[string]route.Route{ // keyed by catalog id; the app owns this policy
+        "opencode-go/deepseek-v4.1-flash": {
+            Attempts: []route.Attempt{
+                {Provider: "opencode-go", Model: "deepseek-v4.1-flash"},
+                {Provider: "openrouter", Model: "deepseek/deepseek-v4.1-flash"},
+            },
+            FallbackOn: route.OnLimitOrRefusal,
+            OnFallback: func(from, to string, err error) { /* show a chip */ },
+        },
+    },
+    DefaultProvider: "openrouter",   // unknown ids, request unrewritten
+    ForceProvider:   "",            // set to pin everything (the kill switch)
+    SessionID:       func() string { return threadID }, // read fresh per call
+    UserAgent:       "myapp/1.0",
+})
+```
+
+`route.New` returns a `provider.Provider`, so it drops into
+`agent.Config.Provider` unchanged. The rules that matter:
+
+- **Model is the wire slug, ModelID the catalog id.** An attempt's `Model` goes
+  onto the wire verbatim; `ModelID` passes through for routing and the ledger.
+  A wire slug in the catalog slot once sent subagents to the wrong backend, so
+  translate at the boundary: `chat.Complete` takes a catalog id and does it.
+- **Failover is a policy hook, never silent.** `FallbackOn` decides whether a
+  failed attempt spills (`OnLimitOrRefusal` for limits, refusals, and upstream
+  failures; `OnAnyError` for the old any-error behaviour). A `bad_request`, a
+  caller cancellation, and an unclassified failure never spill. `OnFallback`
+  fires once per spill, and `Response.Provider` names the attempt that
+  answered, so a paid retry is always visible and attributable.
+- **Allowance is not cost.** A Go call reports what it consumed as `CostUSD`
+  with `CostSource` `"allowance"`, the retail price as `ListCostUSD`, and who
+  paid as `BillingSource`. `Usage.Add` sums both; `usage.Ledger` splits them
+  (`Covered` vs `Real`), so a covered call never reads as real spend.
+- **Meters come from the caller's key.** `opencode.FetchMeters` takes a server
+  and a key with no Nova config; `opencode.PeriodEnd` reads the plan period
+  end off the monthly meter. Both meter endpoints report account-wide windows
+  only — per-model remaining allowance is not published, so headroom logic
+  gets "plan left" plus per-call consumed, never "DeepSeek left".
+- **One-shot calls go through the same router.** `chat.Complete` takes plain
+  messages, tools, and the usual options and returns the finalized response
+  without an agent, for titles, suggestions, extraction, and the rest.
+
 ## Sub-agents
 
 Fanning out child agents is a primitive, not something each adopter rewrites. `agent/sub` runs a
@@ -312,6 +368,15 @@ Polaris has the largest bespoke loop; most of it becomes hooks.
   wrap-up instruction, one final request with no tools, and a caller fallback when the model still
   calls a tool. A `TurnEnd` hook cannot extend the budget.
 
+### What the multi-provider switch needs (nova#59)
+
+- **Routing.** `provider/route` with Polaris's per-model policy, `ForceProvider` as the
+  loop's kill switch, and `OnFallback` feeding the transcript chip.
+- **Money.** The allowance/list/billing fields on `provider.Usage` and the ledger's
+  covered/real split, which Polaris's cost ledger reads instead of re-deriving.
+- **Status.** `opencode.FetchMeters` with the app's key for the provider-status
+  endpoint; per-model remaining is not published, so the panel shows plan headroom.
+
 ### What Polaris's adoption needed (nova#22)
 
 Wire and failure behaviour an adopter with a working loop usually has to keep, and the seam for each:
@@ -352,9 +417,9 @@ Before a project switches, confirm Nova preserves:
       LPI04 to LPI08, IMG01 to IMG10).
 - [ ] **Deferred tool loading** (her-go's `use_tools`). Not built; a per-run `View` is the
       current answer.
-- [ ] **Model fallback as a harness policy.** A request routes to the provider its model names,
-      and provider-level fallback passes through `ProviderOptions` (`openrouter.Routing`); a
-      model-level fallback is the application's policy today.
+- [x] **Model fallback as a harness policy.** `provider/route` runs per-model attempt
+      chains with a fallback predicate (`OnLimitOrRefusal`), a visible `OnFallback` event,
+      and `Response.Provider` attribution (RT01 to RT14, `examples/embed`).
 - [ ] **Trace output equivalent to the current `tool.yaml` trace specs.** Not built;
       `tool.Context.Progress` is what a tool has.
 - [ ] **Session/context behaviour equal to the current compaction.** Compared per adopter;

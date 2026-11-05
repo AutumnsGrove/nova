@@ -7,6 +7,44 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+Nova is `v0.x`, so anything here may break callers. **Upgrade notes for library consumers:**
+
+- `provider.Usage` gains `AllowanceUSD`, `ListCostUSD`, and `BillingSource`, and `CostSource`
+  gains `"allowance"`. A Go call now reports `CostUSD` as allowance dollars instead of falling
+  back to a catalog estimate: if you match on `CostSource`, handle `"allowance"` (a covered
+  call is not real spend; `usage.Ledger` splits them as `Covered` vs `Real`).
+- `provider.Response` gains `Provider`, the id of the backend that served the call. Routers
+  stamp it; plain providers leave it empty unless they set it.
+- `provider.Model` gains `ReasoningEfforts`, `ToolChoice`, `PriceTiers`, `CostMultipliers`,
+  and `MonthlyLimitUSD`. All are additive; an unlisted model reads as the zero value.
+- `mode/providers.Build` now returns a `provider/route` router. Behaviour is unchanged
+  (single attempts, no fallback), but `Name()` is `"route"` instead of `"router"`.
+
+### Added
+- A library-consumer provider router, `provider/route`: named providers built from values,
+  per-catalog-id attempt chains, `OnLimitOrRefusal`/`OnAnyError` fallback predicates with
+  exactly-once spill semantics, a visible `OnFallback` event, `Resolve`/`Primary` inspection,
+  a dynamic `Unknown` hook, and a `ForceProvider` kill switch. `mode/providers` builds on
+  it, so the TUI/`serve` path and every consumer run the same routing code (#59).
+- Allowance accounting across all three wire dialects: Go's `usage.opencode` block parses to
+  `AllowanceUSD`/`ListCostUSD`/`BillingSource` with `CostSource` `"allowance"`, including an
+  explicitly reported zero, and `usage.Ledger` reports covered vs real spend (#59).
+- A one-shot completion seam, `provider/chat.Complete`: plain messages and tools through the
+  same routing, headers, and usage reporting as a loop turn, with no agent (#59).
+- A key-supplied meter fetch, `opencode.FetchMeters`, with `opencode.PeriodEnd` for the plan
+  period end; `FetchUsage` keeps Nova's config-based behaviour on top of it (#59).
+- Picker fields on `provider.Model` — reasoning effort tiers, `tool_choice` variants,
+  prompt-size price tiers, time-based cost multipliers, and docs-only monthly allowances —
+  populated for the Go baseline from the live catalog (#59).
+- A Go-dialect `testkit` double: it requires `x-opencode-session`, emits
+  `usage.opencode`, and serves `/api/go/status` (#59).
+
+### Fixed
+- `provider/opencodego` sends the bare wire slug even when called with a catalog id, and
+  dispatches on the id first, so the endpoint table (not a heuristic) picks the dialect (#59).
+- Error bodies that report `error.type` with no `error.code` (Go's `MissingSessionID` and
+  `EntitlementError`) now yield a `Code` the fallback predicate can classify on (#59).
+
 ## [0.3.3] - 2026-11-05
 
 **Install this.** `v0.3.0`, `v0.3.1` and `v0.3.2` are tagged and resolve as Go modules, but none

@@ -323,6 +323,9 @@ func NoLeaks(t testing.TB)                  // registers a cleanup that checks g
 | TKS12 | requests recorded | two requests | method, path, headers, and body recorded |
 | TKS13 | server closes on cleanup | | later connections refused; no goroutine leak |
 | TKS14 | unknown path | `GET /nope` | 404 |
+| TKS15 | Go double requires the session header | `POST` without `x-opencode-session`, then with it | 400 `MissingSessionID` without; the turn served with |
+| TKS16 | Go double emits `usage.opencode` | turn usage with source `allowance` | the usage chunk carries `opencode` with allowance, list cost and billing source |
+| TKS17 | Go double serves the status endpoint | `GET /api/go/status` with a configured body | 200 with the body verbatim |
 | TKF01 | `TempTree` creates nested files | `a/b/c.txt` | file exists with the content |
 | TKF02 | `TempTree` is absolute and under the temp dir | | true |
 | TKF03 | `Symlink` and `WriteBinary` | | symlink resolves; file has NULs and the size |

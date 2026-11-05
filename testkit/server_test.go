@@ -324,6 +324,98 @@ func TestServer_TKS13_ClosesOnCleanup(t *testing.T) {
 	}
 }
 
+// postGo sends one chat request to a Go double, with or without the session
+// header, and returns the status and body.
+func postGo(t *testing.T, s *Server, session string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, s.URL+"/v1/chat/completions", strings.NewReader(`{"model":"m"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session != "" {
+		req.Header.Set("x-opencode-session", session)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return resp.StatusCode, string(body)
+}
+
+func TestServer_TKS15_GoRequiresSessionHeader(t *testing.T) {
+	s := NewGoServer(t, GoConfig{RequireSession: true}, ServerTurn{Turn: Turn{Text: "hello"}})
+	status, body := postGo(t, s, "")
+	if status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", status)
+	}
+	if !strings.Contains(body, "MissingSessionID") {
+		t.Fatalf("body = %s, want the MissingSessionID shape", body)
+	}
+	status, body = postGo(t, s, "thread-1")
+	if status != http.StatusOK {
+		t.Fatalf("status with a session = %d, want 200", status)
+	}
+	if len(dataLines(body)) == 0 {
+		t.Error("no SSE data lines were served to the sessioned request")
+	}
+}
+
+func TestServer_TKS16_GoEmitsOpencodeUsage(t *testing.T) {
+	s := NewGoServer(t, GoConfig{RequireSession: true}, ServerTurn{Turn: Turn{
+		Text: "hi",
+		Usage: &provider.Usage{PromptTokens: 32, CompletionTokens: 8, TotalTokens: 40,
+			CostUSD: 0.00000576, CostSource: "allowance", AllowanceUSD: 0.00000576,
+			ListCostUSD: 0.0000096, BillingSource: "go"},
+	}})
+	status, body := postGo(t, s, "thread-1")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	found := false
+	for _, line := range dataLines(body) {
+		if line == "[DONE]" {
+			continue
+		}
+		var chunk wireChunk
+		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+			t.Fatalf("bad chunk: %v", err)
+		}
+		if chunk.Usage == nil {
+			continue
+		}
+		found = true
+		op, ok := chunk.Usage["opencode"].(map[string]any)
+		if !ok {
+			t.Fatalf("usage = %v, want an opencode object", chunk.Usage)
+		}
+		if op["allowance"] != 0.00000576 || op["list_cost"] != 0.0000096 || op["billing_source"] != "go" {
+			t.Errorf("opencode = %v, want the scripted allowance numbers", op)
+		}
+	}
+	if !found {
+		t.Error("no usage chunk was sent")
+	}
+}
+
+func TestServer_TKS17_GoServesStatusEndpoint(t *testing.T) {
+	const statusBody = `{"usage":{"rolling":{"status":"ok","percent":3}}}`
+	s := NewGoServer(t, GoConfig{StatusBody: []byte(statusBody)})
+	resp, err := http.Get(s.URL + "/api/go/status")
+	if err != nil {
+		t.Fatalf("GET /api/go/status: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != statusBody {
+		t.Errorf("status = %d body = %s, want 200 with the body verbatim", resp.StatusCode, body)
+	}
+}
+
 func TestServer_TKS14_UnknownPath(t *testing.T) {
 	s := NewServer(t, ServerTurn{Turn: Turn{Text: "hi"}})
 	resp, err := http.Get(s.URL + "/nope")

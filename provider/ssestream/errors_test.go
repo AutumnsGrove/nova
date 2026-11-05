@@ -103,6 +103,22 @@ func TestSSEStream_ErrorBodyNeverEchoesTheKey(t *testing.T) {
 	}
 }
 
+// A gateway that reports its failures as error.type with no error.code (Go's
+// MissingSessionID and EntitlementError shapes) still yields a Code the
+// router's fallback predicate can classify on (#59).
+func TestSSEStream_TMO25_ErrorTypeBacksUpErrorCode(t *testing.T) {
+	perr := errorFor(t, http.StatusBadRequest,
+		`{"type":"error","error":{"type":"MissingSessionID","message":"missing session"}}`, http.Header{})
+	if perr.Code != "MissingSessionID" {
+		t.Errorf("Code = %q, want MissingSessionID", perr.Code)
+	}
+	perr = errorFor(t, http.StatusBadRequest,
+		`{"error":{"type":"server_error","code":"went_away","message":"gone"}}`, http.Header{})
+	if perr.Code != "went_away" {
+		t.Errorf("Code = %q, want the code to win when both are set", perr.Code)
+	}
+}
+
 func TestSSEStream_ErrorBodyIsBoundedAndValidUTF8(t *testing.T) {
 	perr := errorFor(t, http.StatusBadGateway, strings.Repeat("é", maxErrorBodyKept), http.Header{})
 	if !utf8.ValidString(perr.Body) {

@@ -475,6 +475,7 @@ type OpenCodeGoConfig struct {
 | TMO22 | `Each` and `Decode` | a bare event, good events, a bad payload | the bare event skipped; early stop; invalid JSON names its line |
 | TMO23 | `Target` header precedence | config, request, fixed headers and a key | config < request < fixed; the key last, from `APIKeyFunc` first |
 | TMO24 | `Target` key error and preflight | failing key func; cancelled context, no model, no URL | provider error; the matching error before any request |
+| TMO25 | `error.type` backs up `error.code` | `{"error":{"type":"MissingSessionID"}}` and `{... ,"code":"x"}` | `Code` is the type when code is absent; code wins when both are set |
 | DSC02 | refresh while routing | `Refresh` in a loop while `APIFor` runs | no race (under `-race`) |
 | DSC03 | empty or unusable models reply | `{"data":[]}`, an error object, HTML, rows without ids | `Refresh` errors; overlay kept; cache not stamped fresh |
 | OPG35 | catalog says which models cache implicitly | every baseline entry | Claude false; the rest true, and a discovered override keeps the baseline flag |

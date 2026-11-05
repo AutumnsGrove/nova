@@ -118,7 +118,10 @@ func TestProperty_BSH_GroupKill(t *testing.T) {
 		n := 1 + rng.Intn(5)
 		pids, env := pidFile(t)
 		cmd := fmt.Sprintf(`for i in $(seq 1 %d); do sleep 30 & echo $! >> "$PIDS"; done; sleep 30`, n)
-		runBash(t, bashTool(t, WithEnv(env), WithTimeout(300*time.Millisecond)), &tool.Context{WorkDir: t.TempDir()}, map[string]any{"command": cmd})
+		// One second, like the other group-kill tests: the command has to reach
+		// its first echo and its final sleep before the timeout can prove
+		// anything, and 300ms was a startup race that a loaded runner lost.
+		runBash(t, bashTool(t, WithEnv(env), WithTimeout(time.Second)), &tool.Context{WorkDir: t.TempDir()}, map[string]any{"command": cmd})
 		data, err := os.ReadFile(pids)
 		if err != nil {
 			t.Fatalf("seed %d iter %d: %v", seed, i, err)

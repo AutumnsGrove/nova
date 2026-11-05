@@ -7,6 +7,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-05
+
+**Install this.** `v0.3.0`, `v0.3.1` and `v0.3.2` are tagged and resolve as Go modules, but none
+published binaries: their release workflows died on the way, each one stage further than the last. This
+is the `v0.3.2` tree plus the two fixes the build jobs needed, and the release that publishes. The
+feature list is `v0.3.0`'s, further down. Nothing here changes behaviour for a caller: the diff is
+`scripts/package.sh`'s file mode and `release.yml`.
+
+### Fixed
+- The build jobs package their archives. `scripts/package.sh` was tracked without an execute bit, so
+  every job died at `./scripts/package.sh: Permission denied` after the acceptance gate had passed
+  (#74).
+- A `workflow_dispatch` run now goes through the build matrix and stops before publishing, so the
+  archive step is exercised before a tag rather than by one (#74).
+
 ## [0.3.2] - 2026-11-05
 
 **Install this.** v0.3.0 and v0.3.1 are tagged and resolve as Go modules, but neither published
@@ -409,7 +424,8 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
 - The first release: the agent loop, tools, sessions, config, the TUI, the
   extension host, the bundled extensions, serve mode, and the GitHub Action.
 
-[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.3
 [0.3.2]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.2
 [0.3.1]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.1
 [0.3.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.0

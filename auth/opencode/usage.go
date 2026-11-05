@@ -118,16 +118,40 @@ func ParseStatus(payload []byte) []UsageMeter {
 	return out
 }
 
+// PeriodEnd returns the plan period end from fetched meters: the monthly
+// meter's reset time, which ParseStatus already falls back to the payload's
+// access.endsAt when the month carries no resetsAt of its own. It is ""
+// when there is no monthly meter, so a caller gating on the period end can
+// treat that as unknown rather than as now.
+func PeriodEnd(meters []UsageMeter) string {
+	for _, m := range meters {
+		if m.Kind == MeterMonth {
+			return m.ResetsAt
+		}
+	}
+	return ""
+}
+
 // FetchUsage fetches the three meters for a workspace.
 func FetchUsage(ctx context.Context, cfg Config, key, orgID string) ([]UsageMeter, error) {
+	return FetchMeters(ctx, cfg.HTTPClient, cfg.Server, key, orgID)
+}
+
+// FetchMeters fetches the three meters for a workspace from an explicit
+// server with a caller-supplied key, without Nova's credential config. An
+// empty server means the default Console; a nil client means
+// http.DefaultClient. It is the entry point for library consumers, which own
+// their keys; FetchUsage keeps Nova's config-based behaviour on top of it.
+// A payload whose shape changed is ErrUnrecognized, never a panic, so a
+// caller can degrade to its own ledger when the endpoint moves.
+func FetchMeters(ctx context.Context, client *http.Client, server, key, orgID string) ([]UsageMeter, error) {
 	if key == "" {
 		return nil, &UsageError{Kind: ErrNoCredentials, Message: "Not signed in to OpenCode Go."}
 	}
-	server := strings.TrimRight(cfg.Server, "/")
+	server = strings.TrimRight(server, "/")
 	if server == "" {
 		server = DefaultServer
 	}
-	client := cfg.HTTPClient
 	if client == nil {
 		client = http.DefaultClient
 	}

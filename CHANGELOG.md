@@ -7,6 +7,30 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-05
+
+**Install this.** v0.3.0 and v0.3.1 are tagged and resolve as Go modules, but neither published
+binaries: both release workflows died in the acceptance gate, which had been broken since v0.2.0. This
+release is the v0.3.1 tree plus the fixes that got the gate through, and the first since v0.2.0 with a
+GitHub release and downloadable archives. The feature list is v0.3.0's, below. Nothing here changes
+behaviour for a caller: the diff is tests, CI configuration, and the C00 spec.
+
+### Fixed
+- A tag now publishes. The gate is a loop over every archived chunk, and three of its tests failed
+  when it first reached them: `SUP12` slept 50ms of real time hoping a fake-clock timer had
+  registered and failed under load (#67); `TestProperty_BSH_GroupKill` gave its command 300ms to
+  start bash and write a pid file, so a loaded runner killed it first (#71); and the splash GIF
+  re-render ran under `-short`, which made the whole package slow everywhere the fast loop touched it
+  (#65). All three are test-only.
+- The release gate can be run without tagging (`workflow_dispatch`), which is how this release was
+  checked before `v0.3.2` was cut (#70).
+
+### Changed
+- CI costs a third of what it did. A branch push ran two identical pipelines because the workflow
+  triggered on both `push` and `pull_request`; `push` is now limited to `main`. The splash job ran the
+  GIF renderer under `-race` — seven minutes for a package that starts no goroutine — and now runs it
+  plain in about 40 seconds, with `-race` kept for `make race-splash` and for every release (D159).
+
 ## [0.3.1] - 2026-11-04
 
 **Install this, not v0.3.0.** The v0.3.0 tag exists and the Go module resolves, but its release
@@ -385,7 +409,8 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
 - The first release: the agent loop, tools, sessions, config, the TUI, the
   extension host, the bundled extensions, serve mode, and the GitHub Action.
 
-[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.2
 [0.3.1]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.1
 [0.3.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.0
 [0.2.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.2.0

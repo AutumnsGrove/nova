@@ -314,8 +314,8 @@ func TestImportcheck_TestkitAllowedOnlyInTests(t *testing.T) {
 func TestImportcheck_RT11_RouteStaysHarnessOnly(t *testing.T) {
 	for _, shell := range []string{"mode", "config", "session", "usage", "tui", "bundled"} {
 		root := fixtureModule(t, map[string]string{
-			"provider/route/route.go": "package route\n\nimport _ \"example.com/m/" + shell + "\"\n",
-			shell + "/" + shell + ".go":   "package " + shell + "\n",
+			"provider/route/route.go":   "package route\n\nimport _ \"example.com/m/" + shell + "\"\n",
+			shell + "/" + shell + ".go": "package " + shell + "\n",
 		})
 		code, out := runImportcheck(t, root)
 		if code != 1 {

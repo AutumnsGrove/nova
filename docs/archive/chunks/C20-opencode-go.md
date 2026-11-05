@@ -1,8 +1,8 @@
 ---
 chunk: C20
 title: "OpenCode Go, the second launch provider"
-packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./mode/providers, ./auth/opencode, ./mode, ./tui/ui]
-budgets: { ./provider/ssestream: 420, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1540, ./auth: 500, ./mode: 2800, ./tui/ui: 3050 }
+packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./provider/route, ./mode/providers, ./auth/opencode, ./mode, ./tui/ui, ./scripts/importcheck]
+budgets: { ./provider/ssestream: 420, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./provider/route: 340, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1540, ./auth: 500, ./mode: 2800, ./tui/ui: 3050, ./scripts/importcheck: 260 }
 depends: [C02, C03, C12]
 ---
 
@@ -482,6 +482,19 @@ type OpenCodeGoConfig struct {
 | DSC03 | empty or unusable models reply | `{"data":[]}`, an error object, HTML, rows without ids | `Refresh` errors; overlay kept; cache not stamped fresh |
 | OPG35 | catalog says which models cache implicitly | every baseline entry | Claude false; the rest true, and a discovered override keeps the baseline flag |
 | OPG36 | catalog id stripped for the wire | `Model` `opencode-go/glm-5.3`, then the bare slug | the wire model is `glm-5.3` both times |
+| RT01 | a Go route reaches Go | a catalog id routed Go-first | the Go base URL sees the wire slug, `Authorization`, the app `User-Agent`, and `x-opencode-session` |
+| RT02 | no session id still sends | `SessionID` nil on an OpenRouter route | success; no `x-opencode-session` header goes out |
+| RT03 | a limit spills exactly once | Go 429, then OpenRouter success | one OpenRouter call; the response `Provider` is the OpenRouter name |
+| RT04 | `bad_request` does not spill | Go 400 `invalid_request_error` | the error returns; OpenRouter is never called |
+| RT05 | cancellation does not spill | a cancelled context | the caller's cancellation returns; no second attempt |
+| RT06 | a failed attempt's usage is kept | Go fails with usage, then OpenRouter succeeds | the response usage sums both attempts |
+| RT07 | `OnFallback` fires once per spill | Go 429 then success | called once with from, to and the classified error; silent otherwise |
+| RT08 | `Resolve` and the default provider | a known id, an unknown id, an empty default | the attempt order; unknown ids go to the default, or the first provider |
+| RT09 | concurrent use | N goroutines with different catalog ids, `-race` | no shared or mutated headers |
+| RT10 | no fallback, unchanged error | a single-attempt route, Go 500 | the primary error returns unchanged |
+| RT11 | the router stays in the harness layer | a fixture module importing `provider/route` from shell layers | `importcheck` fails; the harness-only fixture passes |
+| RT12 | attribution is the serving attempt | `Name()` and a spilled response | `Name()` is stable; `Response.Provider` names the attempt that answered |
+| RT13 | `ForceProvider` pins everything | the pin set with a Go-first route | OpenRouter serves; Go is never called |
 
 | USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |
 | USG02 | percent clamped | used over limit | percent 100 |

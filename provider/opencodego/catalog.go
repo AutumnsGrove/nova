@@ -24,6 +24,15 @@ type baselineModel struct {
 	// cache automatically, and an unknown gateway is safer without a parameter
 	// it might reject.
 	implicitCaching bool
+	// efforts, toolChoice, tiers, and multipliers come from the live
+	// /v1/models metadata, captured 2026-11-05. monthlyLimitUSD is the
+	// Go ($10) plan's monthly allowance from the Go docs page, same date;
+	// Plus and Teams plans raise it.
+	efforts         []string
+	toolChoice      []string
+	tiers           []provider.PriceTier
+	multipliers     []provider.CostMultiplier
+	monthlyLimitUSD float64
 }
 
 // baseline is the code-defined catalog. It is the offline fallback and the
@@ -34,13 +43,53 @@ type baselineModel struct {
 // Context windows are a conservative 200,000 tokens until discovery reads the
 // live metadata, because the Go page does not list them.
 var baseline = []baselineModel{
-	{idPrefix + "deepseek-v4.1-flash", "DeepSeek V4.1 Flash", DialectChat, 200_000, 0.15, 0.60, false, true},
-	{idPrefix + "glm-5.3", "GLM-5.3", DialectChat, 200_000, 1.40, 4.40, false, true},
-	{idPrefix + "glm-5.3-flash", "GLM-5.3-Flash", DialectChat, 200_000, 0.15, 0.50, false, true},
-	{idPrefix + "kimi-k3", "Kimi K3", DialectChat, 200_000, 3.00, 15.00, false, true},
-	{idPrefix + "grok-4.7", "Grok 4.7", DialectResponses, 200_000, 2.00, 6.00, true, true},
-	{idPrefix + "claude-haiku-5-5", "Claude Haiku 5.5", DialectMessages, 200_000, 0.10, 0.50, true, false},
-	{idPrefix + "minimax-m3", "MiniMax M3", DialectMessages, 200_000, 0.30, 1.20, false, true},
+	{
+		id: idPrefix + "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", dialect: DialectChat,
+		context: 200_000, inPerM: 0.15, outPerM: 0.60, implicitCaching: true,
+		efforts: []string{"low", "high", "max"}, toolChoice: []string{"auto", "none", "required", "tool"},
+		multipliers:     []provider.CostMultiplier{{Factor: 2, Window: "weekdays 01:00-04:00, 06:00-10:00 UTC"}},
+		monthlyLimitUSD: 100,
+	},
+	{
+		id: idPrefix + "glm-5.3", name: "GLM-5.3", dialect: DialectChat,
+		context: 200_000, inPerM: 1.40, outPerM: 4.40, implicitCaching: true,
+		efforts: []string{"low", "high", "max"}, toolChoice: []string{"auto"},
+		monthlyLimitUSD: 15,
+	},
+	{
+		id: idPrefix + "glm-5.3-flash", name: "GLM-5.3-Flash", dialect: DialectChat,
+		context: 200_000, inPerM: 0.15, outPerM: 0.50, implicitCaching: true,
+		efforts: []string{"low", "high", "max"}, toolChoice: []string{"auto"},
+		monthlyLimitUSD: 60,
+	},
+	{
+		id: idPrefix + "kimi-k3", name: "Kimi K3", dialect: DialectChat,
+		context: 200_000, inPerM: 3.00, outPerM: 15.00, implicitCaching: true,
+		efforts: []string{"max"}, toolChoice: []string{"auto", "none", "required"},
+		monthlyLimitUSD: 15,
+	},
+	{
+		id: idPrefix + "grok-4.7", name: "Grok 4.7", dialect: DialectResponses,
+		context: 200_000, inPerM: 2.00, outPerM: 6.00, multimodal: true, implicitCaching: true,
+		efforts: []string{"low", "medium", "high", "xhigh"}, toolChoice: []string{"auto", "none", "required", "tool"},
+		tiers:           []provider.PriceTier{{AboveTokens: 200000, InPerM: 4, OutPerM: 12}},
+		monthlyLimitUSD: 15,
+	},
+	{
+		id: idPrefix + "claude-haiku-5-5", name: "Claude Haiku 5.5", dialect: DialectMessages,
+		context: 200_000, inPerM: 0.10, outPerM: 0.50, multimodal: true,
+		efforts:         []string{"low", "medium", "high", "xhigh", "max"},
+		toolChoice:      []string{"auto", "none", "required", "tool"},
+		tiers:           []provider.PriceTier{{AboveTokens: 100000, InPerM: 0.50, OutPerM: 2.50}},
+		monthlyLimitUSD: 15,
+	},
+	{
+		id: idPrefix + "minimax-m3", name: "MiniMax M3", dialect: DialectMessages,
+		context: 200_000, inPerM: 0.30, outPerM: 1.20, implicitCaching: true,
+		toolChoice:      []string{"auto"},
+		tiers:           []provider.PriceTier{{AboveTokens: 512000, InPerM: 0.60, OutPerM: 2.40}},
+		monthlyLimitUSD: 60,
+	},
 }
 
 // baselineFor returns the baseline entry for a catalog id.
@@ -86,14 +135,19 @@ func RegisterModels() {
 	}
 	for _, b := range baseline {
 		add(provider.Model{
-			ID:              b.id,
-			Name:            b.name,
-			Provider:        ProviderName,
-			Slug:            stripPrefix(b.id),
-			ContextWindow:   b.context,
-			InPerM:          b.inPerM,
-			OutPerM:         b.outPerM,
-			ImplicitCaching: b.implicitCaching,
+			ID:               b.id,
+			Name:             b.name,
+			Provider:         ProviderName,
+			Slug:             stripPrefix(b.id),
+			ContextWindow:    b.context,
+			InPerM:           b.inPerM,
+			OutPerM:          b.outPerM,
+			ImplicitCaching:  b.implicitCaching,
+			ReasoningEfforts: b.efforts,
+			ToolChoice:       b.toolChoice,
+			PriceTiers:       b.tiers,
+			CostMultipliers:  b.multipliers,
+			MonthlyLimitUSD:  b.monthlyLimitUSD,
 		}, b.dialect)
 	}
 	for _, d := range overlay {

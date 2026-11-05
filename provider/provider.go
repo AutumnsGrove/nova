@@ -47,9 +47,13 @@ type Request struct {
 	Temperature       *float64
 	MaxTokens         int
 	Stop              []string
-	ReasoningEffort   string         // "", "low", "medium", or "high"
-	ProviderOptions   map[string]any // merged into the wire body by the provider
-	ExtraHeaders      map[string]string
+	// ReasoningEffort asks for a reasoning tier. The tiers vary by
+	// provider (OpenRouter-style low/medium/high; Go spans minimal to
+	// max); the catalog's ReasoningEfforts lists what a model takes.
+	// "" sends none.
+	ReasoningEffort string
+	ProviderOptions map[string]any // merged into the wire body by the provider
+	ExtraHeaders    map[string]string
 	// PromptCache overrides whether the request carries an explicit prompt
 	// cache marker. Nil means decide from the catalog; see
 	// RequestCacheControl. A pointer, so true and false are both meaningful.

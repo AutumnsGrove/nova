@@ -132,6 +132,14 @@ type Config struct {
 	// DefaultProvider serves ids with no route, with the request unrewritten.
 	// Empty means the first provider.
 	DefaultProvider string
+	// Unknown resolves a catalog id with no configured route against a
+	// dynamic registry. It returns the attempt to serve it and true to
+	// rewrite Model to the attempt's slug, or false to fall through to the
+	// default provider with the request unrewritten. Nil means every
+	// unconfigured id falls through. It runs per request, so a registry
+	// that grows at runtime (live model discovery) routes fresh ids
+	// without rebuilding the router.
+	Unknown func(catalogID string) (Attempt, bool)
 	// ForceProvider pins every call to one provider: the kill switch for an
 	// outage. A known id uses its configured attempt for that provider, so
 	// the wire model stays valid; an unknown id passes through unrewritten.
@@ -154,6 +162,7 @@ type Router struct {
 	routes    map[string]Route
 	defaultP  string
 	forceP    string
+	unknown   func(catalogID string) (Attempt, bool)
 	sessionID func() string
 	userAgent string
 }
@@ -173,6 +182,7 @@ func New(cfg Config) *Router {
 		routes:    map[string]Route{},
 		sessionID: cfg.SessionID,
 		userAgent: cfg.UserAgent,
+		unknown:   cfg.Unknown,
 	}
 	for _, decl := range cfg.Providers {
 		if decl.Name == "" {
@@ -273,6 +283,13 @@ func (r *Router) Stream(ctx context.Context, req provider.Request, onEvent func(
 	// pin rewrites only when the id configures an attempt for it.
 	route, rewrite := r.routes[id]
 	attempts := route.Attempts
+	if !rewrite && r.unknown != nil {
+		if attempt, ok := r.unknown(id); ok {
+			route = Route{Attempts: []Attempt{attempt}}
+			attempts = route.Attempts
+			rewrite = true
+		}
+	}
 	if !rewrite {
 		attempts = []Attempt{{Provider: r.defaultP}}
 	}

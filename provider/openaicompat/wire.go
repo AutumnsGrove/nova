@@ -122,12 +122,13 @@ type tokenDetails struct {
 // rawUsage is the wire usage object. Cost is a pointer so an absent cost can be
 // told from a reported zero, which decides CostSource.
 type rawUsage struct {
-	PromptTokens            int           `json:"prompt_tokens"`
-	CompletionTokens        int           `json:"completion_tokens"`
-	TotalTokens             int           `json:"total_tokens"`
-	Cost                    *float64      `json:"cost"`
-	PromptTokensDetails     *tokenDetails `json:"prompt_tokens_details"`
-	CompletionTokensDetails *tokenDetails `json:"completion_tokens_details"`
+	PromptTokens            int                     `json:"prompt_tokens"`
+	CompletionTokens        int                     `json:"completion_tokens"`
+	TotalTokens             int                     `json:"total_tokens"`
+	Cost                    *float64                `json:"cost"`
+	Opencode                *provider.OpencodeUsage `json:"opencode"`
+	PromptTokensDetails     *tokenDetails           `json:"prompt_tokens_details"`
+	CompletionTokensDetails *tokenDetails           `json:"completion_tokens_details"`
 }
 
 // errorObject is the error shape returned both as an HTTP body and, on a 200,
@@ -148,7 +149,9 @@ type chatChunk struct {
 }
 
 // usageFromRaw maps the wire usage onto provider.Usage. A present cost is
-// trusted as provider-reported.
+// trusted as provider-reported, unless the call carries Go's usage.opencode
+// block: Go reports cost 0 for a covered call, and the allowance is what the
+// turn consumed, so the block wins when it is there.
 func usageFromRaw(u *rawUsage) provider.Usage {
 	out := provider.Usage{
 		PromptTokens:     u.PromptTokens,
@@ -162,7 +165,9 @@ func usageFromRaw(u *rawUsage) provider.Usage {
 	if u.CompletionTokensDetails != nil {
 		out.ReasoningTokens = u.CompletionTokensDetails.ReasoningTokens
 	}
-	if u.Cost != nil {
+	if u.Opencode != nil {
+		out.ApplyOpencode(u.Opencode)
+	} else if u.Cost != nil {
 		out.CostUSD = *u.Cost
 		out.CostSource = "provider"
 	}

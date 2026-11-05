@@ -111,9 +111,14 @@ func New(cfg Config) provider.Provider {
 // Name returns the provider id.
 func (p *Provider) Name() string { return ProviderName }
 
-// Stream dispatches to the dialect for req.Model.
+// Stream dispatches to the dialect for req.Model. A catalog id dispatches
+// exactly (the endpoint table is keyed by it) while the wire carries the
+// bare slug: the catalog prefix is Nova's namespace, not Go's model name.
+// A bare slug passes through unchanged, so existing callers are unaffected.
 func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
-	switch APIFor(req.Model) {
+	dialect := APIFor(req.Model)
+	req.Model = stripPrefix(req.Model)
+	switch dialect {
 	case DialectResponses:
 		return p.responses.Stream(ctx, req, onEvent)
 	case DialectMessages:

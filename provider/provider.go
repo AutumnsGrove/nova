@@ -9,6 +9,7 @@
 package provider
 
 import (
+	"cmp"
 	"context"
 
 	"github.com/AutumnsGrove/nova/message"
@@ -46,9 +47,13 @@ type Request struct {
 	Temperature       *float64
 	MaxTokens         int
 	Stop              []string
-	ReasoningEffort   string         // "", "low", "medium", or "high"
-	ProviderOptions   map[string]any // merged into the wire body by the provider
-	ExtraHeaders      map[string]string
+	// ReasoningEffort asks for a reasoning tier. The tiers vary by
+	// provider (OpenRouter-style low/medium/high; Go spans minimal to
+	// max); the catalog's ReasoningEfforts lists what a model takes.
+	// "" sends none.
+	ReasoningEffort string
+	ProviderOptions map[string]any // merged into the wire body by the provider
+	ExtraHeaders    map[string]string
 	// PromptCache overrides whether the request carries an explicit prompt
 	// cache marker. Nil means decide from the catalog; see
 	// RequestCacheControl. A pointer, so true and false are both meaningful.
@@ -66,7 +71,21 @@ type Usage struct {
 	// A cold cache pays the write rate for the prefix it stores.
 	CacheWriteTokens int     `json:"cache_write_tokens,omitempty"`
 	CostUSD          float64 `json:"cost_usd,omitempty"`
-	CostSource       string  `json:"cost_source,omitempty"` // "provider", "catalog", or ""
+	CostSource       string  `json:"cost_source,omitempty"` // "provider", "allowance", "catalog", or ""
+	// AllowanceUSD is the dollars of a subscription allowance this call
+	// consumed (Go's usage.opencode.allowance). It is part of CostUSD, not
+	// in addition to it: CostUSD is what the call consumed, CostSource says
+	// whose dollars they were. Zero with CostSource "allowance" is a
+	// reported zero (a free model), distinct from an absent allowance.
+	AllowanceUSD float64 `json:"allowance_usd,omitempty"`
+	// ListCostUSD is the list price of the same call
+	// (Go's usage.opencode.list_cost): what it would have cost at retail.
+	// It is informational only and never added to CostUSD.
+	ListCostUSD float64 `json:"list_cost_usd,omitempty"`
+	// BillingSource is the provider-reported billing source, such as "go",
+	// "go-plus", "balance", "free", or "byok". Empty means the
+	// provider did not say.
+	BillingSource string `json:"billing_source,omitempty"`
 }
 
 // Add accumulates another usage record into u.
@@ -79,18 +98,57 @@ func (u *Usage) Add(o Usage) {
 	u.CacheWriteTokens += o.CacheWriteTokens
 	u.CostUSD += o.CostUSD
 	u.CostSource = combineCostSource(u.CostSource, o.CostSource)
+	u.AllowanceUSD += o.AllowanceUSD
+	u.ListCostUSD += o.ListCostUSD
+	u.BillingSource = cmp.Or(u.BillingSource, o.BillingSource)
 }
 
 // combineCostSource keeps the strongest provenance: a provider-reported cost
-// is trusted over a catalog estimate.
+// is trusted over a catalog estimate, and an allowance report counts as
+// provider-reported. Between two provider-reported sources the real-money one
+// ("provider") wins over the allowance one, so a mixed total reads as real
+// spend; the allowance dollars stay visible in AllowanceUSD either way.
 func combineCostSource(a, b string) string {
 	if a == "provider" || b == "provider" {
 		return "provider"
+	}
+	if a == "allowance" || b == "allowance" {
+		return "allowance"
 	}
 	if a == "catalog" || b == "catalog" {
 		return "catalog"
 	}
 	return ""
+}
+
+// OpencodeUsage is the usage.opencode object OpenCode Go attaches to every
+// usage report, beside the dialect's own token counts and cost. Allowance and
+// ListCost are pointers so a reported zero (a free model) reads differently
+// from an absent object, the same rule the cost field already uses.
+type OpencodeUsage struct {
+	Allowance     *float64 `json:"allowance"`
+	ListCost      *float64 `json:"list_cost"`
+	BillingSource string   `json:"billing_source"`
+}
+
+// ApplyOpencode folds a present usage.opencode object into u. The allowance
+// becomes the call's cost with source "allowance", because Go reports cost
+// 0 for a covered call and the allowance is what the turn consumed. A nil
+// object is a no-op, so dialects call this unconditionally after mapping
+// their own fields.
+func (u *Usage) ApplyOpencode(o *OpencodeUsage) {
+	if o == nil {
+		return
+	}
+	if o.Allowance != nil {
+		u.CostUSD = *o.Allowance
+		u.AllowanceUSD = *o.Allowance
+	}
+	u.CostSource = "allowance"
+	if o.ListCost != nil {
+		u.ListCostUSD = *o.ListCost
+	}
+	u.BillingSource = o.BillingSource
 }
 
 // Response is the finalized result of one provider call.
@@ -99,6 +157,10 @@ type Response struct {
 	FinishReason string
 	Usage        Usage
 	Model        string
+	// Provider is the id of the provider that served the call. A plain
+	// provider reports its own name; a router reports the attempt that
+	// answered, so a logged call is attributable to the backend that ran it.
+	Provider string
 }
 
 // StreamEventType identifies a streaming event.

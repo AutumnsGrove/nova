@@ -39,6 +39,40 @@ type Model struct {
 	// False is the safe default: an anthropic-style model needs the marker to
 	// cache at all, and a model the catalog does not know is never marked.
 	ImplicitCaching bool
+	// ReasoningEfforts lists the reasoning effort tiers the model accepts,
+	// such as low, high, or max. Empty means the model has no effort
+	// control; a model the catalog does not know sends none either.
+	ReasoningEfforts []string
+	// ToolChoice lists the tool_choice variants the model accepts, such as
+	// auto, none, required, or tool. Empty means unknown: a model the
+	// catalog does not describe is sent tools without a choice variant.
+	ToolChoice []string
+	// PriceTiers lists the prompt-size price bands above the base InPerM
+	// and OutPerM rates, ascending by AboveTokens. Empty means flat
+	// pricing at any prompt size.
+	PriceTiers []PriceTier
+	// CostMultipliers lists the time-based price factors, such as a peak
+	// doubling. Display-only: scheduling around them is the caller's job.
+	CostMultipliers []CostMultiplier
+	// MonthlyLimitUSD is the subscription's monthly allowance for this
+	// model in dollars, Go base plan. Plus and Teams plans raise it; a
+	// model with no plan limit is zero. Docs-only data, not a price.
+	MonthlyLimitUSD float64
+}
+
+// PriceTier is one prompt-size price band: above AboveTokens prompt tokens,
+// InPerM and OutPerM replace the model's base rates.
+type PriceTier struct {
+	AboveTokens int
+	InPerM      float64
+	OutPerM     float64
+}
+
+// CostMultiplier is one time-based price factor with the window it applies
+// in, in the catalog's own terms (such as weekday peak hours).
+type CostMultiplier struct {
+	Factor float64
+	Window string
 }
 
 // AcceptsImages reports whether the model declares image input. A model with

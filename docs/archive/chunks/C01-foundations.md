@@ -2,7 +2,7 @@
 chunk: C01
 title: "Message, provider contract, testkit"
 packages: [./message, ./provider, ./testkit, ./media]
-budgets: { ./message: 250, ./provider: 500, ./testkit: 1200, ./media: 320, ./roles: 200, ./decide: 400, ./decide/openrouter: 400, ./embed: 260, ./embed/openai: 360, ./embed/ollama: 180, ./embed/openrouter: 220 }
+budgets: { ./message: 250, ./provider: 600, ./testkit: 1200, ./media: 320, ./roles: 200, ./decide: 400, ./decide/openrouter: 400, ./embed: 260, ./embed/openai: 360, ./embed/ollama: 180, ./embed/openrouter: 220 }
 depends: [C00]
 ---
 
@@ -286,6 +286,9 @@ func NoLeaks(t testing.TB)                  // registers a cleanup that checks g
 | PRV22 | registered model keeps `InputModalities` | a model with text+image | `AcceptsImages` true after `GetModel` |
 | PRV23 | cache marker derives from the catalog | unknown model, implicit model, non-implicit model, id and slug disagree | nil, nil, `{"type":"ephemeral"}`, id wins |
 | PRV24 | `PromptCache` overrides the catalog | true on an implicit model; false on a non-implicit one; true on an unknown one | marker; nil; marker |
+| PRV25 | `Usage.Add` sums allowance and list cost | allowance, list cost and billing source on both sides | sums; billing source kept when one side is empty |
+| PRV26 | `CostSource` treats allowance as provider-reported | provider+allowance, allowance+catalog, allowance+allowance, allowance+empty | provider, allowance, allowance, allowance |
+| PRV27 | a model keeps its picker fields | every new field set | `GetModel` returns them all |
 | TKC01 | `FakeClock` does not read real time | `Now()` after `Advance(1h)` | start + 1h, instantly |
 | TKC02 | `Advance` fires timers in deadline order | timers at 3s, 1s, 2s | fire 1s, 2s, 3s |
 | TKC03 | `Sleep` returns on advance | | returns nil |
@@ -321,6 +324,9 @@ func NoLeaks(t testing.TB)                  // registers a cleanup that checks g
 | TKS12 | requests recorded | two requests | method, path, headers, and body recorded |
 | TKS13 | server closes on cleanup | | later connections refused; no goroutine leak |
 | TKS14 | unknown path | `GET /nope` | 404 |
+| TKS15 | Go double requires the session header | `POST` without `x-opencode-session`, then with it | 400 `MissingSessionID` without; the turn served with |
+| TKS16 | Go double emits `usage.opencode` | turn usage with source `allowance` | the usage chunk carries `opencode` with allowance, list cost and billing source |
+| TKS17 | Go double serves the status endpoint | `GET /api/go/status` with a configured body | 200 with the body verbatim |
 | TKF01 | `TempTree` creates nested files | `a/b/c.txt` | file exists with the content |
 | TKF02 | `TempTree` is absolute and under the temp dir | | true |
 | TKF03 | `Symlink` and `WriteBinary` | | symlink resolves; file has NULs and the size |

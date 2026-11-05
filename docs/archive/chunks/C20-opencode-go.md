@@ -1,8 +1,8 @@
 ---
 chunk: C20
 title: "OpenCode Go, the second launch provider"
-packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./mode/providers, ./auth/opencode, ./mode, ./tui/ui]
-budgets: { ./provider/ssestream: 420, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1540, ./auth: 500, ./mode: 2800, ./tui/ui: 3050 }
+packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./provider/route, ./provider/chat, ./mode/providers, ./auth/opencode, ./mode, ./tui/ui, ./scripts/importcheck]
+budgets: { ./provider/ssestream: 420, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./provider/route: 340, ./provider/chat: 160, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1540, ./auth: 500, ./mode: 2800, ./tui/ui: 3050, ./scripts/importcheck: 260 }
 depends: [C02, C03, C12]
 ---
 
@@ -456,6 +456,7 @@ type OpenCodeGoConfig struct {
 | RSP29 | failures inside the stream are classed | `rate_limit_exceeded`, an overload message, `server_error`, and `invalid_prompt` | the first two are retryable; the others are not (a server fault can arrive after output has started) |
 | RSP30 | usage on an incomplete response | `response.incomplete` with input, output, cached, write, reasoning and total | every field mapped; finish `length` |
 | RSP31 | gateway cost on the Responses wire | `usage.cost` present, then absent | `CostSource` `provider`; then 0 and empty |
+| RSP32 | `usage.opencode` on the Responses wire | a full `opencode` block beside `cost: 0` | `CostSource` `allowance` with the exact allowance/list/source |
 | RSP24 | incomplete reasons | `max_output_tokens`, `content_filter`, an unknown reason | `length`, `content_filter`, `stop` |
 | RSP25 | stream cut mid-call | added and an argument fragment, then close | retryable; no tool call returned or delivered |
 | RSP26 | call with no `call_id` | a function call without one | a generated id |
@@ -464,6 +465,7 @@ type OpenCodeGoConfig struct {
 | MSG29 | unusable arguments in the transcript | a prior `tool_use` with cut-off, empty or non-object arguments | the request encodes; `input` is `{}` |
 | MSG30 | usage reported on `message_delta` | `message_start` zeros, then input 3480, output 217, read 7, write 3, cost | prompt 3490 (input+read+write), output 217, cost trusted as `provider` |
 | MSG31 | no cost on the native wire | `message_delta` with output only | `message_start` prompt kept, no cost |
+| MSG32 | `usage.opencode` on `message_delta` | a full `opencode` block beside `cost: 0` | `CostSource` `allowance` with the exact allowance/list/source |
 | MSG23 | `tool_choice` required | `"required"` | `{type:"any"}` |
 | MSG24 | `tool_use` with no id | a block without one | a generated id |
 | MSG25 | error event type | `invalid_request_error` | kept as `Code` |
@@ -475,9 +477,28 @@ type OpenCodeGoConfig struct {
 | TMO22 | `Each` and `Decode` | a bare event, good events, a bad payload | the bare event skipped; early stop; invalid JSON names its line |
 | TMO23 | `Target` header precedence | config, request, fixed headers and a key | config < request < fixed; the key last, from `APIKeyFunc` first |
 | TMO24 | `Target` key error and preflight | failing key func; cancelled context, no model, no URL | provider error; the matching error before any request |
+| TMO25 | `error.type` backs up `error.code` | `{"error":{"type":"MissingSessionID"}}` and `{... ,"code":"x"}` | `Code` is the type when code is absent; code wins when both are set |
 | DSC02 | refresh while routing | `Refresh` in a loop while `APIFor` runs | no race (under `-race`) |
 | DSC03 | empty or unusable models reply | `{"data":[]}`, an error object, HTML, rows without ids | `Refresh` errors; overlay kept; cache not stamped fresh |
 | OPG35 | catalog says which models cache implicitly | every baseline entry | Claude false; the rest true, and a discovered override keeps the baseline flag |
+| OPG36 | catalog id stripped for the wire | `Model` `opencode-go/glm-5.3`, then the bare slug | the wire model is `glm-5.3` both times |
+| OPG37 | Nova's routes are single attempts | a Go 500 with both backends up | the error returns; OpenRouter is never called |
+| OPG38 | the baseline carries picker fields | the deepseek and haiku entries | efforts, tool choice, tiers, multiplier, and monthly limit |
+| RT01 | a Go route reaches Go | a catalog id routed Go-first | the Go base URL sees the wire slug, `Authorization`, the app `User-Agent`, and `x-opencode-session` |
+| RT02 | no session id still sends | `SessionID` nil on an OpenRouter route | success; no `x-opencode-session` header goes out |
+| RT03 | a limit spills exactly once | Go 429, then OpenRouter success | one OpenRouter call; the response `Provider` is the OpenRouter name |
+| RT04 | `bad_request` does not spill | Go 400 `invalid_request_error` | the error returns; OpenRouter is never called |
+| RT05 | cancellation does not spill | a cancelled context | the caller's cancellation returns; no second attempt |
+| RT06 | a failed attempt's usage is kept | Go fails with usage, then OpenRouter succeeds | the response usage sums both attempts |
+| RT07 | `OnFallback` fires once per spill | Go 429 then success | called once with from, to and the classified error; silent otherwise |
+| RT08 | `Resolve` and the default provider | a known id, an unknown id, an empty default | the attempt order; unknown ids go to the default, or the first provider |
+| RT09 | concurrent use | N goroutines with different catalog ids, `-race` | no shared or mutated headers |
+| RT10 | no fallback, unchanged error | a single-attempt route, Go 500 | the primary error returns unchanged |
+| RT11 | the router stays in the harness layer | a fixture module importing `provider/route` from shell layers | `importcheck` fails; the harness-only fixture passes |
+| RT12 | attribution is the serving attempt | `Name()` and a spilled response | `Name()` is stable; `Response.Provider` names the attempt that answered |
+| RT13 | `ForceProvider` pins everything | the pin set with a Go-first route | OpenRouter serves; Go is never called |
+| RT14 | `Unknown` resolves dynamic ids | a hook serving an unconfigured id, then declining one | the hook's attempt runs with its slug; a declined id falls to the default unrewritten |
+| ONE01 | one-shot completion through the router | a catalog id, no agent | content, tool calls and usage return; the wire carries the slug and the Go double serves it |
 
 | USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |
 | USG02 | percent clamped | used over limit | percent 100 |
@@ -505,6 +526,8 @@ type OpenCodeGoConfig struct {
 | USG24 | footer widget | session start, then every 5 min | `ui.status` under `opencode-go` with the footer |
 | USG25 | refresh cadence | fake clock advances 5 min | exactly one refetch |
 | USG26 | refresh without a key | no credential | no `ui.status` published, no request |
+| USG27 | `FetchMeters` without config | a server URL and a key, no `Config` | the same meters `FetchUsage` returns; no key is `no_credentials` |
+| USG28 | `PeriodEnd` | meters with and without a monthly meter | the monthly reset; `""` when absent |
 
 ## Fuzz and property tests
 

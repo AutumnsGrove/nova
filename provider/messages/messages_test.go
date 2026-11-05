@@ -245,6 +245,27 @@ func TestMessages_MSG10_UsageAcrossEvents(t *testing.T) {
 	}
 }
 
+// TestMessages_MSG32_OpencodeUsage checks Go's usage.opencode block is parsed
+// on message_delta with the exact live numbers (#59).
+func TestMessages_MSG32_OpencodeUsage(t *testing.T) {
+	p, _ := newProvider(t, Config{},
+		sse("message_start", `{"type":"message_start","message":{"usage":{"input_tokens":11}}}`),
+		sse("message_delta", `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":8,"cost":0,"opencode":{"billing_source":"go","list_cost":0.0000051,"allowance":0.0000204}}}`),
+		sse("message_stop", `{"type":"message_stop"}`),
+	)
+	resp, _, err := run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	u := resp.Usage
+	if u.CostUSD != 0.0000204 || u.CostSource != "allowance" {
+		t.Errorf("cost = %v/%q, want 0.0000204/allowance", u.CostUSD, u.CostSource)
+	}
+	if u.AllowanceUSD != 0.0000204 || u.ListCostUSD != 0.0000051 || u.BillingSource != "go" {
+		t.Errorf("allowance/list/billing = %v/%v/%q, want 0.0000204/0.0000051/go", u.AllowanceUSD, u.ListCostUSD, u.BillingSource)
+	}
+}
+
 func TestMessages_MSG11_StopReasonMapping(t *testing.T) {
 	cases := map[string]string{
 		"end_turn":      "stop",

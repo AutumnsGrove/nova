@@ -117,6 +117,8 @@ type event struct {
 		CacheReadInputTokens     int      `json:"cache_read_input_tokens"`
 		CacheCreationInputTokens int      `json:"cache_creation_input_tokens"`
 		Cost                     *float64 `json:"cost"`
+		// Opencode is Go's usage.opencode block; see provider.OpencodeUsage.
+		Opencode *provider.OpencodeUsage `json:"opencode"`
 	} `json:"usage"`
 	Error struct {
 		Type    string `json:"type"`

@@ -1,6 +1,7 @@
 package ssestream
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -75,13 +76,18 @@ func truncateUTF8(s string, n int) string {
 }
 
 // errorPayload is the body shape shared by `{"error":{...}}` and `{"message":...}`.
+// Type backs up Code because some gateways report the machine-readable failure
+// there instead (Go's MissingSessionID and EntitlementError shapes carry no
+// code at all).
 type errorPayload struct {
 	Error *struct {
 		Code    any    `json:"code"`
+		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error"`
 	Message string `json:"message"`
 	Code    any    `json:"code"`
+	Type    string `json:"type"`
 }
 
 // bodyError pulls the machine code and human message out of a failed body,
@@ -92,9 +98,9 @@ func bodyError(body []byte) (code, message string) {
 	if json.Unmarshal(body, &p) != nil {
 		return "", stripHTML(body)
 	}
-	code, message = CodeString(p.Code), p.Message
+	code, message = cmp.Or(CodeString(p.Code), p.Type), p.Message
 	if p.Error != nil {
-		code = CodeString(p.Error.Code)
+		code = cmp.Or(CodeString(p.Error.Code), p.Error.Type)
 		if p.Error.Message != "" {
 			message = p.Error.Message
 		}

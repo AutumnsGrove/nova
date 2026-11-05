@@ -62,6 +62,36 @@ func TestProvider_PRV19_RegisterModel(t *testing.T) {
 	}
 }
 
+func TestProvider_PRV27_ModelKeepsPickerFields(t *testing.T) {
+	RegisterModel(Model{
+		ID: "prv27", Provider: "x",
+		ReasoningEfforts: []string{"low", "max"},
+		ToolChoice:       []string{"auto", "required"},
+		PriceTiers:       []PriceTier{{AboveTokens: 200000, InPerM: 4, OutPerM: 12}},
+		CostMultipliers:  []CostMultiplier{{Factor: 2, Window: "weekday peaks"}},
+		MonthlyLimitUSD:  100,
+	})
+	m, ok := GetModel("prv27")
+	if !ok {
+		t.Fatal("GetModel(prv27) not found")
+	}
+	if len(m.ReasoningEfforts) != 2 || m.ReasoningEfforts[1] != "max" {
+		t.Errorf("ReasoningEfforts = %v", m.ReasoningEfforts)
+	}
+	if len(m.ToolChoice) != 2 || m.ToolChoice[1] != "required" {
+		t.Errorf("ToolChoice = %v", m.ToolChoice)
+	}
+	if len(m.PriceTiers) != 1 || m.PriceTiers[0] != (PriceTier{AboveTokens: 200000, InPerM: 4, OutPerM: 12}) {
+		t.Errorf("PriceTiers = %v", m.PriceTiers)
+	}
+	if len(m.CostMultipliers) != 1 || m.CostMultipliers[0] != (CostMultiplier{Factor: 2, Window: "weekday peaks"}) {
+		t.Errorf("CostMultipliers = %v", m.CostMultipliers)
+	}
+	if m.MonthlyLimitUSD != 100 {
+		t.Errorf("MonthlyLimitUSD = %v", m.MonthlyLimitUSD)
+	}
+}
+
 func TestProvider_PRV20_ModelsSorted(t *testing.T) {
 	RegisterModel(Model{ID: "prv20-b", Provider: "zprov"})
 	RegisterModel(Model{ID: "prv20-a", Provider: "aprov"})

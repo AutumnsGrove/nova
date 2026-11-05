@@ -303,6 +303,28 @@ func TestProviders_OPG33_RouterUsesTheStableModelID(t *testing.T) {
 	}
 }
 
+func TestProviders_OPG37_SingleAttemptNoSpill(t *testing.T) {
+	// Nova has no cross-provider model mapping, so its routes are single
+	// attempts: a Go failure returns, it never spends a second backend (#59).
+	goSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":{"message":"boom"}}`))
+	}))
+	t.Cleanup(goSrv.Close)
+	orSrv := newRecordServer(t)
+	cfg := config.Defaults()
+	cfg.Provider.OpenCodeGo.BaseURL = goSrv.URL
+	cfg.Provider.OpenRouter.BaseURL = orSrv.URL
+	p := Build(Options{Config: &cfg, Getenv: envFrom(map[string]string{"OPENROUTER_API_KEY": "or-key"})})
+	_, err := p.Stream(context.Background(), provider.Request{Model: "glm-5.3", ModelID: "opencode-go/glm-5.3"}, nil)
+	if err == nil {
+		t.Fatal("Stream succeeded, want the Go error")
+	}
+	if orSrv.count() != 0 {
+		t.Errorf("OpenRouter saw %d requests, want none", orSrv.count())
+	}
+}
+
 func TestProviders_OPG34_AnUnknownModelIDStillFallsBackToOpenRouter(t *testing.T) {
 	goSrv, orSrv := newRecordServer(t), newRecordServer(t)
 	cfg := config.Defaults()

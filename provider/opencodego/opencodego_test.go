@@ -2,6 +2,8 @@ package opencodego
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -22,15 +24,18 @@ type recordServer struct {
 	mu      sync.Mutex
 	paths   []string
 	headers []http.Header
+	bodies  [][]byte
 }
 
 func newRecordServer(t *testing.T) *recordServer {
 	t.Helper()
 	rs := &recordServer{}
 	rs.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
 		rs.mu.Lock()
 		rs.paths = append(rs.paths, r.URL.Path)
 		rs.headers = append(rs.headers, r.Header.Clone())
+		rs.bodies = append(rs.bodies, body)
 		rs.mu.Unlock()
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -46,6 +51,13 @@ func (rs *recordServer) first() (string, http.Header) {
 		return "", nil
 	}
 	return rs.paths[0], rs.headers[0]
+}
+
+// requestBodies returns every request body the server saw, in order.
+func (rs *recordServer) requestBodies() [][]byte {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	return append([][]byte(nil), rs.bodies...)
 }
 
 func TestOpencodego_OPG01_Name(t *testing.T) {
@@ -121,6 +133,32 @@ func TestOpencodego_OPG21_SessionHeader(t *testing.T) {
 	}
 }
 
+// A catalog id reaches the preset for exact dialect dispatch, but the wire
+// carries the bare slug: the catalog prefix is Nova's namespace, not Go's
+// model name (#59).
+func TestOpencodego_OPG36_CatalogIDStrippedForWire(t *testing.T) {
+	rs := newRecordServer(t)
+	p := New(Config{BaseURL: rs.URL})
+	for _, model := range []string{"opencode-go/glm-5.3", "glm-5.3"} {
+		_, _ = p.Stream(context.Background(), provider.Request{Model: model}, nil)
+	}
+	got := rs.requestBodies()
+	if len(got) != 2 {
+		t.Fatalf("recorded %d bodies, want 2", len(got))
+	}
+	for i, raw := range got {
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("body %d is not JSON: %v", i, err)
+		}
+		if body.Model != "glm-5.3" {
+			t.Errorf("wire model %d = %q, want the bare slug glm-5.3", i, body.Model)
+		}
+	}
+}
+
 func TestOpencodego_OPG09_CatalogEntriesValid(t *testing.T) {
 	if len(Catalog) == 0 {
 		t.Fatal("catalog is empty")
@@ -138,6 +176,42 @@ func TestOpencodego_OPG09_CatalogEntriesValid(t *testing.T) {
 		if m.InPerM <= 0 || m.OutPerM <= 0 {
 			t.Fatalf("%s price = %v/%v", m.ID, m.InPerM, m.OutPerM)
 		}
+	}
+}
+
+// TestOpencodego_OPG38_BaselinePickerFields checks the baseline carries the
+// picker fields from the live catalog (captured 2026-11-05) and the Go-plan
+// monthly allowances from the Go docs page (#59).
+func TestOpencodego_OPG38_BaselinePickerFields(t *testing.T) {
+	deepseek, ok := provider.GetModel("opencode-go/deepseek-v4.1-flash")
+	if !ok {
+		t.Fatal("deepseek entry missing")
+	}
+	if len(deepseek.ReasoningEfforts) != 3 || deepseek.ReasoningEfforts[2] != "max" {
+		t.Errorf("deepseek efforts = %v", deepseek.ReasoningEfforts)
+	}
+	if len(deepseek.ToolChoice) != 4 || deepseek.ToolChoice[3] != "tool" {
+		t.Errorf("deepseek tool choice = %v", deepseek.ToolChoice)
+	}
+	if len(deepseek.CostMultipliers) != 1 || deepseek.CostMultipliers[0].Factor != 2 {
+		t.Errorf("deepseek multipliers = %v", deepseek.CostMultipliers)
+	}
+	if deepseek.MonthlyLimitUSD != 100 {
+		t.Errorf("deepseek monthly limit = %v, want 100", deepseek.MonthlyLimitUSD)
+	}
+	haiku, ok := provider.GetModel("opencode-go/claude-haiku-5-5")
+	if !ok {
+		t.Fatal("haiku entry missing")
+	}
+	if len(haiku.PriceTiers) != 1 || haiku.PriceTiers[0].AboveTokens != 100000 {
+		t.Errorf("haiku tiers = %v, want the 100K cliff", haiku.PriceTiers)
+	}
+	kimi, ok := provider.GetModel("opencode-go/kimi-k3")
+	if !ok {
+		t.Fatal("kimi entry missing")
+	}
+	if len(kimi.ReasoningEfforts) != 1 || kimi.ReasoningEfforts[0] != "max" {
+		t.Errorf("kimi efforts = %v, want max only", kimi.ReasoningEfforts)
 	}
 }
 

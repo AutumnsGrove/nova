@@ -1,11 +1,14 @@
 // Package providers builds the cross-provider router Nova serves: OpenRouter
 // and OpenCode Go, with each request routed to the provider its model names.
+// The routing itself lives in provider/route, shared with every library
+// consumer; this package keeps Nova's app shell around it: config and file
+// reading, key resolution, Home-based cache paths, and the decision and
+// embedding builders.
 package providers
 
 import (
 	"cmp"
 	"context"
-	"maps"
 	"path/filepath"
 	"time"
 
@@ -20,6 +23,7 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/opencodego"
 	"github.com/AutumnsGrove/nova/provider/openrouter"
+	"github.com/AutumnsGrove/nova/provider/route"
 )
 
 // Options configures Build.
@@ -45,13 +49,10 @@ func Build(opt Options) provider.Provider {
 	store := opt.Store
 
 	orBase := cmp.Or(opt.Config.Provider.OpenRouter.BaseURL, getenv("NOVA_OPENROUTER_BASE_URL"))
-	openRouter := openrouter.New(openrouter.Config{
-		BaseURL: orBase,
-		APIKeyFunc: func(context.Context) (string, error) {
-			key, _, err := auth.Resolve("", getenv, store)
-			return key, err
-		},
-	})
+	orKeyFunc := func(context.Context) (string, error) {
+		key, _, err := auth.Resolve("", getenv, store)
+		return key, err
+	}
 
 	// The OpenCode Go key is resolved per request, so a credential saved by
 	// /login at runtime is used by the next request with no restart.
@@ -84,53 +85,33 @@ func Build(opt Options) provider.Provider {
 			})
 		}()
 	}
-	openCodeGo := opencodego.New(opencodego.Config{APIKeyFunc: goKeyFunc, BaseURL: goBase})
-
-	return &router{openRouter: openRouter, openCodeGo: openCodeGo, sessionID: opt.SessionID}
-}
-
-// router sends each request to the provider its model names.
-type router struct {
-	openRouter provider.Provider
-	openCodeGo provider.Provider
-	sessionID  func() string
-}
-
-// Name returns the router's id.
-func (r *router) Name() string { return "router" }
-
-// Stream routes by the model's catalog provider, found from the request's
-// ModelID (the server sends the wire slug as Model, which does not name a
-// provider); an unknown id falls back to OpenRouter.
-func (r *router) Stream(ctx context.Context, req provider.Request, onEvent func(provider.StreamEvent)) (*provider.Response, error) {
-	id := req.ModelID
-	if id == "" {
-		id = req.Model
-	}
-	if m, ok := provider.GetModel(id); ok && m.Provider == opencodego.ProviderName {
-		return r.openCodeGo.Stream(ctx, r.withSession(req), onEvent)
-	}
-	return r.openRouter.Stream(ctx, req, onEvent)
-}
-
-// withSession adds the conversation id as OpenCode Go's session header. It
-// copies the header map, so the caller's request is never mutated and a retry
-// sees the same headers it started with.
-func (r *router) withSession(req provider.Request) provider.Request {
-	if r.sessionID == nil {
-		return req
-	}
-	id := r.sessionID()
-	if id == "" {
-		return req
-	}
-	headers := maps.Clone(req.ExtraHeaders)
-	if headers == nil {
-		headers = map[string]string{}
-	}
-	headers[opencodego.SessionHeader] = id
-	req.ExtraHeaders = headers
-	return req
+	// The route policy is Nova's own catalog, read per request so a model
+	// the background discovery learns mid-session routes correctly. Each
+	// side is a single attempt: Nova has no cross-provider model mapping,
+	// so a fallback chain is the consumer's policy to configure, not
+	// Nova's to guess.
+	return route.New(route.Config{
+		Providers: []route.ProviderDecl{
+			{Name: openrouter.ProviderName, Kind: route.OpenRouter, BaseURL: orBase, APIKeyFunc: orKeyFunc},
+			{Name: opencodego.ProviderName, Kind: route.OpenCodeGo, BaseURL: goBase, APIKeyFunc: goKeyFunc},
+		},
+		DefaultProvider: openrouter.ProviderName,
+		SessionID:       opt.SessionID,
+		Unknown: func(id string) (route.Attempt, bool) {
+			m, ok := provider.GetModel(id)
+			if !ok {
+				return route.Attempt{}, false
+			}
+			switch m.Provider {
+			case opencodego.ProviderName:
+				return route.Attempt{Provider: opencodego.ProviderName, Model: cmp.Or(m.Slug, id)}, true
+			case openrouter.ProviderName:
+				return route.Attempt{Provider: openrouter.ProviderName, Model: cmp.Or(m.Slug, id)}, true
+			default:
+				return route.Attempt{}, false
+			}
+		},
+	})
 }
 
 // decisionClient builds the shared OpenRouter decision client. The chat

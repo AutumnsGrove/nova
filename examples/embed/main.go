@@ -29,7 +29,7 @@ import (
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
-	"github.com/AutumnsGrove/nova/provider/openrouter"
+	"github.com/AutumnsGrove/nova/provider/route"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -279,6 +279,33 @@ func saveNote(_ context.Context, args json.RawMessage, tctx *tool.Context) (tool
 	return tool.Text("saved %s", in.ID), nil
 }
 
+// routedProvider builds the app's chat provider behind provider/route: the
+// loop below never names a backend. OpenRouter serves everything by default;
+// when a Go key is present the Go model routes there instead, and adding a
+// backend later is a decl plus a Routes entry. Empty base URLs mean the
+// presets' defaults, which is what the test overrides with its doubles.
+func routedProvider(orKey, orURL, goKey, goURL string) provider.Provider {
+	decls := []route.ProviderDecl{
+		{Name: "openrouter", Kind: route.OpenRouter, APIKey: orKey, BaseURL: orURL},
+	}
+	routes := map[string]route.Route{}
+	if goKey != "" {
+		decls = append(decls, route.ProviderDecl{Name: "opencode-go", Kind: route.OpenCodeGo, APIKey: goKey, BaseURL: goURL})
+		routes["opencode-go/deepseek-v4.1-flash"] = route.Route{
+			Attempts: []route.Attempt{{Provider: "opencode-go", Model: "deepseek-v4.1-flash"}},
+		}
+	}
+	return route.New(route.Config{
+		Providers:       decls,
+		Routes:          routes,
+		DefaultProvider: "openrouter",
+		// The notes app holds one conversation, so one stable id is enough;
+		// a real app returns its current thread here.
+		SessionID: func() string { return "embed-notes" },
+		UserAgent: "nova-embed/1.0",
+	})
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, `usage: embed "your question"`)
@@ -294,7 +321,7 @@ func main() {
 		{ID: "n2", Title: "Polaris", Body: "first production consumer of the harness layer"},
 	}}
 	app := &App{
-		Provider: openrouter.New(openrouter.Config{APIKey: key}),
+		Provider: routedProvider(key, "", os.Getenv("OPENCODE_GO_API_KEY"), ""),
 		Model:    "anthropic/claude-sonnet-4",
 		Tools:    NoteTools(),
 		Store:    store,

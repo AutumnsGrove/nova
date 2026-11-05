@@ -141,11 +141,16 @@ login_end        { id, error?: {code, message} }    // an interactive sign-in fi
 ```
 
 `usage` is `{prompt_tokens, completion_tokens, reasoning_tokens, total_tokens, cached_tokens, cache_write_tokens,
-cost_usd, cost_source}`; zero `reasoning_tokens`, `cached_tokens`, `cache_write_tokens`, `cost_usd`, and an empty
-`cost_source` are omitted. `cached_tokens` are cache reads and `cache_write_tokens` are tokens written into the cache
+cost_usd, cost_source, allowance_usd, list_cost_usd, billing_source}`; zero `reasoning_tokens`, `cached_tokens`,
+`cache_write_tokens`, `cost_usd`, `allowance_usd`, and `list_cost_usd`, and an empty `cost_source` or
+`billing_source`, are omitted. `cached_tokens` are cache reads and `cache_write_tokens` are tokens written into the cache
 on a cold prefix. `prompt_tokens` is the whole prompt on every dialect, cached tokens included.
 `cost_usd` is the provider's number when it reports one, otherwise computed from the
-model catalog; `cost_source` (`provider` or `catalog`) says which.
+model catalog; `cost_source` (`provider`, `allowance`, or `catalog`) says which. A call covered by a subscription
+allowance (OpenCode Go) reports what the call consumed as both `cost_usd` and `allowance_usd` with `cost_source`
+`allowance`, the retail price of the same call as `list_cost_usd`, and who paid as `billing_source` (`go`,
+`go-plus`, `balance`, `free`, or `byok`). A reported zero allowance (a free model) keeps source `allowance`,
+distinct from a call that reported no allowance at all.
 
 A run always ends with exactly one `run_end`, even on error or abort.
 

@@ -961,6 +961,80 @@ func TestStream_OAI49_UsageMapping(t *testing.T) {
 	}
 }
 
+// TestStream_OAI72_OpencodeUsage checks Go's usage.opencode block is parsed
+// with the exact live numbers (#59): allowance becomes the call's cost with
+// source "allowance", list cost and billing source are kept, a reported
+// zero stays "allowance" rather than reading as absent, and a bare cost
+// with no opencode block is still provider-reported.
+func TestStream_OAI72_OpencodeUsage(t *testing.T) {
+	p, _ := served(t, Config{}, testkit.ServerTurn{Raw: []string{
+		sseLine(map[string]any{"choices": []any{}, "usage": map[string]any{
+			"prompt_tokens":     32,
+			"completion_tokens": 8,
+			"total_tokens":      40,
+			"cost":              0,
+			"opencode": map[string]any{
+				"billing_source": "go",
+				"list_cost":      0.0000096,
+				"allowance":      0.00000576,
+			},
+		}}),
+		doneLine,
+	}})
+	var s sink
+	resp, err := p.Stream(context.Background(), textRequest("m"), s.emit)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	u := resp.Usage
+	if u.CostUSD != 0.00000576 || u.CostSource != "allowance" {
+		t.Errorf("cost = %v/%q, want 0.00000576/allowance", u.CostUSD, u.CostSource)
+	}
+	if u.ListCostUSD != 0.0000096 || u.BillingSource != "go" {
+		t.Errorf("list/billing = %v/%q, want 0.0000096/go", u.ListCostUSD, u.BillingSource)
+	}
+	if u.AllowanceUSD != 0.00000576 {
+		t.Errorf("AllowanceUSD = %v, want 0.00000576", u.AllowanceUSD)
+	}
+
+	p, _ = served(t, Config{}, testkit.ServerTurn{Raw: []string{
+		sseLine(map[string]any{"choices": []any{}, "usage": map[string]any{
+			"prompt_tokens":     48,
+			"completion_tokens": 8,
+			"total_tokens":      56,
+			"cost":              0,
+			"opencode": map[string]any{
+				"billing_source": "go",
+				"list_cost":      0,
+				"allowance":      0,
+			},
+		}}),
+		doneLine,
+	}})
+	resp, err = p.Stream(context.Background(), textRequest("m"), nil)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Usage.CostSource != "allowance" || resp.Usage.CostUSD != 0 {
+		t.Errorf("usage = %+v, want a reported zero with source allowance", resp.Usage)
+	}
+
+	p, _ = served(t, Config{}, testkit.ServerTurn{Raw: []string{
+		sseLine(map[string]any{"choices": []any{}, "usage": map[string]any{
+			"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2,
+			"cost": 0.5,
+		}}),
+		doneLine,
+	}})
+	resp, err = p.Stream(context.Background(), textRequest("m"), nil)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if resp.Usage.CostUSD != 0.5 || resp.Usage.CostSource != "provider" {
+		t.Errorf("usage = %+v, want the bare cost still provider-reported", resp.Usage)
+	}
+}
+
 func TestStream_OAI50_UsageAbsent(t *testing.T) {
 	p, _ := served(t, Config{}, testkit.ServerTurn{Turn: testkit.Turn{Text: "hi"}})
 	resp, err := p.Stream(context.Background(), textRequest("m"), nil)

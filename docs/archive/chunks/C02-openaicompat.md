@@ -205,6 +205,7 @@ func (p *Provider) Stream(ctx context.Context, req provider.Request, onEvent fun
 | OAI69 | cache-write tokens mapped | `prompt_tokens_details.cache_write_tokens` 7 | `Usage.CacheWriteTokens` 7, reads kept |
 | OAI70 | error object after output has started | a chunk with `error` and `finish_reason` `error` after a text delta | non-retryable `*provider.Error` with the code; the delivered text is kept |
 | OAI71 | `finish_reason` `error` with no error object | text, then a chunk finishing with `error` | non-retryable `*provider.Error`; the delivered text is kept |
+| OAI72 | `usage.opencode` parsed | a full `opencode` block; a reported-zero one; `cost` with no `opencode` | `CostSource` `allowance` with the exact allowance/list/source; a reported zero stays `allowance`; bare `cost` still `provider` |
 
 ## Fuzz and property tests
 

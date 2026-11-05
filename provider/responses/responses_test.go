@@ -261,6 +261,25 @@ func TestResponses_RSP10_UsageMapping(t *testing.T) {
 	}
 }
 
+// TestResponses_RSP32_OpencodeUsage checks Go's usage.opencode block is parsed
+// on the Responses wire with the exact live numbers (#59).
+func TestResponses_RSP32_OpencodeUsage(t *testing.T) {
+	p, _ := newProvider(t, Config{},
+		sse("response.completed", `{"type":"response.completed","response":{"usage":{"input_tokens":92,"output_tokens":39,"total_tokens":1283,"cost":0,"opencode":{"billing_source":"go","list_cost":0.000994,"allowance":0.003976}}}}`),
+	)
+	resp, _, err := run(t, p, provider.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	u := resp.Usage
+	if u.CostUSD != 0.003976 || u.CostSource != "allowance" {
+		t.Errorf("cost = %v/%q, want 0.003976/allowance", u.CostUSD, u.CostSource)
+	}
+	if u.AllowanceUSD != 0.003976 || u.ListCostUSD != 0.000994 || u.BillingSource != "go" {
+		t.Errorf("allowance/list/billing = %v/%v/%q, want 0.003976/0.000994/go", u.AllowanceUSD, u.ListCostUSD, u.BillingSource)
+	}
+}
+
 func TestResponses_RSP11_IncompleteMaxTokens(t *testing.T) {
 	p, _ := newProvider(t, Config{},
 		sse("response.incomplete", `{"type":"response.incomplete","response":{"incomplete_details":{"reason":"max_output_tokens"}}}`),

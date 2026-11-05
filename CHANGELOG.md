@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-05
+
 Nova is `v0.x`, so anything here may break callers. **Upgrade notes for library consumers:**
 
 - `provider.Usage` gains `AllowanceUSD`, `ListCostUSD`, and `BillingSource`, and `CostSource`
@@ -462,7 +464,8 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
 - The first release: the agent loop, tools, sessions, config, the TUI, the
   extension host, the bundled extensions, serve mode, and the GitHub Action.
 
-[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.4
 [0.3.3]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.3
 [0.3.2]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.2
 [0.3.1]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.1

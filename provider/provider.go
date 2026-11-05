@@ -9,6 +9,7 @@
 package provider
 
 import (
+	"cmp"
 	"context"
 
 	"github.com/AutumnsGrove/nova/message"
@@ -66,7 +67,21 @@ type Usage struct {
 	// A cold cache pays the write rate for the prefix it stores.
 	CacheWriteTokens int     `json:"cache_write_tokens,omitempty"`
 	CostUSD          float64 `json:"cost_usd,omitempty"`
-	CostSource       string  `json:"cost_source,omitempty"` // "provider", "catalog", or ""
+	CostSource       string  `json:"cost_source,omitempty"` // "provider", "allowance", "catalog", or ""
+	// AllowanceUSD is the dollars of a subscription allowance this call
+	// consumed (Go's usage.opencode.allowance). It is part of CostUSD, not
+	// in addition to it: CostUSD is what the call consumed, CostSource says
+	// whose dollars they were. Zero with CostSource "allowance" is a
+	// reported zero (a free model), distinct from an absent allowance.
+	AllowanceUSD float64 `json:"allowance_usd,omitempty"`
+	// ListCostUSD is the list price of the same call
+	// (Go's usage.opencode.list_cost): what it would have cost at retail.
+	// It is informational only and never added to CostUSD.
+	ListCostUSD float64 `json:"list_cost_usd,omitempty"`
+	// BillingSource is the provider-reported billing source, such as "go",
+	// "go-plus", "balance", "free", or "byok". Empty means the
+	// provider did not say.
+	BillingSource string `json:"billing_source,omitempty"`
 }
 
 // Add accumulates another usage record into u.
@@ -79,13 +94,22 @@ func (u *Usage) Add(o Usage) {
 	u.CacheWriteTokens += o.CacheWriteTokens
 	u.CostUSD += o.CostUSD
 	u.CostSource = combineCostSource(u.CostSource, o.CostSource)
+	u.AllowanceUSD += o.AllowanceUSD
+	u.ListCostUSD += o.ListCostUSD
+	u.BillingSource = cmp.Or(u.BillingSource, o.BillingSource)
 }
 
 // combineCostSource keeps the strongest provenance: a provider-reported cost
-// is trusted over a catalog estimate.
+// is trusted over a catalog estimate, and an allowance report counts as
+// provider-reported. Between two provider-reported sources the real-money one
+// ("provider") wins over the allowance one, so a mixed total reads as real
+// spend; the allowance dollars stay visible in AllowanceUSD either way.
 func combineCostSource(a, b string) string {
 	if a == "provider" || b == "provider" {
 		return "provider"
+	}
+	if a == "allowance" || b == "allowance" {
+		return "allowance"
 	}
 	if a == "catalog" || b == "catalog" {
 		return "catalog"
@@ -99,6 +123,10 @@ type Response struct {
 	FinishReason string
 	Usage        Usage
 	Model        string
+	// Provider is the id of the provider that served the call. A plain
+	// provider reports its own name; a router reports the attempt that
+	// answered, so a logged call is attributable to the backend that ran it.
+	Provider string
 }
 
 // StreamEventType identifies a streaming event.

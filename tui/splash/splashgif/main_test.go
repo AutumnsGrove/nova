@@ -190,6 +190,9 @@ const (
 )
 
 func TestSplashgif_SQN48_CommittedGIFIsCurrent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the GIF re-renders 150 frames")
+	}
 	g, got := decodeCommitted(t)
 	pal := g.Image[0].Palette
 	want := composite(mapToPalette(freshFrames(t), pal), g.Config.Width, g.Config.Height)

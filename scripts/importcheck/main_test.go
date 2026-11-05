@@ -307,6 +307,33 @@ func TestImportcheck_TestkitAllowedOnlyInTests(t *testing.T) {
 	}
 }
 
+// TestImportcheck_RT11_RouteStaysHarnessOnly pins that provider/route is
+// importable by a library consumer: it may use its own provider layer (the
+// two presets it builds) but reaching the application shell fails (#59).
+// The name cites only RT11 so no other spec's matrix sees it.
+func TestImportcheck_RT11_RouteStaysHarnessOnly(t *testing.T) {
+	for _, shell := range []string{"mode", "config", "session", "usage", "tui", "bundled"} {
+		root := fixtureModule(t, map[string]string{
+			"provider/route/route.go": "package route\n\nimport _ \"example.com/m/" + shell + "\"\n",
+			shell + "/" + shell + ".go":   "package " + shell + "\n",
+		})
+		code, out := runImportcheck(t, root)
+		if code != 1 {
+			t.Fatalf("%s: exit = %d, want 1\n%s", shell, code, out)
+		}
+		if !strings.Contains(out, "layer rule") {
+			t.Errorf("%s: output should cite the layer rule:\n%s", shell, out)
+		}
+	}
+	root := fixtureModule(t, map[string]string{
+		"provider/route/route.go":  "package route\n\nimport _ \"example.com/m/provider/openrouter\"\n",
+		"provider/openrouter/o.go": "package openrouter\n",
+	})
+	if code, out := runImportcheck(t, root); code != 0 {
+		t.Fatalf("same-layer preset import: exit = %d, want 0\n%s", code, out)
+	}
+}
+
 // TestImportcheck_ExampleTestMayUseTestkit is the ICK17 counterpart for a test
 // file: the embed example's end-to-end test drives a scripted provider, and
 // testkit is test-only support, not app shell.

@@ -332,7 +332,10 @@ func TestSupervise_SUP12_BackoffDelays(t *testing.T) {
 	h := rawHost(t, HostOptions{Dirs: []string{dir}, Registry: reg, Clock: clk, Env: envWith("ECHO_CRASH_ONCE=1", "ECHO_CRASH_MARKER="+marker)})
 	h.Start(context.Background())
 	waitFor(t, func() bool { _, ok := reg.Get("echo"); return !ok }, "crash removed the tool")
-	time.Sleep(50 * time.Millisecond) // let the backoff timer register
+	// BlockUntil closes the window the old fixed sleep tried to guess at: the
+	// tool is unregistered before the supervisor calls Sleep, so advancing now
+	// could slip in ahead of the backoff timer and pass for the wrong reason.
+	clk.BlockUntil(t, 1)
 	clk.Advance(500 * time.Millisecond)
 	if _, ok := reg.Get("echo"); ok {
 		t.Fatal("restarted before the 1s backoff elapsed")

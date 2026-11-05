@@ -81,6 +81,9 @@ type Server struct {
 	turns []ServerTurn
 	next  int
 	reqs  []RecordedRequest
+	// goConfig enables the Go-dialect behaviors; it is set once by
+	// NewGoServer before serving starts and never mutated after.
+	goConfig GoConfig
 }
 
 // NewServer starts a server that plays the turns in order. It is closed when
@@ -111,13 +114,30 @@ func (s *Server) Requests() []RecordedRequest {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path == "/api/go/status" && s.goConfig.StatusBody != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(s.goConfig.StatusBody)
+		return
+	}
 	if r.Method != http.MethodPost || !knownStreamPath(r.URL.Path) {
 		http.NotFound(w, r)
 		return
 	}
 	body, _ := io.ReadAll(r.Body)
+	session := r.Header.Get(SessionHeader)
 	s.mu.Lock()
 	s.reqs = append(s.reqs, RecordedRequest{Method: r.Method, Path: r.URL.Path, Header: r.Header.Clone(), Body: body})
+	s.mu.Unlock()
+
+	if s.goConfig.RequireSession && session == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, missingSessionBody)
+		return
+	}
+
+	s.mu.Lock()
 	have := s.next < len(s.turns)
 	var turn ServerTurn
 	if have {
@@ -293,8 +313,17 @@ type sseUsage struct {
 	CompletionTokens        int                  `json:"completion_tokens"`
 	TotalTokens             int                  `json:"total_tokens"`
 	Cost                    *float64             `json:"cost,omitempty"`
+	Opencode                *sseOpencode         `json:"opencode,omitempty"`
 	PromptTokensDetails     *sseCachedDetails    `json:"prompt_tokens_details,omitempty"`
 	CompletionTokensDetails *sseReasoningDetails `json:"completion_tokens_details,omitempty"`
+}
+
+// sseOpencode mirrors Go's usage.opencode block: the allowance dollars the
+// call consumed, the list price of the same call, and who paid.
+type sseOpencode struct {
+	Allowance     float64 `json:"allowance"`
+	ListCost      float64 `json:"list_cost"`
+	BillingSource string  `json:"billing_source"`
 }
 
 type sseCachedDetails struct {
@@ -326,6 +355,15 @@ func usageWire(u *provider.Usage) *sseUsage {
 	if u.CostSource == "provider" {
 		cost := u.CostUSD
 		out.Cost = &cost
+	}
+	if u.CostSource == "allowance" {
+		zero := 0.0
+		out.Cost = &zero
+		out.Opencode = &sseOpencode{
+			Allowance:     u.AllowanceUSD,
+			ListCost:      u.ListCostUSD,
+			BillingSource: u.BillingSource,
+		}
 	}
 	return out
 }

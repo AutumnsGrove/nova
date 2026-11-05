@@ -41,12 +41,17 @@ type Ledger struct {
 
 	mu sync.Mutex
 	tally
+	// covered holds the subscription-allowance records and real the
+	// provider-billed ones, so a consumer can tell plan spend from real
+	// spend without re-deriving it. Total is always the sum of the two.
+	covered tally
+	real    tally
 }
 
 // NewLedger builds an empty ledger. cat resolves a model id for cost fallback;
 // it may be nil.
 func NewLedger(cat func(id string) (provider.Model, bool)) *Ledger {
-	return &Ledger{cat: cat, tally: newTally()}
+	return &Ledger{cat: cat, tally: newTally(), covered: newTally(), real: newTally()}
 }
 
 // price fills in a usage record's cost and its source.
@@ -60,11 +65,17 @@ func (l *Ledger) price(model string, u provider.Usage) provider.Usage {
 }
 
 // Add fills in a usage record's cost, adds it to the total and to the model's
-// entry, and returns the filled-in record.
+// entry, and returns the filled-in record. An allowance-sourced record also
+// lands in the covered split, any other in the real one.
 func (l *Ledger) Add(model string, u provider.Usage) provider.Usage {
 	u = l.price(model, u)
 	l.mu.Lock()
 	l.add(model, u)
+	if u.CostSource == "allowance" {
+		l.covered.add(model, u)
+	} else {
+		l.real.add(model, u)
+	}
 	l.mu.Unlock()
 	return u
 }
@@ -74,6 +85,22 @@ func (l *Ledger) Total() provider.Usage {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.total
+}
+
+// Covered returns the accumulated subscription-allowance usage: calls whose
+// cost came out of a plan rather than a balance.
+func (l *Ledger) Covered() provider.Usage {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.covered.total
+}
+
+// Real returns the accumulated usage billed as real money: every record that
+// is not allowance-sourced. A covered call never counts as real spend.
+func (l *Ledger) Real() provider.Usage {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.real.total
 }
 
 // ByModel returns a copy of the per-model breakdown.
@@ -88,24 +115,39 @@ func (l *Ledger) ByModel() map[string]provider.Usage {
 // at once so a concurrent reader never sees a half-built ledger.
 func (l *Ledger) Rebuild(entries []session.Entry) {
 	fresh := newTally()
+	covered := newTally()
+	real := newTally()
 	for _, e := range entries {
 		if e.Usage == nil || (e.Type != session.TypeMessage && e.Type != session.TypeCompaction) {
 			continue
 		}
-		fresh.add(e.Model, l.price(e.Model, *e.Usage))
+		u := l.price(e.Model, *e.Usage)
+		fresh.add(e.Model, u)
+		if u.CostSource == "allowance" {
+			covered.add(e.Model, u)
+		} else {
+			real.add(e.Model, u)
+		}
 	}
 	l.mu.Lock()
 	l.tally = fresh
+	l.covered = covered
+	l.real = real
 	l.mu.Unlock()
 }
 
 // CostFor returns the cost of one usage record: the provider's own number when
-// it reported a positive cost, otherwise a catalog estimate. A negative figure
+// it reported a positive cost, otherwise a catalog estimate. A record the
+// provider marked as allowance-sourced keeps its allowance dollars (even a
+// reported zero) and is never re-priced from the catalog. A negative figure
 // counts as not reported; a NaN or infinite one is garbage and costs nothing
 // (D86). An unknown model or an unpriced one gives (0, "").
 func CostFor(m provider.Model, u provider.Usage) (usd float64, source string) {
 	if math.IsNaN(u.CostUSD) || math.IsInf(u.CostUSD, 1) {
 		return 0, ""
+	}
+	if u.CostSource == "allowance" {
+		return u.CostUSD, "allowance"
 	}
 	if u.CostUSD > 0 {
 		return u.CostUSD, "provider"

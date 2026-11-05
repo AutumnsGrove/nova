@@ -2,6 +2,8 @@ package opencodego
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -22,15 +24,18 @@ type recordServer struct {
 	mu      sync.Mutex
 	paths   []string
 	headers []http.Header
+	bodies  [][]byte
 }
 
 func newRecordServer(t *testing.T) *recordServer {
 	t.Helper()
 	rs := &recordServer{}
 	rs.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
 		rs.mu.Lock()
 		rs.paths = append(rs.paths, r.URL.Path)
 		rs.headers = append(rs.headers, r.Header.Clone())
+		rs.bodies = append(rs.bodies, body)
 		rs.mu.Unlock()
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -46,6 +51,13 @@ func (rs *recordServer) first() (string, http.Header) {
 		return "", nil
 	}
 	return rs.paths[0], rs.headers[0]
+}
+
+// requestBodies returns every request body the server saw, in order.
+func (rs *recordServer) requestBodies() [][]byte {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	return append([][]byte(nil), rs.bodies...)
 }
 
 func TestOpencodego_OPG01_Name(t *testing.T) {
@@ -118,6 +130,32 @@ func TestOpencodego_OPG21_SessionHeader(t *testing.T) {
 	_, header := rs.first()
 	if header.Get(SessionHeader) != "sess-1" {
 		t.Fatalf("%s = %q", SessionHeader, header.Get(SessionHeader))
+	}
+}
+
+// A catalog id reaches the preset for exact dialect dispatch, but the wire
+// carries the bare slug: the catalog prefix is Nova's namespace, not Go's
+// model name (#59).
+func TestOpencodego_OPG36_CatalogIDStrippedForWire(t *testing.T) {
+	rs := newRecordServer(t)
+	p := New(Config{BaseURL: rs.URL})
+	for _, model := range []string{"opencode-go/glm-5.3", "glm-5.3"} {
+		_, _ = p.Stream(context.Background(), provider.Request{Model: model}, nil)
+	}
+	got := rs.requestBodies()
+	if len(got) != 2 {
+		t.Fatalf("recorded %d bodies, want 2", len(got))
+	}
+	for i, raw := range got {
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatalf("body %d is not JSON: %v", i, err)
+		}
+		if body.Model != "glm-5.3" {
+			t.Errorf("wire model %d = %q, want the bare slug glm-5.3", i, body.Model)
+		}
 	}
 }
 

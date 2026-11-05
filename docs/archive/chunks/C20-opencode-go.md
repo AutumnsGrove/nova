@@ -481,6 +481,7 @@ type OpenCodeGoConfig struct {
 | DSC02 | refresh while routing | `Refresh` in a loop while `APIFor` runs | no race (under `-race`) |
 | DSC03 | empty or unusable models reply | `{"data":[]}`, an error object, HTML, rows without ids | `Refresh` errors; overlay kept; cache not stamped fresh |
 | OPG35 | catalog says which models cache implicitly | every baseline entry | Claude false; the rest true, and a discovered override keeps the baseline flag |
+| OPG36 | catalog id stripped for the wire | `Model` `opencode-go/glm-5.3`, then the bare slug | the wire model is `glm-5.3` both times |
 
 | USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |
 | USG02 | percent clamped | used over limit | percent 100 |

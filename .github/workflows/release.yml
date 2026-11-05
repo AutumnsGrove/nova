@@ -31,8 +31,6 @@ jobs:
 
   build:
     needs: accept
-    # A workflow_dispatch run has no tag to stamp or publish.
-    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -66,6 +64,9 @@ jobs:
 
   release:
     needs: build
+    # The only job that needs a tag: a workflow_dispatch run builds the four
+    # archives and stops, which is how a broken script is found before a tag.
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     # The only job that publishes, so the only one that may write.
     permissions:

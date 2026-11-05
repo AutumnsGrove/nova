@@ -1,8 +1,8 @@
 ---
 chunk: C20
 title: "OpenCode Go, the second launch provider"
-packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./provider/route, ./mode/providers, ./auth/opencode, ./mode, ./tui/ui, ./scripts/importcheck]
-budgets: { ./provider/ssestream: 420, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./provider/route: 340, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1540, ./auth: 500, ./mode: 2800, ./tui/ui: 3050, ./scripts/importcheck: 260 }
+packages: [./provider/ssestream, ./provider/responses, ./provider/messages, ./provider/opencodego, ./provider/route, ./provider/chat, ./mode/providers, ./auth/opencode, ./mode, ./tui/ui, ./scripts/importcheck]
+budgets: { ./provider/ssestream: 420, ./provider/responses: 480, ./provider/messages: 480, ./provider/opencodego: 560, ./provider/route: 340, ./provider/chat: 160, ./mode/providers: 360, ./auth/opencode: 720, ./config: 1540, ./auth: 500, ./mode: 2800, ./tui/ui: 3050, ./scripts/importcheck: 260 }
 depends: [C02, C03, C12]
 ---
 
@@ -497,6 +497,7 @@ type OpenCodeGoConfig struct {
 | RT12 | attribution is the serving attempt | `Name()` and a spilled response | `Name()` is stable; `Response.Provider` names the attempt that answered |
 | RT13 | `ForceProvider` pins everything | the pin set with a Go-first route | OpenRouter serves; Go is never called |
 | RT14 | `Unknown` resolves dynamic ids | a hook serving an unconfigured id, then declining one | the hook's attempt runs with its slug; a declined id falls to the default unrewritten |
+| ONE01 | one-shot completion through the router | a catalog id, no agent | content, tool calls and usage return; the wire carries the slug and the Go double serves it |
 
 | USG01 | parse all three meters | `/api/go/status` JSON | five_hour, week, month with used/limit/percent |
 | USG02 | percent clamped | used over limit | percent 100 |

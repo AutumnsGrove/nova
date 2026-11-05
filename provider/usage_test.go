@@ -29,6 +29,41 @@ func TestProvider_PRV13_UsageAddSumsAllFields(t *testing.T) {
 	}
 }
 
+func TestProvider_PRV25_UsageAddSumsAllowance(t *testing.T) {
+	u := Usage{AllowanceUSD: 0.01, ListCostUSD: 0.04, BillingSource: "go"}
+	u.Add(Usage{AllowanceUSD: 0.02, ListCostUSD: 0.08})
+	if u.AllowanceUSD != 0.03 || u.ListCostUSD != 0.12 {
+		t.Errorf("allowance/list = %v/%v, want 0.03/0.12", u.AllowanceUSD, u.ListCostUSD)
+	}
+	if u.BillingSource != "go" {
+		t.Errorf("BillingSource = %q, want the reported source kept", u.BillingSource)
+	}
+	empty := Usage{}
+	empty.Add(Usage{BillingSource: "balance"})
+	if empty.BillingSource != "balance" {
+		t.Errorf("BillingSource = %q, want balance", empty.BillingSource)
+	}
+}
+
+func TestProvider_PRV26_AllowanceIsProviderReported(t *testing.T) {
+	cases := []struct{ a, b, want string }{
+		{"provider", "allowance", "provider"},
+		{"allowance", "provider", "provider"},
+		{"allowance", "catalog", "allowance"},
+		{"catalog", "allowance", "allowance"},
+		{"allowance", "allowance", "allowance"},
+		{"allowance", "", "allowance"},
+		{"", "allowance", "allowance"},
+	}
+	for _, c := range cases {
+		u := Usage{CostSource: c.a}
+		u.Add(Usage{CostSource: c.b})
+		if u.CostSource != c.want {
+			t.Errorf("Add(%q, %q) cost source = %q, want %q", c.a, c.b, u.CostSource, c.want)
+		}
+	}
+}
+
 func TestProvider_PRV14_UsageAddCostSource(t *testing.T) {
 	cases := []struct{ a, b, want string }{
 		{"provider", "catalog", "provider"},

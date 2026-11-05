@@ -287,6 +287,38 @@ func TestEmbed_ConcurrentRunsShareRegistry(t *testing.T) {
 	}
 }
 
+// TestEmbed_RoutedProvider drives the example through the same routedProvider
+// main uses, over two testkit doubles: the Go-first route serves, which
+// proves the loop runs unchanged behind a consumer-built router (#59). The
+// test needs no network and no key, and fails to compile if the example
+// ever imports outside the harness layer.
+func TestEmbed_RoutedProvider(t *testing.T) {
+	goSrv := testkit.NewGoServer(t, testkit.GoConfig{RequireSession: true},
+		testkit.ServerTurn{Turn: testkit.Turn{Text: "routed answer"}})
+	orSrv := testkit.NewServer(t)
+	store := demoStore()
+	var events []Event
+	app := newApp(routedProvider("k-or", orSrv.URL, "k-go", goSrv.URL), store, NoteTools(), &events)
+	app.Model = "opencode-go/deepseek-v4.1-flash"
+
+	res, err := app.Run(context.Background(), nil, "say something", false)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(res.Answer, "routed answer") {
+		t.Fatalf("Answer = %q, want the Go double's text", res.Answer)
+	}
+	if goReqs := goSrv.Requests(); len(goReqs) != 1 {
+		t.Fatalf("Go saw %d requests, want 1", len(goReqs))
+	}
+	if got := goSrv.Requests()[0].Header.Get("x-opencode-session"); got == "" {
+		t.Error("the routed call carried no session header")
+	}
+	if len(orSrv.Requests()) != 0 {
+		t.Error("OpenRouter was called for a Go-routed run")
+	}
+}
+
 func countRole(msgs []message.Message, role message.Role) int {
 	n := 0
 	for _, m := range msgs {

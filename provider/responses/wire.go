@@ -87,6 +87,8 @@ type event struct {
 			OutputTokens int      `json:"output_tokens"`
 			TotalTokens  int      `json:"total_tokens"`
 			Cost         *float64 `json:"cost"`
+			// Opencode is Go's usage.opencode block; see provider.OpencodeUsage.
+			Opencode     *provider.OpencodeUsage `json:"opencode"`
 			InputDetails struct {
 				CachedTokens     int `json:"cached_tokens"`
 				CacheWriteTokens int `json:"cache_write_tokens"`

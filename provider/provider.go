@@ -117,6 +117,36 @@ func combineCostSource(a, b string) string {
 	return ""
 }
 
+// OpencodeUsage is the usage.opencode object OpenCode Go attaches to every
+// usage report, beside the dialect's own token counts and cost. Allowance and
+// ListCost are pointers so a reported zero (a free model) reads differently
+// from an absent object, the same rule the cost field already uses.
+type OpencodeUsage struct {
+	Allowance     *float64 `json:"allowance"`
+	ListCost      *float64 `json:"list_cost"`
+	BillingSource string   `json:"billing_source"`
+}
+
+// ApplyOpencode folds a present usage.opencode object into u. The allowance
+// becomes the call's cost with source "allowance", because Go reports cost
+// 0 for a covered call and the allowance is what the turn consumed. A nil
+// object is a no-op, so dialects call this unconditionally after mapping
+// their own fields.
+func (u *Usage) ApplyOpencode(o *OpencodeUsage) {
+	if o == nil {
+		return
+	}
+	if o.Allowance != nil {
+		u.CostUSD = *o.Allowance
+		u.AllowanceUSD = *o.Allowance
+	}
+	u.CostSource = "allowance"
+	if o.ListCost != nil {
+		u.ListCostUSD = *o.ListCost
+	}
+	u.BillingSource = o.BillingSource
+}
+
 // Response is the finalized result of one provider call.
 type Response struct {
 	Message      message.Message

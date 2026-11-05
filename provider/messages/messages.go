@@ -173,7 +173,11 @@ func consume(s *ssestream.Stream, model string, onEvent func(provider.StreamEven
 				usage.CachedTokens = u.CacheReadInputTokens
 				usage.CacheWriteTokens = u.CacheCreationInputTokens
 			}
-			if u.Cost != nil {
+			// Go's usage.opencode block wins when present: Go reports cost 0
+			// for a covered call, and the allowance is what it consumed.
+			if u.Opencode != nil {
+				usage.ApplyOpencode(u.Opencode)
+			} else if u.Cost != nil {
 				usage.CostUSD = *u.Cost
 				usage.CostSource = "provider"
 			}

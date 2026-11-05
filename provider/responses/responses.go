@@ -166,7 +166,8 @@ func consume(s *ssestream.Stream, model string, onEvent func(provider.StreamEven
 
 // usageOf maps a response's usage. A present cost is the gateway's own number,
 // so it is trusted as provider-reported; an absent one leaves the price to the
-// caller's catalog fallback.
+// caller's catalog fallback. Go's usage.opencode block wins when present: Go
+// reports cost 0 for a covered call, and the allowance is what it consumed.
 func usageOf(ev event) provider.Usage {
 	u := ev.Response.Usage
 	out := provider.Usage{
@@ -177,7 +178,9 @@ func usageOf(ev event) provider.Usage {
 		CacheWriteTokens: u.InputDetails.CacheWriteTokens,
 		TotalTokens:      u.TotalTokens,
 	}
-	if u.Cost != nil {
+	if u.Opencode != nil {
+		out.ApplyOpencode(u.Opencode)
+	} else if u.Cost != nil {
 		out.CostUSD = *u.Cost
 		out.CostSource = "provider"
 	}

@@ -508,6 +508,8 @@ type OpenCodeGoConfig struct {
 | USG24 | footer widget | session start, then every 5 min | `ui.status` under `opencode-go` with the footer |
 | USG25 | refresh cadence | fake clock advances 5 min | exactly one refetch |
 | USG26 | refresh without a key | no credential | no `ui.status` published, no request |
+| USG27 | `FetchMeters` without config | a server URL and a key, no `Config` | the same meters `FetchUsage` returns; no key is `no_credentials` |
+| USG28 | `PeriodEnd` | meters with and without a monthly meter | the monthly reset; `""` when absent |
 
 ## Fuzz and property tests
 

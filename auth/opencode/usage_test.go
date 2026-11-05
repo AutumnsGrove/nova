@@ -268,6 +268,47 @@ func TestUsage_USG20_NoKey(t *testing.T) {
 	}
 }
 
+// TestUsage_USG27_FetchMetersWithoutConfig checks the decoupled entry point
+// serves a caller-supplied server and key with no Config involved (#59).
+func TestUsage_USG27_FetchMetersWithoutConfig(t *testing.T) {
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		_, _ = w.Write(statusJSON(map[string]map[string]any{
+			"fiveHour": {"usedMicroCents": 1_00_000_00, "limitMicroCents": 10_00_000_00},
+		}, ""))
+	}))
+	t.Cleanup(srv.Close)
+	meters, err := FetchMeters(context.Background(), nil, srv.URL+"/", "go-key", "")
+	if err != nil {
+		t.Fatalf("FetchMeters: %v", err)
+	}
+	if len(meters) != 1 || meters[0].Kind != MeterFiveHour {
+		t.Fatalf("meters = %+v, want the five-hour meter", meters)
+	}
+	if path != "/api/go/status" {
+		t.Fatalf("path = %q, want /api/go/status", path)
+	}
+	if _, err := FetchMeters(context.Background(), nil, srv.URL, "", ""); usageErr(t, err).Kind != ErrNoCredentials {
+		t.Fatalf("empty key kind = %v, want no_credentials", err)
+	}
+}
+
+// TestUsage_USG28_PeriodEnd checks the plan period end reads off the monthly
+// meter and is empty when there is no monthly meter (#59).
+func TestUsage_USG28_PeriodEnd(t *testing.T) {
+	meters := []UsageMeter{
+		{Kind: MeterFiveHour, ResetsAt: "2026-10-13T14:00:00Z"},
+		{Kind: MeterMonth, ResetsAt: "2026-10-25T00:00:00Z"},
+	}
+	if got := PeriodEnd(meters); got != "2026-10-25T00:00:00Z" {
+		t.Fatalf("PeriodEnd = %q, want the monthly reset", got)
+	}
+	if got := PeriodEnd(meters[:1]); got != "" {
+		t.Fatalf("PeriodEnd without a monthly meter = %q, want empty", got)
+	}
+}
+
 // usageErr extracts a *UsageError or fails.
 func usageErr(t *testing.T, err error) *UsageError {
 	t.Helper()

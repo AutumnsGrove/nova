@@ -229,6 +229,38 @@ func Test_LED19_RebuildIsAtomic(t *testing.T) {
 	<-done
 }
 
+func Test_LED20_AllowanceCostPassesThrough(t *testing.T) {
+	l := NewLedger(catalog)
+	got := l.Add("a", provider.Usage{PromptTokens: 100, CompletionTokens: 50,
+		CostUSD: 0.005, CostSource: "allowance", AllowanceUSD: 0.005, ListCostUSD: 0.02, BillingSource: "go"})
+	if got.CostUSD != 0.005 || got.CostSource != "allowance" {
+		t.Fatalf("usage = %+v, want the allowance kept, not re-priced", got)
+	}
+	zero := l.Add("a", provider.Usage{CostSource: "allowance", BillingSource: "go"})
+	if zero.CostUSD != 0 || zero.CostSource != "allowance" {
+		t.Fatalf("usage = %+v, want a reported zero to stay allowance", zero)
+	}
+}
+
+func Test_LED21_CoveredAndRealSplit(t *testing.T) {
+	l := NewLedger(catalog)
+	l.Add("a", provider.Usage{PromptTokens: 100, CostUSD: 0.005, CostSource: "allowance",
+		AllowanceUSD: 0.005, ListCostUSD: 0.02, BillingSource: "go"})
+	l.Add("b", provider.Usage{PromptTokens: 100, CostUSD: 0.01, CostSource: "provider"})
+	covered := l.Covered()
+	if covered.CostUSD != 0.005 || covered.AllowanceUSD != 0.005 || covered.PromptTokens != 100 {
+		t.Errorf("Covered = %+v, want the allowance call only", covered)
+	}
+	real := l.Real()
+	if real.CostUSD != 0.01 || real.AllowanceUSD != 0 || real.PromptTokens != 100 {
+		t.Errorf("Real = %+v, want the provider-billed call only", real)
+	}
+	total := l.Total()
+	if total.CostUSD != 0.015 || total.AllowanceUSD != 0.005 || total.PromptTokens != 200 {
+		t.Errorf("Total = %+v, want both calls", total)
+	}
+}
+
 func Test_LED13_CacheWritePremium(t *testing.T) {
 	m := provider.Model{ID: "x", InPerM: 2, OutPerM: 0}
 	usd, source := CostFor(m, provider.Usage{PromptTokens: 1000, CacheWriteTokens: 1000})

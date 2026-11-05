@@ -252,6 +252,8 @@ func CostFor(m provider.Model, u provider.Usage) (usd float64, source string)
 | LED17 | a Messages cold-cache record is priced in full | prompt 19800, written 19700 | 100 at 1x and 19700 at 1.25x |
 | LED18 | `CostFor` with a NaN, +Inf, -Inf or negative provider cost | | NaN and +Inf cost 0; the others fall back to the catalog |
 | LED19 | `Rebuild` while another goroutine reads | `-race` | a reader sees the old or the new totals, never a partial one |
+| LED20 | an allowance cost passes through `CostFor` | `CostUSD` with source `allowance`, then a reported zero | unchanged with source `allowance`; the zero is not re-priced from the catalog |
+| LED21 | covered and real spend split | one allowance record and one provider record | `Covered` holds the allowance, `Real` the provider cost, `Total` both |
 
 ## Fuzz and property tests
 

@@ -217,7 +217,10 @@ func networkCheck(ctx context.Context, opt Options, key string) Check {
 		return Check{Name: "network", Status: Warn, Detail: err.Error(), Fix: "check the network or use --offline"}
 	}
 	defer resp.Body.Close()
-	if key != "" && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+	// Only a 401 means the provider does not know the key. A 403 can be a region
+	// block or a gateway refusal, which says nothing about the key, so it falls
+	// through to the warning below rather than sending the user to sign in again.
+	if key != "" && resp.StatusCode == http.StatusUnauthorized {
 		return Check{
 			Name:   "network",
 			Status: Fail,

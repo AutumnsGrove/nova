@@ -484,6 +484,11 @@ type OpenCodeGoConfig struct {
 | OPG36 | catalog id stripped for the wire | `Model` `opencode-go/glm-5.3`, then the bare slug | the wire model is `glm-5.3` both times |
 | OPG37 | Nova's routes are single attempts | a Go 500 with both backends up | the error returns; OpenRouter is never called |
 | OPG38 | the baseline carries picker fields | the deepseek and haiku entries | efforts, tool choice, tiers, multiplier, and monthly limit |
+| OPG39 | a rejected OpenRouter key says how to sign in again (#53) | OpenRouter answers 401 `User not found.` | the `error` event keeps the provider's text and adds `run "nova login"`; the key is not in it |
+| OPG40 | the hint follows the model's provider (#53) | an OpenCode Go model, Go answers 401 | the hint names `nova login opencode-go`, never the bare OpenRouter login |
+| OPG41 | other failures get no hint (#53) | 400, 403, or 404 | the provider's text only; no `nova login` |
+| OPG42 | an embedder's own provider gets no hint (#53) | `Options.Provider` set, it returns 401 | the provider's text only; no `nova login` |
+| OPG43 | a healthy run prints no hint (#53) | a signed-in OpenCode Go run | no `error` event |
 | RT01 | a Go route reaches Go | a catalog id routed Go-first | the Go base URL sees the wire slug, `Authorization`, the app `User-Agent`, and `x-opencode-session` |
 | RT02 | no session id still sends | `SessionID` nil on an OpenRouter route | success; no `x-opencode-session` header goes out |
 | RT03 | a limit spills exactly once | Go 429, then OpenRouter success | one OpenRouter call; the response `Provider` is the OpenRouter name |

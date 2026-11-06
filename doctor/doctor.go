@@ -197,7 +197,11 @@ func networkCheck(ctx context.Context, opt Options, key string) Check {
 	}
 	cctx, cancel := context.WithTimeout(ctx, opt.NetworkTimeout)
 	defer cancel()
-	url := strings.TrimRight(opt.BaseURL, "/") + "/models"
+	path := "/models"
+	if key != "" && strings.TrimRight(opt.BaseURL, "/") == "https://openrouter.ai/api/v1" {
+		path = "/auth/key"
+	}
+	url := strings.TrimRight(opt.BaseURL, "/") + path
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
 	if err != nil {
 		return Check{Name: "network", Status: Warn, Detail: err.Error(), Fix: "check the API base URL"}
@@ -213,6 +217,14 @@ func networkCheck(ctx context.Context, opt Options, key string) Check {
 		return Check{Name: "network", Status: Warn, Detail: err.Error(), Fix: "check the network or use --offline"}
 	}
 	defer resp.Body.Close()
+	if key != "" && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+		return Check{
+			Name:   "network",
+			Status: Fail,
+			Detail: "OpenRouter rejected the configured API key",
+			Fix:    "run `nova login` or replace OPENROUTER_API_KEY",
+		}
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return Check{Name: "network", Status: Warn, Detail: fmt.Sprintf("OpenRouter returned %s", resp.Status), Fix: "check the network or use --offline"}
 	}

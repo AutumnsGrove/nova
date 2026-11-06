@@ -159,6 +159,22 @@ func TestDoctor_DRX04_NetworkTimeout(t *testing.T) {
 	}
 }
 
+func TestDoctor_DRX08_RejectedKey(t *testing.T) {
+	opt := testOptions(t)
+	opt.Offline = false
+	opt.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/v1/auth/key" {
+			t.Fatalf("auth probe path = %q, want /api/v1/auth/key", r.URL.Path)
+		}
+		return &http.Response{StatusCode: http.StatusUnauthorized, Status: "401 Unauthorized", Body: io.NopCloser(strings.NewReader(`{"error":{"message":"User not found"}}`))}, nil
+	})}
+	checks := Run(context.Background(), opt)
+	c := find(t, checks, "network")
+	if c.Status != Fail || !strings.Contains(c.Detail, "rejected") || !strings.Contains(c.Fix, "nova login") {
+		t.Fatalf("network = %s %q (fix %q), want rejected-key failure with login guidance", c.Status, c.Detail, c.Fix)
+	}
+}
+
 func TestDoctor_DRX05_Offline(t *testing.T) {
 	opt := testOptions(t)
 	opt.Offline = true

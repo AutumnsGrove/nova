@@ -7,6 +7,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+- `nova doctor` now probes OpenRouter's authenticated `/auth/key` route when a key is configured,
+  so a revoked key reports `fail` with a `nova login` fix instead of `ok`. Only a 401 counts as
+  a rejected key: a 403, a 5xx, or a timeout stays a warning. Other base URLs are still probed
+  at `/models`. Thanks to @mikemikimike for the first version of this (#53, #79).
+
 ## [0.3.4] - 2026-11-05
 
 Nova is `v0.x`, so anything here may break callers. **Upgrade notes for library consumers:**

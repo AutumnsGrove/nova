@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/AutumnsGrove/nova/bundled"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/mode/attach"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
 )
 
@@ -153,15 +155,48 @@ func (s *Server) signInProblem() string {
 	if providerauth.Resolve(p, p.ConfigKeyFrom(s.cfg), os.Getenv, s.home).Ready {
 		return ""
 	}
-	login, forName := "nova login", ""
+	forName := ""
 	if p.ID != "openrouter" {
-		login, forName = "nova login "+p.ID, " for "+p.Name
+		forName = " for " + p.Name
+	}
+	return `no API key` + forName + `: ` + signInAdvice(p)
+}
+
+// signInAdvice is how to get a working credential for p: the login command that
+// names it (plain `nova login` is OpenRouter's), and the environment variable
+// that is the other source.
+func signInAdvice(p providerauth.Provider) string {
+	login := "nova login"
+	if p.ID != "openrouter" {
+		login += " " + p.ID
 	}
 	env := ""
 	if len(p.EnvVars) > 0 {
 		env = " or set " + p.EnvVars[0]
 	}
-	return `no API key` + forName + `: run "` + login + `"` + env
+	return `run "` + login + `"` + env
+}
+
+// errorHint is the agent's ErrorHint: when the provider rejected the request's
+// credential (a 401), it says how to sign in again to the provider that serves
+// the current model. It adds to the provider's own message and is silent for
+// every other failure, because a 400 or a 403 is not evidence the key is bad.
+// It is silent too when the host supplied its own provider (usesAuth is false):
+// Nova did not authenticate that call, and ForModel would otherwise point a
+// library user at OpenRouter.
+func (s *Server) errorHint(err error) string {
+	var pe *provider.Error
+	if !s.usesAuth || !errors.As(err, &pe) || pe.Status != http.StatusUnauthorized {
+		return ""
+	}
+	s.mu.Lock()
+	model := s.cfg.Model
+	s.mu.Unlock()
+	p, ok := providerauth.ForModel(model)
+	if !ok {
+		return ""
+	}
+	return "The " + p.Name + " key was rejected: " + signInAdvice(p)
 }
 
 // handleSteer queues a steering message for the active run.

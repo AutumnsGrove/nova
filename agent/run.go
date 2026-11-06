@@ -415,10 +415,9 @@ func (r *run) finish(res *Result, err error) (*Result, error) {
 		if r.cfg.ErrorHint != nil {
 			// The hint is advice added after the error's own text, never a
 			// replacement for it, and a host bug in it must not hide the failure.
-			hint, _ := runHookUnder(context.WithoutCancel(r.ctx), r, "error_hint", func(context.Context) string {
+			if hint, _ := runHookUnder(context.WithoutCancel(r.ctx), r, "error_hint", func(context.Context) string {
 				return r.cfg.ErrorHint(err)
-			})
-			if hint != "" {
+			}); hint != "" {
 				msg += "\n" + hint
 			}
 		}

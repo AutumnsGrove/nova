@@ -227,6 +227,10 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | DRX16 | never prints a secret | all outputs | the key and tokens absent |
 | DRX17 | bounded runtime | everything stalls | finishes within 30 s (fake clock) |
 | DRX18 | crash log path | no report; a report present | path shown; last crash reported |
+| DRX19 | rejected key (#53) | OpenRouter answers 401 on `/auth/key` | network fail; detail says rejected; fix says `nova login` |
+| DRX20 | valid key (#53) | `/auth/key` answers 200 | ok; the authenticated path was probed |
+| DRX21 | server trouble is not a dead key (#53) | 500, 502, or 403 | warn, never fail |
+| DRX22 | other base URL (#53) | a non-OpenRouter `BaseURL` | probes `/models`, not `/auth/key` |
 | DOC01 | topic list | | embedded topics |
 | DOC02 | print a topic | `extensions` | the document |
 | DOC03 | unknown topic | | an error (exit 1) listing the topics on stderr |

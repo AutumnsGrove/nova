@@ -204,6 +204,13 @@ type Config struct {
 	// stream. It controls only the live thinking_delta events.
 	ReasoningFilter func() StreamFilter
 
+	// ErrorHint, when non-nil, is given the error that ended a run and returns
+	// advice to append to the error event's message, such as how to sign in
+	// again. It never replaces the error's own text. The agent knows nothing
+	// about credentials, so the host that does supplies this. A panic in it is
+	// recovered and the event goes out without a hint.
+	ErrorHint func(err error) string
+
 	// Emit receives every event, synchronously, in order. Seq, TS, and Run
 	// are filled in; it may be nil.
 	Emit func(proto.Event)

@@ -308,6 +308,7 @@ func New(opt Options) (*Server, error) {
 		},
 		ToolExecution: agent.Parallel,
 		Retry:         retryPolicy(cfg),
+		ErrorHint:     s.errorHint,
 		Emit:          s.emit,
 		OnMessage:     s.onMessage,
 		Complete:      s.complete,

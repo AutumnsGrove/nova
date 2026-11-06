@@ -411,7 +411,18 @@ func (r *run) finish(res *Result, err error) (*Result, error) {
 		if errors.As(err, &pe) {
 			code = proto.CodeProviderError
 		}
-		r.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: code, Message: err.Error()}})
+		msg := err.Error()
+		if r.cfg.ErrorHint != nil {
+			// The hint is advice added after the error's own text, never a
+			// replacement for it, and a host bug in it must not hide the failure.
+			hint, _ := runHookUnder(context.WithoutCancel(r.ctx), r, "error_hint", func(context.Context) string {
+				return r.cfg.ErrorHint(err)
+			})
+			if hint != "" {
+				msg += "\n" + hint
+			}
+		}
+		r.emit(proto.Event{Type: proto.EventError, Error: &proto.Error{Code: code, Message: msg}})
 	}
 	if r.cfg.Hooks.AgentEnd != nil {
 		runHookUnder(context.WithoutCancel(r.ctx), r, "agent_end", func(ctx context.Context) struct{} {

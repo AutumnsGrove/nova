@@ -159,7 +159,7 @@ func TestDoctor_DRX04_NetworkTimeout(t *testing.T) {
 	}
 }
 
-func TestDoctor_DRX08_RejectedKey(t *testing.T) {
+func TestDoctor_DRX19_RejectedKey(t *testing.T) {
 	opt := testOptions(t)
 	opt.Offline = false
 	opt.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -172,6 +172,64 @@ func TestDoctor_DRX08_RejectedKey(t *testing.T) {
 	c := find(t, checks, "network")
 	if c.Status != Fail || !strings.Contains(c.Detail, "rejected") || !strings.Contains(c.Fix, "nova login") {
 		t.Fatalf("network = %s %q (fix %q), want rejected-key failure with login guidance", c.Status, c.Detail, c.Fix)
+	}
+}
+
+// probeHTTP answers every request with status and records the path it was
+// asked for, so a test can check both the verdict and which endpoint was probed.
+func probeHTTP(status int, path *string) *http.Client {
+	return &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		*path = r.URL.Path
+		return &http.Response{StatusCode: status, Status: http.StatusText(status), Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})}
+}
+
+func TestDoctor_DRX20_ValidKey(t *testing.T) {
+	opt := testOptions(t)
+	opt.Offline = false
+	var path string
+	opt.HTTP = probeHTTP(http.StatusOK, &path)
+	c := find(t, Run(context.Background(), opt), "network")
+	if path != "/api/v1/auth/key" {
+		t.Fatalf("probed %q, want the authenticated /api/v1/auth/key", path)
+	}
+	if c.Status != OK {
+		t.Fatalf("network = %s (%s), want ok for an accepted key", c.Status, c.Detail)
+	}
+}
+
+// A server that is down, or that refuses us for a reason other than the key
+// (a region block, a gateway), says nothing about whether the key is dead, so
+// doctor must not tell the user to sign in again.
+func TestDoctor_DRX21_ServerTroubleIsNotADeadKey(t *testing.T) {
+	for _, status := range []int{http.StatusInternalServerError, http.StatusBadGateway, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			opt := testOptions(t)
+			opt.Offline = false
+			var path string
+			opt.HTTP = probeHTTP(status, &path)
+			c := find(t, Run(context.Background(), opt), "network")
+			if path == "" {
+				t.Fatal("the probe never ran")
+			}
+			if c.Status != Warn {
+				t.Fatalf("network = %s (%s), want warn for status %d", c.Status, c.Detail, status)
+			}
+		})
+	}
+}
+
+// Only OpenRouter has the authenticated /auth/key route. Any other base URL is
+// probed at /models, the one path an OpenAI-compatible server is known to have.
+func TestDoctor_DRX22_OtherBaseURLProbesModels(t *testing.T) {
+	opt := testOptions(t)
+	opt.Offline = false
+	opt.BaseURL = "https://gateway.example/v1"
+	var path string
+	opt.HTTP = probeHTTP(http.StatusOK, &path)
+	c := find(t, Run(context.Background(), opt), "network")
+	if path != "/v1/models" || c.Status != OK {
+		t.Fatalf("probed %q, network = %s (%s), want /v1/models and ok", path, c.Status, c.Detail)
 	}
 }
 

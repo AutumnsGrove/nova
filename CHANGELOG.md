@@ -7,7 +7,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+Upgrade notes for library consumers (#53):
+
+- `agent.Config` gains `ErrorHint func(error) string`. It is additive and optional: a nil hook
+  changes nothing. When set, its result is appended on a new line to the `error` event's message,
+  after the error's own text.
+- If you run `mode.New` without `Options.Provider` (Nova owns the provider), the `error` event for a
+  provider 401 now ends with a second line such as `The OpenRouter key was rejected: run "nova
+  login" or set OPENROUTER_API_KEY`. Code that matches on the whole message should match on a
+  prefix. The event's `code` and the provider's text are unchanged, and a host that supplies its own
+  `Options.Provider` sees no change.
+
 ### Fixed
+- A provider that rejects the key (HTTP 401) now ends the run with a sign-in hint for the provider
+  serving the current model (`nova login`, or `nova login opencode-go`), after the provider's own
+  message, instead of a bare `(status 401)` line. Other failures get no hint (#53).
 - `nova doctor` now probes OpenRouter's authenticated `/auth/key` route when a key is configured,
   so a revoked key reports `fail` with a `nova login` fix instead of `ok`. Only a 401 counts as
   a rejected key: a 403, a 5xx, or a timeout stays a warning. Other base URLs are still probed

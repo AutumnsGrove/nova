@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-11-07
+
 Upgrade notes for library consumers (#53):
 
 - `agent.Config` gains `ErrorHint func(error) string`. It is additive and optional: a nil hook
@@ -26,6 +28,10 @@ Upgrade notes for library consumers (#53):
   so a revoked key reports `fail` with a `nova login` fix instead of `ok`. Only a 401 counts as
   a rejected key: a 403, a 5xx, or a timeout stays a warning. Other base URLs are still probed
   at `/models`. Thanks to @mikemikimike for the first version of this (#53, #79).
+- `opencode-go/deepseek-v4.1-flash` now carries `multimodal: true` in the Go
+  baseline, so `AcceptsImages()` is true and `InputModalities` reads
+  `[text, image]` — it takes `image_url` parts live, and the entry said
+  text-only (#81).
 
 ## [0.3.4] - 2026-11-05
 
@@ -484,7 +490,8 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
 - The first release: the agent loop, tools, sessions, config, the TUI, the
   extension host, the bundled extensions, serve mode, and the GitHub Action.
 
-[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.5
 [0.3.4]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.4
 [0.3.3]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.3
 [0.3.2]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.2

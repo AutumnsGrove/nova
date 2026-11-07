@@ -199,6 +199,9 @@ func TestOpencodego_OPG38_BaselinePickerFields(t *testing.T) {
 	if deepseek.MonthlyLimitUSD != 100 {
 		t.Errorf("deepseek monthly limit = %v, want 100", deepseek.MonthlyLimitUSD)
 	}
+	if !deepseek.AcceptsImages() {
+		t.Errorf("deepseek AcceptsImages = false, want true (takes image_url parts, #81)")
+	}
 	haiku, ok := provider.GetModel("opencode-go/claude-haiku-5-5")
 	if !ok {
 		t.Fatal("haiku entry missing")

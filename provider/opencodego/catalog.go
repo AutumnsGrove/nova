@@ -45,7 +45,7 @@ type baselineModel struct {
 var baseline = []baselineModel{
 	{
 		id: idPrefix + "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", dialect: DialectChat,
-		context: 200_000, inPerM: 0.15, outPerM: 0.60, implicitCaching: true,
+		context: 200_000, inPerM: 0.15, outPerM: 0.60, multimodal: true, implicitCaching: true,
 		efforts: []string{"low", "high", "max"}, toolChoice: []string{"auto", "none", "required", "tool"},
 		multipliers:     []provider.CostMultiplier{{Factor: 2, Window: "weekdays 01:00-04:00, 06:00-10:00 UTC"}},
 		monthlyLimitUSD: 100,

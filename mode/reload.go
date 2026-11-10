@@ -167,6 +167,12 @@ func (s *Server) applyConfig(fresh *config.Config) (modelChanged bool, err error
 	if s.opt.EmbedCatalog == nil {
 		s.embedCatalog = buildEmbeddingCatalog(fresh, s.home)
 	}
+	if s.opt.Speaker == nil {
+		s.speaker = buildSpeaker(fresh, s.home)
+	}
+	if s.opt.Transcriber == nil {
+		s.transcriber = buildTranscriber(fresh, s.home)
+	}
 	s.loaded = file
 	s.model, s.think, s.limit = modelSlug(fresh.Model), fresh.Thinking, fresh.ContextLimit
 	s.policy = fresh.Permissions

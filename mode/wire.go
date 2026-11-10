@@ -115,16 +115,6 @@ func buildTranscriber(cfg *config.Config, home string) voice.Transcriber {
 	})
 }
 
-// buildVoiceCatalog builds the live voice roster reader from the config.
-func buildVoiceCatalog(cfg *config.Config, home string) voice.Catalog {
-	return providers.BuildVoiceCatalog(providers.Options{
-		Config: cfg,
-		Home:   home,
-		Getenv: os.Getenv,
-		Store:  auth.NewFileStore(keyPath(home)),
-	})
-}
-
 // defaultToolNames is the built-in set when the config does not choose one.
 var defaultToolNames = []string{"read", "write", "edit", "list", "glob", "grep", "bash"}
 

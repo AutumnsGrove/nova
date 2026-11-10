@@ -272,12 +272,6 @@ func BuildTranscriber(opt Options) voice.Transcriber {
 	})
 }
 
-// BuildVoiceCatalog returns the live voice roster reader. It shares the voice
-// client, so the roster needs no separate sign-in.
-func BuildVoiceCatalog(opt Options) voice.Catalog {
-	return voiceClient(opt)
-}
-
 // BuildDecisionCatalog returns the live decision-model roster reader. It shares
 // the decision client, so the roster needs no separate sign-in.
 func BuildDecisionCatalog(opt Options) decide.Catalog {

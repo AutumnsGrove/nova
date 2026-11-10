@@ -82,15 +82,13 @@ type Options struct {
 	// Transcriber overrides the transcription client built from the config. nil
 	// means build one.
 	Transcriber voice.Transcriber
-	// VoiceCatalog overrides the live voice roster. nil means build one.
-	VoiceCatalog voice.Catalog
-	Session      string // path to open or create; "" means a new default
-	NoSession    bool   // keep the transcript in memory only
-	Clock        Clock
-	Version      string
-	Mode         string   // tui | print | json | rpc | serve, for extensions
-	Tools        []string // explicit active tool set; nil means use the config
-	NoTools      bool     // register no tools at all
+	Session     string // path to open or create; "" means a new default
+	NoSession   bool   // keep the transcript in memory only
+	Clock       Clock
+	Version     string
+	Mode        string   // tui | print | json | rpc | serve, for extensions
+	Tools       []string // explicit active tool set; nil means use the config
+	NoTools     bool     // register no tools at all
 
 	// ExtraTools are added to the tool pool before the active set is resolved,
 	// so a caller (the GitHub Action) can register mode-specific tools. A
@@ -122,7 +120,6 @@ type Server struct {
 	embedCatalog embed.Catalog
 	speaker      voice.Speaker
 	transcriber  voice.Transcriber
-	voiceCatalog voice.Catalog
 	usesAuth     bool
 	tools        *tool.Registry
 	pool         map[string]tool.Tool
@@ -260,10 +257,6 @@ func New(opt Options) (*Server, error) {
 	if s.transcriber == nil {
 		s.transcriber = buildTranscriber(cfg, home)
 	}
-	s.voiceCatalog = opt.VoiceCatalog
-	if s.voiceCatalog == nil {
-		s.voiceCatalog = buildVoiceCatalog(cfg, home)
-	}
 	tools, pool, err := buildTools(cfg)
 	if err != nil {
 		return nil, err
@@ -338,6 +331,8 @@ func New(opt Options) (*Server, error) {
 		Complete:      s.complete,
 		Decide:        s.decideCall,
 		Embed:         s.embedCall,
+		Speak:         s.speakCall,
+		Transcribe:    s.transcribeCall,
 		Hooks: agent.Hooks{
 			BeforeProviderRequest: func(ctx context.Context, req *provider.Request) {
 				s.beforeProviderRequest(ctx, req)

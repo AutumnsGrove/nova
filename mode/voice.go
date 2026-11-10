@@ -19,7 +19,6 @@ import (
 type Voice struct {
 	speaker     voice.Speaker
 	transcriber voice.Transcriber
-	catalog     voice.Catalog
 	speech      []string
 	transcribe  []string
 }
@@ -51,7 +50,6 @@ func NewVoice(o BuildOptions) (*Voice, error) {
 	return &Voice{
 		speaker:     providers.BuildSpeaker(opt),
 		transcriber: providers.BuildTranscriber(opt),
-		catalog:     providers.BuildVoiceCatalog(opt),
 		speech:      slices.Sorted(maps.Keys(cfg.Voice.Speech.Roles)),
 		transcribe:  slices.Sorted(maps.Keys(cfg.Voice.Transcribe.Roles)),
 	}, nil
@@ -66,10 +64,6 @@ func (v *Voice) Speak(ctx context.Context, req voice.SpeechRequest) (*voice.Clip
 func (v *Voice) Transcribe(ctx context.Context, req voice.TranscribeRequest) (*voice.Transcript, error) {
 	return v.transcriber.Transcribe(ctx, req)
 }
-
-// Catalog reads the live voice roster, for a caller that wants the models the
-// provider currently serves.
-func (v *Voice) Catalog() voice.Catalog { return v.catalog }
 
 // SpeechRoles lists the configured text-to-speech role names.
 func (v *Voice) SpeechRoles() []string { return v.speech }

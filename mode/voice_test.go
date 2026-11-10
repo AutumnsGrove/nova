@@ -4,10 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"path/filepath"
 	"testing"
 
+	"github.com/AutumnsGrove/nova/auth"
+	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/testkit"
+	"github.com/AutumnsGrove/nova/tool"
 	"github.com/AutumnsGrove/nova/voice"
 )
 
@@ -160,5 +166,151 @@ func TestSpeak_A22_NoSpeakerIsAnError(t *testing.T) {
 	}
 	if _, err := s.transcribeCall(context.Background(), voice.TranscribeRequest{Model: "a/b", Audio: []byte{1}, Format: voice.FormatMP3}); err == nil {
 		t.Fatal("transcribeCall with no transcriber = nil, want an error")
+	}
+}
+
+// TestVoice_A26_ToolSeamWiresTheRole drives the whole path the way a real front
+// door does: config role, the built clients, the run's agent.Config, the tool
+// seam, and the usage hook. It exists because the first version of this wiring
+// built the clients but never passed them into the loop, and a test that
+// constructs agent.Config itself cannot see that.
+func TestVoice_A26_ToolSeamWiresTheRole(t *testing.T) {
+	t.Setenv(auth.EnvAPIKey, "test-key")
+	voiceSrv := testkit.NewVoiceServer(t,
+		testkit.VoiceServerTurn{Audio: []byte{1, 2}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Body: `{"text":"hello"}`},
+	)
+	providerSrv := testkit.NewProvider(testkit.RealClock(),
+		testkit.Turn{ToolCalls: []testkit.Call{{ID: "c1", Name: "narrate", Args: `{}`}}},
+		testkit.Turn{Text: "done"},
+	)
+	var gotClip *voice.Clip
+	var gotTranscript *voice.Transcript
+	narrate := tool.New(tool.Info{
+		Name:        "narrate",
+		Description: "speak and transcribe",
+		Parameters:  map[string]any{"type": "object"},
+		ReadOnly:    true,
+	}, func(ctx context.Context, _ json.RawMessage, tctx *tool.Context) (tool.Result, error) {
+		if tctx.Speak == nil || tctx.Transcribe == nil {
+			return tool.Errorf("no voice seam"), nil
+		}
+		clip, err := tctx.Speak(ctx, voice.SpeechRequest{Model: "narrate", Input: "hi"})
+		if err != nil {
+			return tool.Errorf("speak: %v", err), nil
+		}
+		gotClip = clip
+		tctx.AddUsage(clip.Usage)
+		transcript, err := tctx.Transcribe(ctx, voice.TranscribeRequest{Model: "default", Audio: []byte{1}, Format: voice.FormatMP3})
+		if err != nil {
+			return tool.Errorf("transcribe: %v", err), nil
+		}
+		gotTranscript = transcript
+		tctx.AddUsage(transcript.Usage)
+		return tool.Text("%s", transcript.Text), nil
+	})
+
+	cfg := config.Defaults()
+	cfg.Model = "test/model"
+	cfg.Compaction.Enabled = boolPtr(false)
+	cfg.Extensions.Disable = bundledNames()
+	cfg.Provider.OpenRouter.BaseURL = voiceSrv.URL
+	lookup := false
+	cfg.Voice.CostLookup = &lookup
+	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
+		"narrate": {Model: "hexgrad/kokoro-82m", Voice: "af_heart", Format: "mp3"},
+	}
+	cfg.Voice.Transcribe.Roles = map[string]config.TranscribeRoleConfig{
+		"default": {Model: "openai/whisper-1"},
+	}
+	s, err := New(Options{
+		Config:     &cfg,
+		CWD:        t.TempDir(),
+		Home:       t.TempDir(),
+		Provider:   providerSrv,
+		Session:    filepath.Join(t.TempDir(), "session.jsonl"),
+		Version:    "test",
+		Tools:      []string{"narrate"},
+		ExtraTools: []tool.Tool{narrate},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if code := RunPrint(context.Background(), s, "go", io.Discard, io.Discard); code != 0 {
+		t.Fatalf("RunPrint exit = %d", code)
+	}
+	if gotClip == nil || !bytes.Equal(gotClip.Bytes, []byte{1, 2}) || gotClip.Voice != "af_heart" {
+		t.Fatalf("tool got clip %+v; requests: %+v", gotClip, voiceSrv.Requests())
+	}
+	if gotTranscript == nil || gotTranscript.Text != "hello" {
+		t.Fatalf("tool got transcript %+v", gotTranscript)
+	}
+	reqs := voiceSrv.Requests()
+	if len(reqs) != 2 || reqs[0].Path != "/audio/speech" || reqs[1].Path != "/audio/transcriptions" {
+		t.Fatalf("requests = %+v", reqs)
+	}
+}
+
+// TestVoice_Reload_AppliesNewRoles: /reload must rebuild the speaker and
+// transcriber, or fresh voice.* settings sit in s.cfg while calls keep using the
+// old role table.
+func TestVoice_Reload_AppliesNewRoles(t *testing.T) {
+	t.Setenv(auth.EnvAPIKey, "test-key")
+	srv := testkit.NewVoiceServer(t,
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Audio: []byte{2}, ContentType: "audio/mpeg"},
+	)
+	cfg := config.Defaults()
+	cfg.Model = "test/model"
+	cfg.Compaction.Enabled = boolPtr(false)
+	cfg.Extensions.Disable = bundledNames()
+	cfg.Provider.OpenRouter.BaseURL = srv.URL
+	lookup := false
+	cfg.Voice.CostLookup = &lookup
+	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
+		"narrate": {Model: "vendor/one", Voice: "v1"},
+	}
+	fresh := cfg
+	s, err := New(Options{
+		Config:   &cfg,
+		Reload:   func() (*config.Config, []string, error) { return &fresh, nil, nil },
+		CWD:      t.TempDir(),
+		Home:     t.TempDir(),
+		Provider: testkit.NewProvider(testkit.RealClock()),
+		Session:  filepath.Join(t.TempDir(), "session.jsonl"),
+		Version:  "test",
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	speak := func() string {
+		t.Helper()
+		if _, err := s.speakCall(context.Background(), voice.SpeechRequest{Model: "narrate", Input: "hi"}); err != nil {
+			t.Fatalf("speakCall: %v", err)
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		reqs := srv.Requests()
+		if err := json.Unmarshal(reqs[len(reqs)-1].Body, &body); err != nil {
+			t.Fatalf("request body: %v", err)
+		}
+		return body.Model
+	}
+
+	if got := speak(); got != "vendor/one" {
+		t.Fatalf("before reload: model = %q", got)
+	}
+	fresh.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
+		"narrate": {Model: "vendor/two", Voice: "v2"},
+	}
+	if resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdReload}); !resp.OK {
+		t.Fatalf("reload = %+v", resp)
+	}
+	if got := speak(); got != "vendor/two" {
+		t.Fatalf("after reload: model = %q, want the new role table", got)
 	}
 }

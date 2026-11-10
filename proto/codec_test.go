@@ -512,3 +512,20 @@ func TestProto_LGP25_LoginEndDecodesAsEvent(t *testing.T) {
 		t.Fatalf("login_end decoded as %+v", f)
 	}
 }
+
+// TestProto_A24_DefaultLineLimit pins the documented default: a 40 MiB clip is
+// a 53 MiB base64 line, so the ceiling has to clear it. The over-limit path is
+// FRM10's, but this checks it against the real default rather than a test one.
+func TestProto_A24_DefaultLineLimit(t *testing.T) {
+	if defaultMaxLine != 64<<20 {
+		t.Fatalf("defaultMaxLine = %d, want 64 MiB", defaultMaxLine)
+	}
+	line := bytes.Repeat([]byte("a"), 20<<20)
+	if got, err := NewReader(bytes.NewReader(append(line, '\n')), 0).Next(); err != nil || len(got) != len(line) {
+		t.Fatalf("20 MiB line: len %d err %v, want ok", len(got), err)
+	}
+	over := bytes.Repeat([]byte("a"), (64<<20)+1)
+	if _, err := NewReader(bytes.NewReader(append(over, '\n')), 0).Next(); !errors.Is(err, ErrLineTooLong) {
+		t.Fatalf("over 64 MiB err = %v, want ErrLineTooLong", err)
+	}
+}

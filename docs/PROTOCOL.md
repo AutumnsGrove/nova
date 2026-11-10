@@ -15,8 +15,11 @@ version. Unknown fields are ignored. A line that is not a valid frame gets a fai
   lines, and takes a final line that has no terminator.
 - Split records on `\n` only. Do not use a reader that also splits on U+2028 or
   U+2029, which are legal inside JSON strings.
-- A line may be up to 16 MiB. A longer line is a protocol error that closes the
-  connection (a line of exactly 16 MiB, newline excluded, is accepted).
+- A line may be up to 64 MiB. A longer line is a protocol error that closes the
+  connection (a line of exactly 64 MiB, newline excluded, is accepted). The cap
+  is large because a `speak` response carries a base64 audio clip: a 40 MiB clip
+  is a 53 MiB line. A reader grows its buffer on demand, so a small frame costs
+  nothing, and the ceiling is paid only when a large clip crosses.
 - Stdout carries only protocol frames. Logs go to stderr.
 - Writers honour backpressure; readers read continuously.
 

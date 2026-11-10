@@ -14,8 +14,9 @@ import (
 	"time"
 )
 
-// maxLine is the protocol's 16 MiB line cap.
-const maxLine = 16 << 20
+// maxLine is the protocol's line cap, which is large enough for a base64 audio
+// clip. It matches proto's and the host's.
+const maxLine = 64 << 20
 
 // Host collects an extension's registrations and talks to the host process.
 type Host struct {

@@ -333,7 +333,7 @@ twice, answer slowly, answer twice, print garbage to stdout, exit after N calls,
 | SUP14 | shutdown kills descendants | extension forks `sleep` | no process survives |
 | SUP15 | extension ignores shutdown | | killed after the grace |
 | SUP16 | garbage on stdout | | logged; ignored |
-| SUP17 | frame over 16 MiB | | connection closed; counts as a crash |
+| SUP17 | frame over 64 MiB | | connection closed; counts as a crash |
 | SUP18 | no goroutine leak after all of the above | | `NoLeaks` |
 | HST01 | tool call round trip | | result returned |
 | HST02 | tool call timeout | extension sleeps | error result at the deadline; late answer discarded |

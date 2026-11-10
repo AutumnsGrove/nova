@@ -132,7 +132,7 @@ func main() {
 				}})
 			}
 			if env("ECHO_BIG_FRAME") {
-				sendRaw(strings.Repeat("a", 17<<20))
+				sendRaw(strings.Repeat("a", 65<<20))
 			}
 			if env("ECHO_GARBAGE") {
 				outMu.Lock()

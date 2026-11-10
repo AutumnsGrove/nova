@@ -93,7 +93,7 @@ nova/
     image/        inline image capability and Kitty encoding   ≤ 260
     firstrun/     the first-run sign-in and model picker       ≤ 400
     cli/          fang-styled help and errors (full build only) ≤ 150
-  cmd/nova/       main, cobra commands, doctor, version         ≤ 1260
+  cmd/nova/       main, cobra commands, doctor, version         ≤ 1560
   doctor/         environment checks                            ≤ 440
   diag/           crash reports and debug traces                ≤ 250  update/         replace the binary from a checkout or release ≤ 450
   scripts/        matrixcheck, linecount, importcheck, accept

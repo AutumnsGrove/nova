@@ -431,7 +431,7 @@ decision, and it applies to every frame, so a hostile 64 MiB line from an
 authenticated client is possible — the same trust boundary `serve` already has.
 
 `MaxClipBytes` stays at 40 MiB: a 64 MiB ceiling leaves room for the envelope,
-and 40 MiB of MP3 at Kokoro's measured ~42 kbps is over two hours of speech.
+and 40 MiB of MP3 at Kokoro's measured 128 kbps is about forty minutes of speech.
 
 ### CLI
 
@@ -524,7 +524,7 @@ need room before a line is written.
 | `mode/providers` | 320 | 320 (measured 226; three builders fit) |
 | `ext` | 3100 | 3220 (measured 3192; two capabilities, two frames, two caps) |
 | `ext/sdk` | 700 | 700 (measured 652; `Speak`, `Transcribe` fit) |
-| `cmd/nova` | 1260 | 1420 (two subcommands) |
+| `cmd/nova` | 1260 | 1560 (measured 1530; two subcommands with their flags) |
 
 The two new packages also need their budget line in the nearest archived spec
 (`C01-foundations.md`, which already budgets `provider`, `roles`, `decide` and

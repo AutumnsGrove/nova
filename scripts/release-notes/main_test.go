@@ -516,6 +516,30 @@ func TestReleaseNotes_RN19_TimeoutKillsTheWholeGroup(t *testing.T) {
 	}
 }
 
+func TestReleaseNotes_RN20_VersionIsSeparateFromTheRange(t *testing.T) {
+	// A rehearsal names the version it is about, which may not be tagged yet, so
+	// the changelog section and the git range cannot both come from the same
+	// argument: the range is v0.2.0..v0.3.0, the section is 0.2.0.
+	dir := repo(t)
+	stubPi(t)
+	out, errOut, code := notes(t, dir, "--prompt-only", "--version", "v0.2.0", "v0.2.0", "v0.3.0")
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr:\n%s", code, errOut)
+	}
+	if !strings.Contains(out, "The changelog section for 0.2.0") {
+		t.Errorf("the prompt is not written for version 0.2.0:\n%s", out)
+	}
+	if !strings.Contains(out, "Speech and transcription (#85)") {
+		t.Errorf("the 0.2.0 section is missing from the prompt:\n%s", out)
+	}
+	if !strings.Contains(out, "feat: write release notes (#90)") {
+		t.Errorf("the commits still come from the range:\n%s", out)
+	}
+	if strings.Contains(out, "Upgrade notes for library consumers") {
+		t.Errorf("the 0.3.0 section leaked in:\n%s", out)
+	}
+}
+
 func TestReleaseNotes_RN16_MergeCommitsAreExcluded(t *testing.T) {
 	dir := repo(t)
 	stubPi(t)

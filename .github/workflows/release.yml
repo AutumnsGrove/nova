@@ -141,16 +141,24 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -u
-          previous=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
-          echo "release-notes range: ${previous:-<first release>}..${TAG}"
           if ! go build -o "$RUNNER_TEMP/release-notes" ./scripts/release-notes; then
             echo "::warning::scripts/release-notes did not build; the release will publish with no body"
             exit 0
           fi
+          # The version and the ref are separate: a rehearsal is for a version
+          # that may not be tagged yet, so the range ends at HEAD when the name
+          # does not resolve, while the changelog lookup still uses the name.
+          to="$TAG"
+          if ! git rev-parse --verify --quiet "${TAG}^{commit}" >/dev/null; then
+            to=HEAD
+            echo "::warning::${TAG} is not a ref yet; the range ends at HEAD"
+          fi
+          previous=$(git describe --tags --abbrev=0 "${to}^" 2>/dev/null || true)
+          echo "release-notes range: ${previous:-<first release>}..${to} for ${TAG}"
           # Flags come first: Go's flag package stops at the first ref, so a
           # flag after the range is a usage error and no body at all.
           status=0
-          "$RUNNER_TEMP/release-notes" --out body.md "$previous" "$TAG" || status=$?
+          "$RUNNER_TEMP/release-notes" --out body.md --version "$TAG" "$previous" "$to" || status=$?
           if [ "$status" = 3 ]; then
             echo "::warning::the release body is the changelog fallback, not a summary: see release-notes above"
           elif [ "$status" != 0 ]; then

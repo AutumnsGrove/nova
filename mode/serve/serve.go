@@ -37,7 +37,13 @@ const (
 	idleTimeout    = 120 * time.Second
 	writeTimeout   = 30 * time.Second
 	readTimeout    = 2 * time.Minute // a request body must arrive within this
-	shutdownGrace  = 5 * time.Second
+	// commandWriteTimeout and commandReadTimeout are the /v1/commands budget. A
+	// voice command blocks on a provider for a role timeout and then writes tens
+	// of megabytes of base64 audio, and a transcription upload can be tens of
+	// megabytes in, so the request/response default above is too short for it.
+	commandWriteTimeout = 10 * time.Minute
+	commandReadTimeout  = 5 * time.Minute
+	shutdownGrace       = 5 * time.Second
 )
 
 // Options configures the HTTP transport.
@@ -182,8 +188,12 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/v1/events" {
 		rc := http.NewResponseController(w)
 		now := time.Now()
-		_ = rc.SetWriteDeadline(now.Add(writeTimeout))
-		_ = rc.SetReadDeadline(now.Add(readTimeout))
+		write, read := writeTimeout, readTimeout
+		if r.URL.Path == "/v1/commands" {
+			write, read = commandWriteTimeout, commandReadTimeout
+		}
+		_ = rc.SetWriteDeadline(now.Add(write))
+		_ = rc.SetReadDeadline(now.Add(read))
 	}
 	if s.opt.CORSOrigin != "" {
 		w.Header().Add("Vary", "Origin")

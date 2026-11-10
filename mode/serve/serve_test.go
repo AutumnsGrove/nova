@@ -544,11 +544,17 @@ func TestServe_HTP15_WriteDeadlineOnRequestRoutes(t *testing.T) {
 	}
 	t.Cleanup(srv.close)
 
-	for _, route := range []struct{ method, path string }{
-		{"GET", "/v1/state"},
-		{"POST", "/v1/commands"},
-		{"POST", "/v1/ui_response"},
-		{"GET", "/healthz"},
+	// /v1/commands gets its own budget: a command can block on a provider for a
+	// role timeout and then write tens of megabytes of base64 audio, so the
+	// 30 s default would cut the response off mid-body.
+	for _, route := range []struct {
+		method, path string
+		budget       time.Duration
+	}{
+		{"GET", "/v1/state", writeTimeout},
+		{"POST", "/v1/commands", commandWriteTimeout},
+		{"POST", "/v1/ui_response", writeTimeout},
+		{"GET", "/healthz", writeTimeout},
 	} {
 		rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 		req := httptest.NewRequest(route.method, route.path, strings.NewReader("{}"))
@@ -558,8 +564,8 @@ func TestServe_HTP15_WriteDeadlineOnRequestRoutes(t *testing.T) {
 			t.Errorf("%s %s: no write deadline set", route.method, route.path)
 			continue
 		}
-		if got := rec.deadline.Sub(before); got < 25*time.Second || got > 35*time.Second {
-			t.Errorf("%s %s: deadline %v from now, want about 30s", route.method, route.path, got)
+		if got := rec.deadline.Sub(before); got < route.budget-time.Second || got > route.budget+time.Second {
+			t.Errorf("%s %s: deadline %v from now, want about %v", route.method, route.path, got, route.budget)
 		}
 	}
 }
@@ -647,12 +653,21 @@ func TestServe_HTP17_ReadDeadlineOnRequestRoutes(t *testing.T) {
 		t.Fatalf("newServer: %v", err)
 	}
 	t.Cleanup(srv.close)
-	for _, route := range []struct{ method, path string }{{"POST", "/v1/commands"}, {"POST", "/v1/attachments"}, {"POST", "/v1/ui_response"}} {
+	// /v1/commands carries a larger body budget on purpose: a transcription
+	// upload can be tens of megabytes, so the 2 minute default is too short.
+	for _, route := range []struct {
+		method, path string
+		budget       time.Duration
+	}{
+		{"POST", "/v1/commands", commandReadTimeout},
+		{"POST", "/v1/attachments", readTimeout},
+		{"POST", "/v1/ui_response", readTimeout},
+	} {
 		rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
 		before := time.Now()
 		srv.ServeHTTP(rec, httptest.NewRequest(route.method, route.path, strings.NewReader("{}")))
-		if got := rec.readDeadline.Sub(before); !rec.readSet || got < time.Minute || got > 3*time.Minute {
-			t.Errorf("%s %s: read deadline %v from now (set %v), want about 2 minutes", route.method, route.path, got, rec.readSet)
+		if got := rec.readDeadline.Sub(before); !rec.readSet || got < route.budget-time.Second || got > route.budget+time.Second {
+			t.Errorf("%s %s: read deadline %v from now (set %v), want about %v", route.method, route.path, got, rec.readSet, route.budget)
 		}
 	}
 	rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}

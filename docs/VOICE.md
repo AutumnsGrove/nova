@@ -212,9 +212,11 @@ const ChunkRunes = 300
 
 // Join concatenates clips from one voice into one clip. Every clip must share
 // the format, and a PCM clip must share the sample layout; otherwise Join
-// refuses rather than producing a file that plays at the wrong speed. Usage is
-// summed, the first clip's model and voice are kept, and GenerationID is
-// dropped because one joined clip has many generations.
+// refuses rather than producing a file that plays at the wrong speed. A leading
+// ID3 tag is kept on the first clip and dropped from the rest, because some
+// models (Voxtral) tag every response. Usage is summed, the first clip's model
+// and voice are kept, and GenerationID is dropped because one joined clip has
+// many generations.
 func Join(clips ...Clip) (Clip, error)
 
 // WAV prepends a 44-byte RIFF/PCM header to a raw PCM clip, using the clip's
@@ -224,10 +226,10 @@ func WAV(c Clip) []byte
 
 MP3 frames are self-contained, so a join is a byte concatenation; PCM is too,
 with one WAV header written at the end. Kokoro's MP3 begins with a frame sync
-(`ff f3`) and no ID3 tag, so a join of its clips is clean; an adapter that ever
-sees an ID3 tag per clip must strip it rather than leave one mid-stream, and a
-clip that does not round-trip is a test, not a surprise. Joining is what makes a
-long answer possible without a model that accepts a long input.
+(`ff f3`) and no ID3 tag, but Voxtral's begins with an ID3v2.4 tag on every
+response, so `Join` keeps the first clip's tag and drops the rest rather than
+leave one mid-stream. Joining is what makes a long answer possible without a
+model that accepts a long input.
 
 Markdown stripping is deliberately not here. What to strip depends on the app's
 own answer format (Polaris's citation links, Nova's tool cards), and a library
@@ -494,7 +496,7 @@ are a contract between this document and the tests, not a gate.
 | A19 | `List(KindSpeech)` and `List(KindTranscription)` send the matching `output_modalities` filter and map `supported_voices` |
 | A20 | `Chunks` splits at sentence boundaries under the cap, hard-splits a long sentence at a space, never splits a rune, and returns nil for blank input |
 | A21 | `WAV` returns nil for a non-PCM clip and for an unknown layout, and is byte-exact for a known one |
-| A22 | `Join` concatenates same-format clips and sums usage, and a joined mp3 is one playable stream; it refuses mixed formats, mixed PCM layouts and zero clips |
+| A22 | `Join` concatenates same-format clips and sums usage, and a joined mp3 is one playable stream: the first clip's ID3 tag survives and later ones are dropped; it refuses mixed formats, mixed PCM layouts and zero clips |
 | A23 | The `speak` protocol command returns base64 audio that decodes to the same bytes, and `transcribe` returns the transcript |
 | A24 | A frame of 20 MiB is accepted by the protocol reader, and one over 64 MiB fails with `ErrLineTooLong` |
 | A25 | An extension without `model:speech` is refused, and the 21st call in a run hits the cap |
@@ -512,7 +514,7 @@ need room before a line is written.
 
 | Package | Now | After |
 |---|---|---|
-| `voice` | — | ≤ 520 (contract, roles, chunks, join, wav; measured at 513) |
+| `voice` | — | ≤ 540 (contract, roles, chunks, join, wav; measured at 527) |
 | `voice/openrouter` | — | ≤ 620 (four endpoints plus the wire helpers; measured at 600) |
 | `testkit` | 1200 | 1260 (the scripted voice server) |
 | `provider` | 600 | 620 (`Voices`, two predicates) |

@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/AutumnsGrove/nova/provider"
@@ -82,5 +83,63 @@ func TestJoin_A22_DoesNotAlias(t *testing.T) {
 	got.Bytes[0] = 9
 	if a.Bytes[0] != 1 {
 		t.Error("Join() returned a clip that shares its buffer with the input")
+	}
+}
+
+// id3Tag builds a minimal ID3v2 tag of the requested payload size.
+func id3Tag(payload int) []byte {
+	tag := make([]byte, 10+payload)
+	copy(tag, "ID3")
+	tag[3] = 4 // version 2.4
+	tag[6] = byte(payload >> 21 & 0x7f)
+	tag[7] = byte(payload >> 14 & 0x7f)
+	tag[8] = byte(payload >> 7 & 0x7f)
+	tag[9] = byte(payload & 0x7f)
+	return tag
+}
+
+// TestJoin_A22_DropsATagMidStream: Voxtral tags every clip, so a join must keep
+// one tag at the front and none in the middle.
+func TestJoin_A22_DropsATagMidStream(t *testing.T) {
+	first := Clip{Format: FormatMP3, Bytes: append(id3Tag(4), 0xff, 0xf3)}
+	second := Clip{Format: FormatMP3, Bytes: append(id3Tag(20), 0xff, 0xf3, 0x01)}
+	got, err := Join(first, second)
+	if err != nil {
+		t.Fatalf("Join() = %v", err)
+	}
+	if !bytes.Equal(got.Bytes[:14], id3Tag(4)) {
+		t.Errorf("the first clip's tag was dropped: %x", got.Bytes[:14])
+	}
+	rest := got.Bytes[14:]
+	if bytes.Contains(rest, []byte("ID3")) {
+		t.Errorf("a tag survived mid-stream: %x", got.Bytes)
+	}
+	if !bytes.Equal(rest, []byte{0xff, 0xf3, 0xff, 0xf3, 0x01}) {
+		t.Errorf("frames = %x", rest)
+	}
+}
+
+func TestTrimID3_A22(t *testing.T) {
+	frames := []byte{0xff, 0xf3, 0x01}
+	cases := []struct {
+		name string
+		in   []byte
+		want []byte
+	}{
+		{"no tag", frames, frames},
+		{"tag", append(id3Tag(10), frames...), frames},
+		{"truncated tag", append(id3Tag(100), frames...)[:20], append(id3Tag(100), frames...)[:20]},
+		{"shorter than a header", []byte("ID3"), []byte("ID3")},
+	}
+	for _, tc := range cases {
+		if got := trimID3(tc.in); !bytes.Equal(got, tc.want) {
+			t.Errorf("%s: trimID3() = %x, want %x", tc.name, got, tc.want)
+		}
+	}
+	// A footer flag adds ten bytes to the tag, before the frames.
+	withFooter := append(append(id3Tag(4), make([]byte, 10)...), frames...)
+	withFooter[5] = 0x10
+	if got := trimID3(withFooter); !bytes.Equal(got, frames) {
+		t.Errorf("footer: trimID3() = %x, want the frames", got)
 	}
 }

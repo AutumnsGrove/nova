@@ -42,6 +42,10 @@ jobs:
 
   build:
     needs: accept
+    # A dry run rehearses the release job alone: the archives are what a tag
+    # publishes, and package.sh names them from the ref, which a branch name
+    # with a slash breaks.
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -74,10 +78,14 @@ jobs:
           path: dist/*.tar.gz
 
   release:
-    needs: build
-    # Publishing needs a tag. A dispatch run continues only as a dry run, which
-    # rehearses this job and stops before the step that writes to GitHub.
-    if: startsWith(github.ref, 'refs/tags/') || inputs.dry_run
+    needs: [accept, build]
+    # Publishing needs a green tree, a tag and its build. A dispatch run skips
+    # the build and stops before the steps that need artifacts or write to
+    # GitHub, so the job is rehearsed without a tag.
+    if: |
+      always() &&
+      needs.accept.result == 'success' &&
+      (inputs.dry_run || (startsWith(github.ref, 'refs/tags/') && needs.build.result == 'success'))
     runs-on: ubuntu-latest
     # The only job that publishes, so the only one that may write.
     permissions:
@@ -100,10 +108,12 @@ jobs:
         with:
           node-version: "22"
       - uses: actions/download-artifact@v4
+        if: ${{ !inputs.dry_run }}
         with:
           path: dist
           merge-multiple: true
       - name: Write checksums
+        if: ${{ !inputs.dry_run }}
         run: |
           set -eu
           cd dist

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -204,9 +203,9 @@ func commandText(stdin io.Reader, args []string) (string, error) {
 	if strings.TrimSpace(text) == "" {
 		return "", errors.New("speak: no text; pass it as an argument or on stdin")
 	}
-	if n := utf8.RuneCountInString(text); n > voice.MaxSpeechRunes {
-		return "", fmt.Errorf("speak: %d runes is over the %d cap; lower --chunk-size or split the input", n, voice.MaxSpeechRunes)
-	}
+	// No total-length check here: one chunk is validated before its own request,
+	// so chunking lets an input longer than the guard succeed while --no-chunk
+	// refuses it with the same message the library gives.
 	return text, nil
 }
 

@@ -373,3 +373,49 @@ func TestTranscribe_A29_Stdin(t *testing.T) {
 		t.Errorf("stdout = %q", got)
 	}
 }
+
+// TestSpeak_A28_LongInputChunks: the guard is per request, not per command, so
+// an input longer than voice.MaxSpeechRunes is fine when it is chunked.
+func TestSpeak_A28_LongInputChunks(t *testing.T) {
+	srv := testkit.NewVoiceServer(t,
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Audio: []byte{2}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Audio: []byte{3}, ContentType: "audio/mpeg"},
+	)
+	voiceEnv(t, srv)
+	out := filepath.Join(t.TempDir(), "out.mp3")
+	text := strings.Repeat("a", 2500)
+
+	var stdout, stderr bytes.Buffer
+	if err := runSpeak(t, &stdout, &stderr, text, "--model", "vendor/tts", "--voice", "v", "--chunk-size", "1000", "-o", out); err != nil {
+		t.Fatalf("speak: %v", err)
+	}
+	if got := len(srv.Requests()); got != 3 {
+		t.Fatalf("requests = %d, want 3 chunks", got)
+	}
+	written, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("reading output: %v", err)
+	}
+	if !bytes.Equal(written, []byte{1, 2, 3}) {
+		t.Errorf("file = %v", written)
+	}
+}
+
+// TestSpeak_A28_NoChunkRefusesOverTheGuard: --no-chunk leaves the whole input
+// in one request, so the library's guard refuses it before the wire.
+func TestSpeak_A28_NoChunkRefusesOverTheGuard(t *testing.T) {
+	srv := testkit.NewVoiceServer(t)
+	voiceEnv(t, srv)
+	out := filepath.Join(t.TempDir(), "out.mp3")
+	text := strings.Repeat("a", 32_001)
+
+	var stdout, stderr bytes.Buffer
+	err := runSpeak(t, &stdout, &stderr, text, "--model", "vendor/tts", "--voice", "v", "--no-chunk", "-o", out)
+	if err == nil {
+		t.Fatal("speak --no-chunk over the guard = nil, want an error")
+	}
+	if got := len(srv.Requests()); got != 0 {
+		t.Errorf("requests = %d, want 0", got)
+	}
+}

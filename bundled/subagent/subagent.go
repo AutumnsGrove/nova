@@ -13,6 +13,8 @@ import (
 
 	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/agent/sub"
+	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/ext"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
@@ -265,6 +267,8 @@ type Spawner struct {
 	Roots      []string
 	SessionID  string
 	Complete   func(ctx context.Context, req provider.Request) (*provider.Response, error)
+	Decide     func(ctx context.Context, req decide.Request) (*decide.Response, error)
+	Embed      func(ctx context.Context, req embed.Request) (*embed.Response, error)
 	Ledger     *usage.Ledger
 	MaxDepth   int
 	// MaxTokens caps each child request; zero leaves the choice to the provider.
@@ -301,6 +305,8 @@ func (s *Spawner) Spawn(ctx context.Context, req ext.SpawnRequest) (*ext.SpawnRe
 		Roots:      s.Roots,
 		SessionID:  s.SessionID,
 		Complete:   s.Complete,
+		Decide:     s.Decide,
+		Embed:      s.Embed,
 		MaxTokens:  s.MaxTokens,
 		Clock:      s.Clock,
 		Emit:       s.Emit,

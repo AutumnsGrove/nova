@@ -79,6 +79,8 @@ func (s *Server) spawn(ctx context.Context, r ext.SpawnRequest) (*ext.SpawnResul
 		Roots:      []string{s.cwd},
 		SessionID:  s.sessionID(),
 		Complete:   s.complete,
+		Decide:     s.decideCall,
+		Embed:      s.embedCall,
 		Ledger:     s.ledger,
 		MaxDepth:   s.cfg.Subagent.MaxDepth,
 		MaxTokens:  s.cfg.MaxTokens,

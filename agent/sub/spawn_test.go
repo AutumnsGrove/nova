@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"sync"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
+	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
@@ -468,4 +471,93 @@ func eventTypes(events []proto.Event) string {
 		out[i] = ev.Type
 	}
 	return strings.Join(out, ",")
+}
+
+// TestSub_S01_ChildReachesTheParentEmbedder is #87: a child's tool must see the
+// parent's Embed, exactly as it sees Complete and Decide. A nil here made an
+// embedding tool silently unavailable inside a subagent.
+func TestSub_S01_ChildReachesTheParentEmbedder(t *testing.T) {
+	var seen string
+	reg := tool.NewRegistry()
+	reg.MustRegister(tool.New(tool.Info{Name: "embedder"}, func(_ context.Context, _ json.RawMessage, tctx *tool.Context) (tool.Result, error) {
+		if tctx.Embed == nil {
+			seen = "no embedder"
+			return tool.Text("no embedder"), nil
+		}
+		resp, err := tctx.Embed(context.Background(), embed.Request{Model: "role", Input: []string{"a"}})
+		if err != nil {
+			seen = err.Error()
+			return tool.Errorf("%v", err), nil
+		}
+		seen = fmt.Sprintf("%d dims", resp.Dims)
+		return tool.Text("%s", seen), nil
+	}))
+	p := parent(testkit.NewProvider(fakeClock(),
+		testkit.Turn{ToolCalls: []testkit.Call{{ID: "1", Name: "embedder", Args: "{}"}}},
+		testkit.Turn{Text: "done"},
+	), reg)
+	p.Embed = func(context.Context, embed.Request) (*embed.Response, error) {
+		return &embed.Response{Vectors: [][]float32{{1, 2}}, Dims: 2}, nil
+	}
+	if _, err := New(p, Options{}).Spawn(context.Background(), Task{Prompt: "t", Tools: []string{"embedder"}, MaxTurns: 3}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if seen != "2 dims" {
+		t.Fatalf("the child's tool saw %q, want the parent's embedder to answer", seen)
+	}
+}
+
+// TestSub_S02_NoParentEmbedderStaysNil: an absent embedder is a nil seam the
+// tool reports itself, not a panic.
+func TestSub_S02_NoParentEmbedderStaysNil(t *testing.T) {
+	var seen string
+	reg := tool.NewRegistry()
+	reg.MustRegister(tool.New(tool.Info{Name: "embedder"}, func(_ context.Context, _ json.RawMessage, tctx *tool.Context) (tool.Result, error) {
+		seen = "has embedder"
+		if tctx.Embed == nil {
+			seen = "no embedder"
+		}
+		return tool.Text("%s", seen), nil
+	}))
+	p := parent(testkit.NewProvider(fakeClock(),
+		testkit.Turn{ToolCalls: []testkit.Call{{ID: "1", Name: "embedder", Args: "{}"}}},
+		testkit.Turn{Text: "done"},
+	), reg)
+	if _, err := New(p, Options{}).Spawn(context.Background(), Task{Prompt: "t", Tools: []string{"embedder"}, MaxTurns: 3}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if seen != "no embedder" {
+		t.Fatalf("the child's tool saw %q, want a nil seam", seen)
+	}
+}
+
+// TestSub_S03_ChildReachesTheParentDecider: the same gap existed for Decide.
+func TestSub_S03_ChildReachesTheParentDecider(t *testing.T) {
+	var seen string
+	reg := tool.NewRegistry()
+	reg.MustRegister(tool.New(tool.Info{Name: "ask"}, func(_ context.Context, _ json.RawMessage, tctx *tool.Context) (tool.Result, error) {
+		if tctx.Decide == nil {
+			seen = "no decider"
+			return tool.Text("no decider"), nil
+		}
+		if _, err := tctx.Decide(context.Background(), decide.Request{Model: "oracle"}); err != nil {
+			seen = err.Error()
+			return tool.Errorf("%v", err), nil
+		}
+		seen = "decided"
+		return tool.Text("decided"), nil
+	}))
+	p := parent(testkit.NewProvider(fakeClock(),
+		testkit.Turn{ToolCalls: []testkit.Call{{ID: "1", Name: "ask", Args: "{}"}}},
+		testkit.Turn{Text: "done"},
+	), reg)
+	p.Decide = func(context.Context, decide.Request) (*decide.Response, error) {
+		return &decide.Response{}, nil
+	}
+	if _, err := New(p, Options{}).Spawn(context.Background(), Task{Prompt: "t", Tools: []string{"ask"}, MaxTurns: 3}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if seen != "decided" {
+		t.Fatalf("the child's tool saw %q, want the parent's decider to answer", seen)
+	}
 }

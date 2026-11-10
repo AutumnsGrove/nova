@@ -18,6 +18,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/agent"
 	"github.com/AutumnsGrove/nova/decide"
+	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
@@ -75,6 +76,9 @@ type Parent struct {
 
 	Complete func(ctx context.Context, req provider.Request) (*provider.Response, error)
 	Decide   func(ctx context.Context, req decide.Request) (*decide.Response, error)
+	// Embed is the parent's embedder, so a child's tool can reach it. It is a
+	// separate seam from Complete for the same reason it is on tool.Context.
+	Embed func(ctx context.Context, req embed.Request) (*embed.Response, error)
 	// MaxTokens caps each child request.
 	MaxTokens int
 	Clock     agent.Clock
@@ -272,6 +276,7 @@ func (s *Spawner) childConfig(t Task, id string, onEvent func(proto.Event)) (age
 		ToolData:  data,
 		Complete:  p.Complete,
 		Decide:    p.Decide,
+		Embed:     p.Embed,
 		Hooks: agent.Hooks{
 			ToolCall:   used.call,
 			ToolResult: p.ToolResult,

@@ -7,6 +7,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Release pages now carry a body. The `release` workflow writes it from the tag range: the
+  changelog section, the non-merge commits and the diffstat go to a pinned agent, whose answer is
+  checked for shape and size before it is published. A failure, a timeout or an unusable answer
+  falls back to the changelog section, so a release never blocks on it. `scripts/release-notes` runs
+  the same thing locally (`--prompt-only` prints the request and `--out` writes the body) (#90).
+
 ## [0.4.0] - 2026-11-10
 
 Upgrade notes for library consumers (#85):

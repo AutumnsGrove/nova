@@ -50,11 +50,11 @@ nova/
     chat/         one-shot completion seam                     ≤ 160
   roles/          role table, fallback chain, per-attempt timeout ≤ 200
   decide/         decision-model contract                      ≤ 400
+    openrouter/   Decisions API and System One client           ≤ 400
   embed/          embeddings contract, batching, role table   ≤ 260
     openai/       OpenAI-compatible /embeddings                ≤ 360
     ollama/       local /api/embed                              ≤ 180
     openrouter/   preset: embeddings and live roster            ≤ 220
-    openrouter/   Decisions API and System One client           ≤ 400
   voice/          speech and transcription contract, roles,
                   text prep and the WAV header                 ≤ 520
     openrouter/   preset: speech, transcriptions, live roster   ≤ 620
@@ -122,21 +122,26 @@ message ← provider ← roles ← decide ← tool ← proto ← agent ← mode 
   group and signalled, shared by `tools/bash` and `ext`.
 - `embed` imports `provider` and `roles`; its adapters import only `embed`, so a
   dialect never needs the harness. `embed` is the embeddings counterpart of
-  `decide`: a contract, wire adapters, and a role table.
+  `decide`: a contract, wire adapters, and a role table. `voice` sits beside it
+  with the same shape for the two audio directions, and `voice/openrouter` imports
+  only `voice`.
 - `provider` imports `message`. `roles` imports `provider`; it owns the role table,
   the alias rule, the fallback order, and the per-attempt timeout so every primitive
-  shares one resolver. `decide` imports `roles`. `tool` imports `message`,
-  `provider`, and `decide`.
+  shares one resolver. `decide` and `voice` import `roles`. `tool` imports
+  `message`, `provider`, `decide`, `embed`, and `voice`.
 - `proto` imports `message` and `provider` and nothing above them.
 - `permission` imports `tool`. `usage` imports `provider` and `session`.
 - `tools/*` import `message`, `provider`, `tool`, and (for the shared glob engine)
   `permission`; they never import each other or a higher layer.
-- `agent` imports `message`, `provider`, `tool`, `permission`, `proto`, `decide`. `agent/sub`
+- `agent` imports `message`, `provider`, `tool`, `permission`, `proto`, `decide`, `embed`, and
+  `voice`. `agent/sub`
   adds the child-run primitive (`sub.Spawner`): it imports `agent` and the same layers, and
   `bundled/subagent` is a wrapper over it. `config`
   imports `permission` because it decodes the policy.
 - `session` imports `message` and `provider`. `compaction` imports `session`, `provider`, `message`.
-- `ext` imports `proto`, `tool`, `agent`, `permission`. It never imports `tui`.
+- `ext` imports `proto`, `tool`, `agent`, `permission`, and the primitive contracts (`decide`,
+  `embed`, `voice`) its frames carry. It never imports `tui`. A `bundled` extension that wires a
+  primitive may import that contract too.
 - `diag` is a stdlib-only leaf: it holds no Nova state, so `agent` and `ext` may
   import it for crash reporting without breaking the layering.
 - `mode` wires everything (including `serve` and `action`). `cmd/nova` only parses flags and calls `mode`, `ext`, and `update`.
@@ -429,6 +434,44 @@ stored index. Truncating an over-long input is an explicit opt-in, never silent.
 There is no store, no index and no chunking here; the caller owns its data plane.
 `tool.Context.Embed`, `agent.Config.Embed`, the `embed` protocol command,
 `/embed`, and the `model:embed` extension frame are the same seams `decide` has.
+
+
+### Speech and transcription
+
+`voice.Speaker` synthesizes audio from text and `voice.Transcriber` turns audio
+into text; both are plain calls, not runs, so they emit no events. One package
+holds both directions because they share the formats, the size caps, the model
+catalog and the client, which owns the two sibling endpoints.
+`voice/openrouter` is the v1 adapter and the live roster:
+`output_modalities=speech` or `=transcription` makes those models visible at all,
+and each entry carries `supported_voices`, so a voice picker needs no hardcoded
+list (Kokoro alone publishes 54).
+
+A speech role bundles the model *and* the voice, because a voice name belongs to
+one model: `alloy` is an OpenAI voice and returns 400 on Voxtral or Kokoro. A
+fallback therefore restates its own model and voice, the audio analogue of
+`embed`'s dimension check. A transcription role is the plain
+model/fallback/timeout shape. One attempt per model, then the fallback.
+
+A `pcm` clip carries its sample layout in the response `Content-Type`
+(`audio/pcm;rate=24000;channels=1`), so `voice.WAV` writes a playable file
+without hardcoding a model's numbers. `voice.Chunks` and `voice.Join` are what
+make a long answer possible: a model's own input cap is far below Nova's 32,000
+rune guard, so the caller (and `nova speak` by default) splits at sentence
+boundaries, synthesizes each piece, and joins them — MP3 frames concatenate, and
+PCM gets one header at the end.
+
+The speech endpoint returns raw audio with no usage block, so exact cost is a
+best-effort `GET /generation` lookup on the generation id. It is off in the
+library, where a voice agent would pay a round trip for a number it never reads,
+and on in Nova's own front doors, which report spend. Transcription returns its
+own usage: cost and seconds always, token counts only when the model reports
+them.
+
+`tool.Context.Speak` and `Transcribe`, `agent.Config`, the `speak` and
+`transcribe` protocol commands, `model:speech` and `model:transcribe` extension
+frames, and `nova speak` / `nova transcribe` are the seams. There is no TUI entry
+point, because a terminal cannot play or record; a voice UI is a separate issue.
 
 ## 9. Configuration and resources
 

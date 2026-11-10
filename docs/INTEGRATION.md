@@ -277,6 +277,97 @@ declares `model:embed` and calls `sdk.Host.Embed` (the `embed` frame). Print,
 serve, and rpc clients use the `embed` command, and `/embed` shows the configured
 roles.
 
+
+## Speech and transcription
+
+Speech is the same kind of primitive as embeddings: a plain call, not a
+generation round trip, with a role table so an app never names a vendor. A
+speech role carries the voice as well as the model, because a voice identifier
+belongs to one model.
+
+```yaml
+voice:
+  allow_aliases: false          # -latest / ~ ids are refused by default
+  cost_lookup: true             # exact speech cost, one extra request per call
+  speech:
+    roles:
+      narrate:
+        model: openai/gpt-4o-mini-tts-2025-12-15
+        voice: alloy
+        format: mp3
+        speed: 1.0
+        timeout_ms: 120000
+        fallback:               # a fallback restates its own model and voice
+          model: mistralai/voxtral-mini-tts-2603
+          voice: en_paul_neutral
+          format: mp3
+  transcribe:
+    roles:
+      default:
+        model: openai/whisper-1
+        fallback: mistralai/voxtral-small-transcribe-3-0
+        timeout_ms: 60000
+```
+
+(`voiceor` is an alias for `github.com/AutumnsGrove/nova/voice/openrouter`.)
+
+```go
+client := voiceor.New(voiceor.Config{
+    APIKeyFunc: func(ctx context.Context) (string, error) { return myKey(ctx) },
+    CostLookup: false, // a voice agent should not pay for a number it ignores
+})
+roles := voice.NewRoles(voice.RolesConfig{
+    Speaker: client,
+    Transcriber: client,
+    Speech: map[string]voice.VoiceRole{
+        "narrate": {Model: "openai/gpt-4o-mini-tts-2025-12-15", Voice: "alloy", Format: voice.FormatMP3},
+    },
+    Transcribe: map[string]voice.TranscribeRole{
+        "default": {Model: "openai/whisper-1"},
+    },
+})
+
+cfg := agent.Config{
+    // ...
+    Speak: roles.Speak,
+    Transcribe: roles.Transcribe,
+}
+
+// in a tool:
+clip, err := tctx.Speak(ctx, voice.SpeechRequest{Model: "narrate", Input: "All tests pass."})
+if err == nil {
+    tctx.AddUsage(clip.Usage)   // counts in the run's totals
+    data := voice.WAV(*clip)    // nil for an mp3 clip, which is already a file
+    _ = data
+}
+
+transcript, err := tctx.Transcribe(ctx, voice.TranscribeRequest{
+    Model: "default", Audio: memo, Format: voice.FormatWebM,
+})
+```
+
+A long answer is split and joined rather than sent as one input:
+
+```go
+var clips []voice.Clip
+for _, chunk := range voice.Chunks(answer, voice.ChunkRunes) {
+    clip, err := roles.Speak(ctx, voice.SpeechRequest{Model: "narrate", Input: chunk})
+    if err != nil {
+        return err // write nothing: a partial file that looks whole is worse
+    }
+    clips = append(clips, *clip)
+}
+joined, err := voice.Join(clips...)
+```
+
+`voice/openrouter` carries the clip's format and pcm layout from the response
+headers, and `voice.Join` refuses a mixed format or a mixed pcm layout. An empty
+transcript is a successful answer for silent audio, not an error; the caller
+decides what to show. A bundled extension gets `Env.Speak` and `Env.Transcribe`;
+a subprocess extension declares `model:speech` or `model:transcribe` and calls
+`sdk.Host.Speak` / `Transcribe`. Print, serve, and rpc clients use the `speak`
+and `transcribe` commands, and the CLI is `nova speak` / `nova transcribe`.
+
 ## ivy — "Ask Ivy"
 
 Ivy is the best first adopter: greenfield loop, three read-only tools, and a

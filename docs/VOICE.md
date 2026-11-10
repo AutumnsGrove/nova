@@ -6,9 +6,9 @@ reach every front door, and what the caller still owns. This document is the
 reference for issue [#85](https://github.com/AutumnsGrove/nova/issues/85); the
 follow-up for local engines is [#86](https://github.com/AutumnsGrove/nova/issues/86).
 
-Status: **proposed.** Nothing here is built yet. Each slice changes this
-document in the same commit that changes the contract, the way
-[`IMAGE.md`](IMAGE.md) did.
+Status: **built.** The decisions are D161 to D167 in
+[`DECISIONS.md`](DECISIONS.md). Each slice changed this document in the commit
+that changed the contract, the way [`IMAGE.md`](IMAGE.md) did.
 
 ## Why
 

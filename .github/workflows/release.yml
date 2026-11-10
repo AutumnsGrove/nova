@@ -6,8 +6,19 @@ on:
       - "v*"
   # The gate is the part that fails, and it has failed on three tags in a row.
   # A manual run checks the whole accept loop on the branch before anything is
-  # tagged; only the accept job runs, because build and release need a tag ref.
+  # tagged. `dry_run` goes further and runs the release job too, writing the
+  # body to the job summary instead of publishing it, so the path that turns a
+  # tag into a release page is rehearsed before a tag exists.
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run the release job without publishing (writes the body to the summary)"
+        type: boolean
+        default: false
+      tag:
+        description: "Version to write notes for (defaults to the ref name)"
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -64,9 +75,9 @@ jobs:
 
   release:
     needs: build
-    # The only job that needs a tag: a workflow_dispatch run builds the four
-    # archives and stops, which is how a broken script is found before a tag.
-    if: startsWith(github.ref, 'refs/tags/')
+    # Publishing needs a tag. A dispatch run continues only as a dry run, which
+    # rehearses this job and stops before the step that writes to GitHub.
+    if: startsWith(github.ref, 'refs/tags/') || inputs.dry_run
     runs-on: ubuntu-latest
     # The only job that publishes, so the only one that may write.
     permissions:
@@ -114,10 +125,13 @@ jobs:
         timeout-minutes: 8
         env:
           OPENCODE_API_KEY: ${{ secrets.PI_REVIEW_API_KEY }}
+          # A tag push names the tag; a dry run names the branch, or the version
+          # typed into the dispatch form.
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -u
-          previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
-          echo "release-notes range: ${previous:-<first release>}..${GITHUB_REF_NAME}"
+          previous=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          echo "release-notes range: ${previous:-<first release>}..${TAG}"
           if ! go build -o "$RUNNER_TEMP/release-notes" ./scripts/release-notes; then
             echo "::warning::scripts/release-notes did not build; the release will publish with no body"
             exit 0
@@ -125,7 +139,7 @@ jobs:
           # Flags come first: Go's flag package stops at the first ref, so a
           # flag after the range is a usage error and no body at all.
           status=0
-          "$RUNNER_TEMP/release-notes" --out body.md "$previous" "$GITHUB_REF_NAME" || status=$?
+          "$RUNNER_TEMP/release-notes" --out body.md "$previous" "$TAG" || status=$?
           if [ "$status" = 3 ]; then
             echo "::warning::the release body is the changelog fallback, not a summary: see release-notes above"
           elif [ "$status" != 0 ]; then
@@ -134,9 +148,32 @@ jobs:
           if [ -s body.md ]; then
             echo "body=body.md" >>"$GITHUB_OUTPUT"
           else
-            echo "::warning::no release body: the agent failed and the changelog has no section for ${GITHUB_REF_NAME}"
+            echo "::warning::no release body: the agent failed and the changelog has no section for ${TAG}"
           fi
+      # A dry run shows the body where a reviewer reads it and keeps it as an
+      # artifact, so the only thing left unproven is the publish call itself.
+      - name: Show the body
+        if: inputs.dry_run
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          {
+            echo "## Release body for ${TAG}"
+            echo
+            if [ -s body.md ]; then
+              cat body.md
+            else
+              echo "No body: the agent failed and the changelog has no section for ${TAG}."
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: inputs.dry_run
+        with:
+          name: release-notes
+          path: body.md
+          if-no-files-found: ignore
       - uses: softprops/action-gh-release@v2
+        if: ${{ !inputs.dry_run }}
         with:
           # Empty when there is nothing to say, and action-gh-release ignores an
           # empty body_path, so the release publishes with no body as before.

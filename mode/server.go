@@ -29,6 +29,7 @@ import (
 	"github.com/AutumnsGrove/nova/session"
 	"github.com/AutumnsGrove/nova/tool"
 	"github.com/AutumnsGrove/nova/usage"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // extShutdownTimeout bounds how long Close waits for extensions to stop.
@@ -75,13 +76,19 @@ type Options struct {
 	Embedder embed.Embedder
 	// EmbedCatalog overrides the live embeddings roster. nil means build one.
 	EmbedCatalog embed.Catalog
-	Session      string // path to open or create; "" means a new default
-	NoSession    bool   // keep the transcript in memory only
-	Clock        Clock
-	Version      string
-	Mode         string   // tui | print | json | rpc | serve, for extensions
-	Tools        []string // explicit active tool set; nil means use the config
-	NoTools      bool     // register no tools at all
+	// Speaker overrides the speech client built from the config. nil means
+	// build one (the normal server); a test can inject one.
+	Speaker voice.Speaker
+	// Transcriber overrides the transcription client built from the config. nil
+	// means build one.
+	Transcriber voice.Transcriber
+	Session     string // path to open or create; "" means a new default
+	NoSession   bool   // keep the transcript in memory only
+	Clock       Clock
+	Version     string
+	Mode        string   // tui | print | json | rpc | serve, for extensions
+	Tools       []string // explicit active tool set; nil means use the config
+	NoTools     bool     // register no tools at all
 
 	// ExtraTools are added to the tool pool before the active set is resolved,
 	// so a caller (the GitHub Action) can register mode-specific tools. A
@@ -111,6 +118,8 @@ type Server struct {
 	catalog      decide.Catalog
 	embedder     embed.Embedder
 	embedCatalog embed.Catalog
+	speaker      voice.Speaker
+	transcriber  voice.Transcriber
 	usesAuth     bool
 	tools        *tool.Registry
 	pool         map[string]tool.Tool
@@ -240,6 +249,14 @@ func New(opt Options) (*Server, error) {
 	if s.embedCatalog == nil {
 		s.embedCatalog = buildEmbeddingCatalog(cfg, home)
 	}
+	s.speaker = opt.Speaker
+	if s.speaker == nil {
+		s.speaker = buildSpeaker(cfg, home)
+	}
+	s.transcriber = opt.Transcriber
+	if s.transcriber == nil {
+		s.transcriber = buildTranscriber(cfg, home)
+	}
 	tools, pool, err := buildTools(cfg)
 	if err != nil {
 		return nil, err
@@ -314,6 +331,8 @@ func New(opt Options) (*Server, error) {
 		Complete:      s.complete,
 		Decide:        s.decideCall,
 		Embed:         s.embedCall,
+		Speak:         s.speakCall,
+		Transcribe:    s.transcribeCall,
 		Hooks: agent.Hooks{
 			BeforeProviderRequest: func(ctx context.Context, req *provider.Request) {
 				s.beforeProviderRequest(ctx, req)

@@ -19,8 +19,10 @@ var ErrBadFrame = errors.New("proto: bad frame")
 // the reader stays failed.
 var ErrLineTooLong = errors.New("proto: line too long")
 
-// defaultMaxLine is the documented 16 MiB line cap.
-const defaultMaxLine = 16 << 20
+// defaultMaxLine is the documented 64 MiB line cap. A voice clip is carried
+// base64, so a 40 MiB clip is a 53 MiB line and the cap has to clear it. The
+// reader grows its buffer on demand, so a small frame costs nothing.
+const defaultMaxLine = 64 << 20
 
 // UnknownTypeError reports a frame whose type is empty or contains whitespace
 // or control characters, so the caller can answer with an error response.
@@ -65,7 +67,7 @@ type Reader struct {
 	failed  error
 }
 
-// NewReader wraps r. A maxLine of zero means the 16 MiB default; a negative
+// NewReader wraps r. A maxLine of zero means the 64 MiB default; a negative
 // value is clamped to zero.
 func NewReader(r io.Reader, maxLine int) *Reader {
 	if maxLine < 0 {

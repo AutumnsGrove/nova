@@ -318,6 +318,46 @@ func (s *Server) handleEmbed(ctx context.Context, cmd proto.Command) proto.Respo
 	return okResponse(cmd, resp)
 }
 
+// handleSpeak runs one synthesis request. It blocks on the provider, so it
+// takes the caller's context; a cancelled client cancels the call.
+func (s *Server) handleSpeak(ctx context.Context, cmd proto.Command) proto.Response {
+	if cmd.Speech == nil {
+		return failResponse(cmd, proto.CodeBadRequest, "speak: a request is required")
+	}
+	if err := cmd.Speech.Validate(); err != nil {
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	clip, err := s.speakCall(ctx, *cmd.Speech)
+	if err != nil {
+		var pe *provider.Error
+		if errors.As(err, &pe) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return failResponse(cmd, proto.CodeProviderError, err.Error())
+		}
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	return okResponse(cmd, clip)
+}
+
+// handleTranscribe runs one transcription request, under the same rules as
+// speak: it blocks, and a cancelled client cancels the call.
+func (s *Server) handleTranscribe(ctx context.Context, cmd proto.Command) proto.Response {
+	if cmd.Transcription == nil {
+		return failResponse(cmd, proto.CodeBadRequest, "transcribe: a request is required")
+	}
+	if err := cmd.Transcription.Validate(); err != nil {
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	transcript, err := s.transcribeCall(ctx, *cmd.Transcription)
+	if err != nil {
+		var pe *provider.Error
+		if errors.As(err, &pe) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return failResponse(cmd, proto.CodeProviderError, err.Error())
+		}
+		return failResponse(cmd, proto.CodeBadRequest, err.Error())
+	}
+	return okResponse(cmd, transcript)
+}
+
 // handleEmbedCommand lists the configured embedding roles or the live roster.
 // Embedding text needs a model and input, so that stays on the embed protocol
 // command and the tool seam.

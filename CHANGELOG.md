@@ -7,6 +7,36 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Speech and transcription** as harness primitives (#85). `voice.Speaker` and
+  `voice.Transcriber` turn text into audio and audio into text, with the
+  OpenRouter adapter in `voice/openrouter`, a role table over `roles`, and
+  `voice.Chunks`, `voice.Join` and `voice.WAV` for long answers and raw PCM. The
+  seams are `tool.Context.Speak`/`Transcribe`, `agent.Config`, the `speak` and
+  `transcribe` protocol commands, `model:speech`/`model:transcribe` extension
+  capabilities with per-run caps, `sdk.Host.Speak`/`Transcribe`, and the
+  `nova speak` and `nova transcribe` subcommands. There is no TUI entry point.
+- `provider.Model` gains `Voices` (the roster's `supported_voices`) and the
+  `SupportsSpeech` / `SupportsTranscription` predicates (#85).
+- The `voice` config block: `allow_aliases`, `cost_lookup`, `speech.roles` and
+  `transcribe.roles`, plus `extensions.speech_max_per_run` and
+  `extensions.transcribe_max_per_run` (default 20 each) (#85).
+
+### Changed
+
+- The protocol line cap rises from 16 MiB to **64 MiB**, in `proto`, the
+  extension host, the SDK reader and `serve`'s request body. A 40 MiB audio clip
+  is a 53 MiB base64 line, so the old cap could not carry the largest clip the
+  library allows. This is a relaxation for Nova's own ends, but a third-party
+  protocol client with a 16 MiB reader will fail on a clip above ~12 MiB (#85).
+
+### Fixed
+
+- A subagent now reaches the parent's embedder and decider. `sub.Spawner` never
+  filled `Decide`, and `Embed` was missing from the parent entirely, so a
+  child's tool calling `tctx.Embed` or `tctx.Decide` saw nil (#87).
+
 ## [0.3.5] - 2026-11-07
 
 Upgrade notes for library consumers (#53):

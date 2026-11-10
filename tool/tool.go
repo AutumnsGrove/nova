@@ -15,6 +15,7 @@ import (
 	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // Context carries per-call dependencies and application state to a tool.
@@ -48,6 +49,13 @@ type Context struct {
 	// generation round trip. It may be nil. The tool reports the call's usage
 	// with AddUsage, exactly as it does for Complete and Decide.
 	Embed func(ctx context.Context, req embed.Request) (*embed.Response, error)
+	// Speak synthesizes speech, for a tool that needs audio without a
+	// generation round trip. It may be nil. The tool reports the call's usage
+	// with AddUsage, as it does for the other primitive seams.
+	Speak func(ctx context.Context, req voice.SpeechRequest) (*voice.Clip, error)
+	// Transcribe turns audio into text. It may be nil, and its usage is
+	// reported the same way.
+	Transcribe func(ctx context.Context, req voice.TranscribeRequest) (*voice.Transcript, error)
 	// Inject queues a message to append after this tool's batch, for a tool that
 	// needs a message of its own rather than Result.Parts. It is per call and
 	// ordered with the rest of the batch. It may be nil.

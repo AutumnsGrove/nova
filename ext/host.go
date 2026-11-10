@@ -17,6 +17,7 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
 	"github.com/AutumnsGrove/nova/usage"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // defaultCompleteMax caps nested model calls per extension per run.
@@ -27,6 +28,13 @@ const defaultDecideMax = 20
 
 // defaultEmbedMax caps embeddings calls per extension per run.
 const defaultEmbedMax = 20
+
+// defaultSpeechMax and defaultTranscribeMax cap the voice calls per extension
+// per run, so a subprocess that finds a loop cannot spend without bound.
+const (
+	defaultSpeechMax     = 20
+	defaultTranscribeMax = 20
+)
 
 // defaultToolCallTimeout bounds one protocol tool call.
 const defaultToolCallTimeout = 120 * time.Second
@@ -66,30 +74,34 @@ type Status struct {
 
 // HostOptions configures an extension Host.
 type HostOptions struct {
-	Dirs        []string // user extensions first, then trusted project ones
-	Disabled    []string
-	Registry    *tool.Registry
-	Session     SessionAPI
-	SessionID   string
-	UI          UIBridge
-	Complete    func(ctx context.Context, req provider.Request) (*provider.Response, error)
-	CompleteMax int
-	Decide      func(ctx context.Context, req decide.Request) (*decide.Response, error)
-	DecideMax   int
-	Embed       func(ctx context.Context, req embed.Request) (*embed.Response, error)
-	EmbedMax    int
-	Emit        func(proto.Event)
-	NovaVersion string
-	CWD         string
-	Mode        string
-	Env         func() []string
-	ScrubEnv    []string
-	PassEnv     []string
-	Flags       map[string]string
-	EntryKinds  map[string][]string
-	Run         CommandRunner
-	Clock       Clock
-	Log         func(level, msg string)
+	Dirs          []string // user extensions first, then trusted project ones
+	Disabled      []string
+	Registry      *tool.Registry
+	Session       SessionAPI
+	SessionID     string
+	UI            UIBridge
+	Complete      func(ctx context.Context, req provider.Request) (*provider.Response, error)
+	CompleteMax   int
+	Decide        func(ctx context.Context, req decide.Request) (*decide.Response, error)
+	DecideMax     int
+	Embed         func(ctx context.Context, req embed.Request) (*embed.Response, error)
+	EmbedMax      int
+	Speak         func(ctx context.Context, req voice.SpeechRequest) (*voice.Clip, error)
+	SpeechMax     int
+	Transcribe    func(ctx context.Context, req voice.TranscribeRequest) (*voice.Transcript, error)
+	TranscribeMax int
+	Emit          func(proto.Event)
+	NovaVersion   string
+	CWD           string
+	Mode          string
+	Env           func() []string
+	ScrubEnv      []string
+	PassEnv       []string
+	Flags         map[string]string
+	EntryKinds    map[string][]string
+	Run           CommandRunner
+	Clock         Clock
+	Log           func(level, msg string)
 
 	// Config, Ledger, Extra, Spawn, and HasUI are handed to bundled
 	// extensions through Env. They may be nil.
@@ -146,6 +158,8 @@ type Host struct {
 	complete       map[string]int
 	decide         map[string]int
 	embed          map[string]int
+	speech         map[string]int
+	transcribe     map[string]int
 	hookErrAt      map[string]time.Time
 	entryKinds     map[string][]string
 	manifestHashes map[string]string
@@ -176,6 +190,8 @@ func NewHost(opt HostOptions) *Host {
 		complete:       map[string]int{},
 		decide:         map[string]int{},
 		embed:          map[string]int{},
+		speech:         map[string]int{},
+		transcribe:     map[string]int{},
 		hookErrAt:      map[string]time.Time{},
 		entryKinds:     map[string][]string{},
 		manifestHashes: map[string]string{},
@@ -311,6 +327,10 @@ func (h *Host) handleFrame(inst *instance, c *conn, typ string, line []byte, r r
 		h.handleDecide(inst, c, line)
 	case "embed":
 		h.handleEmbed(inst, c, line)
+	case "speak":
+		h.handleSpeak(inst, c, line)
+	case "transcribe":
+		h.handleTranscribe(inst, c, line)
 	case "log":
 		var f struct {
 			Level string `json:"level"`
@@ -708,6 +728,118 @@ func (h *Host) handleEmbed(inst *instance, c *conn, line []byte) {
 		}
 		frame := &outFrame{Type: "embed_result", ID: f.ID, Vectors: resp.Vectors, Dims: resp.Dims, Usage: resp.Usage, Model: resp.Model}
 		_ = c.notify(frame)
+	}) {
+		h.deny(inst, c, f.ID, proto.CodeBusy, "too many requests in flight")
+	}
+}
+
+// handleSpeak performs a synthesis call under the per-run cap, on its own
+// goroutine so a slow model does not stop the extension's other frames.
+func (h *Host) handleSpeak(inst *instance, c *conn, line []byte) {
+	var f struct {
+		ID      string              `json:"id"`
+		Request voice.SpeechRequest `json:"request"`
+	}
+	if err := json.Unmarshal(line, &f); err != nil {
+		h.deny(inst, c, "", proto.CodeBadRequest, "malformed speak frame")
+		return
+	}
+	if !inst.manifest.hasCapability("model:speech") {
+		h.deny(inst, c, f.ID, proto.CodePermissionDenied, "model:speech capability not declared")
+		return
+	}
+	if err := f.Request.Validate(); err != nil {
+		h.deny(inst, c, f.ID, proto.CodeBadRequest, err.Error())
+		return
+	}
+	if h.opt.Speak == nil {
+		h.deny(inst, c, f.ID, proto.CodeUnsupported, "no speech function is attached")
+		return
+	}
+	limit := h.opt.SpeechMax
+	if limit <= 0 {
+		limit = defaultSpeechMax
+	}
+	h.mu.Lock()
+	h.speech[inst.manifest.Name]++
+	over := h.speech[inst.manifest.Name] > limit
+	h.mu.Unlock()
+	if over {
+		h.deny(inst, c, f.ID, proto.CodeBadRequest, fmt.Sprintf("speak cap of %d reached for this run", limit))
+		return
+	}
+	if !c.async(func(ctx context.Context) {
+		clip, err := h.opt.Speak(ctx, f.Request)
+		if err != nil {
+			code := proto.CodeBadRequest
+			var pe *provider.Error
+			if errors.As(err, &pe) {
+				code = proto.CodeProviderError
+			}
+			h.deny(inst, c, f.ID, code, err.Error())
+			return
+		}
+		if clip == nil {
+			h.deny(inst, c, f.ID, proto.CodeInternal, "speaker returned no clip")
+			return
+		}
+		_ = c.notify(&outFrame{Type: "speak_result", ID: f.ID, Clip: clip})
+	}) {
+		h.deny(inst, c, f.ID, proto.CodeBusy, "too many requests in flight")
+	}
+}
+
+// handleTranscribe performs a transcription call under the per-run cap, with
+// the same rules as speak.
+func (h *Host) handleTranscribe(inst *instance, c *conn, line []byte) {
+	var f struct {
+		ID      string                  `json:"id"`
+		Request voice.TranscribeRequest `json:"request"`
+	}
+	if err := json.Unmarshal(line, &f); err != nil {
+		h.deny(inst, c, "", proto.CodeBadRequest, "malformed transcribe frame")
+		return
+	}
+	if !inst.manifest.hasCapability("model:transcribe") {
+		h.deny(inst, c, f.ID, proto.CodePermissionDenied, "model:transcribe capability not declared")
+		return
+	}
+	if err := f.Request.Validate(); err != nil {
+		h.deny(inst, c, f.ID, proto.CodeBadRequest, err.Error())
+		return
+	}
+	if h.opt.Transcribe == nil {
+		h.deny(inst, c, f.ID, proto.CodeUnsupported, "no transcription function is attached")
+		return
+	}
+	limit := h.opt.TranscribeMax
+	if limit <= 0 {
+		limit = defaultTranscribeMax
+	}
+	h.mu.Lock()
+	h.transcribe[inst.manifest.Name]++
+	over := h.transcribe[inst.manifest.Name] > limit
+	h.mu.Unlock()
+	if over {
+		h.deny(inst, c, f.ID, proto.CodeBadRequest, fmt.Sprintf("transcribe cap of %d reached for this run", limit))
+		return
+	}
+	if !c.async(func(ctx context.Context) {
+		transcript, err := h.opt.Transcribe(ctx, f.Request)
+		if err != nil {
+			code := proto.CodeBadRequest
+			var pe *provider.Error
+			if errors.As(err, &pe) {
+				code = proto.CodeProviderError
+			}
+			h.deny(inst, c, f.ID, code, err.Error())
+			return
+		}
+		if transcript == nil {
+			h.deny(inst, c, f.ID, proto.CodeInternal, "transcriber returned no transcript")
+			return
+		}
+		_ = c.notify(&outFrame{Type: "transcribe_result", ID: f.ID, Transcript: transcript})
 	}) {
 		h.deny(inst, c, f.ID, proto.CodeBusy, "too many requests in flight")
 	}

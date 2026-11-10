@@ -18,6 +18,7 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
 	"github.com/AutumnsGrove/nova/usage"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // eventCallbackBudget is how long one Events observer may take for one event
@@ -77,6 +78,10 @@ type Env struct {
 	Decide func(ctx context.Context, req decide.Request) (*decide.Response, error)
 	// Embed performs one embeddings call.
 	Embed func(ctx context.Context, req embed.Request) (*embed.Response, error)
+	// Speak performs one synthesis call.
+	Speak func(ctx context.Context, req voice.SpeechRequest) (*voice.Clip, error)
+	// Transcribe performs one transcription call.
+	Transcribe func(ctx context.Context, req voice.TranscribeRequest) (*voice.Transcript, error)
 	// Spawn runs a fresh agent loop as a sub-agent.
 	Spawn func(ctx context.Context, r SpawnRequest) (*SpawnResult, error)
 	// HasUI reports whether the attached client declared a capability.
@@ -176,19 +181,21 @@ func (h *Host) initBundle(inst *instance) (err error) {
 func (h *Host) newEnv(inst *instance) *Env {
 	name := inst.manifest.Name
 	env := &Env{
-		CWD:      h.opt.CWD,
-		Mode:     h.opt.Mode,
-		Config:   h.opt.Config,
-		Log:      func(level, msg string) { h.logf(level, name+": "+msg) },
-		Session:  h.opt.Session,
-		UI:       h.opt.UI,
-		Ledger:   h.opt.Ledger,
-		Extra:    h.opt.Extra,
-		Complete: h.opt.Complete,
-		Decide:   h.opt.Decide,
-		Embed:    h.opt.Embed,
-		Spawn:    h.opt.Spawn,
-		HasUI:    h.hasUI,
+		CWD:        h.opt.CWD,
+		Mode:       h.opt.Mode,
+		Config:     h.opt.Config,
+		Log:        func(level, msg string) { h.logf(level, name+": "+msg) },
+		Session:    h.opt.Session,
+		UI:         h.opt.UI,
+		Ledger:     h.opt.Ledger,
+		Extra:      h.opt.Extra,
+		Complete:   h.opt.Complete,
+		Decide:     h.opt.Decide,
+		Embed:      h.opt.Embed,
+		Speak:      h.opt.Speak,
+		Transcribe: h.opt.Transcribe,
+		Spawn:      h.opt.Spawn,
+		HasUI:      h.hasUI,
 	}
 	env.Tool = func(t tool.Tool) error {
 		return h.registerTool(inst, &bundledTool{inst: inst, t: t}, false)
@@ -387,9 +394,11 @@ func (h *Host) runBundledCommand(ctx context.Context, inst *instance, cmd InProc
 func (h *Host) Observe(ev proto.Event) {
 	h.mu.Lock()
 	if ev.Type == proto.EventRunStart {
-		clear(h.complete) // the completion, decision and embedding caps are per run
+		clear(h.complete) // the model-call caps are per run
 		clear(h.decide)
 		clear(h.embed)
+		clear(h.speech)
+		clear(h.transcribe)
 	}
 	insts := append([]*instance(nil), h.insts...)
 	h.mu.Unlock()

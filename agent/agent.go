@@ -21,6 +21,7 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // ToolExecutionMode controls how the tool calls in one assistant message run.
@@ -227,6 +228,12 @@ type Config struct {
 	// Embed is given to tools as tool.Context.Embed, for vectors from text. It
 	// may be nil. A tool reports the call's usage with AddUsage.
 	Embed func(ctx context.Context, req embed.Request) (*embed.Response, error)
+	// Speak is given to tools as tool.Context.Speak, for audio from text. It
+	// may be nil. A tool reports the call's usage with AddUsage.
+	Speak func(ctx context.Context, req voice.SpeechRequest) (*voice.Clip, error)
+	// Transcribe is given to tools as tool.Context.Transcribe, for text from
+	// audio. It may be nil, and its usage is reported the same way.
+	Transcribe func(ctx context.Context, req voice.TranscribeRequest) (*voice.Transcript, error)
 }
 
 // Result is the outcome of a run.

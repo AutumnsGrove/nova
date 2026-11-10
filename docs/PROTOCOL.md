@@ -15,8 +15,11 @@ version. Unknown fields are ignored. A line that is not a valid frame gets a fai
   lines, and takes a final line that has no terminator.
 - Split records on `\n` only. Do not use a reader that also splits on U+2028 or
   U+2029, which are legal inside JSON strings.
-- A line may be up to 16 MiB. A longer line is a protocol error that closes the
-  connection (a line of exactly 16 MiB, newline excluded, is accepted).
+- A line may be up to 64 MiB. A longer line is a protocol error that closes the
+  connection (a line of exactly 64 MiB, newline excluded, is accepted). The cap
+  is large because a `speak` response carries a base64 audio clip: a 40 MiB clip
+  is a 53 MiB line. A reader grows its buffer on demand, so a small frame costs
+  nothing, and the ceiling is paid only when a large clip crosses.
 - Stdout carries only protocol frames. Logs go to stderr.
 - Writers honour backpressure; readers read continuously.
 
@@ -74,6 +77,8 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 | `compact` | `instructions?` | run compaction now |
 | `decide` | `decision` | one decision-model call. `decision` is `{model, state, questions}`, where a question is `{kind, instructions, criteria?, levels?}` and `kind` is `choice`, `noul`, or `score` (`levels` is the ordered set for `score`). Answers come back as `{answers, usage, model}`. A malformed request is `bad_request`; a role or provider failure is `provider_error`. It blocks until the model answers, so it is not a run and emits no run events |
 | `embed` | `embedding` | one embeddings call. `embedding` is `{model, input, truncate?}`, where `input` is the text batch and `truncate` embeds a prefix of an over-long input instead of refusing it. Answers come back as `{vectors, model, dims, usage}`, with the vectors in input order. A malformed request is `bad_request`; a role or provider failure is `provider_error`. It blocks until the provider answers, so it is not a run and emits no run events |
+| `speak` | `speech` | one text-to-speech call. `speech` is `{model, input, voice?, format?, speed?, instructions?}`, where `model` is a catalog id or a configured role and `format` is `mp3` or `pcm`. Answers come back as a clip: `{audio, format, mime, sample_rate?, channels?, bits_per_sample?, model, voice, generation_id?, usage}`, with `audio` base64. A malformed request is `bad_request`; a role or provider failure is `provider_error`. It blocks until the provider answers, so it is not a run and emits no run events. |
+| `transcribe` | `transcription` | one speech-to-text call. `transcription` is `{model, audio, format, language?, temperature?, timestamps?, verbose?}`, where `audio` is base64 and `format` is one of `wav`, `mp3`, `flac`, `m4a`, `ogg`, `webm`, `aac`. Answers come back as `{text, language?, duration?, segments?, words?, model, generation_id?, usage}`. Timestamps need `verbose`, because only verbose_json carries them. A malformed request is `bad_request`; a role or provider failure is `provider_error`. It blocks, so it is not a run and emits no run events |
 | `session.new` | | start a fresh session file; answers `{id, path}`. Refused with `busy` during a run; forgets the previous conversation's token counts |
 | `session.resume` | `session` | open an existing session by id or path; answers `{id, path}`. `busy` during a run; forgets the token counts |
 | `session.fork` | `entry?` | copy the branch ending at `entry` (default: the active leaf) into a new session. `busy` during a run; forgets the token counts |
@@ -252,6 +257,10 @@ ext  → host  {"type":"decide","id":"d1","request":{…}}   // decision-model c
 host → ext   {"type":"decide_result","id":"d1","answers":{…},"usage":{…},"model":"…"}
 ext  → host  {"type":"embed","id":"e1","request":{…}}   // embeddings call
 host → ext   {"type":"embed_result","id":"e1","vectors":[[…]],"dims":1024,"usage":{…},"model":"…"}
+ext  → host  {"type":"speak","id":"s1","request":{…}}   // synthesis call
+host → ext   {"type":"speak_result","id":"s1","clip":{"audio":"<base64>","format":"mp3",…}}
+ext  → host  {"type":"transcribe","id":"g1","request":{…}}   // transcription call
+host → ext   {"type":"transcribe_result","id":"g1","transcript":{"text":"…",…}}
 ext  → host  {"type":"log","level":"info","text":"…"}
 host → ext   {"type":"shutdown"}
 ```
@@ -272,15 +281,20 @@ Rules:
   must be an object schema, and an extension may register at most 128 tools and
   128 commands. A tool that fails a check is refused with `bad_request` and the
   extension's other registrations proceed.
-- A `ui_request` that needs an answer, a `complete`, a `decide`, and an `embed` are served on their own, so
-  a slow answer does not delay the extension's other frames. At most eight such
-  requests per extension may be in flight; more are refused with `busy`.
+- A `ui_request` that needs an answer, a `complete`, a `decide`, an `embed`, a
+  `speak` and a `transcribe` are served on their own, so a slow answer does not
+  delay the extension's other frames. At most eight such requests per extension
+  may be in flight; more are refused with `busy`.
 - A `decide` frame needs the `model:decide` capability and is capped by
   `extensions.decide_max_per_run` (default 20) per extension per run. A malformed
   request is refused with `bad_request` on the frame's `id`.
 - An `embed` frame needs the `model:embed` capability and is capped by
   `extensions.embed_max_per_run` (default 20) per extension per run. A refused
   call past the cap is an `error` frame on its `id`, not a crash.
+- A `speak` frame needs `model:speech` and a `transcribe` frame needs
+  `model:transcribe`, each capped by `extensions.speech_max_per_run` /
+  `extensions.transcribe_max_per_run` (default 20) per extension per run. The
+  result frames carry the whole clip or transcript, so audio crosses base64.
 - `append_entry` data is stored in the session and replayed to the extension on
   `init` after a reload, in order, so it can rebuild its state.
 - If the extension process exits, the host unregisters its tools, emits

@@ -38,6 +38,8 @@ gap in the protocol, to be filed and closed, not a permanent privilege.
 | Call the model | `model:complete` | `complete` |
 | Call a decision model | `model:decide` | `decide` |
 | Embed text | `model:embed` | `embed` |
+| Speak text | `model:speech` | `speak` |
+| Transcribe audio | `model:transcribe` | `transcribe` |
 | Add a model provider | `providers` | `register.providers` |
 | Add an MCP server | `mcp` | `register.mcp` |
 

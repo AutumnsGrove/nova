@@ -67,8 +67,11 @@ func knownStreamPath(path string) bool {
 // RecordedRequest is what the server saw.
 type RecordedRequest struct {
 	Method, Path string
-	Header       http.Header
-	Body         []byte
+	// Query is the raw query string, without the "?", for a server that needs
+	// to assert a filter such as output_modalities=speech.
+	Query  string
+	Header http.Header
+	Body   []byte
 }
 
 // Server is a local HTTP server that speaks OpenAI chat-completions SSE.

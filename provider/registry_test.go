@@ -185,3 +185,41 @@ func TestProvider_EMB18_SupportsEmbeddings(t *testing.T) {
 		}
 	}
 }
+
+func TestProvider_A19_SupportsSpeechAndTranscription(t *testing.T) {
+	cases := []struct {
+		name          string
+		out           []string
+		speech        bool
+		transcription bool
+	}{
+		{"nil is a chat model", nil, false, false},
+		{"text only", []string{"text"}, false, false},
+		{"speech only", []string{"speech"}, true, false},
+		{"transcription only", []string{"transcription"}, false, true},
+		{"embeddings are neither", []string{"embeddings"}, false, false},
+	}
+	for _, tc := range cases {
+		m := Model{OutputModalities: tc.out}
+		if got := m.SupportsSpeech(); got != tc.speech {
+			t.Errorf("%s: SupportsSpeech() = %v, want %v", tc.name, got, tc.speech)
+		}
+		if got := m.SupportsTranscription(); got != tc.transcription {
+			t.Errorf("%s: SupportsTranscription() = %v, want %v", tc.name, got, tc.transcription)
+		}
+	}
+}
+
+func TestProvider_A19_ModelKeepsVoices(t *testing.T) {
+	RegisterModel(Model{ID: "a19", Provider: "x", OutputModalities: []string{"speech"}, Voices: []string{"af_heart", "am_adam"}})
+	got, ok := GetModel("a19")
+	if !ok {
+		t.Fatal("GetModel(a19) not found")
+	}
+	if !got.SupportsSpeech() {
+		t.Errorf("registered model lost its output modalities: %+v", got)
+	}
+	if len(got.Voices) != 2 || got.Voices[0] != "af_heart" || got.Voices[1] != "am_adam" {
+		t.Errorf("registered model lost its voices: %+v", got.Voices)
+	}
+}

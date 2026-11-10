@@ -6,9 +6,9 @@ reach every front door, and what the caller still owns. This document is the
 reference for issue [#85](https://github.com/AutumnsGrove/nova/issues/85); the
 follow-up for local engines is [#86](https://github.com/AutumnsGrove/nova/issues/86).
 
-Status: **proposed.** Nothing here is built yet. Each slice changes this
-document in the same commit that changes the contract, the way
-[`IMAGE.md`](IMAGE.md) did.
+Status: **built.** The decisions are D161 to D167 in
+[`DECISIONS.md`](DECISIONS.md). Each slice changed this document in the commit
+that changed the contract, the way [`IMAGE.md`](IMAGE.md) did.
 
 ## Why
 
@@ -212,9 +212,11 @@ const ChunkRunes = 300
 
 // Join concatenates clips from one voice into one clip. Every clip must share
 // the format, and a PCM clip must share the sample layout; otherwise Join
-// refuses rather than producing a file that plays at the wrong speed. Usage is
-// summed, the first clip's model and voice are kept, and GenerationID is
-// dropped because one joined clip has many generations.
+// refuses rather than producing a file that plays at the wrong speed. A leading
+// ID3 tag is kept on the first clip and dropped from the rest, because some
+// models (Voxtral) tag every response. Usage is summed, the first clip's model
+// and voice are kept, and GenerationID is dropped because one joined clip has
+// many generations.
 func Join(clips ...Clip) (Clip, error)
 
 // WAV prepends a 44-byte RIFF/PCM header to a raw PCM clip, using the clip's
@@ -224,10 +226,10 @@ func WAV(c Clip) []byte
 
 MP3 frames are self-contained, so a join is a byte concatenation; PCM is too,
 with one WAV header written at the end. Kokoro's MP3 begins with a frame sync
-(`ff f3`) and no ID3 tag, so a join of its clips is clean; an adapter that ever
-sees an ID3 tag per clip must strip it rather than leave one mid-stream, and a
-clip that does not round-trip is a test, not a surprise. Joining is what makes a
-long answer possible without a model that accepts a long input.
+(`ff f3`) and no ID3 tag, but Voxtral's begins with an ID3v2.4 tag on every
+response, so `Join` keeps the first clip's tag and drops the rest rather than
+leave one mid-stream. Joining is what makes a long answer possible without a
+model that accepts a long input.
 
 Markdown stripping is deliberately not here. What to strip depends on the app's
 own answer format (Polaris's citation links, Nova's tool cards), and a library
@@ -431,7 +433,7 @@ decision, and it applies to every frame, so a hostile 64 MiB line from an
 authenticated client is possible — the same trust boundary `serve` already has.
 
 `MaxClipBytes` stays at 40 MiB: a 64 MiB ceiling leaves room for the envelope,
-and 40 MiB of MP3 at Kokoro's measured ~42 kbps is over two hours of speech.
+and 40 MiB of MP3 at Kokoro's measured 128 kbps is about forty minutes of speech.
 
 ### CLI
 
@@ -494,7 +496,7 @@ are a contract between this document and the tests, not a gate.
 | A19 | `List(KindSpeech)` and `List(KindTranscription)` send the matching `output_modalities` filter and map `supported_voices` |
 | A20 | `Chunks` splits at sentence boundaries under the cap, hard-splits a long sentence at a space, never splits a rune, and returns nil for blank input |
 | A21 | `WAV` returns nil for a non-PCM clip and for an unknown layout, and is byte-exact for a known one |
-| A22 | `Join` concatenates same-format clips and sums usage, and a joined mp3 is one playable stream; it refuses mixed formats, mixed PCM layouts and zero clips |
+| A22 | `Join` concatenates same-format clips and sums usage, and a joined mp3 is one playable stream: the first clip's ID3 tag survives and later ones are dropped; it refuses mixed formats, mixed PCM layouts and zero clips |
 | A23 | The `speak` protocol command returns base64 audio that decodes to the same bytes, and `transcribe` returns the transcript |
 | A24 | A frame of 20 MiB is accepted by the protocol reader, and one over 64 MiB fails with `ErrLineTooLong` |
 | A25 | An extension without `model:speech` is refused, and the 21st call in a run hits the cap |
@@ -512,18 +514,19 @@ need room before a line is written.
 
 | Package | Now | After |
 |---|---|---|
-| `voice` | — | ≤ 420 (contract, roles, chunks, join, wav) |
-| `voice/openrouter` | — | ≤ 420 |
-| `provider` | 600 | 620 (`Voices`, two predicates) |
-| `proto` | 600 | 600 (one constant; the line-limit change is a value, not code) |
-| `config` | 1540 | 1640 (`voice` block) |
-| `tool` | 660 | 680 (two context fields) |
-| `agent` | 1420 | 1430 (two config fields, two pass-throughs) |
-| `mode` | 2800 | 2920 (handlers, commands, `mode.Voice`) |
-| `mode/providers` | 320 | 400 (three builders) |
-| `ext` | 3100 | 3160 (two capabilities, two frames, two caps) |
-| `ext/sdk` | 700 | 740 (`Speak`, `Transcribe`) |
-| `cmd/nova` | 1260 | 1420 (two subcommands) |
+| `voice` | — | ≤ 540 (contract, roles, chunks, join, wav; measured 527) |
+| `voice/openrouter` | — | ≤ 620 (four endpoints and the wire helpers; measured 600) |
+| `testkit` | 1200 | 1260 (the scripted voice server; measured 1235) |
+| `config` | 1540 | 1640 (the `voice` block; measured 1565) |
+| `agent` | 1420 | 1440 (two config fields and the pass-throughs; measured 1423) |
+| `mode` | 2800 | 2980 (handlers, commands, `mode.Voice`; measured 2940) |
+| `ext` | 3100 | 3220 (two capabilities, two frames, two caps; measured 3196) |
+| `cmd/nova` | 1260 | 1560 (two subcommands with their flags; measured 1526) |
+| `provider` | 600 | 600 (measured 550; `Voices` and two predicates fit) |
+| `proto` | 600 | 600 (measured 410; the line cap and two request fields fit) |
+| `tool` | 660 | 660 (measured 655; two context fields fit) |
+| `mode/providers` | 320 | 320 (measured 223; three builders fit) |
+| `ext/sdk` | 700 | 700 (measured 652; `Speak` and `Transcribe` fit) |
 
 The two new packages also need their budget line in the nearest archived spec
 (`C01-foundations.md`, which already budgets `provider`, `roles`, `decide` and

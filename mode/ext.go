@@ -21,6 +21,7 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/session"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // buildExtensionHost constructs the host that loads subprocess extensions. It
@@ -31,30 +32,34 @@ func (s *Server) buildExtensionHost() *ext.Host {
 		extra[k] = v
 	}
 	return ext.NewHost(ext.HostOptions{
-		Dirs:        extensionDirs(s.cfg, s.cwd, s.home),
-		Disabled:    s.cfg.Extensions.Disable,
-		Registry:    s.tools,
-		Session:     sessionBridge{s},
-		SessionID:   s.sessionID(),
-		UI:          uiBridge{s},
-		Complete:    s.complete,
-		CompleteMax: s.cfg.Extensions.CompleteMaxPerRun,
-		Decide:      s.decideCall,
-		DecideMax:   s.cfg.Extensions.DecideMaxPerRun,
-		Embed:       s.embedCall,
-		EmbedMax:    s.cfg.Extensions.EmbedMaxPerRun,
-		Emit:        s.emit,
-		NovaVersion: s.opt.Version,
-		CWD:         s.cwd,
-		Mode:        cmp.Or(s.opt.Mode, "rpc"), // "rpc" is the protocol default
-		Env:         os.Environ,
-		ScrubEnv:    append(providerauth.CredentialEnv(), s.cfg.Extensions.ScrubEnv...),
-		PassEnv:     s.cfg.Extensions.PassEnv,
-		Config:      s.cfg,
-		Ledger:      s.ledger,
-		Extra:       extra,
-		Spawn:       s.spawn,
-		HasUI:       s.supportsUI,
+		Dirs:          extensionDirs(s.cfg, s.cwd, s.home),
+		Disabled:      s.cfg.Extensions.Disable,
+		Registry:      s.tools,
+		Session:       sessionBridge{s},
+		SessionID:     s.sessionID(),
+		UI:            uiBridge{s},
+		Complete:      s.complete,
+		CompleteMax:   s.cfg.Extensions.CompleteMaxPerRun,
+		Decide:        s.decideCall,
+		DecideMax:     s.cfg.Extensions.DecideMaxPerRun,
+		Embed:         s.embedCall,
+		EmbedMax:      s.cfg.Extensions.EmbedMaxPerRun,
+		Speak:         s.speakCall,
+		SpeechMax:     s.cfg.Extensions.SpeechMaxPerRun,
+		Transcribe:    s.transcribeCall,
+		TranscribeMax: s.cfg.Extensions.TranscribeMaxPerRun,
+		Emit:          s.emit,
+		NovaVersion:   s.opt.Version,
+		CWD:           s.cwd,
+		Mode:          cmp.Or(s.opt.Mode, "rpc"), // "rpc" is the protocol default
+		Env:           os.Environ,
+		ScrubEnv:      append(providerauth.CredentialEnv(), s.cfg.Extensions.ScrubEnv...),
+		PassEnv:       s.cfg.Extensions.PassEnv,
+		Config:        s.cfg,
+		Ledger:        s.ledger,
+		Extra:         extra,
+		Spawn:         s.spawn,
+		HasUI:         s.supportsUI,
 	})
 }
 
@@ -79,6 +84,10 @@ func (s *Server) spawn(ctx context.Context, r ext.SpawnRequest) (*ext.SpawnResul
 		Roots:      []string{s.cwd},
 		SessionID:  s.sessionID(),
 		Complete:   s.complete,
+		Decide:     s.decideCall,
+		Embed:      s.embedCall,
+		Speak:      s.speakCall,
+		Transcribe: s.transcribeCall,
 		Ledger:     s.ledger,
 		MaxDepth:   s.cfg.Subagent.MaxDepth,
 		MaxTokens:  s.cfg.MaxTokens,
@@ -155,6 +164,29 @@ func (s *Server) embedCall(ctx context.Context, req embed.Request) (*embed.Respo
 		return nil, errors.New("mode: no embedder is configured")
 	}
 	return e.Embed(ctx, req)
+}
+
+// speakCall is the synthesis call a tool or extension gets. It reads the
+// speaker under the lock, so a reload can swap the role table between runs.
+func (s *Server) speakCall(ctx context.Context, req voice.SpeechRequest) (*voice.Clip, error) {
+	s.mu.Lock()
+	speaker := s.speaker
+	s.mu.Unlock()
+	if speaker == nil {
+		return nil, errors.New("mode: no speaker is configured")
+	}
+	return speaker.Speak(ctx, req)
+}
+
+// transcribeCall is the transcription call a tool or extension gets.
+func (s *Server) transcribeCall(ctx context.Context, req voice.TranscribeRequest) (*voice.Transcript, error) {
+	s.mu.Lock()
+	transcriber := s.transcriber
+	s.mu.Unlock()
+	if transcriber == nil {
+		return nil, errors.New("mode: no transcriber is configured")
+	}
+	return transcriber.Transcribe(ctx, req)
 }
 
 // sessionBridge adapts the server's session store to ext.SessionAPI.

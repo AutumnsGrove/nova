@@ -24,6 +24,8 @@ import (
 	"github.com/AutumnsGrove/nova/provider/opencodego"
 	"github.com/AutumnsGrove/nova/provider/openrouter"
 	"github.com/AutumnsGrove/nova/provider/route"
+	"github.com/AutumnsGrove/nova/voice"
+	voiceor "github.com/AutumnsGrove/nova/voice/openrouter"
 )
 
 // Options configures Build.
@@ -197,6 +199,77 @@ func BuildEmbedder(opt Options) embed.Embedder {
 // embeddings client, so the roster needs no separate sign-in.
 func BuildEmbeddingCatalog(opt Options) embed.Catalog {
 	return embeddingClient(opt)
+}
+
+// voiceClient builds the shared OpenRouter voice client. It uses the same base
+// URL and credential as chat, decisions and embeddings, and asks for exact
+// speech cost only when the config says so.
+func voiceClient(opt Options) *voiceor.Client {
+	getenv := opt.Getenv
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	store := opt.Store
+	orBase := cmp.Or(opt.Config.Provider.OpenRouter.BaseURL, getenv("NOVA_OPENROUTER_BASE_URL"))
+	return voiceor.New(voiceor.Config{
+		BaseURL: orBase,
+		APIKeyFunc: func(context.Context) (string, error) {
+			key, _, err := auth.Resolve("", getenv, store)
+			return key, err
+		},
+		CostLookup: opt.Config.Voice.CostLookupEnabled(),
+	})
+}
+
+// BuildSpeaker returns the voice client wrapped in the speech roles from the
+// config. A speech role carries its own voice, because a voice name belongs to
+// one model and a fallback restates its own.
+func BuildSpeaker(opt Options) voice.Speaker {
+	client := voiceClient(opt)
+	roles := make(map[string]voice.VoiceRole, len(opt.Config.Voice.Speech.Roles))
+	for name, role := range opt.Config.Voice.Speech.Roles {
+		entry := voice.VoiceRole{
+			Model:        role.Model,
+			Voice:        role.Voice,
+			Format:       voice.Format(role.Format),
+			Speed:        role.Speed,
+			Instructions: role.Instructions,
+			Timeout:      time.Duration(role.TimeoutMS) * time.Millisecond,
+		}
+		if role.Fallback != nil {
+			entry.Fallback = &voice.VoiceAttempt{
+				Model:  role.Fallback.Model,
+				Voice:  role.Fallback.Voice,
+				Format: voice.Format(role.Fallback.Format),
+				Speed:  role.Fallback.Speed,
+			}
+		}
+		roles[name] = entry
+	}
+	return voice.NewRoles(voice.RolesConfig{
+		Speaker:      client,
+		Speech:       roles,
+		AllowAliases: opt.Config.Voice.AllowAliases,
+	})
+}
+
+// BuildTranscriber returns the voice client wrapped in the transcription roles
+// from the config.
+func BuildTranscriber(opt Options) voice.Transcriber {
+	client := voiceClient(opt)
+	roles := make(map[string]voice.TranscribeRole, len(opt.Config.Voice.Transcribe.Roles))
+	for name, role := range opt.Config.Voice.Transcribe.Roles {
+		roles[name] = voice.TranscribeRole{
+			Model:    role.Model,
+			Fallback: role.Fallback,
+			Timeout:  time.Duration(role.TimeoutMS) * time.Millisecond,
+		}
+	}
+	return voice.NewRoles(voice.RolesConfig{
+		Transcriber:  client,
+		Transcribe:   roles,
+		AllowAliases: opt.Config.Voice.AllowAliases,
+	})
 }
 
 // BuildDecisionCatalog returns the live decision-model roster reader. It shares

@@ -12,10 +12,13 @@ import (
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
-// maxFrameLine is the documented 16 MiB protocol line cap.
-const maxFrameLine = 16 << 20
+// maxFrameLine is the documented protocol line cap. It matches proto's, because
+// a speak frame carries a base64 audio clip and a smaller cap here would refuse
+// a frame the protocol allows.
+const maxFrameLine = 64 << 20
 
 // writeQueueSize is how many frames may wait for the writer before a sender
 // has to wait for the peer to read.
@@ -68,6 +71,8 @@ type outFrame struct {
 	Vectors      any               `json:"vectors,omitempty"`
 	Dims         int               `json:"dims,omitempty"`
 	Model        string            `json:"model,omitempty"`
+	Clip         *voice.Clip       `json:"clip,omitempty"`
+	Transcript   *voice.Transcript `json:"transcript,omitempty"`
 	Error        *proto.Error      `json:"error,omitempty"`
 }
 

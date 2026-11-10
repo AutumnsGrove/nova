@@ -518,8 +518,8 @@ need room before a line is written.
 | `provider` | 600 | 620 (`Voices`, two predicates) |
 | `proto` | 600 | 600 (one constant; the line-limit change is a value, not code) |
 | `config` | 1540 | 1640 (`voice` block) |
-| `tool` | 660 | 680 (two context fields) |
-| `agent` | 1420 | 1430 (two config fields, two pass-throughs) |
+| `tool` | 660 | 660 (measured 655; two context fields fit) |
+| `agent` | 1420 | 1440 (measured 1423; two config fields, two pass-throughs) |
 | `mode` | 2800 | 2920 (handlers, commands, `mode.Voice`) |
 | `mode/providers` | 320 | 400 (three builders) |
 | `ext` | 3100 | 3160 (two capabilities, two frames, two caps) |

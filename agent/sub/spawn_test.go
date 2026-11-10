@@ -21,6 +21,7 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 func fakeClock() *testkit.FakeClock {
@@ -559,5 +560,40 @@ func TestSub_S03_ChildReachesTheParentDecider(t *testing.T) {
 	}
 	if seen != "decided" {
 		t.Fatalf("the child's tool saw %q, want the parent's decider to answer", seen)
+	}
+}
+
+// TestSub_A26_ChildReachesTheParentVoice: the voice seams cross into a child the
+// same way Complete, Decide and Embed do.
+func TestSub_A26_ChildReachesTheParentVoice(t *testing.T) {
+	var sawSpeak, sawTranscribe bool
+	reg := tool.NewRegistry()
+	reg.MustRegister(tool.New(tool.Info{Name: "voice"}, func(ctx context.Context, _ json.RawMessage, tctx *tool.Context) (tool.Result, error) {
+		if tctx.Speak == nil || tctx.Transcribe == nil {
+			return tool.Text("no voice seam"), nil
+		}
+		if _, err := tctx.Speak(ctx, voice.SpeechRequest{Model: "vendor/tts", Voice: "v", Input: "hi"}); err == nil {
+			sawSpeak = true
+		}
+		if _, err := tctx.Transcribe(ctx, voice.TranscribeRequest{Model: "vendor/stt", Audio: []byte{1}, Format: voice.FormatMP3}); err == nil {
+			sawTranscribe = true
+		}
+		return tool.Text("ok"), nil
+	}))
+	p := parent(testkit.NewProvider(fakeClock(),
+		testkit.Turn{ToolCalls: []testkit.Call{{ID: "1", Name: "voice", Args: "{}"}}},
+		testkit.Turn{Text: "done"},
+	), reg)
+	p.Speak = func(context.Context, voice.SpeechRequest) (*voice.Clip, error) {
+		return &voice.Clip{}, nil
+	}
+	p.Transcribe = func(context.Context, voice.TranscribeRequest) (*voice.Transcript, error) {
+		return &voice.Transcript{Text: "hi"}, nil
+	}
+	if _, err := New(p, Options{}).Spawn(context.Background(), Task{Prompt: "t", Tools: []string{"voice"}, MaxTurns: 3}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if !sawSpeak || !sawTranscribe {
+		t.Fatalf("child saw speak=%v transcribe=%v, want both", sawSpeak, sawTranscribe)
 	}
 }

@@ -66,7 +66,7 @@ nova/
   permission/     allow/ask/deny policy                         ≤ 340
   proc/           process-group start, signal, exit status       ≤ 80
   proto/          wire types and JSONL framing                  ≤ 600
-  agent/          the loop, hooks, queues, retry                ≤ 1420
+  agent/          the loop, hooks, queues, retry                ≤ 1440
     sub/          child agent runs: scoping, tagging, limits   ≤ 340
   session/        JSONL tree store, branches, custom entries    ≤ 900
   compaction/     summarise-and-splice, context limit           ≤ 600

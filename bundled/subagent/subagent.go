@@ -21,6 +21,7 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
 	"github.com/AutumnsGrove/nova/usage"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // Defaults and limits.
@@ -269,6 +270,8 @@ type Spawner struct {
 	Complete   func(ctx context.Context, req provider.Request) (*provider.Response, error)
 	Decide     func(ctx context.Context, req decide.Request) (*decide.Response, error)
 	Embed      func(ctx context.Context, req embed.Request) (*embed.Response, error)
+	Speak      func(ctx context.Context, req voice.SpeechRequest) (*voice.Clip, error)
+	Transcribe func(ctx context.Context, req voice.TranscribeRequest) (*voice.Transcript, error)
 	Ledger     *usage.Ledger
 	MaxDepth   int
 	// MaxTokens caps each child request; zero leaves the choice to the provider.
@@ -307,6 +310,8 @@ func (s *Spawner) Spawn(ctx context.Context, req ext.SpawnRequest) (*ext.SpawnRe
 		Complete:   s.Complete,
 		Decide:     s.Decide,
 		Embed:      s.Embed,
+		Speak:      s.Speak,
+		Transcribe: s.Transcribe,
 		MaxTokens:  s.MaxTokens,
 		Clock:      s.Clock,
 		Emit:       s.Emit,

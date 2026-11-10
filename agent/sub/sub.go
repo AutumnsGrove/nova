@@ -24,6 +24,7 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/tool"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // Limits are the defaults a caller gets before setting its own.
@@ -79,6 +80,10 @@ type Parent struct {
 	// Embed is the parent's embedder, so a child's tool can reach it. It is a
 	// separate seam from Complete for the same reason it is on tool.Context.
 	Embed func(ctx context.Context, req embed.Request) (*embed.Response, error)
+	// Speak and Transcribe are the parent's voice seams, so a child's tool can
+	// reach them.
+	Speak      func(ctx context.Context, req voice.SpeechRequest) (*voice.Clip, error)
+	Transcribe func(ctx context.Context, req voice.TranscribeRequest) (*voice.Transcript, error)
 	// MaxTokens caps each child request.
 	MaxTokens int
 	Clock     agent.Clock
@@ -260,23 +265,25 @@ func (s *Spawner) childConfig(t Task, id string, onEvent func(proto.Event)) (age
 	}
 	used := &toolUse{parent: p.ToolCall}
 	return agent.Config{
-		Provider:  p.Provider,
-		Model:     model,
-		ModelID:   modelID,
-		System:    t.System,
-		Tools:     reg,
-		Policy:    p.Policy,
-		Ask:       p.Ask,
-		WorkDir:   p.WorkDir,
-		Roots:     p.Roots,
-		SessionID: p.SessionID,
-		MaxTurns:  t.MaxTurns,
-		MaxTokens: p.MaxTokens,
-		Clock:     p.Clock,
-		ToolData:  data,
-		Complete:  p.Complete,
-		Decide:    p.Decide,
-		Embed:     p.Embed,
+		Provider:   p.Provider,
+		Model:      model,
+		ModelID:    modelID,
+		System:     t.System,
+		Tools:      reg,
+		Policy:     p.Policy,
+		Ask:        p.Ask,
+		WorkDir:    p.WorkDir,
+		Roots:      p.Roots,
+		SessionID:  p.SessionID,
+		MaxTurns:   t.MaxTurns,
+		MaxTokens:  p.MaxTokens,
+		Clock:      p.Clock,
+		ToolData:   data,
+		Complete:   p.Complete,
+		Decide:     p.Decide,
+		Embed:      p.Embed,
+		Speak:      p.Speak,
+		Transcribe: p.Transcribe,
 		Hooks: agent.Hooks{
 			ToolCall:   used.call,
 			ToolResult: p.ToolResult,

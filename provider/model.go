@@ -34,6 +34,11 @@ type Model struct {
 	// "decisions". Empty means text only, the safe default for a chat model.
 	// It mirrors OpenRouter's output_modalities.
 	OutputModalities []string
+	// Voices lists the voice identifiers a speech model accepts, such as
+	// "af_heart" or "alloy". Empty means the roster did not report any, which
+	// is the case for every model that is not a speech model. It mirrors
+	// OpenRouter's supported_voices.
+	Voices []string
 	// ImplicitCaching reports that the provider caches a repeated request
 	// prefix on its own, so Nova must not send an explicit cache marker.
 	// False is the safe default: an anthropic-style model needs the marker to
@@ -93,6 +98,21 @@ func (m Model) SupportsDecisions() bool {
 // modalities is a chat model, so this is false for anything Nova does not know.
 func (m Model) SupportsEmbeddings() bool {
 	return slices.Contains(m.OutputModalities, "embeddings")
+}
+
+// SupportsSpeech reports whether the model is a text-to-speech model. The live
+// roster marks one with the "speech" output modality; a model with no
+// modalities is a chat model, so this is false for anything Nova does not know.
+func (m Model) SupportsSpeech() bool {
+	return slices.Contains(m.OutputModalities, "speech")
+}
+
+// SupportsTranscription reports whether the model is a speech-to-text model.
+// The live roster marks one with the "transcription" output modality; a model
+// with no modalities is a chat model, so this is false for anything Nova does
+// not know.
+func (m Model) SupportsTranscription() bool {
+	return slices.Contains(m.OutputModalities, "transcription")
 }
 
 var (

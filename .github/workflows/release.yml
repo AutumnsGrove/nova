@@ -80,6 +80,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -92,11 +95,15 @@ jobs:
           # name, and "./name" would never match.
           sha256sum -- *.tar.gz | sort -k2 >checksums.txt
           cat checksums.txt
+      - name: Install pi
+        run: npm install -g @earendil-works/pi-coding-agent@1.5.0
       - name: Write release notes
         id: notes
         # A body is a courtesy, so nothing here may fail the release: the script
         # falls back to the changelog section on its own, and this step warns
-        # rather than stopping when even that is missing.
+        # rather than stopping when even that is missing. It is built rather than
+        # run, because `go run` collapses every non-zero status to 1 and status 3
+        # is how the script says the fallback produced the body.
         continue-on-error: true
         timeout-minutes: 8
         env:
@@ -105,9 +112,16 @@ jobs:
           set -u
           previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           echo "release-notes range: ${previous:-<first release>}..${GITHUB_REF_NAME}"
+          go build -o "$RUNNER_TEMP/release-notes" ./scripts/release-notes || exit 0
           # Flags come first: Go's flag package stops at the first ref, so a
           # flag after the range is a usage error and no body at all.
-          go run ./scripts/release-notes --out body.md "$previous" "$GITHUB_REF_NAME" || true
+          status=0
+          "$RUNNER_TEMP/release-notes" --out body.md "$previous" "$GITHUB_REF_NAME" || status=$?
+          if [ "$status" = 3 ]; then
+            echo "::warning::the release body is the changelog fallback, not a summary: see release-notes above"
+          elif [ "$status" != 0 ]; then
+            echo "::warning::release-notes exited $status"
+          fi
           if [ -s body.md ]; then
             echo "body=body.md" >>"$GITHUB_OUTPUT"
           else

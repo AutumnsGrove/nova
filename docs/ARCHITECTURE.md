@@ -96,7 +96,7 @@ nova/
   cmd/nova/       main, cobra commands, doctor, version         ≤ 1560
   doctor/         environment checks                            ≤ 440
   diag/           crash reports and debug traces                ≤ 250  update/         replace the binary from a checkout or release ≤ 450
-  scripts/        matrixcheck, linecount, importcheck, accept
+  scripts/        matrixcheck, linecount, importcheck, accept, release-notes
   assets/         logo SVGs and the generator
   docs/           embedded topics, search, authoring context    ≤ 220
 ```

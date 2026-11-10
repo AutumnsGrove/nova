@@ -179,8 +179,13 @@ bump, release, or tag a version:
    commit** (not squash), so the per-issue commits survive, and only when the user has asked you to merge.
 5. **Tag the merge commit on `main`**: `git checkout main && git pull`, then
    `git tag -a vX.Y.Z -m "nova vX.Y.Z" && git push origin vX.Y.Z`. Pushing the tag starts the release workflow
-   (it re-runs every chunk's acceptance, builds four binaries, and publishes a GitHub release), so push it only
-   when the user has asked for the release.
+   (it re-runs every chunk's acceptance, builds four binaries, writes the release body and publishes a GitHub
+   release), so push it only when the user has asked for the release. The body is written from the tag range by
+   `go run ./scripts/release-notes --out body.md <previous-tag> vX.Y.Z`; run it before tagging if you want to read
+   or edit it, and note that the step falls back to the changelog section on its own, so a release never depends on
+   the model answering. Flags come before the refs: Go's `flag` stops at the first one, so `--out` after the range is
+   a usage error. The exit status says which body you got: 0 the agent's summary, 3 the changelog fallback, so
+   `go run ... ; echo $?` reads 1 for 3 and you should read the warning line instead.
 6. **Verify.** Watch the `release` workflow to success, and check the module resolves:
    `go list -m github.com/AutumnsGrove/nova@vX.Y.Z` from a scratch module.
 7. **Tell the consumers.** Polaris (and any other importer) moves with `go get github.com/AutumnsGrove/nova@vX.Y.Z`

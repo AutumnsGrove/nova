@@ -73,6 +73,21 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The body is written from the tag range, so the whole history and
+          # every tag have to be here.
+          fetch-depth: 0
+      # The toolchain below exists only for the release body, so none of it may
+      # fail the release: a bad install leaves the script to fall back on its own
+      # and the body is written from the changelog section instead.
+      - uses: actions/setup-go@v5
+        continue-on-error: true
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        continue-on-error: true
+        with:
+          node-version: "22"
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -85,8 +100,47 @@ jobs:
           # name, and "./name" would never match.
           sha256sum -- *.tar.gz | sort -k2 >checksums.txt
           cat checksums.txt
+      - name: Install pi
+        continue-on-error: true
+        run: npm install -g @earendil-works/pi-coding-agent@1.5.2
+      - name: Write release notes
+        id: notes
+        # A body is a courtesy, so nothing here may fail the release: the script
+        # falls back to the changelog section on its own, and this step warns
+        # rather than stopping when even that is missing. It is built rather than
+        # run, because `go run` collapses every non-zero status to 1 and status 3
+        # is how the script says the fallback produced the body.
+        continue-on-error: true
+        timeout-minutes: 8
+        env:
+          OPENCODE_API_KEY: ${{ secrets.PI_REVIEW_API_KEY }}
+        run: |
+          set -u
+          previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          echo "release-notes range: ${previous:-<first release>}..${GITHUB_REF_NAME}"
+          if ! go build -o "$RUNNER_TEMP/release-notes" ./scripts/release-notes; then
+            echo "::warning::scripts/release-notes did not build; the release will publish with no body"
+            exit 0
+          fi
+          # Flags come first: Go's flag package stops at the first ref, so a
+          # flag after the range is a usage error and no body at all.
+          status=0
+          "$RUNNER_TEMP/release-notes" --out body.md "$previous" "$GITHUB_REF_NAME" || status=$?
+          if [ "$status" = 3 ]; then
+            echo "::warning::the release body is the changelog fallback, not a summary: see release-notes above"
+          elif [ "$status" != 0 ]; then
+            echo "::warning::release-notes exited $status"
+          fi
+          if [ -s body.md ]; then
+            echo "body=body.md" >>"$GITHUB_OUTPUT"
+          else
+            echo "::warning::no release body: the agent failed and the changelog has no section for ${GITHUB_REF_NAME}"
+          fi
       - uses: softprops/action-gh-release@v2
         with:
+          # Empty when there is nothing to say, and action-gh-release ignores an
+          # empty body_path, so the release publishes with no body as before.
+          body_path: ${{ steps.notes.outputs.body }}
           files: |
             dist/*.tar.gz
             dist/checksums.txt

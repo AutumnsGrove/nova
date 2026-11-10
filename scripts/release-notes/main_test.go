@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The fixture is a small repository with two tags, a merge commit and a
@@ -483,6 +484,35 @@ func TestReleaseNotes_RN18_DefaultCapFitsALargeRelease(t *testing.T) {
 	}
 	if out != sectionV3 {
 		t.Errorf("an oversized body was published instead of falling back")
+	}
+}
+
+func TestReleaseNotes_RN19_TimeoutKillsTheWholeGroup(t *testing.T) {
+	// pi runs tools, so a child can outlive it holding the output pipe. Killing
+	// only pi leaves cmd.Wait blocked on that pipe past the deadline, which in
+	// CI would run into the step's own timeout and publish no body. The whole
+	// group has to die for the deadline to bound wall clock.
+	dir := repo(t)
+	record := stubPi(t)
+	script := "#!/bin/sh\nsleep 5 &\nsleep 5\n"
+	if err := os.WriteFile(filepath.Join(filepath.Dir(record), "pi"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake pi: %v", err)
+	}
+	// The deadline has to outlast the fork, or the shell dies before it spawns
+	// the child that holds the pipe and the case cannot reproduce.
+	start := time.Now()
+	out, errOut, code := notes(t, dir, "--timeout", "300ms", "v0.2.0", "v0.3.0")
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("the deadline did not bound wall clock: it took %s", elapsed)
+	}
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3 (the changelog fallback ran)", code)
+	}
+	if out != sectionV3 {
+		t.Errorf("stdout = %q, want the 0.3.0 section", out)
+	}
+	if !strings.Contains(errOut, "300ms") {
+		t.Errorf("the warning does not name the timeout:\n%s", errOut)
 	}
 }
 

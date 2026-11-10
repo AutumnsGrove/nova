@@ -22,6 +22,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/AutumnsGrove/nova/proc"
 )
 
 //go:embed prompt.md
@@ -285,17 +287,32 @@ func generate(o options, prompt string, env []string) (body, why string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), o.timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "pi", args...)
+	cmd := exec.Command("pi", args...)
+	// pi runs tools, so a tool can leave a child holding its output pipe. The
+	// deadline has to kill the whole group, not just pi: a killed pi whose child
+	// still holds the pipe keeps Wait blocked, and the timeout stops bounding
+	// wall clock.
+	proc.SetGroup(cmd)
 	if len(env) > 0 {
 		cmd.Env = env
 	}
 	cmd.Stdin = strings.NewReader(prompt)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return "", fmt.Sprintf("the agent did not finish within %s", o.timeout)
-		}
+	if err := cmd.Start(); err != nil {
+		return "", "the agent could not start: " + err.Error()
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	var err error
+	select {
+	case err = <-done:
+	case <-ctx.Done():
+		proc.Kill(cmd.Process.Pid)
+		<-done
+		return "", fmt.Sprintf("the agent did not finish within %s", o.timeout)
+	}
+	if err != nil {
 		msg := strings.TrimSpace(errOut.String())
 		if len(msg) > 300 {
 			msg = msg[:300] + "..."

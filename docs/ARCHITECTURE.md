@@ -71,7 +71,7 @@ nova/
   session/        JSONL tree store, branches, custom entries    ≤ 900
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
-  config/         YAML config, trust, context files, skills     ≤ 1540
+  config/         YAML config, trust, context files, skills     ≤ 1640
   mode/           server core, print, json, rpc                 ≤ 2800
     attach/       protocol attachments to content parts         ≤ 160
     serve/        the protocol over HTTP and SSE                ≤ 440

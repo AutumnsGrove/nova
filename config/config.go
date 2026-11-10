@@ -46,6 +46,7 @@ type Config struct {
 	Display      DisplayConfig     `yaml:"display"`
 	Decide       DecideConfig      `yaml:"decide"`
 	Embed        EmbedConfig       `yaml:"embed"`
+	Voice        VoiceConfig       `yaml:"voice"`
 }
 
 // DisplayConfig holds the TUI's rendering preferences. Both line counts are
@@ -122,6 +123,65 @@ type EmbedRole struct {
 	Fallback  string `yaml:"fallback"`
 	TimeoutMS int    `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
 	Dims      int    `yaml:"dims"`
+}
+
+// VoiceConfig maps application roles to speech and transcription models. A
+// speech role bundles the model and the voice, because a voice name belongs to
+// one model; a transcription role is the plain model/fallback/timeout shape.
+type VoiceConfig struct {
+	// AllowAliases permits ids that end in "-latest" or start with "~". Off by
+	// default, as for decisions and embeddings.
+	AllowAliases bool `yaml:"allow_aliases"`
+	// CostLookup asks the provider for the exact cost of each synthesis. It is
+	// a pointer so an unset block still reports spend; set it false for the
+	// fast path.
+	CostLookup *bool                 `yaml:"cost_lookup"`
+	Speech     VoiceSpeechConfig     `yaml:"speech"`
+	Transcribe VoiceTranscribeConfig `yaml:"transcribe"`
+}
+
+// CostLookupEnabled reports whether Nova's front doors ask for exact speech
+// cost. The default is on: a caller that never reads Usage turns it off.
+func (c VoiceConfig) CostLookupEnabled() bool {
+	return c.CostLookup == nil || *c.CostLookup
+}
+
+// VoiceSpeechConfig holds the text-to-speech roles.
+type VoiceSpeechConfig struct {
+	Roles map[string]SpeechRoleConfig `yaml:"roles"`
+}
+
+// SpeechRoleConfig is one text-to-speech role. Format is "mp3" or "pcm"; Speed
+// is a playback multiplier.
+type SpeechRoleConfig struct {
+	Model        string                `yaml:"model"`
+	Voice        string                `yaml:"voice"`
+	Format       string                `yaml:"format"`
+	Speed        *float64              `yaml:"speed"`
+	Instructions string                `yaml:"instructions"`
+	TimeoutMS    int                   `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
+	Fallback     *SpeechFallbackConfig `yaml:"fallback"`
+}
+
+// SpeechFallbackConfig is a second attempt. It restates its own model and voice,
+// because a voice name is model-specific and cannot be inherited.
+type SpeechFallbackConfig struct {
+	Model  string   `yaml:"model"`
+	Voice  string   `yaml:"voice"`
+	Format string   `yaml:"format"`
+	Speed  *float64 `yaml:"speed"`
+}
+
+// VoiceTranscribeConfig holds the speech-to-text roles.
+type VoiceTranscribeConfig struct {
+	Roles map[string]TranscribeRoleConfig `yaml:"roles"`
+}
+
+// TranscribeRoleConfig is one speech-to-text role.
+type TranscribeRoleConfig struct {
+	Model     string `yaml:"model"`
+	Fallback  string `yaml:"fallback"`
+	TimeoutMS int    `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
 }
 
 // ProviderConfig holds per-provider settings.
@@ -460,6 +520,7 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 	displayCells(&cfg.Display.ImageWidthCells, Defaults().Display.ImageWidthCells, "display.image_width_cells", warnings)
 	normaliseDecide(cfg, warnings)
 	normaliseEmbed(cfg, warnings)
+	normaliseVoice(cfg, warnings)
 	if err := cfg.Permissions.Validate(); err != nil {
 		*warnings = append(*warnings, Warning{Source: "config", Message: "invalid permissions: " + err.Error()})
 		cfg.Permissions = Defaults().Permissions
@@ -490,6 +551,31 @@ func normaliseEmbed(cfg *Config, warnings *[]Warning) {
 			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("embed role %q has no model", name)})
 		}
 		cfg.Embed.Roles[name] = role
+	}
+}
+
+// normaliseVoice clamps a negative timeout and names a role with no model at
+// load time, so a typo is visible before the first call. A bad format or speed
+// is left to the call, which names the value it refused.
+func normaliseVoice(cfg *Config, warnings *[]Warning) {
+	for _, name := range slices.Sorted(maps.Keys(cfg.Voice.Speech.Roles)) {
+		role := cfg.Voice.Speech.Roles[name]
+		nonNegative(&role.TimeoutMS, "voice.speech.roles."+name+".timeout_ms", warnings)
+		if role.Model == "" {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice speech role %q has no model", name)})
+		}
+		if role.Fallback != nil && role.Fallback.Model == "" {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice speech role %q fallback has no model", name)})
+		}
+		cfg.Voice.Speech.Roles[name] = role
+	}
+	for _, name := range slices.Sorted(maps.Keys(cfg.Voice.Transcribe.Roles)) {
+		role := cfg.Voice.Transcribe.Roles[name]
+		nonNegative(&role.TimeoutMS, "voice.transcribe.roles."+name+".timeout_ms", warnings)
+		if role.Model == "" {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice transcription role %q has no model", name)})
+		}
+		cfg.Voice.Transcribe.Roles[name] = role
 	}
 }
 

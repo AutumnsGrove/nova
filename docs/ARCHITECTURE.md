@@ -57,7 +57,7 @@ nova/
     openrouter/   Decisions API and System One client           ≤ 400
   voice/          speech and transcription contract, roles,
                   text prep and the WAV header                 ≤ 520
-    openrouter/   preset: speech, transcriptions, live roster   ≤ 420
+    openrouter/   preset: speech, transcriptions, live roster   ≤ 620
   auth/           OAuth PKCE login, key store                   ≤ 500
   tool/           Tool contract, registry, schema validation    ≤ 660
   tools/          fs (read write edit list)                     ≤ 1060
@@ -81,7 +81,7 @@ nova/
                   in-process API for bundled extensions         ≤ 3100
     install/      install, update, remove, lockfile, git        ≤ 660
     sdk/          the Go SDK for extensions                     ≤ 700
-  testkit/        fake provider and server, clock, golden       ≤ 1200
+  testkit/        fake provider and server, clock, golden       ≤ 1260
   bundled/        in-tree extensions: tasks, ask, plan,
                   subagent, webfetch                            ≤ 2560 total
   tui/            the terminal UI                               ≤ 10300

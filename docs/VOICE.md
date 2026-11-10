@@ -513,7 +513,8 @@ need room before a line is written.
 | Package | Now | After |
 |---|---|---|
 | `voice` | — | ≤ 520 (contract, roles, chunks, join, wav; measured at 513) |
-| `voice/openrouter` | — | ≤ 420 |
+| `voice/openrouter` | — | ≤ 620 (four endpoints plus the wire helpers; measured at 600) |
+| `testkit` | 1200 | 1260 (the scripted voice server) |
 | `provider` | 600 | 620 (`Voices`, two predicates) |
 | `proto` | 600 | 600 (one constant; the line-limit change is a value, not code) |
 | `config` | 1540 | 1640 (`voice` block) |

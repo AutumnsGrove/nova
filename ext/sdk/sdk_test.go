@@ -412,3 +412,53 @@ func toJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
 }
+
+func TestSDK_A25_Speak(t *testing.T) {
+	p := startSDK(t, func(h *Host) error {
+		h.Tool(Tool{Name: "s"}, func(c *Call) (Result, error) {
+			raw, err := h.Speak(c.Context(), map[string]any{"model": "x", "voice": "v", "input": "hi"})
+			if err != nil {
+				return Result{}, err
+			}
+			return Text("%s", raw), nil
+		})
+		return nil
+	})
+	p.send(map[string]any{"type": "tool_call", "id": "t1", "name": "s"})
+	frame := p.recv()
+	if frame["type"] != "speak" {
+		t.Fatalf("frame = %+v", frame)
+	}
+	request, _ := frame["request"].(map[string]any)
+	if request["model"] != "x" || request["voice"] != "v" {
+		t.Fatalf("request = %+v", request)
+	}
+	id, _ := frame["id"].(string)
+	p.send(map[string]any{"type": "speak_result", "id": id, "clip": map[string]any{"audio": "AQ==", "format": "mp3"}})
+	if got := p.recv(); got["type"] != "tool_result" {
+		t.Fatalf("result = %+v", got)
+	}
+}
+
+func TestSDK_A25_Transcribe(t *testing.T) {
+	p := startSDK(t, func(h *Host) error {
+		h.Tool(Tool{Name: "t"}, func(c *Call) (Result, error) {
+			raw, err := h.Transcribe(c.Context(), map[string]any{"model": "x", "audio": "AQ==", "format": "mp3"})
+			if err != nil {
+				return Result{}, err
+			}
+			return Text("%s", raw), nil
+		})
+		return nil
+	})
+	p.send(map[string]any{"type": "tool_call", "id": "t1", "name": "t"})
+	frame := p.recv()
+	if frame["type"] != "transcribe" {
+		t.Fatalf("frame = %+v", frame)
+	}
+	id, _ := frame["id"].(string)
+	p.send(map[string]any{"type": "transcribe_result", "id": id, "transcript": map[string]any{"text": "hi"}})
+	if got := p.recv(); got["type"] != "tool_result" {
+		t.Fatalf("result = %+v", got)
+	}
+}

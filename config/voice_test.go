@@ -111,3 +111,25 @@ voice:
 		}
 	}
 }
+
+func TestDefaults_VoiceExtensionCaps(t *testing.T) {
+	cfg := Defaults().Extensions
+	if cfg.SpeechMaxPerRun != 20 || cfg.TranscribeMaxPerRun != 20 {
+		t.Errorf("default voice caps = %d/%d, want 20/20", cfg.SpeechMaxPerRun, cfg.TranscribeMaxPerRun)
+	}
+}
+
+func TestLoad_VoiceExtensionCaps(t *testing.T) {
+	home, cwd := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(home, ".config", "nova", "config.yaml"), "extensions:\n  speech_max_per_run: -1\n  transcribe_max_per_run: 5\n")
+	cfg, warnings := loadAt(t, cwd, home, LoadOptions{})
+	if got := cfg.Extensions.SpeechMaxPerRun; got != 0 {
+		t.Errorf("speech_max_per_run = %d, want 0", got)
+	}
+	if got := cfg.Extensions.TranscribeMaxPerRun; got != 5 {
+		t.Errorf("transcribe_max_per_run = %d, want 5", got)
+	}
+	if text := warnText(warnings); !strings.Contains(text, "extensions.speech_max_per_run") {
+		t.Errorf("warnings = %s, want a negative-cap warning", text)
+	}
+}

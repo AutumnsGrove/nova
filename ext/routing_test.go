@@ -16,6 +16,7 @@ import (
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
 	"github.com/AutumnsGrove/nova/tool"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // waitContains polls path until it contains substr or the deadline passes.
@@ -539,5 +540,78 @@ func TestHost_EMB16_CapResetsEachRun(t *testing.T) {
 	defer h.mu.Unlock()
 	if got := h.embed["echo"]; got != 0 {
 		t.Fatalf("count after run_start = %d, want 0", got)
+	}
+}
+
+// TestHost_A25_Speak performs one synthesis call and returns its frame.
+func TestHost_A25_Speak(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	var calls atomic.Int32
+	dir := rawEchoDir(t, "echo", "capabilities: [model:speech]\n")
+	startHost(t, []string{dir}, HostOptions{
+		Env: envWith("ECHO_SPEAK_COUNT=1", "ECHO_TRACE="+trace),
+		Speak: func(context.Context, voice.SpeechRequest) (*voice.Clip, error) {
+			calls.Add(1)
+			return &voice.Clip{Bytes: []byte{1}, Format: voice.FormatMP3, MIME: "audio/mpeg", Voice: "v"}, nil
+		},
+	})
+	waitContains(t, trace, "speak_result", 3*time.Second)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("Speak called %d times, want 1", n)
+	}
+}
+
+// TestHost_A25_SpeakCap refuses the call past the per-run limit.
+func TestHost_A25_SpeakCap(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	var calls atomic.Int32
+	dir := rawEchoDir(t, "echo", "capabilities: [model:speech]\n")
+	startHost(t, []string{dir}, HostOptions{
+		SpeechMax: 1,
+		Env:       envWith("ECHO_SPEAK_COUNT=2", "ECHO_TRACE="+trace),
+		Speak: func(context.Context, voice.SpeechRequest) (*voice.Clip, error) {
+			calls.Add(1)
+			return &voice.Clip{Bytes: []byte{1}, Format: voice.FormatMP3}, nil
+		},
+	})
+	waitContains(t, trace, "error:s1", 3*time.Second)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("Speak called %d times, want 1", n)
+	}
+}
+
+// TestHost_A25_NeedsSpeechCapability refuses a call without model:speech.
+func TestHost_A25_NeedsSpeechCapability(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	var calls atomic.Int32
+	dir := rawEchoDir(t, "echo", "")
+	startHost(t, []string{dir}, HostOptions{
+		Env: envWith("ECHO_SPEAK_COUNT=1", "ECHO_TRACE="+trace),
+		Speak: func(context.Context, voice.SpeechRequest) (*voice.Clip, error) {
+			calls.Add(1)
+			return &voice.Clip{}, nil
+		},
+	})
+	waitContains(t, trace, "error", 3*time.Second)
+	if n := calls.Load(); n != 0 {
+		t.Fatalf("Speak called %d times without the capability", n)
+	}
+}
+
+// TestHost_A25_Transcribe performs one transcription call under its capability.
+func TestHost_A25_Transcribe(t *testing.T) {
+	trace := t.TempDir() + "/trace"
+	var calls atomic.Int32
+	dir := rawEchoDir(t, "echo", "capabilities: [model:transcribe]\n")
+	startHost(t, []string{dir}, HostOptions{
+		Env: envWith("ECHO_TRANSCRIBE_COUNT=1", "ECHO_TRACE="+trace),
+		Transcribe: func(_ context.Context, req voice.TranscribeRequest) (*voice.Transcript, error) {
+			calls.Add(1)
+			return &voice.Transcript{Text: "hi", Model: req.Model}, nil
+		},
+	})
+	waitContains(t, trace, "transcribe_result", 3*time.Second)
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("Transcribe called %d times, want 1", n)
 	}
 }

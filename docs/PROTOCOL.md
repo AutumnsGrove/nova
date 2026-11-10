@@ -257,6 +257,10 @@ ext  → host  {"type":"decide","id":"d1","request":{…}}   // decision-model c
 host → ext   {"type":"decide_result","id":"d1","answers":{…},"usage":{…},"model":"…"}
 ext  → host  {"type":"embed","id":"e1","request":{…}}   // embeddings call
 host → ext   {"type":"embed_result","id":"e1","vectors":[[…]],"dims":1024,"usage":{…},"model":"…"}
+ext  → host  {"type":"speak","id":"s1","request":{…}}   // synthesis call
+host → ext   {"type":"speak_result","id":"s1","clip":{"audio":"<base64>","format":"mp3",…}}
+ext  → host  {"type":"transcribe","id":"g1","request":{…}}   // transcription call
+host → ext   {"type":"transcribe_result","id":"g1","transcript":{"text":"…",…}}
 ext  → host  {"type":"log","level":"info","text":"…"}
 host → ext   {"type":"shutdown"}
 ```
@@ -277,15 +281,20 @@ Rules:
   must be an object schema, and an extension may register at most 128 tools and
   128 commands. A tool that fails a check is refused with `bad_request` and the
   extension's other registrations proceed.
-- A `ui_request` that needs an answer, a `complete`, a `decide`, and an `embed` are served on their own, so
-  a slow answer does not delay the extension's other frames. At most eight such
-  requests per extension may be in flight; more are refused with `busy`.
+- A `ui_request` that needs an answer, a `complete`, a `decide`, an `embed`, a
+  `speak` and a `transcribe` are served on their own, so a slow answer does not
+  delay the extension's other frames. At most eight such requests per extension
+  may be in flight; more are refused with `busy`.
 - A `decide` frame needs the `model:decide` capability and is capped by
   `extensions.decide_max_per_run` (default 20) per extension per run. A malformed
   request is refused with `bad_request` on the frame's `id`.
 - An `embed` frame needs the `model:embed` capability and is capped by
   `extensions.embed_max_per_run` (default 20) per extension per run. A refused
   call past the cap is an `error` frame on its `id`, not a crash.
+- A `speak` frame needs `model:speech` and a `transcribe` frame needs
+  `model:transcribe`, each capped by `extensions.speech_max_per_run` /
+  `extensions.transcribe_max_per_run` (default 20) per extension per run. The
+  result frames carry the whole clip or transcript, so audio crosses base64.
 - `append_entry` data is stored in the session and replayed to the extension on
   `init` after a reload, in order, so it can rebuild its state.
 - If the extension process exits, the host unregisters its tools, emits

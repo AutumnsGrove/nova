@@ -303,6 +303,26 @@ func (h *Host) Embed(ctx context.Context, req any) (json.RawMessage, error) {
 	return h.request(ctx, map[string]any{"type": "embed", "request": json.RawMessage(raw)})
 }
 
+// Speak makes a synthesis call. The request is a voice.SpeechRequest-shaped
+// object; the raw result is the speak_result frame, whose clip is the audio.
+func (h *Host) Speak(ctx context.Context, req any) (json.RawMessage, error) {
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	return h.request(ctx, map[string]any{"type": "speak", "request": json.RawMessage(raw)})
+}
+
+// Transcribe makes a transcription call. The request is a
+// voice.TranscribeRequest-shaped object; the raw result is the transcript.
+func (h *Host) Transcribe(ctx context.Context, req any) (json.RawMessage, error) {
+	raw, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	return h.request(ctx, map[string]any{"type": "transcribe", "request": json.RawMessage(raw)})
+}
+
 // Run reads init, calls fn, registers, and serves until shutdown or EOF.
 func Run(fn func(*Host) error) {
 	if err := run(fn, os.Stdin, os.Stdout); err != nil {
@@ -387,7 +407,7 @@ func (h *Host) serve(r *bufio.Reader) error {
 		switch probe.Type {
 		case "shutdown":
 			return nil
-		case "ui_response", "complete_result", "decide_result", "embed_result", "error":
+		case "ui_response", "complete_result", "decide_result", "embed_result", "speak_result", "transcribe_result", "error":
 			h.deliver(probe.ID, line)
 		case "replay":
 			var f struct {

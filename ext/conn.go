@@ -12,6 +12,7 @@ import (
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/proto"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // maxFrameLine is the documented protocol line cap. It matches proto's, because
@@ -70,6 +71,8 @@ type outFrame struct {
 	Vectors      any               `json:"vectors,omitempty"`
 	Dims         int               `json:"dims,omitempty"`
 	Model        string            `json:"model,omitempty"`
+	Clip         *voice.Clip       `json:"clip,omitempty"`
+	Transcript   *voice.Transcript `json:"transcript,omitempty"`
 	Error        *proto.Error      `json:"error,omitempty"`
 }
 

@@ -517,13 +517,13 @@ need room before a line is written.
 | `testkit` | 1200 | 1260 (the scripted voice server) |
 | `provider` | 600 | 620 (`Voices`, two predicates) |
 | `proto` | 600 | 600 (measured 410; the line cap and two request fields fit) |
-| `config` | 1540 | 1640 (`voice` block) |
+| `config` | 1540 | 1640 (measured 1565; the `voice` block) |
 | `tool` | 660 | 660 (measured 655; two context fields fit) |
 | `agent` | 1420 | 1440 (measured 1423; two config fields, two pass-throughs) |
 | `mode` | 2800 | 2980 (measured 2945; handlers, commands, `mode.Voice`) |
 | `mode/providers` | 320 | 320 (measured 226; three builders fit) |
-| `ext` | 3100 | 3160 (two capabilities, two frames, two caps) |
-| `ext/sdk` | 700 | 740 (`Speak`, `Transcribe`) |
+| `ext` | 3100 | 3220 (measured 3192; two capabilities, two frames, two caps) |
+| `ext/sdk` | 700 | 700 (measured 652; `Speak`, `Transcribe` fit) |
 | `cmd/nova` | 1260 | 1420 (two subcommands) |
 
 The two new packages also need their budget line in the nearest archived spec

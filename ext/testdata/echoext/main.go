@@ -131,6 +131,16 @@ func main() {
 					"model": "x", "input": []string{"a"},
 				}})
 			}
+			for i := 0; i < envInt("ECHO_SPEAK_COUNT", 0); i++ {
+				send(map[string]any{"type": "speak", "id": "s" + strconv.Itoa(i), "request": map[string]any{
+					"model": "vendor/tts", "voice": "v", "input": "hi",
+				}})
+			}
+			for i := 0; i < envInt("ECHO_TRANSCRIBE_COUNT", 0); i++ {
+				send(map[string]any{"type": "transcribe", "id": "t" + strconv.Itoa(i), "request": map[string]any{
+					"model": "vendor/stt", "audio": "AQ==", "format": "mp3",
+				}})
+			}
 			if env("ECHO_BIG_FRAME") {
 				sendRaw(strings.Repeat("a", 65<<20))
 			}

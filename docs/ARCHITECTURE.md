@@ -78,7 +78,7 @@ nova/
     action/       the GitHub review action                      ≤ 750
     providers/    build both providers, route by model          ≤ 320
   ext/            extension host, manifest, check, reload,
-                  in-process API for bundled extensions         ≤ 3100
+                  in-process API for bundled extensions         ≤ 3220
     install/      install, update, remove, lockfile, git        ≤ 660
     sdk/          the Go SDK for extensions                     ≤ 700
   testkit/        fake provider and server, clock, golden       ≤ 1260

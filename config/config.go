@@ -224,13 +224,15 @@ type BashConfig struct {
 
 // ExtensionsConfig bounds the extension host.
 type ExtensionsConfig struct {
-	Disable           []string `yaml:"disable"`
-	Dirs              []string `yaml:"dirs"`
-	ScrubEnv          []string `yaml:"scrub_env"`            // extra variables hidden from extension processes
-	PassEnv           []string `yaml:"pass_env"`             // variables explicitly passed through
-	CompleteMaxPerRun int      `yaml:"complete_max_per_run"` // default 20
-	DecideMaxPerRun   int      `yaml:"decide_max_per_run"`   // default 20
-	EmbedMaxPerRun    int      `yaml:"embed_max_per_run"`    // default 20
+	Disable             []string `yaml:"disable"`
+	Dirs                []string `yaml:"dirs"`
+	ScrubEnv            []string `yaml:"scrub_env"`              // extra variables hidden from extension processes
+	PassEnv             []string `yaml:"pass_env"`               // variables explicitly passed through
+	CompleteMaxPerRun   int      `yaml:"complete_max_per_run"`   // default 20
+	DecideMaxPerRun     int      `yaml:"decide_max_per_run"`     // default 20
+	EmbedMaxPerRun      int      `yaml:"embed_max_per_run"`      // default 20
+	SpeechMaxPerRun     int      `yaml:"speech_max_per_run"`     // default 20
+	TranscribeMaxPerRun int      `yaml:"transcribe_max_per_run"` // default 20
 }
 
 // HookConfig is one declarative hook.
@@ -277,7 +279,7 @@ func Defaults() Config {
 	enabled := true
 	return Config{
 		Compaction: CompactionConfig{Enabled: &enabled},
-		Extensions: ExtensionsConfig{CompleteMaxPerRun: 20, DecideMaxPerRun: 20, EmbedMaxPerRun: 20},
+		Extensions: ExtensionsConfig{CompleteMaxPerRun: 20, DecideMaxPerRun: 20, EmbedMaxPerRun: 20, SpeechMaxPerRun: 20, TranscribeMaxPerRun: 20},
 		Retry:      RetryConfig{Max: 3, BaseMS: 500, CapMS: 30000},
 		Display:    DisplayConfig{ThinkingLines: 8, ToolLines: 6, ShowImages: true, ImageWidthCells: 60},
 	}
@@ -510,6 +512,8 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 	nonNegative(&cfg.Extensions.CompleteMaxPerRun, "extensions.complete_max_per_run", warnings)
 	nonNegative(&cfg.Extensions.DecideMaxPerRun, "extensions.decide_max_per_run", warnings)
 	nonNegative(&cfg.Extensions.EmbedMaxPerRun, "extensions.embed_max_per_run", warnings)
+	nonNegative(&cfg.Extensions.SpeechMaxPerRun, "extensions.speech_max_per_run", warnings)
+	nonNegative(&cfg.Extensions.TranscribeMaxPerRun, "extensions.transcribe_max_per_run", warnings)
 	nonNegative(&cfg.Compaction.Reserve, "compaction.reserve", warnings)
 	nonNegative(&cfg.Compaction.KeepRecent, "compaction.keep_recent", warnings)
 	nonNegative(&cfg.Retry.Max, "retry.max", warnings)

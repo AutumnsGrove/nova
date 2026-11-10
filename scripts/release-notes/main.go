@@ -40,7 +40,9 @@ const (
 	// backend work behind it (the largest real one wanted 13 KiB) while still
 	// catching an answer that has started dumping the commit log.
 	defaultMaxBytes = 16 << 10
-	defaultTimeout  = 5 * time.Minute
+	// A CI run took 4m41s for one release, so five minutes left no headroom
+	// and a slower runner would fall back to the changelog by accident.
+	defaultTimeout = 12 * time.Minute
 	// emptyTree is git's hash of an empty tree. It is the diff base for a first
 	// release, which has no previous tag to compare against.
 	emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"

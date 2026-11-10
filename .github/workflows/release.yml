@@ -132,7 +132,8 @@ jobs:
         # run, because `go run` collapses every non-zero status to 1 and status 3
         # is how the script says the fallback produced the body.
         continue-on-error: true
-        timeout-minutes: 8
+        # The script's own deadline is 12 minutes; this is the backstop above it.
+        timeout-minutes: 15
         env:
           OPENCODE_API_KEY: ${{ secrets.PI_REVIEW_API_KEY }}
           # A tag push names the tag; a dry run names the branch, or the version

@@ -514,19 +514,19 @@ need room before a line is written.
 
 | Package | Now | After |
 |---|---|---|
-| `voice` | — | ≤ 540 (contract, roles, chunks, join, wav; measured at 527) |
-| `voice/openrouter` | — | ≤ 620 (four endpoints plus the wire helpers; measured at 600) |
-| `testkit` | 1200 | 1260 (the scripted voice server) |
-| `provider` | 600 | 620 (`Voices`, two predicates) |
+| `voice` | — | ≤ 540 (contract, roles, chunks, join, wav; measured 527) |
+| `voice/openrouter` | — | ≤ 620 (four endpoints and the wire helpers; measured 600) |
+| `testkit` | 1200 | 1260 (the scripted voice server; measured 1235) |
+| `config` | 1540 | 1640 (the `voice` block; measured 1565) |
+| `agent` | 1420 | 1440 (two config fields and the pass-throughs; measured 1423) |
+| `mode` | 2800 | 2980 (handlers, commands, `mode.Voice`; measured 2940) |
+| `ext` | 3100 | 3220 (two capabilities, two frames, two caps; measured 3196) |
+| `cmd/nova` | 1260 | 1560 (two subcommands with their flags; measured 1526) |
+| `provider` | 600 | 600 (measured 550; `Voices` and two predicates fit) |
 | `proto` | 600 | 600 (measured 410; the line cap and two request fields fit) |
-| `config` | 1540 | 1640 (measured 1565; the `voice` block) |
 | `tool` | 660 | 660 (measured 655; two context fields fit) |
-| `agent` | 1420 | 1440 (measured 1423; two config fields, two pass-throughs) |
-| `mode` | 2800 | 2980 (measured 2945; handlers, commands, `mode.Voice`) |
-| `mode/providers` | 320 | 320 (measured 226; three builders fit) |
-| `ext` | 3100 | 3220 (measured 3192; two capabilities, two frames, two caps) |
-| `ext/sdk` | 700 | 700 (measured 652; `Speak`, `Transcribe` fit) |
-| `cmd/nova` | 1260 | 1560 (measured 1530; two subcommands with their flags) |
+| `mode/providers` | 320 | 320 (measured 223; three builders fit) |
+| `ext/sdk` | 700 | 700 (measured 652; `Speak` and `Transcribe` fit) |
 
 The two new packages also need their budget line in the nearest archived spec
 (`C01-foundations.md`, which already budgets `provider`, `roles`, `decide` and

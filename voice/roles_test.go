@@ -1,0 +1,242 @@
+package voice
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/AutumnsGrove/nova/provider"
+)
+
+func floatPtr(f float64) *float64 { return &f }
+
+type speakStep struct {
+	clip *Clip
+	err  error
+}
+
+type fakeSpeaker struct {
+	calls []SpeechRequest
+	steps []speakStep
+}
+
+func (f *fakeSpeaker) Speak(_ context.Context, req SpeechRequest) (*Clip, error) {
+	f.calls = append(f.calls, req)
+	if len(f.calls) > len(f.steps) {
+		return nil, fmt.Errorf("fakeSpeaker: unexpected call %d", len(f.calls))
+	}
+	step := f.steps[len(f.calls)-1]
+	return step.clip, step.err
+}
+
+type transcribeStep struct {
+	transcript *Transcript
+	err        error
+}
+
+type fakeTranscriber struct {
+	calls []TranscribeRequest
+	steps []transcribeStep
+}
+
+func (f *fakeTranscriber) Transcribe(_ context.Context, req TranscribeRequest) (*Transcript, error) {
+	f.calls = append(f.calls, req)
+	if len(f.calls) > len(f.steps) {
+		return nil, fmt.Errorf("fakeTranscriber: unexpected call %d", len(f.calls))
+	}
+	step := f.steps[len(f.calls)-1]
+	return step.transcript, step.err
+}
+
+func TestSpeak_A07_RoleResolves(t *testing.T) {
+	fake := &fakeSpeaker{steps: []speakStep{{clip: &Clip{Bytes: []byte("x"), Format: FormatMP3, Voice: "af_heart"}}}}
+	roles := NewRoles(RolesConfig{
+		Speaker: fake,
+		Speech: map[string]VoiceRole{
+			"narrate": {Model: "hexgrad/kokoro-82m", Voice: "af_heart", Format: FormatMP3, Speed: floatPtr(1.2), Instructions: "calm"},
+		},
+	})
+	got, err := roles.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"})
+	if err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("speaker calls = %d, want 1", len(fake.calls))
+	}
+	call := fake.calls[0]
+	if call.Model != "hexgrad/kokoro-82m" || call.Voice != "af_heart" || call.Format != FormatMP3 || call.Speed == nil || *call.Speed != 1.2 || call.Instructions != "calm" {
+		t.Errorf("resolved request = %+v", call)
+	}
+	if got.Voice != "af_heart" {
+		t.Errorf("clip voice = %q, want af_heart", got.Voice)
+	}
+}
+
+func TestSpeak_A07_RequestWinsOverRole(t *testing.T) {
+	fake := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
+	roles := NewRoles(RolesConfig{
+		Speaker: fake,
+		Speech:  map[string]VoiceRole{"narrate": {Model: "m/tts", Voice: "role-voice", Format: FormatMP3}},
+	})
+	_, err := roles.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi", Voice: "call-voice", Format: FormatPCM})
+	if err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if call := fake.calls[0]; call.Voice != "call-voice" || call.Format != FormatPCM {
+		t.Errorf("request overrides were lost: %+v", call)
+	}
+}
+
+func TestSpeak_A07_DirectIDPassesThrough(t *testing.T) {
+	fake := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
+	roles := NewRoles(RolesConfig{Speaker: fake})
+	if _, err := roles.Speak(context.Background(), SpeechRequest{Model: "openai/gpt-4o-mini-tts", Voice: "alloy", Input: "hi"}); err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if call := fake.calls[0]; call.Model != "openai/gpt-4o-mini-tts" || call.Voice != "alloy" {
+		t.Errorf("direct id was rewritten: %+v", call)
+	}
+}
+
+func TestSpeak_A07_NoVoiceIsRefusedBeforeTheWire(t *testing.T) {
+	fake := &fakeSpeaker{}
+	roles := NewRoles(RolesConfig{Speaker: fake, Speech: map[string]VoiceRole{"silent": {Model: "m/tts"}}})
+	_, err := roles.Speak(context.Background(), SpeechRequest{Model: "silent", Input: "hi"})
+	if err == nil {
+		t.Fatal("Speak() = nil, want an error for a missing voice")
+	}
+	if len(fake.calls) != 0 {
+		t.Errorf("speaker was called %d times, want 0", len(fake.calls))
+	}
+}
+
+func TestSpeak_A08_FallbackRestatesItsVoice(t *testing.T) {
+	fake := &fakeSpeaker{steps: []speakStep{
+		{clip: &Clip{Usage: provider.Usage{CostUSD: 0.01, CostSource: "provider"}}, err: errors.New("502")},
+		{clip: &Clip{Usage: provider.Usage{CostUSD: 0.02, CostSource: "provider"}}},
+	}}
+	roles := NewRoles(RolesConfig{
+		Speaker: fake,
+		Speech: map[string]VoiceRole{
+			"narrate": {
+				Model: "primary/tts", Voice: "one", Format: FormatMP3,
+				Fallback: &VoiceAttempt{Model: "fallback/tts", Voice: "two", Format: FormatPCM},
+			},
+		},
+	})
+	got, err := roles.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"})
+	if err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if len(fake.calls) != 2 {
+		t.Fatalf("speaker calls = %d, want 2", len(fake.calls))
+	}
+	if c := fake.calls[0]; c.Model != "primary/tts" || c.Voice != "one" || c.Format != FormatMP3 {
+		t.Errorf("primary call = %+v", c)
+	}
+	if c := fake.calls[1]; c.Model != "fallback/tts" || c.Voice != "two" || c.Format != FormatPCM {
+		t.Errorf("fallback call = %+v", c)
+	}
+	if got.Usage.CostUSD != 0.03 {
+		t.Errorf("usage cost = %v, want 0.03 from both attempts", got.Usage.CostUSD)
+	}
+}
+
+func TestSpeak_A08_BadFallbackIsRefusedBeforeThePrimary(t *testing.T) {
+	fake := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
+	roles := NewRoles(RolesConfig{
+		Speaker: fake,
+		Speech: map[string]VoiceRole{
+			"narrate": {
+				Model: "primary/tts", Voice: "one", Format: FormatMP3,
+				Fallback: &VoiceAttempt{Model: "fallback/tts", Voice: "two", Format: FormatOGG},
+			},
+		},
+	})
+	if _, err := roles.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"}); err == nil {
+		t.Fatal("Speak() = nil, want a refusal for an unsupported fallback format")
+	}
+	if len(fake.calls) != 0 {
+		t.Errorf("speaker was called %d times, want 0", len(fake.calls))
+	}
+}
+
+func TestSpeak_A09_Aliases(t *testing.T) {
+	fake := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}, {clip: &Clip{}}}}
+	role := map[string]VoiceRole{"narrate": {Model: "vendor/tts-latest", Voice: "v"}}
+
+	strict := NewRoles(RolesConfig{Speaker: fake, Speech: role})
+	if _, err := strict.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"}); err == nil {
+		t.Fatal("Speak() with an alias = nil, want a refusal")
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("speaker was called %d times, want 0", len(fake.calls))
+	}
+
+	lenient := NewRoles(RolesConfig{Speaker: fake, Speech: role, AllowAliases: true})
+	if _, err := lenient.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"}); err != nil {
+		t.Fatalf("Speak() with allow_aliases = %v", err)
+	}
+}
+
+func TestSpeak_A09_UnknownRoleNamesTheRole(t *testing.T) {
+	roles := NewRoles(RolesConfig{Speaker: &fakeSpeaker{}})
+	_, err := roles.Speak(context.Background(), SpeechRequest{Model: "oracle", Input: "hi"})
+	if err == nil {
+		t.Fatal("Speak() = nil, want an error")
+	}
+	if !strings.Contains(err.Error(), "oracle") {
+		t.Errorf("error %q does not name the role", err)
+	}
+}
+
+func TestSpeak_NoSpeaker(t *testing.T) {
+	roles := NewRoles(RolesConfig{})
+	if _, err := roles.Speak(context.Background(), SpeechRequest{Model: "a/b", Voice: "v", Input: "hi"}); err == nil {
+		t.Fatal("Speak() = nil, want an error")
+	}
+}
+
+func TestTranscribe_A18_FallbackAccumulatesUsage(t *testing.T) {
+	fake := &fakeTranscriber{steps: []transcribeStep{
+		{transcript: &Transcript{Usage: provider.Usage{PromptTokens: 10, CostUSD: 0.001, CostSource: "provider"}}, err: errors.New("503")},
+		{transcript: &Transcript{Text: "hello", Usage: provider.Usage{PromptTokens: 20, CostUSD: 0.002, CostSource: "provider"}}},
+	}}
+	roles := NewRoles(RolesConfig{
+		Transcriber: fake,
+		Transcribe:  map[string]TranscribeRole{"default": {Model: "primary/stt", Fallback: "fallback/stt"}},
+	})
+	got, err := roles.Transcribe(context.Background(), TranscribeRequest{Model: "default", Audio: []byte{1}, Format: FormatMP3})
+	if err != nil {
+		t.Fatalf("Transcribe() = %v", err)
+	}
+	if got.Text != "hello" {
+		t.Errorf("text = %q, want hello", got.Text)
+	}
+	if got.Usage.PromptTokens != 30 || got.Usage.CostUSD != 0.003 {
+		t.Errorf("usage = %+v, want both attempts summed", got.Usage)
+	}
+	if len(fake.calls) != 2 || fake.calls[0].Model != "primary/stt" || fake.calls[1].Model != "fallback/stt" {
+		t.Errorf("calls = %+v", fake.calls)
+	}
+}
+
+func TestTranscribe_A16_InvalidRequestNeverReachesTheAdapter(t *testing.T) {
+	fake := &fakeTranscriber{}
+	roles := NewRoles(RolesConfig{Transcriber: fake})
+	if _, err := roles.Transcribe(context.Background(), TranscribeRequest{Model: "openai/whisper-1", Format: FormatMP3}); err == nil {
+		t.Fatal("Transcribe() = nil, want an error for empty audio")
+	}
+	if len(fake.calls) != 0 {
+		t.Errorf("transcriber was called %d times, want 0", len(fake.calls))
+	}
+}
+
+func TestTranscribe_NoTranscriber(t *testing.T) {
+	roles := NewRoles(RolesConfig{})
+	if _, err := roles.Transcribe(context.Background(), TranscribeRequest{Model: "a/b", Audio: []byte{1}, Format: FormatMP3}); err == nil {
+		t.Fatal("Transcribe() = nil, want an error")
+	}
+}

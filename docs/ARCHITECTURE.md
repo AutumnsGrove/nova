@@ -55,6 +55,9 @@ nova/
     ollama/       local /api/embed                              ≤ 180
     openrouter/   preset: embeddings and live roster            ≤ 220
     openrouter/   Decisions API and System One client           ≤ 400
+  voice/          speech and transcription contract, roles,
+                  text prep and the WAV header                 ≤ 520
+    openrouter/   preset: speech, transcriptions, live roster   ≤ 420
   auth/           OAuth PKCE login, key store                   ≤ 500
   tool/           Tool contract, registry, schema validation    ≤ 660
   tools/          fs (read write edit list)                     ≤ 1060

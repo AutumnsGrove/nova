@@ -512,7 +512,7 @@ need room before a line is written.
 
 | Package | Now | After |
 |---|---|---|
-| `voice` | — | ≤ 420 (contract, roles, chunks, join, wav) |
+| `voice` | — | ≤ 520 (contract, roles, chunks, join, wav; measured at 513) |
 | `voice/openrouter` | — | ≤ 420 |
 | `provider` | 600 | 620 (`Voices`, two predicates) |
 | `proto` | 600 | 600 (one constant; the line-limit change is a value, not code) |

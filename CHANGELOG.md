@@ -7,16 +7,35 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-10
+
+Upgrade notes for library consumers (#85):
+
+- `agent.Config` and `tool.Context` gain optional `Speak` and `Transcribe` fields, and
+  `proto.Command` gains `speech` and `transcription`. All are additive: a nil field changes
+  nothing, so existing callers need no edit.
+- The protocol line cap rises from 16 MiB to 64 MiB in `proto`, the extension host and the SDK,
+  and `serve`'s request-body default rises from 32 MiB to 64 MiB. If you run your own client with
+  a line or body limit below 64 MiB, raise it: a `speak` response above about 12 MiB will
+  otherwise fail. No frame shape changed.
+- `agent/sub` now passes the parent's `Embed` and `Decide` into a child, so a subagent's tool
+  that used to see nil for either reaches the parent's seam. If you worked around that, the
+  workaround is no longer needed.
+- `POST /v1/commands` on `serve` gets its own transport budget (10 minutes to write, 5 to read)
+  instead of the shared 30 s / 2 min, because a voice command can take a minute and return tens
+  of megabytes. Other routes keep the short budget.
+
 ### Added
 
 - **Speech and transcription** as harness primitives (#85). `voice.Speaker` and
   `voice.Transcriber` turn text into audio and audio into text, with the
   OpenRouter adapter in `voice/openrouter`, a role table over `roles`, and
-  `voice.Chunks`, `voice.Join` and `voice.WAV` for long answers and raw PCM. The
-  seams are `tool.Context.Speak`/`Transcribe`, `agent.Config`, the `speak` and
-  `transcribe` protocol commands, `model:speech`/`model:transcribe` extension
-  capabilities with per-run caps, `sdk.Host.Speak`/`Transcribe`, and the
-  `nova speak` and `nova transcribe` subcommands. There is no TUI entry point.
+  `voice.Chunks`, `voice.Join` (which keeps one ID3 tag when joining clips) and
+  `voice.WAV` for long answers and raw PCM. The seams are
+  `tool.Context.Speak`/`Transcribe`, `agent.Config`, the `speak` and `transcribe`
+  protocol commands, `model:speech`/`model:transcribe` extension capabilities
+  with per-run caps, `sdk.Host.Speak`/`Transcribe`, and the `nova speak` and
+  `nova transcribe` subcommands. There is no TUI entry point.
 - `provider.Model` gains `Voices` (the roster's `supported_voices`) and the
   `SupportsSpeech` / `SupportsTranscription` predicates (#85).
 - The `voice` config block: `allow_aliases`, `cost_lookup`, `speech.roles` and
@@ -25,14 +44,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
-- The protocol line cap rises from 16 MiB to **64 MiB**, in `proto`, the
-  extension host, the SDK reader and `serve`'s request body. A 40 MiB audio clip
-  is a 53 MiB base64 line, so the old cap could not carry the largest clip the
-  library allows. This is a relaxation for Nova's own ends, but a third-party
-  protocol client with a 16 MiB reader will fail on a clip above ~12 MiB (#85).
+- The protocol line cap rises from 16 MiB to **64 MiB** in `proto`, the
+  extension host and the SDK reader, and `serve`'s request-body default rises
+  from 32 MiB to 64 MiB. A 40 MiB audio clip is a 53 MiB base64 line, so the old
+  cap could not carry the largest clip the library allows. This is a relaxation
+  for Nova's own ends, but a third-party protocol client with a limit below
+  64 MiB will fail on a clip above ~12 MiB (#85).
 
 ### Fixed
 
+- `POST /v1/commands` on `serve` no longer cuts a long command's response off at 30 seconds
+  (#85).
 - A subagent now reaches the parent's embedder and decider. `sub.Spawner` never
   filled `Decide`, and `Embed` was missing from the parent entirely, so a
   child's tool calling `tctx.Embed` or `tctx.Decide` saw nil (#87).
@@ -520,7 +542,8 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
 - The first release: the agent loop, tools, sessions, config, the TUI, the
   extension host, the bundled extensions, serve mode, and the GitHub Action.
 
-[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.4.0
 [0.3.5]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.5
 [0.3.4]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.4
 [0.3.3]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.3

@@ -163,20 +163,20 @@ v1, enforced before a message enters the transcript or a command is accepted:
 - One encoded image ≤ 4.5 MiB (pi's `DEFAULT_MAX_BYTES`).
 - At most 4 images per message, and ≤ 8 MiB of encoded image bytes per message.
   The **per-message total** is the number that matters: the session line and the
-  `proto`/`ext` line caps are 16 MiB (`proto/codec.go:23`, `ext/conn.go:15`), and
+  `proto`/`ext` line caps are 64 MiB (`proto/codec.go:25`, `ext/conn.go:21`), and
   JSON escaping plus surrounding fields need headroom.
 - Decoded pixel cap 80 megapixels, checked via `image.DecodeConfig`.
 - A prompt or tool result over a limit is refused with a specific message, never
   truncated silently.
 
 These are constants in the media package, so a test asserts the exact boundary
-and one comment explains the 16 MiB ceiling they exist to respect.
+and one comment explains the 64 MiB ceiling they exist to respect.
 
 ### Where the bytes live
 
 **Bounded inline base64 in the session.** There is no sidecar file and no second
 storage path: a normalized image is small enough (≤4.5 MiB, ~6 MiB base64) to sit
-inside Nova's 16 MiB JSONL line limit, and the whole session stays one
+inside Nova's 64 MiB JSONL line limit, and the whole session stays one
 self-describing file that `session.tree`, fork, and compaction already understand.
 The encoder caps the **total** encoded bytes per message, not just per image, so a
 multi-image message cannot cross the line limit. If full-resolution history is
@@ -237,7 +237,7 @@ type, `?name=` the display name), validates them through the server's store, and
 answers `{id, name, mime_type, size_bytes}`. `prompt`/`steer`/`follow_up` accept
 `Attachment{ID: ...}` as an alternative to `Data`, resolved to bytes
 server-side. Exactly one of `id` or `data`/`path` is set. The store lives in
-memory in the server and expires when it closes; `serve.MaxBody` is 32 MiB.
+memory in the server and expires when it closes; `serve.MaxBody` defaults to 64 MiB.
 
 **Additive, version stays 1.** Parts are new optional fields on existing types, so
 an old client ignores them. The extension `tool_result` frame gains a `parts`

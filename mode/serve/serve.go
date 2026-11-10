@@ -54,7 +54,7 @@ type Options struct {
 	CORSOrigin   string        // a single exact origin, or ""
 	RingSize     int           // events kept for resume; default 1000
 	Heartbeat    time.Duration // default 15s
-	MaxBody      int64         // default 32 MiB
+	MaxBody      int64         // default 64 MiB
 
 	headerTimeout time.Duration // test seam; zero means the documented 10s
 }

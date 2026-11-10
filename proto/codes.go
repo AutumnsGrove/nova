@@ -57,6 +57,8 @@ const (
 	CmdListProviders   = "list_providers"
 	CmdDecide          = "decide"
 	CmdEmbed           = "embed"
+	CmdSpeak           = "speak"
+	CmdTranscribe      = "transcribe"
 	CmdLogin           = "login"
 	CmdLoginSubmit     = "login_submit"
 	CmdLoginCancel     = "login_cancel"

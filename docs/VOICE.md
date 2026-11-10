@@ -516,12 +516,12 @@ need room before a line is written.
 | `voice/openrouter` | — | ≤ 620 (four endpoints plus the wire helpers; measured at 600) |
 | `testkit` | 1200 | 1260 (the scripted voice server) |
 | `provider` | 600 | 620 (`Voices`, two predicates) |
-| `proto` | 600 | 600 (one constant; the line-limit change is a value, not code) |
+| `proto` | 600 | 600 (measured 410; the line cap and two request fields fit) |
 | `config` | 1540 | 1640 (`voice` block) |
 | `tool` | 660 | 660 (measured 655; two context fields fit) |
 | `agent` | 1420 | 1440 (measured 1423; two config fields, two pass-throughs) |
-| `mode` | 2800 | 2920 (handlers, commands, `mode.Voice`) |
-| `mode/providers` | 320 | 400 (three builders) |
+| `mode` | 2800 | 2980 (measured 2945; handlers, commands, `mode.Voice`) |
+| `mode/providers` | 320 | 320 (measured 226; three builders fit) |
 | `ext` | 3100 | 3160 (two capabilities, two frames, two caps) |
 | `ext/sdk` | 700 | 740 (`Speak`, `Transcribe`) |
 | `cmd/nova` | 1260 | 1420 (two subcommands) |

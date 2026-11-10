@@ -24,6 +24,7 @@ import (
 	"github.com/AutumnsGrove/nova/tools/bash"
 	"github.com/AutumnsGrove/nova/tools/fs"
 	"github.com/AutumnsGrove/nova/tools/search"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // keyPath is where the OpenRouter key is stored under the user config dir.
@@ -85,6 +86,38 @@ func buildEmbeddingCatalog(cfg *config.Config, home string) embed.Catalog {
 // config. It shares the OpenRouter credential with the chat provider.
 func buildDecisionCatalog(cfg *config.Config, home string) decide.Catalog {
 	return providers.BuildDecisionCatalog(providers.Options{
+		Config: cfg,
+		Home:   home,
+		Getenv: os.Getenv,
+		Store:  auth.NewFileStore(keyPath(home)),
+	})
+}
+
+// buildSpeaker builds the role-resolving speech client from the config. It
+// shares the OpenRouter credential with chat, decisions and embeddings.
+func buildSpeaker(cfg *config.Config, home string) voice.Speaker {
+	return providers.BuildSpeaker(providers.Options{
+		Config: cfg,
+		Home:   home,
+		Getenv: os.Getenv,
+		Store:  auth.NewFileStore(keyPath(home)),
+	})
+}
+
+// buildTranscriber builds the role-resolving transcription client from the
+// config.
+func buildTranscriber(cfg *config.Config, home string) voice.Transcriber {
+	return providers.BuildTranscriber(providers.Options{
+		Config: cfg,
+		Home:   home,
+		Getenv: os.Getenv,
+		Store:  auth.NewFileStore(keyPath(home)),
+	})
+}
+
+// buildVoiceCatalog builds the live voice roster reader from the config.
+func buildVoiceCatalog(cfg *config.Config, home string) voice.Catalog {
+	return providers.BuildVoiceCatalog(providers.Options{
 		Config: cfg,
 		Home:   home,
 		Getenv: os.Getenv,

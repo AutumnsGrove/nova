@@ -29,6 +29,7 @@ import (
 	"github.com/AutumnsGrove/nova/session"
 	"github.com/AutumnsGrove/nova/tool"
 	"github.com/AutumnsGrove/nova/usage"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // extShutdownTimeout bounds how long Close waits for extensions to stop.
@@ -75,6 +76,14 @@ type Options struct {
 	Embedder embed.Embedder
 	// EmbedCatalog overrides the live embeddings roster. nil means build one.
 	EmbedCatalog embed.Catalog
+	// Speaker overrides the speech client built from the config. nil means
+	// build one (the normal server); a test can inject one.
+	Speaker voice.Speaker
+	// Transcriber overrides the transcription client built from the config. nil
+	// means build one.
+	Transcriber voice.Transcriber
+	// VoiceCatalog overrides the live voice roster. nil means build one.
+	VoiceCatalog voice.Catalog
 	Session      string // path to open or create; "" means a new default
 	NoSession    bool   // keep the transcript in memory only
 	Clock        Clock
@@ -111,6 +120,9 @@ type Server struct {
 	catalog      decide.Catalog
 	embedder     embed.Embedder
 	embedCatalog embed.Catalog
+	speaker      voice.Speaker
+	transcriber  voice.Transcriber
+	voiceCatalog voice.Catalog
 	usesAuth     bool
 	tools        *tool.Registry
 	pool         map[string]tool.Tool
@@ -239,6 +251,18 @@ func New(opt Options) (*Server, error) {
 	s.embedCatalog = opt.EmbedCatalog
 	if s.embedCatalog == nil {
 		s.embedCatalog = buildEmbeddingCatalog(cfg, home)
+	}
+	s.speaker = opt.Speaker
+	if s.speaker == nil {
+		s.speaker = buildSpeaker(cfg, home)
+	}
+	s.transcriber = opt.Transcriber
+	if s.transcriber == nil {
+		s.transcriber = buildTranscriber(cfg, home)
+	}
+	s.voiceCatalog = opt.VoiceCatalog
+	if s.voiceCatalog == nil {
+		s.voiceCatalog = buildVoiceCatalog(cfg, home)
 	}
 	tools, pool, err := buildTools(cfg)
 	if err != nil {

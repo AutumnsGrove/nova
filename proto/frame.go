@@ -8,6 +8,7 @@ import (
 	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // Error is a protocol error with a stable code.
@@ -60,6 +61,11 @@ type Command struct {
 	// request shape, so a client sends the same model/input/truncate it would
 	// pass to embed.Embedder.
 	Embedding *embed.Request `json:"embedding,omitempty"`
+	// Speech carries one synthesis request for CmdSpeak, and Transcription one
+	// transcription request for CmdTranscribe. Both are the library request
+	// shapes, so a client sends exactly what it would pass to voice.Speaker.
+	Speech        *voice.SpeechRequest     `json:"speech,omitempty"`
+	Transcription *voice.TranscribeRequest `json:"transcription,omitempty"`
 }
 
 // Response is the outcome of one command.

@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/testkit"
+	"github.com/AutumnsGrove/nova/voice"
 )
 
 // recordServer counts requests.
@@ -334,5 +336,75 @@ func TestProviders_OPG34_AnUnknownModelIDStillFallsBackToOpenRouter(t *testing.T
 	_, _ = p.Stream(context.Background(), provider.Request{Model: "x/y", ModelID: "nobody/never-heard-of-it"}, nil)
 	if orSrv.count() == 0 || goSrv.count() != 0 {
 		t.Fatalf("OpenRouter got %d and OpenCode Go got %d, want OpenRouter only", orSrv.count(), goSrv.count())
+	}
+}
+
+func floatPtr(f float64) *float64 { return &f }
+
+// TestBuildSpeaker_A07_RoleTable proves the config's speech role reaches the
+// wire: the model, the voice, the format and the speed all come from the role.
+func TestBuildSpeaker_A07_RoleTable(t *testing.T) {
+	srv := testkit.NewVoiceServer(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
+	cfg := &config.Config{}
+	cfg.Provider.OpenRouter.BaseURL = srv.URL
+	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
+		"narrate": {
+			Model: "vendor/tts", Voice: "af_heart", Format: "mp3", Speed: floatPtr(1.2),
+			Instructions: "calm", TimeoutMS: 5000,
+		},
+	}
+	speaker := BuildSpeaker(Options{
+		Config: cfg,
+		Getenv: envFrom(map[string]string{"OPENROUTER_API_KEY": "or-key"}),
+	})
+	if _, err := speaker.Speak(context.Background(), voice.SpeechRequest{Model: "narrate", Input: "hi"}); err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	reqs := srv.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %d, want 1", len(reqs))
+	}
+	var body struct {
+		Model          string   `json:"model"`
+		Voice          string   `json:"voice"`
+		ResponseFormat string   `json:"response_format"`
+		Speed          *float64 `json:"speed"`
+		Instructions   string   `json:"instructions"`
+	}
+	if err := json.Unmarshal(reqs[0].Body, &body); err != nil {
+		t.Fatalf("request body: %v", err)
+	}
+	if body.Model != "vendor/tts" || body.Voice != "af_heart" || body.ResponseFormat != "mp3" || body.Instructions != "calm" {
+		t.Errorf("body = %+v", body)
+	}
+	if body.Speed == nil || *body.Speed != 1.2 {
+		t.Errorf("speed = %v, want 1.2", body.Speed)
+	}
+}
+
+// TestBuildTranscriber_A07_RoleTable: a transcription role resolves to its model
+// and reaches /audio/transcriptions.
+func TestBuildTranscriber_A07_RoleTable(t *testing.T) {
+	srv := testkit.NewVoiceServer(t, testkit.VoiceServerTurn{Body: `{"text":"hi"}`})
+	cfg := &config.Config{}
+	cfg.Provider.OpenRouter.BaseURL = srv.URL
+	cfg.Voice.Transcribe.Roles = map[string]config.TranscribeRoleConfig{
+		"default": {Model: "vendor/stt", TimeoutMS: 5000},
+	}
+	transcriber := BuildTranscriber(Options{
+		Config: cfg,
+		Getenv: envFrom(map[string]string{"OPENROUTER_API_KEY": "or-key"}),
+	})
+	got, err := transcriber.Transcribe(context.Background(), voice.TranscribeRequest{
+		Model: "default", Audio: []byte{1}, Format: voice.FormatMP3,
+	})
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	if got.Text != "hi" || got.Model != "vendor/stt" {
+		t.Errorf("transcript = %+v", got)
+	}
+	if reqs := srv.Requests(); len(reqs) != 1 || reqs[0].Path != "/audio/transcriptions" {
+		t.Errorf("requests = %+v", reqs)
 	}
 }

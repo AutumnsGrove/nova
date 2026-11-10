@@ -77,10 +77,15 @@ jobs:
           # The body is written from the tag range, so the whole history and
           # every tag have to be here.
           fetch-depth: 0
+      # The toolchain below exists only for the release body, so none of it may
+      # fail the release: a bad install leaves the script to fall back on its own
+      # and the body is written from the changelog section instead.
       - uses: actions/setup-go@v5
+        continue-on-error: true
         with:
           go-version-file: go.mod
       - uses: actions/setup-node@v4
+        continue-on-error: true
         with:
           node-version: "22"
       - uses: actions/download-artifact@v4
@@ -96,6 +101,7 @@ jobs:
           sha256sum -- *.tar.gz | sort -k2 >checksums.txt
           cat checksums.txt
       - name: Install pi
+        continue-on-error: true
         run: npm install -g @earendil-works/pi-coding-agent@1.5.2
       - name: Write release notes
         id: notes

@@ -14,9 +14,10 @@ Upgrade notes for library consumers (#85):
 - `agent.Config` and `tool.Context` gain optional `Speak` and `Transcribe` fields, and
   `proto.Command` gains `speech` and `transcription`. All are additive: a nil field changes
   nothing, so existing callers need no edit.
-- The protocol line cap rises from 16 MiB to 64 MiB **in every reader Nova ships** (`proto`, the
-  extension host, the SDK and `serve`). If you run your own client with a 16 MiB line limit,
-  raise it: a `speak` response above about 12 MiB will otherwise fail. No frame shape changed.
+- The protocol line cap rises from 16 MiB to 64 MiB in `proto`, the extension host and the SDK,
+  and `serve`'s request-body default rises from 32 MiB to 64 MiB. If you run your own client with
+  a line or body limit below 64 MiB, raise it: a `speak` response above about 12 MiB will
+  otherwise fail. No frame shape changed.
 - `agent/sub` now passes the parent's `Embed` and `Decide` into a child, so a subagent's tool
   that used to see nil for either reaches the parent's seam. If you worked around that, the
   workaround is no longer needed.
@@ -43,11 +44,12 @@ Upgrade notes for library consumers (#85):
 
 ### Changed
 
-- The protocol line cap rises from 16 MiB to **64 MiB**, in `proto`, the
-  extension host, the SDK reader and `serve`'s request body. A 40 MiB audio clip
-  is a 53 MiB base64 line, so the old cap could not carry the largest clip the
-  library allows. This is a relaxation for Nova's own ends, but a third-party
-  protocol client with a 16 MiB reader will fail on a clip above ~12 MiB (#85).
+- The protocol line cap rises from 16 MiB to **64 MiB** in `proto`, the
+  extension host and the SDK reader, and `serve`'s request-body default rises
+  from 32 MiB to 64 MiB. A 40 MiB audio clip is a 53 MiB base64 line, so the old
+  cap could not carry the largest clip the library allows. This is a relaxation
+  for Nova's own ends, but a third-party protocol client with a limit below
+  64 MiB will fail on a clip above ~12 MiB (#85).
 
 ### Fixed
 

@@ -65,8 +65,10 @@ type options struct {
 	promptOnly bool
 }
 
-// run is the testable entry point: 0 a body was produced (by the agent or by the
-// changelog fallback, which may be empty), 2 a usage or setup error.
+// run is the testable entry point: 0 the agent's answer is the body, 3 the body
+// came from the fallback (or there is none), 2 a usage or setup error. CI turns
+// 3 into a warning, so a silent fallback cannot hide a body that was never
+// written by the agent.
 func run(args []string, stdout, stderr io.Writer, env []string) int {
 	o, err := parse(args)
 	if err != nil {
@@ -96,6 +98,9 @@ func run(args []string, stdout, stderr io.Writer, env []string) int {
 	if err := emit(o, stdout, stderr, body); err != nil {
 		fmt.Fprintf(stderr, "release-notes: %v\n", err)
 		return 2
+	}
+	if why != "" {
+		return 3
 	}
 	return 0
 }

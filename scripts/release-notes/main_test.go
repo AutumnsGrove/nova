@@ -218,8 +218,8 @@ func TestReleaseNotes_RN04_AgentFailureFallsBackToTheChangelog(t *testing.T) {
 	stubPi(t)
 	t.Setenv("PI_FAKE_CODE", "1")
 	out, errOut, code := notes(t, dir, "v0.2.0", "v0.3.0")
-	if code != 0 {
-		t.Fatalf("a failed agent failed the release: exit = %d", code)
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3 (the changelog fallback ran, without failing the release)", code)
 	}
 	if out != sectionV3 {
 		t.Errorf("stdout = %q, want the 0.3.0 section %q", out, sectionV3)
@@ -234,8 +234,8 @@ func TestReleaseNotes_RN05_EmptyOutputFallsBack(t *testing.T) {
 	stubPi(t)
 	t.Setenv("PI_FAKE_OUT", "   \n\n")
 	out, errOut, code := notes(t, dir, "v0.2.0", "v0.3.0")
-	if code != 0 {
-		t.Fatalf("exit = %d", code)
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3 (the changelog fallback ran)", code)
 	}
 	if out != sectionV3 {
 		t.Errorf("stdout = %q, want the 0.3.0 section", out)
@@ -250,8 +250,8 @@ func TestReleaseNotes_RN06_OversizeOutputFallsBack(t *testing.T) {
 	stubPi(t)
 	t.Setenv("PI_FAKE_OUT", "### Added\n\n- "+strings.Repeat("x", 200)+"\n")
 	out, errOut, code := notes(t, dir, "--max-bytes", "100", "v0.2.0", "v0.3.0")
-	if code != 0 {
-		t.Fatalf("exit = %d", code)
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3 (the changelog fallback ran)", code)
 	}
 	if out != sectionV3 {
 		t.Errorf("stdout = %q, want the 0.3.0 section", out)
@@ -266,8 +266,8 @@ func TestReleaseNotes_RN07_UnstructuredOutputFallsBack(t *testing.T) {
 	stubPi(t)
 	t.Setenv("PI_FAKE_OUT", "Sure! Here are the release notes you asked for.\n")
 	out, errOut, code := notes(t, dir, "v0.2.0", "v0.3.0")
-	if code != 0 {
-		t.Fatalf("exit = %d", code)
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3 (the changelog fallback ran)", code)
 	}
 	if out != sectionV3 {
 		t.Errorf("stdout = %q, want the 0.3.0 section", out)
@@ -285,8 +285,8 @@ func TestReleaseNotes_RN08_NoChangelogAndNoAgentWritesNothing(t *testing.T) {
 	// back to and the release is published with no body, as it is today.
 	gitRun(t, dir, "tag", "-a", "v9.9.9", "-m", "v9.9.9")
 	out, errOut, code := notes(t, dir, "v0.2.0", "v9.9.9")
-	if code != 0 {
-		t.Fatalf("exit = %d", code)
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3 (the changelog fallback ran)", code)
 	}
 	if out != "" {
 		t.Errorf("stdout = %q, want nothing", out)
@@ -354,8 +354,8 @@ func TestReleaseNotes_RN11_ChangelogSectionStopsAtTheNextVersion(t *testing.T) {
 	stubPi(t)
 	t.Setenv("PI_FAKE_CODE", "1")
 	out, _, code := notes(t, dir, "v0.2.0", "v0.3.0")
-	if code != 0 {
-		t.Fatalf("exit = %d", code)
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3 (the changelog fallback ran)", code)
 	}
 	if strings.Contains(out, "## [0.3.0]") {
 		t.Errorf("the fallback kept the version heading:\n%s", out)
@@ -432,8 +432,8 @@ func TestReleaseNotes_RN15_TimeoutFallsBackToTheChangelog(t *testing.T) {
 	// The deadline is a millisecond, so the fake never finishes and the script
 	// must not wait for it. No test sleeps on real time.
 	out, errOut, code := notes(t, dir, "--timeout", "1ms", "v0.2.0", "v0.3.0")
-	if code != 0 {
-		t.Fatalf("exit = %d", code)
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3 (the changelog fallback ran)", code)
 	}
 	if out != sectionV3 {
 		t.Errorf("stdout = %q, want the 0.3.0 section", out)
@@ -478,8 +478,8 @@ func TestReleaseNotes_RN18_DefaultCapFitsALargeRelease(t *testing.T) {
 	}
 	t.Setenv("PI_FAKE_OUT", large+strings.Repeat("- one more change (#90) that pushes the body past the cap.\n", 120))
 	out, _, code = notes(t, dir, "v0.2.0", "v0.3.0")
-	if code != 0 {
-		t.Fatalf("exit = %d", code)
+	if code != 3 {
+		t.Fatalf("exit = %d, want 3 (the changelog fallback ran)", code)
 	}
 	if out != sectionV3 {
 		t.Errorf("an oversized body was published instead of falling back")

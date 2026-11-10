@@ -21,6 +21,8 @@ func (h *Host) Reload(ctx context.Context) []error {
 	h.complete = map[string]int{}
 	h.decide = map[string]int{}
 	h.embed = map[string]int{}
+	h.speech = map[string]int{}
+	h.transcribe = map[string]int{}
 	h.mu.Unlock()
 	errs := h.rebuildChanged(ctx)
 	return append(errs, h.start(ctx)...)

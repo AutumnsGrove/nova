@@ -394,9 +394,11 @@ func (h *Host) runBundledCommand(ctx context.Context, inst *instance, cmd InProc
 func (h *Host) Observe(ev proto.Event) {
 	h.mu.Lock()
 	if ev.Type == proto.EventRunStart {
-		clear(h.complete) // the completion, decision and embedding caps are per run
+		clear(h.complete) // the model-call caps are per run
 		clear(h.decide)
 		clear(h.embed)
+		clear(h.speech)
+		clear(h.transcribe)
 	}
 	insts := append([]*instance(nil), h.insts...)
 	h.mu.Unlock()

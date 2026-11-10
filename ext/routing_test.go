@@ -615,3 +615,38 @@ func TestHost_A25_Transcribe(t *testing.T) {
 		t.Fatalf("Transcribe called %d times, want 1", n)
 	}
 }
+
+// TestHost_A25_CapsResetEachRun keeps both voice caps per run, like the others,
+// and resets them on a reload so the counters never outlive the host's config.
+func TestHost_A25_CapsResetEachRun(t *testing.T) {
+	h := NewHost(HostOptions{})
+	h.mu.Lock()
+	h.speech["echo"] = 5
+	h.transcribe["echo"] = 5
+	h.mu.Unlock()
+
+	h.Observe(proto.Event{Type: proto.EventRunStart})
+
+	h.mu.Lock()
+	speech, transcribe := h.speech["echo"], h.transcribe["echo"]
+	h.mu.Unlock()
+	if speech != 0 || transcribe != 0 {
+		t.Fatalf("counts after run_start = %d/%d, want 0/0", speech, transcribe)
+	}
+
+	h.mu.Lock()
+	h.speech["echo"] = 7
+	h.transcribe["echo"] = 7
+	h.mu.Unlock()
+	if errs := h.Reload(context.Background()); len(errs) != 0 {
+		t.Fatalf("Reload: %v", errs)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if got := h.speech["echo"]; got != 0 {
+		t.Fatalf("speech count after Reload = %d, want 0", got)
+	}
+	if got := h.transcribe["echo"]; got != 0 {
+		t.Fatalf("transcribe count after Reload = %d, want 0", got)
+	}
+}

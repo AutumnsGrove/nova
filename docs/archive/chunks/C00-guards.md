@@ -2,7 +2,7 @@
 chunk: C00
 title: "Guards"
 packages: [./scripts/spec, ./scripts/matrixcheck, ./scripts/linecount, ./scripts/importcheck, ./scripts/accept]
-budgets: { ./scripts/spec: 250, ./scripts/matrixcheck: 250, ./scripts/linecount: 120, ./scripts/importcheck: 260, ./scripts/accept: 200 }
+budgets: { ./scripts/spec: 250, ./scripts/matrixcheck: 250, ./scripts/linecount: 120, ./scripts/importcheck: 260, ./scripts/accept: 200, ./scripts/release-notes: 340 }
 depends: []
 ---
 

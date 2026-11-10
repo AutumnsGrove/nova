@@ -73,6 +73,13 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The body is written from the tag range, so the whole history and
+          # every tag have to be here.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -85,8 +92,32 @@ jobs:
           # name, and "./name" would never match.
           sha256sum -- *.tar.gz | sort -k2 >checksums.txt
           cat checksums.txt
+      - name: Write release notes
+        id: notes
+        # A body is a courtesy, so nothing here may fail the release: the script
+        # falls back to the changelog section on its own, and this step warns
+        # rather than stopping when even that is missing.
+        continue-on-error: true
+        timeout-minutes: 8
+        env:
+          OPENCODE_API_KEY: ${{ secrets.PI_REVIEW_API_KEY }}
+        run: |
+          set -u
+          previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          echo "release-notes range: ${previous:-<first release>}..${GITHUB_REF_NAME}"
+          # Flags come first: Go's flag package stops at the first ref, so a
+          # flag after the range is a usage error and no body at all.
+          go run ./scripts/release-notes --out body.md "$previous" "$GITHUB_REF_NAME" || true
+          if [ -s body.md ]; then
+            echo "body=body.md" >>"$GITHUB_OUTPUT"
+          else
+            echo "::warning::no release body: the agent failed and the changelog has no section for ${GITHUB_REF_NAME}"
+          fi
       - uses: softprops/action-gh-release@v2
         with:
+          # Empty when there is nothing to say, and action-gh-release ignores an
+          # empty body_path, so the release publishes with no body as before.
+          body_path: ${{ steps.notes.outputs.body }}
           files: |
             dist/*.tar.gz
             dist/checksums.txt

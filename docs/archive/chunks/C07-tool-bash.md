@@ -161,6 +161,7 @@ the max timeout).
 | PRC03 | killed by a signal | the command signals itself with TERM | code -1 and the signal number |
 | PRC04 | an error that is not an exit | a start failure | code -1, no signal |
 | PRC05 | group termination reaches children | a shell with a backgrounded child, `proc.Terminate` | the leader dies of TERM and the group is gone |
+| PRC06 | a group empties once its stragglers are reaped | a probe that reports a member twice, then none | the poll waits for it, and a group that never empties fails within the bound |
 
 A process started by the command is killed with its group when the call ends, even if it
 redirected its output. A long-running server is not a use of this tool (see Out of scope).

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/AutumnsGrove/nova/proc"
 )
@@ -52,8 +53,50 @@ func TestGroup_PRC05_KillReachesChildren(t *testing.T) {
 	if _, sig := proc.ExitStatus(err); sig != int(syscall.SIGTERM) {
 		t.Fatalf("signal = %d, want SIGTERM (err %v)", sig, err)
 	}
-	if err := syscall.Kill(-cmd.Process.Pid, 0); err == nil {
+	if err := waitGone(func() error { return syscall.Kill(-cmd.Process.Pid, 0) }, 2*time.Second); err != nil {
 		proc.Kill(cmd.Process.Pid)
-		t.Fatal("process group still alive after Terminate")
+		t.Fatalf("process group still alive after Terminate: %v", err)
+	}
+}
+
+// waitGone polls until the group has no members left. A signalled child is
+// still in its group until it is reaped, so one check straight after Terminate
+// races the reaper: an idle machine reaps in microseconds and a loaded runner
+// does not, which failed the accept gate (#94).
+func waitGone(probe func() error, within time.Duration) error {
+	deadline := time.Now().Add(within)
+	for {
+		err := probe()
+		if errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			if err == nil {
+				return errors.New("the group still has a member")
+			}
+			return err
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestGroup_PRC06_WaitGoneToleratesAStraggler(t *testing.T) {
+	calls := 0
+	straggler := func() error {
+		calls++
+		if calls < 3 {
+			return nil // a member is still there
+		}
+		return syscall.ESRCH
+	}
+	if err := waitGone(straggler, time.Second); err != nil {
+		t.Fatalf("a straggler that reaps in time is not a failure: %v", err)
+	}
+	if calls < 3 {
+		t.Fatalf("probed %d times, want the straggler to be polled until gone", calls)
+	}
+	err := waitGone(func() error { return nil }, 20*time.Millisecond)
+	if err == nil {
+		t.Fatal("a group that never empties has to fail, not hang")
 	}
 }

@@ -7,13 +7,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-11
+
 ### Added
 
 - Release pages now carry a body. The `release` workflow writes it from the tag range: the
   changelog section, the non-merge commits and the diffstat go to a pinned agent, whose answer is
   checked for shape and size before it is published. A failure, a timeout or an unusable answer
   falls back to the changelog section, so a release never blocks on it, and the step warns when
-  that happens. `scripts/release-notes` runs the same thing locally (`--prompt-only` prints the request and `--out` writes the body) (#90).
+  that happens (#90).
+- `scripts/release-notes` runs the same generation locally: `--prompt-only` prints the request,
+  `--out` writes the body, and `--max-bytes` overrides the 16 KiB cap (#90).
+- The release workflow takes a `dry_run` input, so the job that turns a tag into a release page can
+  be rehearsed against a branch or a version that is not tagged yet: it runs in full, writes the
+  body to the job summary and an artifact, and skips publishing (#90).
 
 ## [0.4.0] - 2026-11-10
 
@@ -550,7 +557,8 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
 - The first release: the agent loop, tools, sessions, config, the TUI, the
   extension host, the bundled extensions, serve mode, and the GitHub Action.
 
-[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/AutumnsGrove/nova/releases/tag/v0.4.1
 [0.4.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.4.0
 [0.3.5]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.5
 [0.3.4]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.4

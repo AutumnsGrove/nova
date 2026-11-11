@@ -1,6 +1,12 @@
 // Command accept is the definition of done for a chunk. It runs the checks in
 // docs/TESTING.md section 6 in order, stops at the first failure, and prints a
 // one-line summary per step. "Done" is a check, not a judgement.
+//
+// A chunk is accepted in two phases: steps that do not depend on the chunk run
+// once, and then the chunk's own tests and its matrix and budget checks. With
+// --all the module-wide phase runs a single time for every archived chunk,
+// which is what the release gate does: the same work 23 times over was a fifth
+// of a sixteen-minute gate (#97).
 package main
 
 import (
@@ -10,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -33,8 +40,15 @@ type step struct {
 func run(args []string, stdout, stderr io.Writer, env []string) int {
 	chunk, from, ok := parseArgs(args)
 	if !ok {
-		fmt.Fprintln(stderr, "usage: accept <CNN> [-from step]")
+		fmt.Fprintln(stderr, "usage: accept <CNN> [-from step] | accept --all")
 		return 2
+	}
+	if chunk == allChunks {
+		if from != "" {
+			fmt.Fprintln(stderr, "accept: -from is for a single chunk")
+			return 2
+		}
+		return runAll(stdout, stderr, env)
 	}
 	specPath, err := spec.Find(chunk)
 	if err != nil {
@@ -51,30 +65,14 @@ func run(args []string, stdout, stderr io.Writer, env []string) int {
 		return 1
 	}
 
-	steps := buildSteps(specPath, s.Packages)
+	steps := append(globalSteps(), chunkSteps(specPath, s.Packages)...)
 	start, ok := startIndex(steps, from)
 	if !ok {
 		fmt.Fprintf(stderr, "accept: unknown step %q\n", from)
 		return 2
 	}
 
-	for _, st := range steps[start:] {
-		began := time.Now()
-		out, err := runStep(st, env)
-		elapsed := time.Since(began).Round(time.Millisecond)
-		status := "ok"
-		if err != nil || (st.dirty && strings.TrimSpace(out) != "") {
-			status = "FAIL"
-		}
-		fmt.Fprintf(stdout, "%-12s %s  %s\n", st.name, status, elapsed)
-		if status == "FAIL" {
-			if text := strings.TrimSpace(out); text != "" {
-				fmt.Fprintln(stdout, text)
-			}
-			return 1
-		}
-	}
-	return 0
+	return runSteps(steps[start:], stdout, env)
 }
 
 // splashPkg costs minutes under -race: it rasterises 150 frames per test. The
@@ -118,20 +116,85 @@ func parseArgs(args []string) (chunk, from string, ok bool) {
 	return positional[0], from, true
 }
 
-// buildSteps is the documented order from docs/TESTING.md section 6.
-func buildSteps(specPath string, pkgs []string) []step {
-	timeout := testTimeout(pkgs)
+// globalSteps do not depend on which chunk is being accepted, so the gate runs
+// them once. The documented order from docs/TESTING.md section 6 keeps gofmt
+// first, and importcheck moves up with the rest of the module-wide work.
+func globalSteps() []step {
 	return []step{
 		{name: "gofmt", argv: []string{"gofmt", "-l", "."}, dirty: true},
 		{name: "vet", argv: []string{"go", "vet", "./..."}},
 		{name: "build", argv: []string{"go", "build", "./..."}},
 		{name: "build-notui", argv: []string{"go", "build", "-tags", "notui", "./..."}},
-		{name: "test-short", argv: append([]string{"go", "test", "-short", "-race", "-p", "2", "-timeout", timeout}, pkgs...)},
+		{name: "importcheck", argv: []string{"go", "run", "./scripts/importcheck"}},
+	}
+}
+
+// chunkSteps are the ones that name a chunk. There is one test step: -race is
+// kept, but the earlier -short run was a strict subset of this one, so the gate
+// paid for the detector twice per chunk and learned nothing the second time.
+func chunkSteps(specPath string, pkgs []string) []step {
+	timeout := testTimeout(pkgs)
+	return []step{
 		{name: "test", argv: append([]string{"go", "test", "-race", "-p", "2", "-timeout", timeout}, pkgs...)},
 		{name: "matrixcheck", argv: append([]string{"go", "run", "./scripts/matrixcheck", specPath}, pkgs...)},
 		{name: "linecount", argv: []string{"go", "run", "./scripts/linecount", specPath}},
-		{name: "importcheck", argv: []string{"go", "run", "./scripts/importcheck"}},
 	}
+}
+
+// allChunks is the argument that accepts every archived chunk in one pass.
+const allChunks = "--all"
+
+// runAll runs the module-wide steps once and each chunk's own steps in order,
+// stopping at the first failure with the chunk named. It is the release gate.
+func runAll(stdout, stderr io.Writer, env []string) int {
+	specs, err := filepath.Glob(filepath.Join("docs", "archive", "chunks", "C*.md"))
+	if err != nil || len(specs) == 0 {
+		fmt.Fprintln(stderr, "accept: no chunk specs under docs/archive/chunks")
+		return 2
+	}
+	sort.Strings(specs)
+	if code := runSteps(globalSteps(), stdout, env); code != 0 {
+		return code
+	}
+	for _, specPath := range specs {
+		s, err := spec.Load(specPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "accept: %v\n", err)
+			return 2
+		}
+		if missing := firstMissing(s.Packages); missing != "" {
+			fmt.Fprintf(stderr, "accept: package %s does not exist\n", missing)
+			return 1
+		}
+		chunk := strings.SplitN(filepath.Base(specPath), "-", 2)[0]
+		fmt.Fprintf(stdout, "== accept %s ==\n", chunk)
+		if code := runSteps(chunkSteps(specPath, s.Packages), stdout, env); code != 0 {
+			fmt.Fprintf(stderr, "accept: %s failed\n", chunk)
+			return code
+		}
+	}
+	return 0
+}
+
+// runSteps runs one phase in order and stops at the first failure.
+func runSteps(steps []step, stdout io.Writer, env []string) int {
+	for _, st := range steps {
+		began := time.Now()
+		out, err := runStep(st, env)
+		elapsed := time.Since(began).Round(time.Millisecond)
+		status := "ok"
+		if err != nil || (st.dirty && strings.TrimSpace(out) != "") {
+			status = "FAIL"
+		}
+		fmt.Fprintf(stdout, "%-12s %s  %s\n", st.name, status, elapsed)
+		if status == "FAIL" {
+			if text := strings.TrimSpace(out); text != "" {
+				fmt.Fprintln(stdout, text)
+			}
+			return 1
+		}
+	}
+	return 0
 }
 
 // startIndex maps -from to a step index, or reports an unknown step.

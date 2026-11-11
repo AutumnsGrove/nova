@@ -170,9 +170,11 @@ accept <CNN> [-from step]          exit 0 all steps pass; exit 1 a step failed; 
 | ACC03 | a test fails | failing test in a listed package | exit 1; prints the test output |
 | ACC04 | unknown chunk | `accept C99` | exit 2 |
 | ACC05 | `-from step` | `accept C01 -from matrixcheck` | earlier steps skipped, later ones run |
-| ACC06 | steps run in the documented order | recorded command log | matches the order in Behaviour 7 |
+| ACC06 | steps run in the documented order | recorded command log | the module-wide steps once (`gofmt`, `vet`, `build`, `build-notui`, `importcheck`), then the chunk's own (`test`, `matrixcheck`, `linecount`) |
 | ACC07 | package listed in spec does not exist | | exit 1 naming the package |
-| ACC08 | a chunk that owns `./tui/splash/splashgif` | a spec listing that package | both test steps carry `-timeout 25m`; any other chunk gets `-timeout 10m` |
+| ACC08 | a chunk that owns `./tui/splash/splashgif` | a spec listing that package | the test step carries `-timeout 25m`; any other chunk gets `-timeout 10m` |
+| ACC09 | `--all` runs the gate once for every chunk | two chunk specs and a recorded command log | the module-wide steps run once, the per-chunk ones twice, and each chunk is named in the summary |
+| ACC10 | `--all` stops on the failing chunk | the second chunk's matrixcheck fails | exit 1 and stderr names that chunk |
 
 Test strategy: each program has a `run(args, stdout, stderr, env) int` function so tests
 call it directly. Fixtures for `matrixcheck`, `importcheck`, and `accept` are small Go

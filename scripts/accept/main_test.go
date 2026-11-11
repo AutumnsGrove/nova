@@ -67,7 +67,7 @@ budgets: { ./p: 100 }
 | AA01 | a case |
 `
 
-var stepNames = []string{"gofmt", "vet", "build", "build-notui", "test-short", "test", "matrixcheck", "linecount", "importcheck"}
+var stepNames = []string{"gofmt", "vet", "build", "build-notui", "importcheck", "test", "matrixcheck", "linecount"}
 
 func TestAccept_ACC01_AllStepsPass(t *testing.T) {
 	dir := fixture(t, goodSpec, map[string]string{"p/p.go": "package p\n"})
@@ -172,11 +172,10 @@ func TestAccept_ACC06_StepsRunInOrder(t *testing.T) {
 		"go vet ./...",
 		"go build ./...",
 		"go build -tags notui ./...",
-		"go test -short -race -p 2 -timeout 10m ./p",
+		"go run ./scripts/importcheck",
 		"go test -race -p 2 -timeout 10m ./p",
 		"go run ./scripts/matrixcheck docs/archive/chunks/C00-fixture.md ./p",
 		"go run ./scripts/linecount docs/archive/chunks/C00-fixture.md",
-		"go run ./scripts/importcheck",
 	}, "\n")
 	got, _ := os.ReadFile(record)
 	if strings.TrimSpace(string(got)) != want {
@@ -234,12 +233,97 @@ budgets: { ./tui/splash/splashgif: 100 }
 		t.Fatalf("exit = %d, want 0\n%s%s", code, out.String(), errOut.String())
 	}
 	log, _ := os.ReadFile(record)
-	for _, want := range []string{
-		"go test -short -race -p 2 -timeout 25m ./tui/splash/splashgif",
-		"go test -race -p 2 -timeout 25m ./tui/splash/splashgif",
-	} {
-		if !strings.Contains(string(log), want) {
-			t.Errorf("command log is missing %q:\n%s", want, log)
+	want := "go test -race -p 2 -timeout 25m ./tui/splash/splashgif"
+	if !strings.Contains(string(log), want) {
+		t.Errorf("command log is missing %q:\n%s", want, log)
+	}
+}
+
+// --all is the release gate: the module-wide steps run once for every chunk, and
+// each chunk keeps its own tests, matrix and budget checks (#97).
+func TestAccept_ACC09_AllRunsTheGateOnce(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"docs/archive/chunks/C00-fixture.md": goodSpec,
+		"docs/archive/chunks/C01-fixture.md": strings.ReplaceAll(goodSpec, "C00", "C01"),
+		"p/p.go":                             "package p\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", name, err)
 		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	record := stubBin(t, okGo, okGofmt)
+	t.Chdir(dir)
+	var out, errOut bytes.Buffer
+	if code := run([]string{"--all"}, &out, &errOut, nil); code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s%s", code, out.String(), errOut.String())
+	}
+	log, _ := os.ReadFile(record)
+	lines := strings.Split(strings.TrimSpace(string(log)), "\n")
+	count := func(prefix string) int {
+		n := 0
+		for _, l := range lines {
+			if strings.HasPrefix(l, prefix) {
+				n++
+			}
+		}
+		return n
+	}
+	// Once each, however many chunks there are: the point of the change.
+	for _, once := range []string{"gofmt -l .", "go vet ./...", "go build ./...", "go build -tags notui ./...", "go run ./scripts/importcheck"} {
+		if got := count(once); got != 1 {
+			t.Errorf("%q ran %d times, want 1", once, got)
+		}
+	}
+	// Twice each, once per chunk: the checks that name a chunk.
+	for _, twice := range []string{"go test -race", "go run ./scripts/matrixcheck", "go run ./scripts/linecount"} {
+		if got := count(twice); got != 2 {
+			t.Errorf("%q ran %d times, want 2", twice, got)
+		}
+	}
+	if !strings.Contains(out.String(), "== accept C00 ==") || !strings.Contains(out.String(), "== accept C01 ==") {
+		t.Errorf("a chunk is not named in the summary:\n%s", out.String())
+	}
+}
+
+// A chunk that fails stops the gate and is named, so the log says which one.
+func TestAccept_ACC10_AllStopsOnTheFailingChunk(t *testing.T) {
+	dir := t.TempDir()
+	spec := strings.ReplaceAll(goodSpec, "C00", "C02")
+	for _, f := range [][2]string{
+		{"docs/archive/chunks/C00-fixture.md", goodSpec},
+		{"docs/archive/chunks/C02-fixture.md", spec},
+		{"p/p.go", "package p\n"},
+	} {
+		path := filepath.Join(dir, f[0])
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(f[1]), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	// A test step that fails only for the second chunk's package set.
+	failing := `#!/bin/sh
+printf 'go %s\n' "$*" >> "$RECORD"
+for a in "$@"; do
+  if [ "$a" = "docs/archive/chunks/C02-fixture.md" ]; then exit 1; fi
+done
+exit 0
+`
+	stubBin(t, failing, okGofmt)
+	t.Chdir(dir)
+	var out, errOut bytes.Buffer
+	code := run([]string{"--all"}, &out, &errOut, nil)
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1\n%s%s", code, out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "C02 failed") {
+		t.Errorf("stderr does not name the failing chunk:\n%s", errOut.String())
 	}
 }

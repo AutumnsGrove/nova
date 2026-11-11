@@ -562,6 +562,7 @@ are a contract between this document and the tests, not a gate.
 | A37 | `CostLookup` false makes no roster request at all |
 | A38 | A pin naming one provider is priced from that endpoint's rate, not the roster's cheapest one, and the endpoint list is read for it |
 | A39 | A pin whose endpoint price cannot be read leaves the cost unknown rather than falling back to the cheapest rate, and the clip is still returned |
+| A40 | A pin naming a provider the endpoint list does not carry leaves the cost unknown for the same reason, and the roster is not read as a fallback |
 
 ## Budgets
 

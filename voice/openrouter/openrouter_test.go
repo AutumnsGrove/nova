@@ -300,6 +300,36 @@ func TestSpeak_A39_APinnedPriceThatCannotBeReadIsUnknown(t *testing.T) {
 	}
 }
 
+// TestSpeak_A40_APinToAnAbsentProviderIsUnknown: the endpoint table can be read
+// and still not contain the pinned name, which is the other way a pin cannot be
+// attributed a price. The answer is the same as a failed read: unknown, never the
+// cheapest rate.
+func TestSpeak_A40_APinToAnAbsentProviderIsUnknown(t *testing.T) {
+	client, srv := newCostClient(t,
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Body: kokoroEndpoints},
+	)
+	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hello there.",
+		Provider: map[string]any{"only": []string{"Somewhere"}},
+	})
+	if err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	var roster bool
+	for _, r := range srv.Requests() {
+		if strings.HasSuffix(r.Path, "/models") {
+			roster = true
+		}
+	}
+	if roster {
+		t.Error("the roster was read for an unattributable pin, so the cost may be the cheapest rate")
+	}
+	if clip.Usage.CostUSD != 0 || clip.Usage.CostSource != "" {
+		t.Errorf("usage = %+v, want an unknown cost rather than the cheapest rate", clip.Usage)
+	}
+}
+
 // TestSpeak_A35_RosterIsReadOncePerClient: the roster is a cache, so a second
 // clip costs no extra request. The old lookup paid one per clip for nothing.
 func TestSpeak_A35_RosterIsReadOncePerClient(t *testing.T) {

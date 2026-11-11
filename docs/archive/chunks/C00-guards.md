@@ -103,13 +103,14 @@ accept <CNN> [-from step]          exit 0 all steps pass; exit 1 a step failed; 
       (`./tui/...`, `./bundled/...`, with `charm.land/fang` also in `./tui/cli`). A violation message names
       the module, the package, and says to record the addition in `docs/DECISIONS.md` (D46).
 7. **accept** runs, in order, stopping at the first failure and printing the failing
-   command's output: `gofmt -l`, `go vet`, `go build ./...`, `go build -tags notui ./...`,
-   `go test -short -race -p 2` on the spec's packages, `go test -race -p 2` on the same,
-   both with an explicit `-timeout`: 25m when the chunk owns `./tui/splash/splashgif`
-   (the budget `make race-splash` gives it), 10m otherwise, so the gate never inherits the
-   toolchain's default,
-   `matrixcheck`, `linecount`, `importcheck`. A step whose package does not exist yet is
-   an error, not a skip.
+   command's output, in two phases (D169). The module-wide phase runs once: `gofmt -l`,
+   `go vet`, `go build ./...`, `go build -tags notui ./...`, `importcheck`. Then the
+   chunk's own: `go test -race -p 2` on the spec's packages with an explicit `-timeout`
+   (25m when the chunk owns `./tui/splash/splashgif`, the budget `make race-splash` gives
+   it, 10m otherwise, so the gate never inherits the toolchain's default), `matrixcheck`,
+   `linecount`. A step whose package does not exist yet is an error, not a skip.
+   `accept --all` runs the module-wide phase once for every archived spec, which is what
+   `release.yml` calls.
 8. `accept` prints a one-line summary per step (`ok`/`FAIL`, duration).
 
 ## Matrix

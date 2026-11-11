@@ -247,6 +247,100 @@ func TestSpeak_A16_InvalidRequestNeverReachesTheServer(t *testing.T) {
 	}
 }
 
+// speechBody decodes a recorded request into its top-level keys, so a test can
+// ask whether a field was serialised at all rather than only what it held. The
+// provider object is a map, and omitempty on a map is easy to get wrong, so
+// both halves of A31 read the raw JSON.
+func speechBody(t *testing.T, body []byte) map[string]json.RawMessage {
+	t.Helper()
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(body, &top); err != nil {
+		t.Fatalf("request body %q: %v", body, err)
+	}
+	return top
+}
+
+// TestSpeak_A31_ProviderObjectIsVerbatim: a provider object is the provider's
+// business, so it reaches the wire exactly as the caller wrote it.
+func TestSpeak_A31_ProviderObjectIsVerbatim(t *testing.T) {
+	client, srv := newClient(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
+	_, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+		Provider: map[string]any{
+			"only":        []string{"Together"},
+			"data_policy": "deny",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	reqs := srv.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %d, want 1", len(reqs))
+	}
+	top := speechBody(t, reqs[0].Body)
+	raw, ok := top["provider"]
+	if !ok {
+		t.Fatalf("body = %s, want a provider key", reqs[0].Body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("provider = %s: %v", raw, err)
+	}
+	if only, ok := got["only"].([]any); !ok || len(only) != 1 || only[0] != "Together" {
+		t.Errorf("provider.only = %v, want [Together]", got["only"])
+	}
+	if got["data_policy"] != "deny" {
+		t.Errorf("provider.data_policy = %v, want deny: an unknown key is not dropped", got["data_policy"])
+	}
+}
+
+// TestSpeak_A31_NoProviderOmitsTheKey: a request without a pin must not send an
+// empty object, because an empty provider block changes routing on its own.
+func TestSpeak_A31_NoProviderOmitsTheKey(t *testing.T) {
+	client, srv := newClient(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
+	if _, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+	}); err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	reqs := srv.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %d, want 1", len(reqs))
+	}
+	if top := speechBody(t, reqs[0].Body); top["provider"] != nil {
+		t.Errorf("body = %s, want no provider key", reqs[0].Body)
+	}
+}
+
+// TestSpeak_A34_NonsenseProviderReachesTheServer: no local validation. The
+// provider object is the provider's business; a typo is its 400, which maps to
+// a provider error like any other status.
+func TestSpeak_A34_NonsenseProviderReachesTheServer(t *testing.T) {
+	client, srv := newClient(t, testkit.VoiceServerTurn{
+		Status: 400,
+		Body:   `{"error":{"message":"unknown field lonly"}}`,
+	})
+	_, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+		Provider: map[string]any{"lonly": []string{"Together"}},
+	})
+	reqs := srv.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %d, want 1: the typo must reach the server", len(reqs))
+	}
+	if top := speechBody(t, reqs[0].Body); top["provider"] == nil {
+		t.Errorf("body = %s, want the nonsense provider object to pass through", reqs[0].Body)
+	}
+	var providerErr *provider.Error
+	if !errors.As(err, &providerErr) {
+		t.Fatalf("error = %T %v, want *provider.Error", err, err)
+	}
+	if providerErr.Status != 400 {
+		t.Errorf("status = %d, want 400", providerErr.Status)
+	}
+}
+
 func TestTranscribe_A12_Multipart(t *testing.T) {
 	audio := []byte{1, 2, 3, 4}
 	client, srv := newClient(t, testkit.VoiceServerTurn{

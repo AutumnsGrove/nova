@@ -24,6 +24,10 @@ type VoiceRole struct {
 	// Speed is a playback multiplier; nil leaves it to the request.
 	Speed        *float64
 	Instructions string
+	// Provider pins the endpoint for this attempt. It is not inherited by the
+	// fallback for the same reason the voice is not: it names the endpoints of
+	// one model, and the fallback is another model.
+	Provider map[string]any
 	// Timeout is per attempt; zero means only the caller's context bounds it.
 	Timeout  time.Duration
 	Fallback *VoiceAttempt
@@ -31,10 +35,11 @@ type VoiceRole struct {
 
 // VoiceAttempt is one fallback: a model with its own voice and bounds.
 type VoiceAttempt struct {
-	Model  string
-	Voice  string
-	Format Format
-	Speed  *float64
+	Model    string
+	Voice    string
+	Format   Format
+	Speed    *float64
+	Provider map[string]any
 }
 
 // TranscribeRole maps an application role to a transcription model and its
@@ -175,10 +180,15 @@ func (r *Roles) speechAttempts(req SpeechRequest) ([]SpeechRequest, time.Duratio
 			attempt.Format = firstFormat(attempt.Format, role.Format)
 			attempt.Speed = firstSpeed(attempt.Speed, role.Speed)
 			attempt.Instructions = firstNonEmpty(attempt.Instructions, role.Instructions)
+			attempt.Provider = firstProvider(attempt.Provider, role.Provider)
 		case i > 0 && named && role.Fallback != nil:
 			attempt.Voice = role.Fallback.Voice
 			attempt.Format = firstFormat(role.Fallback.Format, attempt.Format)
 			attempt.Speed = firstSpeed(role.Fallback.Speed, attempt.Speed)
+			// Replace rather than merge: a pin names one model's endpoints, so a
+			// primary's pin that leaked into a fallback would be routed against a
+			// model it never named. A fallback without a pin means no pin.
+			attempt.Provider = role.Fallback.Provider
 		}
 		if err := attempt.Validate(); err != nil {
 			return nil, 0, err
@@ -256,6 +266,14 @@ func firstFormat(a, b Format) Format {
 // firstSpeed returns a when it is set, otherwise b.
 func firstSpeed(a, b *float64) *float64 {
 	if a != nil {
+		return a
+	}
+	return b
+}
+
+// firstProvider returns a when it is set, otherwise b.
+func firstProvider(a, b map[string]any) map[string]any {
+	if len(a) > 0 {
 		return a
 	}
 	return b

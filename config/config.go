@@ -160,16 +160,19 @@ type SpeechRoleConfig struct {
 	Speed        *float64              `yaml:"speed"`
 	Instructions string                `yaml:"instructions"`
 	TimeoutMS    int                   `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
+	Provider     map[string]any        `yaml:"provider"`
 	Fallback     *SpeechFallbackConfig `yaml:"fallback"`
 }
 
 // SpeechFallbackConfig is a second attempt. It restates its own model and voice,
-// because a voice name is model-specific and cannot be inherited.
+// because a voice name is model-specific and cannot be inherited. Provider is
+// restated for the same reason: a pinned primary may want another pin or none.
 type SpeechFallbackConfig struct {
-	Model  string   `yaml:"model"`
-	Voice  string   `yaml:"voice"`
-	Format string   `yaml:"format"`
-	Speed  *float64 `yaml:"speed"`
+	Model    string         `yaml:"model"`
+	Voice    string         `yaml:"voice"`
+	Format   string         `yaml:"format"`
+	Speed    *float64       `yaml:"speed"`
+	Provider map[string]any `yaml:"provider"`
 }
 
 // VoiceTranscribeConfig holds the speech-to-text roles.

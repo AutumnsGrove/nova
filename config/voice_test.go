@@ -64,6 +64,42 @@ voice:
 	}
 }
 
+func TestLoad_VoiceRoleProvider(t *testing.T) {
+	home, cwd := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(home, ".config", "nova", "config.yaml"), `
+voice:
+  speech:
+    roles:
+      narrate:
+        model: hexgrad/kokoro-82m
+        voice: af_heart
+        provider:
+          only: [Together]
+        fallback:
+          model: fallback/tts
+          voice: two
+          provider:
+            only: [DeepInfra]
+      plain:
+        model: hexgrad/kokoro-82m
+        voice: af_heart
+`)
+	cfg, warnings := loadAt(t, cwd, home, LoadOptions{})
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", warnings)
+	}
+	role := cfg.Voice.Speech.Roles["narrate"]
+	if only := role.Provider["only"]; only == nil {
+		t.Errorf("provider = %v, want only: [Together] verbatim", role.Provider)
+	}
+	if role.Fallback == nil || role.Fallback.Provider["only"] == nil {
+		t.Errorf("fallback = %+v, want its own provider", role.Fallback)
+	}
+	if role := cfg.Voice.Speech.Roles["plain"]; role.Provider != nil {
+		t.Errorf("provider = %v, want nil for a role without one", role.Provider)
+	}
+}
+
 func TestLoad_VoiceCostLookupDefaultsOn(t *testing.T) {
 	home, cwd := t.TempDir(), t.TempDir()
 	cfg, warnings := loadAt(t, cwd, home, LoadOptions{})

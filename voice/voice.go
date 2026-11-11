@@ -136,6 +136,10 @@ type SpeechRequest struct {
 	// Instructions are delivery notes such as tone or pacing, where the model
 	// supports them.
 	Instructions string `json:"instructions,omitempty"`
+	// Provider is an optional routing object, sent to the API verbatim. Nova does
+	// not model its keys: "only", "order", "ignore" and the data-policy keys
+	// are the provider's vocabulary, and a typo is its error, not a local one.
+	Provider map[string]any `json:"provider,omitempty"`
 }
 
 // Validate checks a request before it reaches the wire, so a malformed input is

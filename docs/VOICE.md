@@ -610,8 +610,8 @@ makes it true:
   Nova's front doors; a failed lookup is not a failed synthesis.
 - Transcription uses multipart in v1; base64 JSON waits for a consumer that
   needs over 25 MiB on a non-multipart provider.
-- The audio endpoints get no `provider` passthrough, because the API does not
-  apply routing preferences to them.
+- The audio endpoints take a `provider` passthrough, because the API does honour
+  `only` there even though its docs say otherwise; Nova ships no default pin.
 - The protocol line limit rises from 16 MiB to 64 MiB, because a 40 MiB clip is
   a 53 MiB base64 line and the library's cap should be reachable.
 - `nova speak` chunks and joins by default, because a model's input cap is far

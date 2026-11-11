@@ -132,16 +132,17 @@ type VoiceConfig struct {
 	// AllowAliases permits ids that end in "-latest" or start with "~". Off by
 	// default, as for decisions and embeddings.
 	AllowAliases bool `yaml:"allow_aliases"`
-	// CostLookup asks the provider for the exact cost of each synthesis. It is
-	// a pointer so an unset block still reports spend; set it false for the
-	// fast path.
+	// CostLookup estimates each synthesis's cost from the model's catalog price.
+	// It is a pointer so an unset block still reports spend; set it false for
+	// the fast path, which skips the roster read.
 	CostLookup *bool                 `yaml:"cost_lookup"`
 	Speech     VoiceSpeechConfig     `yaml:"speech"`
 	Transcribe VoiceTranscribeConfig `yaml:"transcribe"`
 }
 
-// CostLookupEnabled reports whether Nova's front doors ask for exact speech
-// cost. The default is on: a caller that never reads Usage turns it off.
+// CostLookupEnabled reports whether Nova's front doors estimate speech cost. The
+// default is on: a caller that never reads Usage turns it off and saves the
+// roster read.
 func (c VoiceConfig) CostLookupEnabled() bool {
 	return c.CostLookup == nil || *c.CostLookup
 }

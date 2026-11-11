@@ -109,10 +109,13 @@ type Clip struct {
 }
 ```
 
-The speech endpoint returns a raw byte stream with no usage block. `Clip.Usage`
-therefore carries `CostUSD` only when the generation lookup below answers;
-`CostSource` is `"provider"` when it does and empty when it does not. An app that
-needs exact spend can read `GenerationID` and resolve it itself.
+The speech endpoint returns a raw byte stream with no usage block, and
+`GET /generation` answers with an all-null record for a `gen-tts-*` id, so there
+is no exact cost to read. `Clip.Usage` therefore carries **an estimate** derived
+from the model's catalog price: `CostSource` is `"catalog"`, and empty when the
+price is unknown. An app that needs to reconcile spend against its bill must do
+so from its own records; `GenerationID` is captured for that, but it does not
+resolve today.
 
 The PCM layout comes from the response `Content-Type`, which OpenRouter sends as
 `audio/pcm;rate=24000;channels=1`. The adapter parses `rate` and `channels` when
@@ -287,7 +290,7 @@ shape expresses.
 ```yaml
 voice:
   allow_aliases: false   # -latest / ~ ids are refused by default
-  cost_lookup: true      # best-effort /generation lookup, Nova's own front doors
+  cost_lookup: true      # price speech from the catalog, Nova's own front doors
   speech:
     roles:
       narrate:
@@ -349,7 +352,7 @@ Three wire decisions worth recording, and what the live API actually did on
 |---|---|
 | `audio/speech` `pcm` | `Content-Type: audio/pcm;rate=24000;channels=1`, `X-Generation-Id: gen-tts-…` |
 | `audio/speech` `mp3` | `Content-Type: audio/mpeg`, body starts `ff f3` (frame sync, no ID3) |
-| `GET /generation?id=…` | `api_type: tts`, `total_cost: 1.86e-06`, available immediately |
+| `GET /generation?id=gen-tts-…` | **all nulls** — `total_cost`, `usage`, `model` and `provider_name`; an earlier measurement of `total_cost: 1.86e-06` on a Kokoro generation no longer reproduces |
 | multipart with `file=@clip.bin` | **400** — the format is inferred from the filename extension |
 | multipart with `file=@clip.mp3` | 200, `{"text":"Hi.","usage":{"seconds":1,"cost":0.0001}}` |
 | base64 `input_audio` | 200, the same body |
@@ -378,20 +381,28 @@ Three wire decisions worth recording, and what the live API actually did on
    Nova deliberately does **not** hardcode a pin: the trade is reliability
    against a 6.5× token price, which is the operator's to make. See D162 and
    D170.
-3. **Speech cost is a best-effort second request.** The speech response is raw
-   audio with no usage block, so exact cost is only available from
-   `GET {base}/generation?id=<X-Generation-Id>`, which answered immediately with
-   `total_cost` for a Kokoro generation. When cost lookup is on, the adapter
-   makes that call with a 5 s bound and fills `Usage.CostUSD`; a failed or slow
-   lookup leaves cost at zero and never fails the synthesis. This replaces the
-   per-million-character table Polaris maintains by hand, which prices
-   characters at the per-token rate and so overestimates prose by roughly the
-   chars-per-token ratio (about 4×).
+3. **Speech cost is a catalog estimate, because there is no exact one.** The
+   speech response is raw audio with no usage block, and `GET
+   {base}/generation?id=<X-Generation-Id>` returns all nulls for a `gen-tts-*`
+   id, so the lookup this adapter used to make was one wasted request per clip
+   for a number that never came back. Instead the adapter reads the speech
+   roster once per client and prices each synthesis as `chars/4` tokens at the
+   model's per-million-token rate, with `CostSource: "catalog"`.
+
+   `chars/4` is an estimate of the provider's tokeniser, which Nova does not
+   have. That matters for the *unit*: the roster's `pricing.prompt` is dollars
+   per **token**, not per character — Kokoro is `0.00000062` ($0.62/M tokens on
+   DeepInfra) and Together's endpoint for the same model is `0.000004` ($4.00/M).
+   Pricing characters at the token rate without the ratio would overstate prose
+   by about 4×, which is the flaw in the hand-maintained table this replaces.
+   The estimate can still be wrong by the tokeniser's real ratio, so it is
+   reported with `CostSource: "catalog"` and never as a provider figure.
 
 `voice/openrouter.Config.CostLookup` defaults to **false**: a voice agent that
-calls `Speak` on every reply should not pay an extra round trip for a number it
-never reads. Nova's own front doors set it from `voice.cost_lookup`, which
-defaults to true, because they are the ones that report spend.
+calls `Speak` on every reply should not pay for a roster read it never uses.
+Nova's own front doors set it from `voice.cost_lookup`, which defaults to true,
+because they are the ones that report spend. The roster is cached, so the cost
+is one extra request per client rather than one per clip.
 
 Errors are `*provider.Error` with the status and `provider.Classify`'s
 retryability, the body truncated to 500 characters, and the request bounded by
@@ -512,7 +523,7 @@ are a contract between this document and the tests, not a gate.
 | A07 | A role resolves model, voice, format and speed; a direct id with a slash passes through and needs its own voice |
 | A08 | A fallback uses its own model and voice, and a fallback whose format the model cannot produce is refused |
 | A09 | A `-latest` or `~` id is refused unless `allow_aliases` is set |
-| A10 | A cost lookup fills `CostUSD` with source `provider`; a failing or slow lookup leaves zero and still returns the clip; `CostLookup` false makes no request |
+| A10 | A synthesis is priced from the catalog: `chars/4` tokens at the model's per-million-token rate, with `CostSource: "catalog"`, and no `/generation` request is made |
 | A11 | A cancelled context returns `ctx.Err` with no clip, and the body is closed |
 | A12 | A transcription is sent as multipart with `file` **named `clip.<format>`**, `model`, `language`, `temperature` and the response format, and the recorded form fields match |
 | A13 | A json transcript maps text and cost into `Transcript` (`CostSource: "provider"`), trims the text, and tolerates a usage block with no token counts |
@@ -537,6 +548,9 @@ are a contract between this document and the tests, not a gate.
 | A32 | A role's `provider` reaches the attempt it belongs to, and a fallback's own `provider` replaces it rather than inheriting the primary's; a role without one sends nil |
 | A33 | `voice.speech.roles.<name>.provider` loads from config and reaches the wire through `BuildSpeaker`, and a fallback's own pin replaces the primary's |
 | A34 | The provider object is not validated locally: a nonsense key still reaches the server, and the 400 it earns is a `*provider.Error` like any other |
+| A35 | The speech roster is read once per client: a second clip costs no extra request, and both clips carry a cost |
+| A36 | A model absent from the roster, a model priced at zero, or a failed roster leaves the cost at zero with no source, and the clip is still returned |
+| A37 | `CostLookup` false makes no roster request at all |
 
 ## Budgets
 
@@ -570,7 +584,7 @@ Each slice is one commit with its tests, and this document changes with it.
 
 1. `provider.Model.Voices`, `SupportsSpeech`, `SupportsTranscription`; catalog test.
 2. `voice`: the contract, validation, `Chunks`, `Join`, `WAV`, and the roles decorator.
-3. `voice/openrouter`: both endpoints, the cost lookup, the roster.
+3. `voice/openrouter`: both endpoints, the cost estimate, the roster.
 4. `proto`: the 64 MiB line limit and its test.
 5. `config`: the `voice` block and its warnings.
 6. `tool.Context` and `agent.Config` seams; `agent/sub` passes all three
@@ -592,7 +606,7 @@ makes it true:
   name is model-specific.
 - Chunking, joining and the WAV header live in the contract; markdown stripping
   does not.
-- Speech cost is a best-effort `/generation` lookup, off in the library and on in
+- Speech cost is a catalog estimate (`chars/4` tokens at the roster price), off in the library and on in
   Nova's front doors; a failed lookup is not a failed synthesis.
 - Transcription uses multipart in v1; base64 JSON waits for a consumer that
   needs over 25 MiB on a non-multipart provider.

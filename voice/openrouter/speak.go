@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"unicode/utf8"
 
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/voice"
@@ -84,9 +85,10 @@ func (c *Client) Speak(ctx context.Context, req voice.SpeechRequest) (*voice.Cli
 	if clip.Format == voice.FormatPCM {
 		clip.SampleRate, clip.Channels, clip.BitsPerSample = pcmLayout(resp.Header.Get("Content-Type"))
 	}
-	if c.costLookup && clip.GenerationID != "" {
-		if cost, ok := c.generationCost(ctx, clip.GenerationID); ok {
-			clip.Usage = provider.Usage{CostUSD: cost, CostSource: "provider"}
+	if c.costLookup {
+		if perMillion, ok := c.pricePerMillion(ctx, req.Model); ok {
+			tokens := float64(utf8.RuneCountInString(req.Input)) / catalogRunesPerToken
+			clip.Usage = provider.Usage{CostUSD: tokens * perMillion / 1e6, CostSource: "catalog"}
 		}
 	}
 	return clip, nil

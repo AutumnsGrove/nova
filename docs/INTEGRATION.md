@@ -288,7 +288,7 @@ belongs to one model.
 ```yaml
 voice:
   allow_aliases: false          # -latest / ~ ids are refused by default
-  cost_lookup: true             # exact speech cost, one extra request per call
+  cost_lookup: true             # estimate speech cost from the catalog price
   speech:
     roles:
       narrate:

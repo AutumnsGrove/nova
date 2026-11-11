@@ -341,12 +341,15 @@ func TestProviders_OPG34_AnUnknownModelIDStillFallsBackToOpenRouter(t *testing.T
 
 func floatPtr(f float64) *float64 { return &f }
 
+func boolPtr(b bool) *bool { return &b }
+
 // TestBuildSpeaker_A07_RoleTable proves the config's speech role reaches the
 // wire: the model, the voice, the format and the speed all come from the role.
 func TestBuildSpeaker_A07_RoleTable(t *testing.T) {
 	srv := testkit.NewVoiceServer(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
 	cfg := &config.Config{}
 	cfg.Provider.OpenRouter.BaseURL = srv.URL
+	cfg.Voice.CostLookup = boolPtr(false) // the estimate is not this test's subject
 	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
 		"narrate": {
 			Model: "vendor/tts", Voice: "af_heart", Format: "mp3", Speed: floatPtr(1.2),
@@ -392,6 +395,7 @@ func TestBuildSpeaker_A33_RolePinReachesTheWire(t *testing.T) {
 	)
 	cfg := &config.Config{}
 	cfg.Provider.OpenRouter.BaseURL = srv.URL
+	cfg.Voice.CostLookup = boolPtr(false)
 	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
 		"narrate": {
 			Model: "hexgrad/kokoro-82m", Voice: "af_heart",
@@ -433,6 +437,7 @@ func TestBuildSpeaker_A33_NoPinSendsNoProviderKey(t *testing.T) {
 	srv := testkit.NewVoiceServer(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
 	cfg := &config.Config{}
 	cfg.Provider.OpenRouter.BaseURL = srv.URL
+	cfg.Voice.CostLookup = boolPtr(false)
 	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
 		"narrate": {Model: "hexgrad/kokoro-82m", Voice: "af_heart"},
 	}

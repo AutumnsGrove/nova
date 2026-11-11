@@ -2,60 +2,53 @@ package openrouter
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/url"
+
+	"github.com/AutumnsGrove/nova/voice"
 )
 
-// generationWire is the subset of /generation the cost lookup needs. total_cost
-// is the call's real spend; usage is the same number under its older name, so it
-// is a fallback rather than a second charge.
-type generationWire struct {
-	Data struct {
-		APIType   string   `json:"api_type"`
-		TotalCost *float64 `json:"total_cost"`
-		Usage     *float64 `json:"usage"`
-	} `json:"data"`
+// catalogRunesPerToken estimates a tokeniser's ratio for prose. OpenRouter
+// prices speech per input *token* (Kokoro is $0.62 per million on DeepInfra and
+// $4.00 on Together), and Nova has no tokeniser, so a synthesis's cost is an
+// estimate and never an invoice. Four characters to a token is the usual figure
+// for English; CostSource reports the result as "catalog" so a reader knows it
+// is derived rather than billed.
+const catalogRunesPerToken = 4
+
+// prices caches the roster's per-million-token price by model id. The roster is
+// one request per client rather than one per clip, which is what the old
+// /generation lookup cost for a number it never returned.
+type prices struct {
+	// table is nil until the roster has been read once.
+	table map[string]float64
 }
 
-// generationCost resolves a synthesis's exact cost. The speech response carries
-// no usage block, so this second request is the only exact price. It is best
-// effort: a missing key, a slow lookup, a non-200 or a malformed body all leave
-// the cost unknown, because a failed lookup is not a failed synthesis.
-func (c *Client) generationCost(ctx context.Context, generationID string) (float64, bool) {
-	ctx, cancel := context.WithTimeout(ctx, c.costTimeout)
-	defer cancel()
-	key, err := c.resolveKey(ctx)
-	if err != nil {
+// pricePerMillion returns the catalog price for model, reading the speech
+// roster on first use. ok is false when the model is absent, its price is
+// unknown (zero), or the roster could not be read: an unknown price is not zero
+// dollars, and the caller must leave the cost unset rather than report one.
+//
+// The lock is held across the fetch on purpose, so concurrent clips read the
+// roster once between them instead of racing a request each. It covers only the
+// cost step, which runs after a clip has already been synthesized.
+func (c *Client) pricePerMillion(ctx context.Context, model string) (float64, bool) {
+	if !c.costLookup {
 		return 0, false
 	}
-	endpoint := c.baseURL + "/generation?id=" + url.QueryEscape(generationID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return 0, false
+	c.costMu.Lock()
+	defer c.costMu.Unlock()
+	if c.prices.table == nil {
+		models, err := c.List(ctx, voice.KindSpeech)
+		if err != nil {
+			// Not cached: a transient failure must not disable costing for the
+			// life of the client.
+			return 0, false
+		}
+		table := make(map[string]float64, len(models))
+		for _, m := range models {
+			table[m.ID] = m.InPerM
+		}
+		c.prices.table = table
 	}
-	c.setHeaders(req, key)
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return 0, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return 0, false
-	}
-	data, err := readBody(resp.Body, maxJSONBody)
-	if err != nil {
-		return 0, false
-	}
-	var wire generationWire
-	if err := json.Unmarshal(data, &wire); err != nil {
-		return 0, false
-	}
-	switch {
-	case wire.Data.TotalCost != nil && *wire.Data.TotalCost >= 0:
-		return *wire.Data.TotalCost, true
-	case wire.Data.Usage != nil && *wire.Data.Usage >= 0:
-		return *wire.Data.Usage, true
-	}
-	return 0, false
+	perMillion, ok := c.prices.table[model]
+	return perMillion, ok && perMillion > 0
 }

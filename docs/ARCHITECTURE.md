@@ -461,12 +461,14 @@ rune guard, so the caller (and `nova speak` by default) splits at sentence
 boundaries, synthesizes each piece, and joins them — MP3 frames concatenate, and
 PCM gets one header at the end.
 
-The speech endpoint returns raw audio with no usage block, so exact cost is a
-best-effort `GET /generation` lookup on the generation id. It is off in the
-library, where a voice agent would pay a round trip for a number it never reads,
-and on in Nova's own front doors, which report spend. Transcription returns its
-own usage: cost and seconds always, token counts only when the model reports
-them.
+The speech endpoint returns raw audio with no usage block, and the generation
+endpoint answers with nulls for a `gen-tts` id, so a synthesis's cost is a
+catalog estimate: `chars/4` tokens at the model's per-million-token price, marked
+`CostSource: "catalog"`. The roster that carries the price is read once per
+client. It is off in the library, where a voice agent would pay for a number it
+never reads, and on in Nova's own front doors, which report spend. Transcription
+returns its own usage: cost and seconds always, token counts only when the model
+reports them.
 
 `tool.Context.Speak` and `Transcribe`, `agent.Config`, the `speak` and
 `transcribe` protocol commands, `model:speech` and `model:transcribe` extension

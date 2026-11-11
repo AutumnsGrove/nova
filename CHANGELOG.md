@@ -7,6 +7,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- Speech cost is now an estimate from the model's catalog price, and it is always reported: a
+  synthesis is priced as `chars/4` tokens at the roster's per-million-token rate, with
+  `CostSource: "catalog"`. The `/generation` lookup it replaces returned an all-null record for a
+  `gen-tts-*` id, so speech cost was always zero and a remote voice looked free beside a local one
+  (#91).
+- `voice/openrouter`: the speech roster is read once and cached, so `CostLookup` costs one extra
+  request per client rather than one per clip. `Config.CostTimeout` and `DefaultCostTimeout` are
+  removed — there is no separate lookup to bound — which breaks a caller that sets either. Both
+  were additive options; drop them and nothing else changes.
+
 ### Added
 
 - A speech role can pin the endpoint that serves it. `voice.speech.roles.<name>.provider` (and

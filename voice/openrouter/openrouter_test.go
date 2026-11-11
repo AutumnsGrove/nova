@@ -168,54 +168,129 @@ func TestSpeak_A06_NoAudio(t *testing.T) {
 	}
 }
 
-func TestSpeak_A10_CostLookup(t *testing.T) {
+// kokoroRoster is a one-model speech roster priced at Together's $4.00 per
+// million tokens, the pin the issue measured against DeepInfra's 429s.
+const kokoroRoster = `{"data":[{"id":"hexgrad/kokoro-82m","name":"Kokoro",
+	"pricing":{"prompt":"0.000004"},
+	"architecture":{"output_modalities":["speech"]}}]}`
+
+// TestSpeak_A10_CostIsEstimatedFromTheCatalog: /generation answers with an
+// all-null record for a gen-tts id, so a synthesis's cost is estimated from the
+// roster price instead: chars/4 tokens at the model's per-million-token rate.
+func TestSpeak_A10_CostIsEstimatedFromTheCatalog(t *testing.T) {
 	client, srv := newCostClient(t,
-		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg", Headers: map[string]string{"X-Generation-Id": "gen-1"}},
-		testkit.VoiceServerTurn{Body: `{"data":{"api_type":"tts","total_cost":0.000123}}`},
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg", Headers: map[string]string{"X-Generation-Id": "gen-tts-1"}},
+		testkit.VoiceServerTurn{Body: kokoroRoster},
 	)
+	// 100 characters is 25 tokens at the chars-per-token estimate, and Kokoro on
+	// Together is $4.00 per million.
+	input := strings.Repeat("a", 100)
 	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
-		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: input,
 	})
 	if err != nil {
 		t.Fatalf("Speak: %v", err)
 	}
-	if clip.Usage.CostUSD != 0.000123 || clip.Usage.CostSource != "provider" {
-		t.Errorf("usage = %+v, want the looked-up cost", clip.Usage)
+	want := 25 * 4.00 / 1e6
+	if diff := clip.Usage.CostUSD - want; diff > 1e-12 || diff < -1e-12 {
+		t.Errorf("cost = %v, want %v", clip.Usage.CostUSD, want)
+	}
+	if clip.Usage.CostSource != "catalog" {
+		t.Errorf("cost source = %q, want catalog", clip.Usage.CostSource)
 	}
 	reqs := srv.Requests()
 	if len(reqs) != 2 {
-		t.Fatalf("requests = %d, want the synthesis and the lookup", len(reqs))
+		t.Fatalf("requests = %d, want the synthesis and the roster", len(reqs))
 	}
-	if reqs[1].Path != "/generation" || reqs[1].Query != "id=gen-1" {
-		t.Errorf("lookup request = %s?%s, want /generation?id=gen-1", reqs[1].Path, reqs[1].Query)
+	if reqs[0].Path != "/audio/speech" || reqs[1].Path != "/models" {
+		t.Errorf("paths = %q, %q, want the synthesis then the roster", reqs[0].Path, reqs[1].Path)
 	}
-	if got := reqs[1].Header.Get("Authorization"); got != "Bearer "+testKey {
-		t.Errorf("lookup Authorization = %q", got)
+	for _, r := range reqs {
+		if r.Path == "/generation" {
+			t.Error("a generation lookup was made for a speech clip")
+		}
 	}
 }
 
-func TestSpeak_A10_FailedLookupIsNotAFailedSynthesis(t *testing.T) {
-	client, _ := newCostClient(t,
-		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg", Headers: map[string]string{"X-Generation-Id": "gen-1"}},
-		testkit.VoiceServerTurn{Status: 500, Body: `{"error":{"message":"nope"}}`},
+// TestSpeak_A35_RosterIsReadOncePerClient: the roster is a cache, so a second
+// clip costs no extra request. The old lookup paid one per clip for nothing.
+func TestSpeak_A35_RosterIsReadOncePerClient(t *testing.T) {
+	client, srv := newCostClient(t,
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Body: kokoroRoster},
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
 	)
-	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
-		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
-	})
-	if err != nil {
-		t.Fatalf("Speak: %v", err)
+	for i := 0; i < 2; i++ {
+		clip, err := client.Speak(context.Background(), voice.SpeechRequest{
+			Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hello there.",
+		})
+		if err != nil {
+			t.Fatalf("Speak %d: %v", i, err)
+		}
+		if clip.Usage.CostSource != "catalog" {
+			t.Errorf("clip %d cost source = %q, want catalog", i, clip.Usage.CostSource)
+		}
 	}
-	if len(clip.Bytes) != 1 {
-		t.Errorf("clip bytes = %v", clip.Bytes)
+	rosters := 0
+	for _, r := range srv.Requests() {
+		if r.Path == "/models" {
+			rosters++
+		}
 	}
-	if clip.Usage.CostUSD != 0 || clip.Usage.CostSource != "" {
-		t.Errorf("usage = %+v, want an unknown cost", clip.Usage)
+	if rosters != 1 {
+		t.Errorf("roster requests = %d, want 1 for two clips", rosters)
 	}
 }
 
-func TestSpeak_A10_LookupOffMakesOneRequest(t *testing.T) {
+// TestSpeak_A36_UnknownPriceLeavesCostUnknown: an estimate needs a price. A
+// model missing from the roster, a zero price, or a failed roster leaves the
+// cost at zero with no source, and never fails the synthesis.
+func TestSpeak_A36_UnknownPriceLeavesCostUnknown(t *testing.T) {
+	cases := []struct {
+		name string
+		body testkit.VoiceServerTurn
+	}{
+		{"absent from the roster", testkit.VoiceServerTurn{Body: `{"data":[{"id":"other/tts","pricing":{"prompt":"0.000004"}}]}`}},
+		{"priced at zero", testkit.VoiceServerTurn{Body: `{"data":[{"id":"hexgrad/kokoro-82m","pricing":{"prompt":"0"}}]}`}},
+		{"roster failed", testkit.VoiceServerTurn{Status: 500, Body: `{"error":{"message":"nope"}}`}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, srv := newCostClient(t,
+				testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+				tc.body,
+			)
+			clip, err := client.Speak(context.Background(), voice.SpeechRequest{
+				Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+			})
+			if err != nil {
+				t.Fatalf("Speak: %v", err)
+			}
+			if len(clip.Bytes) != 1 {
+				t.Errorf("clip bytes = %v, want the audio", clip.Bytes)
+			}
+			// Assert the positive before the negative: the estimate must have
+			// read the roster and found nothing, rather than never looked.
+			rosters := 0
+			for _, r := range srv.Requests() {
+				if r.Path == "/models" {
+					rosters++
+				}
+			}
+			if rosters != 1 {
+				t.Fatalf("roster requests = %d, want 1", rosters)
+			}
+			if clip.Usage.CostUSD != 0 || clip.Usage.CostSource != "" {
+				t.Errorf("usage = %+v, want an unknown cost", clip.Usage)
+			}
+		})
+	}
+}
+
+// TestSpeak_A37_LookupOffMakesOneRequest: with costing off, no roster is read.
+func TestSpeak_A37_LookupOffMakesOneRequest(t *testing.T) {
 	client, srv := newClient(t, testkit.VoiceServerTurn{
-		Audio: []byte{1}, ContentType: "audio/mpeg", Headers: map[string]string{"X-Generation-Id": "gen-1"},
+		Audio: []byte{1}, ContentType: "audio/mpeg",
 	})
 	if _, err := client.Speak(context.Background(), voice.SpeechRequest{
 		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
@@ -223,7 +298,7 @@ func TestSpeak_A10_LookupOffMakesOneRequest(t *testing.T) {
 		t.Fatalf("Speak: %v", err)
 	}
 	if got := len(srv.Requests()); got != 1 {
-		t.Errorf("requests = %d, want 1 with the lookup off", got)
+		t.Errorf("requests = %d, want 1 with costing off", got)
 	}
 }
 
@@ -549,20 +624,6 @@ func TestSpeak_KeyError(t *testing.T) {
 	}
 	if got := len(srv.Requests()); got != 0 {
 		t.Errorf("requests = %d, want 0", got)
-	}
-}
-
-func TestSpeak_A10_NoGenerationIDMeansNoLookup(t *testing.T) {
-	client, srv := newCostClient(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
-	clip, err := client.Speak(context.Background(), voice.SpeechRequest{Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi."})
-	if err != nil {
-		t.Fatalf("Speak: %v", err)
-	}
-	if clip.Usage.CostUSD != 0 || clip.Usage.CostSource != "" {
-		t.Errorf("usage = %+v", clip.Usage)
-	}
-	if got := len(srv.Requests()); got != 1 {
-		t.Errorf("requests = %d, want 1", got)
 	}
 }
 

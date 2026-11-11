@@ -15,20 +15,33 @@ import (
 // key in the environment.
 func voiceEnv(t *testing.T, srv *testkit.VoiceServer) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	t.Setenv("OPENROUTER_API_KEY", "sk-test-value-123")
 	t.Setenv("NOVA_OPENROUTER_BASE_URL", srv.URL)
+	// Costing is off by default here: these tests script one turn per
+	// synthesis, and the catalog read the estimate makes would consume one.
+	writeConfig(t, home, "voice:\n  cost_lookup: false\n")
+}
+
+// writeConfig writes a user config under home.
+func writeConfig(t *testing.T, home, body string) {
+	t.Helper()
+	dir := filepath.Join(home, ".config", "nova")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // writeVoiceConfig writes a user config with one speech and one transcription
 // role, so a test can check that flags win over roles.
 func writeVoiceConfig(t *testing.T, home string) {
 	t.Helper()
-	dir := filepath.Join(home, ".config", "nova")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	body := `voice:
+  cost_lookup: false
   speech:
     roles:
       narrate:
@@ -40,9 +53,7 @@ func writeVoiceConfig(t *testing.T, home string) {
       default:
         model: vendor/role-stt
 `
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeConfig(t, home, body)
 }
 
 // runSpeak runs one speak command with args and returns its output.

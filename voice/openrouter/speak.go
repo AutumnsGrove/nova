@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"unicode/utf8"
 
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/voice"
@@ -21,6 +22,9 @@ type speechWire struct {
 	ResponseFormat string   `json:"response_format"`
 	Speed          *float64 `json:"speed,omitempty"`
 	Instructions   string   `json:"instructions,omitempty"`
+	// Provider is a pointer so an absent pin omits the key: an empty provider
+	// object is not the same request as none, and the endpoint may route on it.
+	Provider *map[string]any `json:"provider,omitempty"`
 }
 
 // Speak synthesizes one clip. The response is raw audio, so the format and the
@@ -40,6 +44,7 @@ func (c *Client) Speak(ctx context.Context, req voice.SpeechRequest) (*voice.Cli
 	body, err := json.Marshal(speechWire{
 		Model: req.Model, Input: req.Input, Voice: req.Voice,
 		ResponseFormat: string(format), Speed: req.Speed, Instructions: req.Instructions,
+		Provider: speechProvider(req.Provider),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("voice: encoding request: %w", err)
@@ -80,10 +85,21 @@ func (c *Client) Speak(ctx context.Context, req voice.SpeechRequest) (*voice.Cli
 	if clip.Format == voice.FormatPCM {
 		clip.SampleRate, clip.Channels, clip.BitsPerSample = pcmLayout(resp.Header.Get("Content-Type"))
 	}
-	if c.costLookup && clip.GenerationID != "" {
-		if cost, ok := c.generationCost(ctx, clip.GenerationID); ok {
-			clip.Usage = provider.Usage{CostUSD: cost, CostSource: "provider"}
+	if c.costLookup {
+		if perMillion, ok := c.pricePerMillion(ctx, req.Model, req.Provider); ok {
+			runes := float64(utf8.RuneCountInString(req.Input))
+			clip.Usage = provider.Usage{CostUSD: runes * perMillion / 1e6, CostSource: "catalog"}
 		}
 	}
 	return clip, nil
+}
+
+// speechProvider returns a pointer to the provider object only when there is one
+// to send, so a request without a pin omits the key entirely. An empty object is
+// a different request from an absent one, and some endpoints route on it.
+func speechProvider(p map[string]any) *map[string]any {
+	if len(p) == 0 {
+		return nil
+	}
+	return &p
 }

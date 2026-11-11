@@ -7,6 +7,38 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- Speech cost is now an estimate from the model's catalog price, and it is always reported: a
+  synthesis is priced per character, `runes * pricePerMillion / 1e6`, with `CostSource: "catalog"`.
+  A role pinned to one provider is priced from that endpoint, so a pin to Together costs what
+  Together charges rather than DeepInfra's rate. The `/generation` lookup this replaces returned an
+  all-null record for a `gen-tts-*` id, so speech cost was always zero and a remote voice looked
+  free beside a local one (#91).
+- `voice/openrouter`: the catalog tables behind the estimate are cached, so `CostLookup` costs at
+  most one extra request per client rather than one per clip. `Config.CostTimeout` and `DefaultCostTimeout` are
+  removed — there is no separate lookup to bound — which breaks a caller that sets either. Both
+  were additive options; drop them and nothing else changes.
+
+### Added
+
+- A speech role can pin the endpoint that serves it. `voice.speech.roles.<name>.provider` (and
+  the same key on a fallback) is sent to `POST /audio/speech` as the `provider` object, verbatim,
+  so `only`, `order`, `ignore` and the data-policy keys all work. No pin still means the provider
+  picks, which is the cheapest endpoint rather than the most reliable one: an unpinned Kokoro
+  synthesis hung for 45 s because the cheapest endpoint was returning 429 (#92).
+
+### Fixed
+
+- Nova's voice documentation claimed OpenRouter ignores `only` on the audio endpoints, so a
+  provider pin could not work. It does work: `only: [Together]` answered in 0.6 s against a 45 s
+  hang unpinned. `docs/VOICE.md` and D162's successor, D170, correct the record (#92).
+
+### Removed
+
+- `voice/openrouter.DefaultSpeechModel` and `DefaultTranscribeModel`. Nothing referenced them, and
+  naming a default implied one exists when the model always comes from a role (#92).
+
 ## [0.4.1] - 2026-11-11
 
 ### Added

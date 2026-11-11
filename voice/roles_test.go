@@ -144,6 +144,67 @@ func TestSpeak_A08_FallbackRestatesItsVoice(t *testing.T) {
 	}
 }
 
+// TestSpeak_A32_RolePinReachesTheWire: a role's provider pin rides on the
+// attempt it belongs to, and a fallback's own pin replaces it. The pin cannot
+// be inherited for the same reason the voice cannot: it names endpoints of one
+// model, and a fallback is another model.
+func TestSpeak_A32_RolePinReachesTheWire(t *testing.T) {
+	primaryPin := map[string]any{"only": []string{"Together"}}
+	fallbackPin := map[string]any{"only": []string{"DeepInfra"}}
+	fake := &fakeSpeaker{steps: []speakStep{
+		{clip: &Clip{}, err: errors.New("429")},
+		{clip: &Clip{}},
+	}}
+	roles := NewRoles(RolesConfig{
+		Speaker: fake,
+		Speech: map[string]VoiceRole{
+			"narrate": {
+				Model: "hexgrad/kokoro-82m", Voice: "af_heart", Provider: primaryPin,
+				Fallback: &VoiceAttempt{Model: "fallback/tts", Voice: "two", Provider: fallbackPin},
+			},
+		},
+	})
+	if _, err := roles.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"}); err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if len(fake.calls) != 2 {
+		t.Fatalf("speaker calls = %d, want 2", len(fake.calls))
+	}
+	if got := fake.calls[0].Provider; len(got) != 1 || !hasOnly(got, "Together") {
+		t.Errorf("primary pin = %v, want only Together", got)
+	}
+	if got := fake.calls[1].Provider; len(got) != 1 || !hasOnly(got, "DeepInfra") {
+		t.Errorf("fallback pin = %v, want only DeepInfra", got)
+	}
+}
+
+// TestSpeak_A32_NoPinSendsNothing: a role without a pin leaves the request as it
+// was, so the provider chooses. The zero value must change nothing.
+func TestSpeak_A32_NoPinSendsNothing(t *testing.T) {
+	fake := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
+	roles := NewRoles(RolesConfig{
+		Speaker: fake,
+		Speech: map[string]VoiceRole{
+			"narrate": {Model: "hexgrad/kokoro-82m", Voice: "af_heart"},
+		},
+	})
+	if _, err := roles.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"}); err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("speaker calls = %d, want 1", len(fake.calls))
+	}
+	if got := fake.calls[0].Provider; got != nil {
+		t.Errorf("provider = %v, want nil so the key is omitted", got)
+	}
+}
+
+// hasOnly reports whether a provider object pins a single name through "only".
+func hasOnly(pin map[string]any, name string) bool {
+	only, ok := pin["only"].([]string)
+	return ok && len(only) == 1 && only[0] == name
+}
+
 func TestSpeak_A08_BadFallbackIsRefusedBeforeThePrimary(t *testing.T) {
 	fake := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
 	roles := NewRoles(RolesConfig{

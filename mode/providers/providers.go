@@ -234,14 +234,16 @@ func BuildSpeaker(opt Options) voice.Speaker {
 			Format:       voice.Format(role.Format),
 			Speed:        role.Speed,
 			Instructions: role.Instructions,
+			Provider:     role.Provider,
 			Timeout:      time.Duration(role.TimeoutMS) * time.Millisecond,
 		}
 		if role.Fallback != nil {
 			entry.Fallback = &voice.VoiceAttempt{
-				Model:  role.Fallback.Model,
-				Voice:  role.Fallback.Voice,
-				Format: voice.Format(role.Fallback.Format),
-				Speed:  role.Fallback.Speed,
+				Model:    role.Fallback.Model,
+				Voice:    role.Fallback.Voice,
+				Format:   voice.Format(role.Fallback.Format),
+				Speed:    role.Fallback.Speed,
+				Provider: role.Fallback.Provider,
 			}
 		}
 		roles[name] = entry

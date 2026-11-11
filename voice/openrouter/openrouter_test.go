@@ -168,54 +168,253 @@ func TestSpeak_A06_NoAudio(t *testing.T) {
 	}
 }
 
-func TestSpeak_A10_CostLookup(t *testing.T) {
+// The live prices for hexgrad/kokoro-82m, from GET /models?output_modalities=speech
+// and GET /models/hexgrad/kokoro-82m/endpoints on 2026-11-11. OpenRouter prices
+// speech per character, in the unit each provider bills, so the roster's
+// 0.00000062 is DeepInfra at $0.62/M characters and the roster reports the
+// cheapest endpoint. Together's endpoint is 6.5x that.
+const (
+	kokoroRoster = `{"data":[{"id":"hexgrad/kokoro-82m","name":"Kokoro",
+	"pricing":{"prompt":"0.00000062"},
+	"architecture":{"output_modalities":["speech"]}}]}`
+	kokoroEndpoints = `{"data":{"endpoints":[
+		{"provider_name":"DeepInfra","pricing":{"prompt":"0.00000062"}},
+		{"provider_name":"Together","pricing":{"prompt":"0.000004"}}]}}`
+)
+
+// TestSpeak_A10_CostIsEstimatedFromTheCatalog: /generation answers with an
+// all-null record for a gen-tts id, so a synthesis's cost is estimated from the
+// catalog price instead. OpenRouter bills speech per character, so the runes
+// are priced directly and no tokeniser is needed.
+func TestSpeak_A10_CostIsEstimatedFromTheCatalog(t *testing.T) {
 	client, srv := newCostClient(t,
-		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg", Headers: map[string]string{"X-Generation-Id": "gen-1"}},
-		testkit.VoiceServerTurn{Body: `{"data":{"api_type":"tts","total_cost":0.000123}}`},
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg", Headers: map[string]string{"X-Generation-Id": "gen-tts-1"}},
+		testkit.VoiceServerTurn{Body: kokoroRoster},
 	)
+	// 100 characters at the roster's $0.62 per million, DeepInfra's rate.
+	input := strings.Repeat("a", 100)
 	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
-		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: input,
 	})
 	if err != nil {
 		t.Fatalf("Speak: %v", err)
 	}
-	if clip.Usage.CostUSD != 0.000123 || clip.Usage.CostSource != "provider" {
-		t.Errorf("usage = %+v, want the looked-up cost", clip.Usage)
+	want := 100 * 0.62 / 1e6
+	if diff := clip.Usage.CostUSD - want; diff > 1e-12 || diff < -1e-12 {
+		t.Errorf("cost = %v, want %v", clip.Usage.CostUSD, want)
+	}
+	if clip.Usage.CostSource != "catalog" {
+		t.Errorf("cost source = %q, want catalog", clip.Usage.CostSource)
 	}
 	reqs := srv.Requests()
 	if len(reqs) != 2 {
-		t.Fatalf("requests = %d, want the synthesis and the lookup", len(reqs))
+		t.Fatalf("requests = %d, want the synthesis and the roster", len(reqs))
 	}
-	if reqs[1].Path != "/generation" || reqs[1].Query != "id=gen-1" {
-		t.Errorf("lookup request = %s?%s, want /generation?id=gen-1", reqs[1].Path, reqs[1].Query)
+	if reqs[0].Path != "/audio/speech" || reqs[1].Path != "/models" {
+		t.Errorf("paths = %q, %q, want the synthesis then the roster", reqs[0].Path, reqs[1].Path)
 	}
-	if got := reqs[1].Header.Get("Authorization"); got != "Bearer "+testKey {
-		t.Errorf("lookup Authorization = %q", got)
+	for _, r := range reqs {
+		if r.Path == "/generation" {
+			t.Error("a generation lookup was made for a speech clip")
+		}
 	}
 }
 
-func TestSpeak_A10_FailedLookupIsNotAFailedSynthesis(t *testing.T) {
-	client, _ := newCostClient(t,
-		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg", Headers: map[string]string{"X-Generation-Id": "gen-1"}},
+// TestSpeak_A38_APinIsPricedAtItsEndpoint: the roster reports the cheapest
+// endpoint, so a request pinned elsewhere must be priced from the endpoint it
+// pinned. Kokoro on Together is 6.5x DeepInfra, and this is the one case where
+// using the roster price would understate by that much.
+func TestSpeak_A38_APinIsPricedAtItsEndpoint(t *testing.T) {
+	// A pinned request reads the endpoint table, not the roster: two turns.
+	client, srv := newCostClient(t,
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Body: kokoroEndpoints},
+	)
+	input := strings.Repeat("a", 100)
+	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: input,
+		Provider: map[string]any{"only": []string{"Together"}},
+	})
+	if err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	want := 100 * 4.00 / 1e6
+	if diff := clip.Usage.CostUSD - want; diff > 1e-12 || diff < -1e-12 {
+		t.Errorf("cost = %v, want %v (Together's rate, not DeepInfra's)", clip.Usage.CostUSD, want)
+	}
+	if clip.Usage.CostSource != "catalog" {
+		t.Errorf("cost source = %q, want catalog", clip.Usage.CostSource)
+	}
+	gotEndpoints := false
+	for _, r := range srv.Requests() {
+		if strings.HasSuffix(r.Path, "/endpoints") {
+			gotEndpoints = true
+		}
+	}
+	if !gotEndpoints {
+		t.Error("the endpoint list was never read, so the pin was priced at the cheapest rate")
+	}
+}
+
+// TestSpeak_A39_APinnedPriceThatCannotBeReadIsUnknown: reporting the cheapest
+// rate for a request deliberately routed to a pricier endpoint is the silent
+// understatement this estimate exists to avoid, so an unreadable pinned price
+// leaves the cost unknown instead.
+func TestSpeak_A39_APinnedPriceThatCannotBeReadIsUnknown(t *testing.T) {
+	// A pinned request makes exactly one catalog call, so the 500 must be the
+	// second turn: scripting the roster first would serve it to /endpoints and
+	// leave the failure unexercised.
+	client, srv := newCostClient(t,
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
 		testkit.VoiceServerTurn{Status: 500, Body: `{"error":{"message":"nope"}}`},
 	)
 	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
-		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hello there.",
+		Provider: map[string]any{"only": []string{"Somewhere"}},
 	})
 	if err != nil {
 		t.Fatalf("Speak: %v", err)
 	}
 	if len(clip.Bytes) != 1 {
-		t.Errorf("clip bytes = %v", clip.Bytes)
+		t.Errorf("clip bytes = %v, want the audio", clip.Bytes)
+	}
+	var asked, roster bool
+	for _, r := range srv.Requests() {
+		if strings.HasSuffix(r.Path, "/endpoints") {
+			asked = true
+		}
+		if strings.HasSuffix(r.Path, "/models") {
+			roster = true
+		}
+	}
+	if !asked {
+		t.Fatal("the pinned endpoint list was never requested")
+	}
+	// No roster read either: falling back to the cheapest rate is the failure
+	// this case guards against, so the fallback must not even be attempted.
+	if roster {
+		t.Error("the roster was read after the pinned price failed, so the cost may be the cheapest rate")
 	}
 	if clip.Usage.CostUSD != 0 || clip.Usage.CostSource != "" {
-		t.Errorf("usage = %+v, want an unknown cost", clip.Usage)
+		t.Errorf("usage = %+v, want an unknown cost rather than the cheapest rate", clip.Usage)
 	}
 }
 
-func TestSpeak_A10_LookupOffMakesOneRequest(t *testing.T) {
+// TestSpeak_A40_APinToAnAbsentProviderIsUnknown: the endpoint table can be read
+// and still not contain the pinned name, which is the other way a pin cannot be
+// attributed a price. The answer is the same as a failed read: unknown, never the
+// cheapest rate.
+func TestSpeak_A40_APinToAnAbsentProviderIsUnknown(t *testing.T) {
+	client, srv := newCostClient(t,
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Body: kokoroEndpoints},
+	)
+	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hello there.",
+		Provider: map[string]any{"only": []string{"Somewhere"}},
+	})
+	if err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	var asked, roster bool
+	for _, r := range srv.Requests() {
+		if strings.HasSuffix(r.Path, "/endpoints") {
+			asked = true
+		}
+		if strings.HasSuffix(r.Path, "/models") {
+			roster = true
+		}
+	}
+	if !asked {
+		t.Fatal("the pinned endpoint list was never requested")
+	}
+	if roster {
+		t.Error("the roster was read for an unattributable pin, so the cost may be the cheapest rate")
+	}
+	if clip.Usage.CostUSD != 0 || clip.Usage.CostSource != "" {
+		t.Errorf("usage = %+v, want an unknown cost rather than the cheapest rate", clip.Usage)
+	}
+}
+
+// TestSpeak_A35_RosterIsReadOncePerClient: the roster is a cache, so a second
+// clip costs no extra request. The old lookup paid one per clip for nothing.
+func TestSpeak_A35_RosterIsReadOncePerClient(t *testing.T) {
+	client, srv := newCostClient(t,
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Body: kokoroRoster},
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+	)
+	for i := 0; i < 2; i++ {
+		clip, err := client.Speak(context.Background(), voice.SpeechRequest{
+			Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hello there.",
+		})
+		if err != nil {
+			t.Fatalf("Speak %d: %v", i, err)
+		}
+		if clip.Usage.CostSource != "catalog" {
+			t.Errorf("clip %d cost source = %q, want catalog", i, clip.Usage.CostSource)
+		}
+	}
+	rosters := 0
+	for _, r := range srv.Requests() {
+		if r.Path == "/models" {
+			rosters++
+		}
+	}
+	if rosters != 1 {
+		t.Errorf("roster requests = %d, want 1 for two clips", rosters)
+	}
+}
+
+// TestSpeak_A36_UnknownPriceLeavesCostUnknown: an estimate needs a price. A
+// model missing from the roster, a zero price, or a failed roster leaves the
+// cost at zero with no source, and never fails the synthesis.
+func TestSpeak_A36_UnknownPriceLeavesCostUnknown(t *testing.T) {
+	cases := []struct {
+		name string
+		body testkit.VoiceServerTurn
+	}{
+		{"absent from the roster", testkit.VoiceServerTurn{Body: `{"data":[{"id":"other/tts","pricing":{"prompt":"0.000004"}}]}`}},
+		{"priced at zero", testkit.VoiceServerTurn{Body: `{"data":[{"id":"hexgrad/kokoro-82m","pricing":{"prompt":"0"}}]}`}},
+		{"roster failed", testkit.VoiceServerTurn{Status: 500, Body: `{"error":{"message":"nope"}}`}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, srv := newCostClient(t,
+				testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+				tc.body,
+			)
+			clip, err := client.Speak(context.Background(), voice.SpeechRequest{
+				Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+			})
+			if err != nil {
+				t.Fatalf("Speak: %v", err)
+			}
+			if len(clip.Bytes) != 1 {
+				t.Errorf("clip bytes = %v, want the audio", clip.Bytes)
+			}
+			// Assert the positive before the negative: the estimate must have
+			// read the roster and found nothing, rather than never looked.
+			rosters := 0
+			for _, r := range srv.Requests() {
+				if r.Path == "/models" {
+					rosters++
+				}
+			}
+			if rosters != 1 {
+				t.Fatalf("roster requests = %d, want 1", rosters)
+			}
+			if clip.Usage.CostUSD != 0 || clip.Usage.CostSource != "" {
+				t.Errorf("usage = %+v, want an unknown cost", clip.Usage)
+			}
+		})
+	}
+}
+
+// TestSpeak_A37_LookupOffMakesOneRequest: with costing off, no roster is read.
+func TestSpeak_A37_LookupOffMakesOneRequest(t *testing.T) {
 	client, srv := newClient(t, testkit.VoiceServerTurn{
-		Audio: []byte{1}, ContentType: "audio/mpeg", Headers: map[string]string{"X-Generation-Id": "gen-1"},
+		Audio: []byte{1}, ContentType: "audio/mpeg",
 	})
 	if _, err := client.Speak(context.Background(), voice.SpeechRequest{
 		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
@@ -223,7 +422,7 @@ func TestSpeak_A10_LookupOffMakesOneRequest(t *testing.T) {
 		t.Fatalf("Speak: %v", err)
 	}
 	if got := len(srv.Requests()); got != 1 {
-		t.Errorf("requests = %d, want 1 with the lookup off", got)
+		t.Errorf("requests = %d, want 1 with costing off", got)
 	}
 }
 
@@ -244,6 +443,100 @@ func TestSpeak_A16_InvalidRequestNeverReachesTheServer(t *testing.T) {
 	}
 	if got := len(srv.Requests()); got != 0 {
 		t.Errorf("requests = %d, want 0", got)
+	}
+}
+
+// speechBody decodes a recorded request into its top-level keys, so a test can
+// ask whether a field was serialised at all rather than only what it held. The
+// provider object is a map, and omitempty on a map is easy to get wrong, so
+// both halves of A31 read the raw JSON.
+func speechBody(t *testing.T, body []byte) map[string]json.RawMessage {
+	t.Helper()
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(body, &top); err != nil {
+		t.Fatalf("request body %q: %v", body, err)
+	}
+	return top
+}
+
+// TestSpeak_A31_ProviderObjectIsVerbatim: a provider object is the provider's
+// business, so it reaches the wire exactly as the caller wrote it.
+func TestSpeak_A31_ProviderObjectIsVerbatim(t *testing.T) {
+	client, srv := newClient(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
+	_, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+		Provider: map[string]any{
+			"only":        []string{"Together"},
+			"data_policy": "deny",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	reqs := srv.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %d, want 1", len(reqs))
+	}
+	top := speechBody(t, reqs[0].Body)
+	raw, ok := top["provider"]
+	if !ok {
+		t.Fatalf("body = %s, want a provider key", reqs[0].Body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("provider = %s: %v", raw, err)
+	}
+	if only, ok := got["only"].([]any); !ok || len(only) != 1 || only[0] != "Together" {
+		t.Errorf("provider.only = %v, want [Together]", got["only"])
+	}
+	if got["data_policy"] != "deny" {
+		t.Errorf("provider.data_policy = %v, want deny: an unknown key is not dropped", got["data_policy"])
+	}
+}
+
+// TestSpeak_A31_NoProviderOmitsTheKey: a request without a pin must not send an
+// empty object, because an empty provider block changes routing on its own.
+func TestSpeak_A31_NoProviderOmitsTheKey(t *testing.T) {
+	client, srv := newClient(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
+	if _, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+	}); err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	reqs := srv.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %d, want 1", len(reqs))
+	}
+	if top := speechBody(t, reqs[0].Body); top["provider"] != nil {
+		t.Errorf("body = %s, want no provider key", reqs[0].Body)
+	}
+}
+
+// TestSpeak_A34_NonsenseProviderReachesTheServer: no local validation. The
+// provider object is the provider's business; a typo is its 400, which maps to
+// a provider error like any other status.
+func TestSpeak_A34_NonsenseProviderReachesTheServer(t *testing.T) {
+	client, srv := newClient(t, testkit.VoiceServerTurn{
+		Status: 400,
+		Body:   `{"error":{"message":"unknown field lonly"}}`,
+	})
+	_, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi.",
+		Provider: map[string]any{"lonly": []string{"Together"}},
+	})
+	reqs := srv.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %d, want 1: the typo must reach the server", len(reqs))
+	}
+	if top := speechBody(t, reqs[0].Body); top["provider"] == nil {
+		t.Errorf("body = %s, want the nonsense provider object to pass through", reqs[0].Body)
+	}
+	var providerErr *provider.Error
+	if !errors.As(err, &providerErr) {
+		t.Fatalf("error = %T %v, want *provider.Error", err, err)
+	}
+	if providerErr.Status != 400 {
+		t.Errorf("status = %d, want 400", providerErr.Status)
 	}
 }
 
@@ -455,20 +748,6 @@ func TestSpeak_KeyError(t *testing.T) {
 	}
 	if got := len(srv.Requests()); got != 0 {
 		t.Errorf("requests = %d, want 0", got)
-	}
-}
-
-func TestSpeak_A10_NoGenerationIDMeansNoLookup(t *testing.T) {
-	client, srv := newCostClient(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
-	clip, err := client.Speak(context.Background(), voice.SpeechRequest{Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hi."})
-	if err != nil {
-		t.Fatalf("Speak: %v", err)
-	}
-	if clip.Usage.CostUSD != 0 || clip.Usage.CostSource != "" {
-		t.Errorf("usage = %+v", clip.Usage)
-	}
-	if got := len(srv.Requests()); got != 1 {
-		t.Errorf("requests = %d, want 1", got)
 	}
 }
 

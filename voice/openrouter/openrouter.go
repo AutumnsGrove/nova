@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AutumnsGrove/nova/voice"
@@ -26,13 +27,6 @@ const (
 	DefaultReferer = "https://github.com/AutumnsGrove/nova"
 	// DefaultTitle is sent as X-Title for attribution.
 	DefaultTitle = "Nova"
-	// DefaultSpeechModel is a cheap hosted voice with a published roster.
-	DefaultSpeechModel = "hexgrad/kokoro-82m"
-	// DefaultTranscribeModel is the widely available hosted transcription model.
-	DefaultTranscribeModel = "openai/whisper-1"
-	// DefaultCostTimeout bounds the generation lookup, which must never delay a
-	// synthesis for long.
-	DefaultCostTimeout = 5 * time.Second
 	// DefaultTimeout bounds one audio request. Transcription is capped by the
 	// provider's own 60 s upstream timeout; synthesis of a long chunk can take
 	// longer than a chat call, so this is generous.
@@ -54,23 +48,23 @@ type Config struct {
 	Title string
 	// HTTPClient overrides the default client.
 	HTTPClient *http.Client
-	// CostLookup asks the provider for the exact cost of each synthesis. It
-	// costs one extra request per call, so a caller that never reads Usage
-	// should leave it false.
+	// CostLookup estimates each synthesis's cost from the model's catalog price.
+	// It costs one roster request per client rather than one per clip, so a
+	// caller that never reads Usage should leave it false.
 	CostLookup bool
-	// CostTimeout bounds one lookup. Default DefaultCostTimeout.
-	CostTimeout time.Duration
 }
 
 // Client is an OpenRouter voice backend and roster reader.
 type Client struct {
-	key         func(context.Context) (string, error)
-	baseURL     string
-	referer     string
-	title       string
-	http        *http.Client
-	costLookup  bool
-	costTimeout time.Duration
+	key     func(context.Context) (string, error)
+	baseURL string
+	referer string
+	title   string
+	http    *http.Client
+	// costLookup turns on the catalog price estimate for speech.
+	costLookup bool
+	costMu     sync.Mutex
+	prices     prices
 }
 
 var (
@@ -98,22 +92,17 @@ func New(cfg Config) *Client {
 	if client == nil {
 		client = &http.Client{Timeout: DefaultTimeout}
 	}
-	costTimeout := cfg.CostTimeout
-	if costTimeout <= 0 {
-		costTimeout = DefaultCostTimeout
-	}
 	key := cfg.APIKeyFunc
 	if key == nil {
 		key = func(context.Context) (string, error) { return cfg.APIKey, nil }
 	}
 	return &Client{
-		key:         key,
-		baseURL:     baseURL,
-		referer:     referer,
-		title:       title,
-		http:        client,
-		costLookup:  cfg.CostLookup,
-		costTimeout: costTimeout,
+		key:        key,
+		baseURL:    baseURL,
+		referer:    referer,
+		title:      title,
+		http:       client,
+		costLookup: cfg.CostLookup,
 	}
 }
 

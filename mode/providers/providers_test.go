@@ -341,12 +341,15 @@ func TestProviders_OPG34_AnUnknownModelIDStillFallsBackToOpenRouter(t *testing.T
 
 func floatPtr(f float64) *float64 { return &f }
 
+func boolPtr(b bool) *bool { return &b }
+
 // TestBuildSpeaker_A07_RoleTable proves the config's speech role reaches the
 // wire: the model, the voice, the format and the speed all come from the role.
 func TestBuildSpeaker_A07_RoleTable(t *testing.T) {
 	srv := testkit.NewVoiceServer(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
 	cfg := &config.Config{}
 	cfg.Provider.OpenRouter.BaseURL = srv.URL
+	cfg.Voice.CostLookup = boolPtr(false) // the estimate is not this test's subject
 	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
 		"narrate": {
 			Model: "vendor/tts", Voice: "af_heart", Format: "mp3", Speed: floatPtr(1.2),
@@ -380,6 +383,104 @@ func TestBuildSpeaker_A07_RoleTable(t *testing.T) {
 	if body.Speed == nil || *body.Speed != 1.2 {
 		t.Errorf("speed = %v, want 1.2", body.Speed)
 	}
+}
+
+// TestBuildSpeaker_A33_RolePinReachesTheWire: a role's provider pin is a config
+// key, so `voice.speech.roles.narrate.provider.only` is all an operator writes to
+// route a synthesis away from the cheapest default. The fallback carries its own.
+func TestBuildSpeaker_A33_RolePinReachesTheWire(t *testing.T) {
+	srv := testkit.NewVoiceServer(t,
+		testkit.VoiceServerTurn{Status: 429, Body: `{"error":{"message":"busy"}}`},
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+	)
+	cfg := &config.Config{}
+	cfg.Provider.OpenRouter.BaseURL = srv.URL
+	cfg.Voice.CostLookup = boolPtr(false)
+	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
+		"narrate": {
+			Model: "hexgrad/kokoro-82m", Voice: "af_heart",
+			Provider: map[string]any{"only": []string{"Together"}},
+			Fallback: &config.SpeechFallbackConfig{
+				Model: "fallback/tts", Voice: "two",
+				Provider: map[string]any{"only": []string{"DeepInfra"}},
+			},
+		},
+	}
+	speaker := BuildSpeaker(Options{
+		Config: cfg,
+		Getenv: envFrom(map[string]string{"OPENROUTER_API_KEY": "or-key"}),
+	})
+	if _, err := speaker.Speak(context.Background(), voice.SpeechRequest{Model: "narrate", Input: "hi"}); err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	reqs := srv.Requests()
+	var speech []testkit.RecordedRequest
+	for _, r := range reqs {
+		if r.Path == "/audio/speech" {
+			speech = append(speech, r)
+		}
+	}
+	if len(speech) != 2 {
+		t.Fatalf("speech requests = %d, want 2", len(speech))
+	}
+	if got := speechPin(t, speech[0].Body); !sameOnly(got, "Together") {
+		t.Errorf("primary provider = %v, want only Together", got)
+	}
+	if got := speechPin(t, speech[1].Body); !sameOnly(got, "DeepInfra") {
+		t.Errorf("fallback provider = %v, want only DeepInfra", got)
+	}
+}
+
+// TestBuildSpeaker_A33_NoPinSendsNoProviderKey: a role without a provider sends
+// no provider object at all, so the default stays the provider's choice.
+func TestBuildSpeaker_A33_NoPinSendsNoProviderKey(t *testing.T) {
+	srv := testkit.NewVoiceServer(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
+	cfg := &config.Config{}
+	cfg.Provider.OpenRouter.BaseURL = srv.URL
+	cfg.Voice.CostLookup = boolPtr(false)
+	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
+		"narrate": {Model: "hexgrad/kokoro-82m", Voice: "af_heart"},
+	}
+	speaker := BuildSpeaker(Options{
+		Config: cfg,
+		Getenv: envFrom(map[string]string{"OPENROUTER_API_KEY": "or-key"}),
+	})
+	if _, err := speaker.Speak(context.Background(), voice.SpeechRequest{Model: "narrate", Input: "hi"}); err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	reqs := srv.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("requests = %d, want 1", len(reqs))
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(reqs[0].Body, &body); err != nil {
+		t.Fatalf("body: %v", err)
+	}
+	if body["provider"] != nil {
+		t.Errorf("body = %s, want no provider key", reqs[0].Body)
+	}
+}
+
+// speechPin decodes the provider object from a recorded speech body, failing the
+// test when it is absent.
+func speechPin(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	var top struct {
+		Provider map[string]any `json:"provider"`
+	}
+	if err := json.Unmarshal(body, &top); err != nil {
+		t.Fatalf("body %q: %v", body, err)
+	}
+	if top.Provider == nil {
+		t.Fatalf("body = %s, want a provider key", body)
+	}
+	return top.Provider
+}
+
+// sameOnly reports whether pin pins exactly name through "only".
+func sameOnly(pin map[string]any, name string) bool {
+	only, ok := pin["only"].([]any)
+	return ok && len(only) == 1 && only[0] == name
 }
 
 // TestBuildTranscriber_A07_RoleTable: a transcription role resolves to its model

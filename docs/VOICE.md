@@ -92,6 +92,7 @@ type SpeechRequest struct {
     Format       Format   `json:"format,omitempty"`       // "mp3" or "pcm"; "" means mp3
     Speed        *float64 `json:"speed,omitempty"`        // a pointer, so 1.0 is explicit
     Instructions string   `json:"instructions,omitempty"` // tone and pacing, where supported
+    Provider     map[string]any `json:"provider,omitempty"` // a routing pin, sent verbatim
 }
 
 type Clip struct {
@@ -108,10 +109,13 @@ type Clip struct {
 }
 ```
 
-The speech endpoint returns a raw byte stream with no usage block. `Clip.Usage`
-therefore carries `CostUSD` only when the generation lookup below answers;
-`CostSource` is `"provider"` when it does and empty when it does not. An app that
-needs exact spend can read `GenerationID` and resolve it itself.
+The speech endpoint returns a raw byte stream with no usage block, and
+`GET /generation` answers with an all-null record for a `gen-tts-*` id, so there
+is no exact cost to read. `Clip.Usage` therefore carries **an estimate** derived
+from the model's catalog price, priced per character: `CostSource` is
+`"catalog"`, and empty when the price is unknown. An app that needs to reconcile spend against its bill must do
+so from its own records; `GenerationID` is captured for that, but it does not
+resolve today.
 
 The PCM layout comes from the response `Content-Type`, which OpenRouter sends as
 `audio/pcm;rate=24000;channels=1`. The adapter parses `rate` and `channels` when
@@ -251,15 +255,17 @@ type VoiceRole struct {
     Format       Format
     Speed        *float64
     Instructions string
+    Provider     map[string]any // optional routing pin, own to this model
     Timeout      time.Duration
-    Fallback     *VoiceAttempt // optional; model and voice are its own
+    Fallback     *VoiceAttempt // optional; model, voice and pin are its own
 }
 
 type VoiceAttempt struct {
-    Model  string
-    Voice  string
-    Format Format
-    Speed  *float64
+    Model    string
+    Voice    string
+    Format   Format
+    Speed    *float64
+    Provider map[string]any
 }
 
 type TranscribeRole struct {
@@ -284,7 +290,7 @@ shape expresses.
 ```yaml
 voice:
   allow_aliases: false   # -latest / ~ ids are refused by default
-  cost_lookup: true      # best-effort /generation lookup, Nova's own front doors
+  cost_lookup: true      # price speech from the catalog, Nova's own front doors
   speech:
     roles:
       narrate:
@@ -292,11 +298,14 @@ voice:
         voice: alloy
         format: mp3
         speed: 1.0
+        provider:              # optional routing pin, sent verbatim
+          only: [Together]
         timeout_ms: 120000
         fallback:
           model: mistralai/voxtral-mini-tts-2603
           voice: en_paul_neutral
           format: mp3
+          provider: {only: [DeepInfra]}   # restated, never inherited
   transcribe:
     roles:
       default:
@@ -310,6 +319,17 @@ timeout is 60 s per request and its docs say to split longer recordings; a
 longer role timeout would only wait for a call the provider has already given up
 on. `cost_lookup` is global rather than per role because it is a property of the
 provider, not of a voice.
+
+`provider` is a routing pin: an arbitrary object passed to the endpoint as the
+`provider` field, so `only`, `order`, `ignore` and the data-policy keys all work
+without Nova modelling them. **No pin means the provider picks the cheapest
+endpoint**, which is not always the one that answers: measured on 2026-11-10,
+`hexgrad/kokoro-82m` + `af_heart` returned in 0.6 s pinned to Together and hung
+for 45 s unpinned, because the cheapest endpoint (DeepInfra) was 429ing. The pin
+is not free — Together is $4.00/M tokens against DeepInfra's $0.62/M — so it is
+the operator's call, per role and per fallback. A fallback restates its own pin
+for the same reason it restates its voice: a pin names one model's endpoints.
+A provider object that contains no keys is the same as none and is omitted.
 
 ## The OpenRouter adapter
 
@@ -332,7 +352,8 @@ Three wire decisions worth recording, and what the live API actually did on
 |---|---|
 | `audio/speech` `pcm` | `Content-Type: audio/pcm;rate=24000;channels=1`, `X-Generation-Id: gen-tts-…` |
 | `audio/speech` `mp3` | `Content-Type: audio/mpeg`, body starts `ff f3` (frame sync, no ID3) |
-| `GET /generation?id=…` | `api_type: tts`, `total_cost: 1.86e-06`, available immediately |
+| `GET /models/{id}/endpoints` | per-provider `pricing.prompt`: Kokoro is `0.00000062` (DeepInfra) and `0.000004` (Together) |
+| `GET /generation?id=gen-tts-…` | **all nulls** — `total_cost`, `usage`, `model` and `provider_name`; an earlier measurement of `total_cost: 1.86e-06` on a Kokoro generation no longer reproduces |
 | multipart with `file=@clip.bin` | **400** — the format is inferred from the filename extension |
 | multipart with `file=@clip.mp3` | 200, `{"text":"Hi.","usage":{"seconds":1,"cost":0.0001}}` |
 | base64 `input_audio` | 200, the same body |
@@ -346,24 +367,51 @@ Three wire decisions worth recording, and what the live API actually did on
    as `clip.bin` are a 400. Polaris and her-go both use base64 JSON; base64
    remains the path for files over the 25 MiB multipart cap on OpenAI and Groq,
    and arrives with `voice/openai` if a consumer needs it.
-2. **No `provider` passthrough.** OpenRouter does not apply `order`, `only` or
-   `ignore` to the audio endpoints, so Polaris's `{"only": ["Together"]}` pin
-   cannot work on the current API. A model-level fallback in the role table is
-   the resilience lever instead.
-3. **Speech cost is a best-effort second request.** The speech response is raw
-   audio with no usage block, so exact cost is only available from
-   `GET {base}/generation?id=<X-Generation-Id>`, which answered immediately with
-   `total_cost` for a Kokoro generation. When cost lookup is on, the adapter
-   makes that call with a 5 s bound and fills `Usage.CostUSD`; a failed or slow
-   lookup leaves cost at zero and never fails the synthesis. This replaces the
-   per-million-character table Polaris maintains by hand, which prices
-   characters at the per-token rate and so overestimates prose by roughly the
-   chars-per-token ratio (about 4×).
+2. **`provider` is a passthrough, and the pin matters more than the price.**
+   OpenRouter's docs say `order`, `only` and `ignore` are not applied to the
+   audio endpoints. **That is false in practice**: `only` is honoured, and a
+   request that sends nothing gets the cheapest endpoint. The same Kokoro
+   request answered in 0.6 s via `{"only":["Together"]}`, instantly 429ed via
+   `{"only":["DeepInfra"]}`, and hung for 45 s with no `provider` field at all;
+   `GET /generation` confirmed the `provider_name` each time. The adapter
+   therefore sends `SpeechRequest.Provider` verbatim when it is set and omits
+   the key when it is not, and it validates nothing about the object beyond
+   that: the keys are the provider's vocabulary, so a typo is its 400, which
+   maps to a `*provider.Error` like any other status. An empty object is
+   omitted rather than sent, because it is not the same request as none.
+   Nova deliberately does **not** hardcode a pin: the trade is reliability
+   against a 6.5× character price, which is the operator's to make. See D162 and
+   D170.
+3. **Speech cost is a catalog estimate, because there is no exact one.** The
+   speech response is raw audio with no usage block, and `GET
+   {base}/generation?id=<X-Generation-Id>` returns all nulls for a `gen-tts-*`
+   id, so the lookup this adapter used to make was one wasted request per clip
+   for a number that never came back. Instead the adapter prices each synthesis
+   from the catalog, with `CostSource: "catalog"`.
+
+   **The unit is characters, not tokens.** OpenRouter bills media models "per
+   character or minute of audio", and a speech model's `pricing.prompt` is
+   dollars per character in the unit its provider bills, so a synthesis costs
+   `runes * pricePerMillion / 1e6` and no tokeniser is involved. Kokoro is
+   `0.00000062` ($0.62/M characters on DeepInfra) and Together's endpoint for
+   the same model is `0.000004` ($4.00/M).
+
+   **The roster reports the cheapest endpoint, so a pin is priced separately.**
+   `GET /models?output_modalities=speech` gave `0.00000062` for Kokoro, which is
+   DeepInfra; a request pinned to Together is billed 6.5× that. A pin naming
+   exactly one provider is therefore priced from
+   `GET /models/{id}/endpoints`, and if that table cannot be read the cost is
+   left **unknown** rather than reported at the cheapest rate, since understating
+   a deliberately pricier route is the error this estimate exists to avoid. A pin
+   that names several providers, or routes by `order` or `ignore`, leaves the
+   choice to the API and is priced at the roster's cheapest rate; that case is
+   the one approximation left, and it is in the direction of a lower number.
 
 `voice/openrouter.Config.CostLookup` defaults to **false**: a voice agent that
-calls `Speak` on every reply should not pay an extra round trip for a number it
-never reads. Nova's own front doors set it from `voice.cost_lookup`, which
-defaults to true, because they are the ones that report spend.
+calls `Speak` on every reply should not pay for a catalog read it never uses.
+Nova's own front doors set it from `voice.cost_lookup`, which defaults to true,
+because they are the ones that report spend. Both tables are cached, so the cost
+is at most one extra request per client and per priced model, not one per clip.
 
 Errors are `*provider.Error` with the status and `provider.Classify`'s
 retryability, the body truncated to 500 characters, and the request bounded by
@@ -484,7 +532,7 @@ are a contract between this document and the tests, not a gate.
 | A07 | A role resolves model, voice, format and speed; a direct id with a slash passes through and needs its own voice |
 | A08 | A fallback uses its own model and voice, and a fallback whose format the model cannot produce is refused |
 | A09 | A `-latest` or `~` id is refused unless `allow_aliases` is set |
-| A10 | A cost lookup fills `CostUSD` with source `provider`; a failing or slow lookup leaves zero and still returns the clip; `CostLookup` false makes no request |
+| A10 | A synthesis is priced from the catalog per character: `runes * pricePerMillion / 1e6`, with `CostSource: "catalog"`, and no `/generation` request is made |
 | A11 | A cancelled context returns `ctx.Err` with no clip, and the body is closed |
 | A12 | A transcription is sent as multipart with `file` **named `clip.<format>`**, `model`, `language`, `temperature` and the response format, and the recorded form fields match |
 | A13 | A json transcript maps text and cost into `Transcript` (`CostSource: "provider"`), trims the text, and tolerates a usage block with no token counts |
@@ -505,6 +553,16 @@ are a contract between this document and the tests, not a gate.
 | A28 | `nova speak` chunks a long file, joins the clips, reports the chunk count and cost, and writes nothing when a middle chunk fails |
 | A29 | `nova transcribe` prints the text, and `--json` prints the full transcript |
 | A30 | Fuzz: `Chunks` never panics, never splits a rune and never exceeds the cap; a hostile transcript body never panics the decoder |
+| A31 | A `Provider` object is serialised into the body verbatim, unknown keys included; a request without one omits the `provider` key entirely |
+| A32 | A role's `provider` reaches the attempt it belongs to, and a fallback's own `provider` replaces it rather than inheriting the primary's; a role without one sends nil |
+| A33 | `voice.speech.roles.<name>.provider` loads from config and reaches the wire through `BuildSpeaker`, and a fallback's own pin replaces the primary's |
+| A34 | The provider object is not validated locally: a nonsense key still reaches the server, and the 400 it earns is a `*provider.Error` like any other |
+| A35 | The speech roster is read once per client: a second clip costs no extra request, and both clips carry a cost |
+| A36 | A model absent from the roster, a model priced at zero, or a failed roster leaves the cost at zero with no source, and the clip is still returned |
+| A37 | `CostLookup` false makes no roster request at all |
+| A38 | A pin naming one provider is priced from that endpoint's rate, not the roster's cheapest one, and the endpoint list is read for it |
+| A39 | A pin whose endpoint price cannot be read leaves the cost unknown rather than falling back to the cheapest rate, and the clip is still returned |
+| A40 | A pin naming a provider the endpoint list does not carry leaves the cost unknown for the same reason, and the roster is not read as a fallback |
 
 ## Budgets
 
@@ -538,7 +596,7 @@ Each slice is one commit with its tests, and this document changes with it.
 
 1. `provider.Model.Voices`, `SupportsSpeech`, `SupportsTranscription`; catalog test.
 2. `voice`: the contract, validation, `Chunks`, `Join`, `WAV`, and the roles decorator.
-3. `voice/openrouter`: both endpoints, the cost lookup, the roster.
+3. `voice/openrouter`: both endpoints, the cost estimate, the roster.
 4. `proto`: the 64 MiB line limit and its test.
 5. `config`: the `voice` block and its warnings.
 6. `tool.Context` and `agent.Config` seams; `agent/sub` passes all three
@@ -560,12 +618,12 @@ makes it true:
   name is model-specific.
 - Chunking, joining and the WAV header live in the contract; markdown stripping
   does not.
-- Speech cost is a best-effort `/generation` lookup, off in the library and on in
+- Speech cost is a catalog estimate (`runes` at the priced endpoint's per-million-character rate), off in the library and on in
   Nova's front doors; a failed lookup is not a failed synthesis.
 - Transcription uses multipart in v1; base64 JSON waits for a consumer that
   needs over 25 MiB on a non-multipart provider.
-- The audio endpoints get no `provider` passthrough, because the API does not
-  apply routing preferences to them.
+- The audio endpoints take a `provider` passthrough, because the API does honour
+  `only` there even though its docs say otherwise; Nova ships no default pin.
 - The protocol line limit rises from 16 MiB to 64 MiB, because a 40 MiB clip is
   a 53 MiB base64 line and the library's cap should be reachable.
 - `nova speak` chunks and joins by default, because a model's input cap is far

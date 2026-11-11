@@ -132,16 +132,17 @@ type VoiceConfig struct {
 	// AllowAliases permits ids that end in "-latest" or start with "~". Off by
 	// default, as for decisions and embeddings.
 	AllowAliases bool `yaml:"allow_aliases"`
-	// CostLookup asks the provider for the exact cost of each synthesis. It is
-	// a pointer so an unset block still reports spend; set it false for the
-	// fast path.
+	// CostLookup estimates each synthesis's cost from the model's catalog price.
+	// It is a pointer so an unset block still reports spend; set it false for
+	// the fast path, which skips the roster read.
 	CostLookup *bool                 `yaml:"cost_lookup"`
 	Speech     VoiceSpeechConfig     `yaml:"speech"`
 	Transcribe VoiceTranscribeConfig `yaml:"transcribe"`
 }
 
-// CostLookupEnabled reports whether Nova's front doors ask for exact speech
-// cost. The default is on: a caller that never reads Usage turns it off.
+// CostLookupEnabled reports whether Nova's front doors estimate speech cost. The
+// default is on: a caller that never reads Usage turns it off and saves the
+// roster read.
 func (c VoiceConfig) CostLookupEnabled() bool {
 	return c.CostLookup == nil || *c.CostLookup
 }
@@ -160,16 +161,19 @@ type SpeechRoleConfig struct {
 	Speed        *float64              `yaml:"speed"`
 	Instructions string                `yaml:"instructions"`
 	TimeoutMS    int                   `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
+	Provider     map[string]any        `yaml:"provider"`
 	Fallback     *SpeechFallbackConfig `yaml:"fallback"`
 }
 
 // SpeechFallbackConfig is a second attempt. It restates its own model and voice,
-// because a voice name is model-specific and cannot be inherited.
+// because a voice name is model-specific and cannot be inherited. Provider is
+// restated for the same reason: a pinned primary may want another pin or none.
 type SpeechFallbackConfig struct {
-	Model  string   `yaml:"model"`
-	Voice  string   `yaml:"voice"`
-	Format string   `yaml:"format"`
-	Speed  *float64 `yaml:"speed"`
+	Model    string         `yaml:"model"`
+	Voice    string         `yaml:"voice"`
+	Format   string         `yaml:"format"`
+	Speed    *float64       `yaml:"speed"`
+	Provider map[string]any `yaml:"provider"`
 }
 
 // VoiceTranscribeConfig holds the speech-to-text roles.

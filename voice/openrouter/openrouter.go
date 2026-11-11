@@ -26,10 +26,6 @@ const (
 	DefaultReferer = "https://github.com/AutumnsGrove/nova"
 	// DefaultTitle is sent as X-Title for attribution.
 	DefaultTitle = "Nova"
-	// DefaultSpeechModel is a cheap hosted voice with a published roster.
-	DefaultSpeechModel = "hexgrad/kokoro-82m"
-	// DefaultTranscribeModel is the widely available hosted transcription model.
-	DefaultTranscribeModel = "openai/whisper-1"
 	// DefaultCostTimeout bounds the generation lookup, which must never delay a
 	// synthesis for long.
 	DefaultCostTimeout = 5 * time.Second

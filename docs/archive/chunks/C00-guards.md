@@ -103,13 +103,14 @@ accept <CNN> [-from step]          exit 0 all steps pass; exit 1 a step failed; 
       (`./tui/...`, `./bundled/...`, with `charm.land/fang` also in `./tui/cli`). A violation message names
       the module, the package, and says to record the addition in `docs/DECISIONS.md` (D46).
 7. **accept** runs, in order, stopping at the first failure and printing the failing
-   command's output: `gofmt -l`, `go vet`, `go build ./...`, `go build -tags notui ./...`,
-   `go test -short -race -p 2` on the spec's packages, `go test -race -p 2` on the same,
-   both with an explicit `-timeout`: 25m when the chunk owns `./tui/splash/splashgif`
-   (the budget `make race-splash` gives it), 10m otherwise, so the gate never inherits the
-   toolchain's default,
-   `matrixcheck`, `linecount`, `importcheck`. A step whose package does not exist yet is
-   an error, not a skip.
+   command's output, in two phases (D169). The module-wide phase runs once: `gofmt -l`,
+   `go vet`, `go build ./...`, `go build -tags notui ./...`, `importcheck`. Then the
+   chunk's own: `go test -race -p 2` on the spec's packages with an explicit `-timeout`
+   (25m when the chunk owns `./tui/splash/splashgif`, the budget `make race-splash` gives
+   it, 10m otherwise, so the gate never inherits the toolchain's default), `matrixcheck`,
+   `linecount`. A step whose package does not exist yet is an error, not a skip.
+   `accept --all` runs the module-wide phase once for every archived spec, which is what
+   `release.yml` calls.
 8. `accept` prints a one-line summary per step (`ok`/`FAIL`, duration).
 
 ## Matrix
@@ -170,9 +171,11 @@ accept <CNN> [-from step]          exit 0 all steps pass; exit 1 a step failed; 
 | ACC03 | a test fails | failing test in a listed package | exit 1; prints the test output |
 | ACC04 | unknown chunk | `accept C99` | exit 2 |
 | ACC05 | `-from step` | `accept C01 -from matrixcheck` | earlier steps skipped, later ones run |
-| ACC06 | steps run in the documented order | recorded command log | matches the order in Behaviour 7 |
+| ACC06 | steps run in the documented order | recorded command log | the module-wide steps once (`gofmt`, `vet`, `build`, `build-notui`, `importcheck`), then the chunk's own (`test`, `matrixcheck`, `linecount`) |
 | ACC07 | package listed in spec does not exist | | exit 1 naming the package |
-| ACC08 | a chunk that owns `./tui/splash/splashgif` | a spec listing that package | both test steps carry `-timeout 25m`; any other chunk gets `-timeout 10m` |
+| ACC08 | a chunk that owns `./tui/splash/splashgif` | a spec listing that package | the test step carries `-timeout 25m`; any other chunk gets `-timeout 10m` |
+| ACC09 | `--all` runs the gate once for every chunk | two chunk specs and a recorded command log | the module-wide steps run once, the per-chunk ones twice, and each chunk is named in the summary |
+| ACC10 | `--all` stops on the failing chunk | the second chunk's matrixcheck fails | exit 1 and stderr names that chunk |
 
 Test strategy: each program has a `run(args, stdout, stderr, env) int` function so tests
 call it directly. Fixtures for `matrixcheck`, `importcheck`, and `accept` are small Go

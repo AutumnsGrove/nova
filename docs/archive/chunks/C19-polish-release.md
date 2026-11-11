@@ -265,7 +265,7 @@ func Needed(hasKey bool, cfg *config.Config) []Step
 | FAV04 | deterministic | twice | identical bytes |
 | FAV05 | 16 px legibility | the star's arms are at least 2 pixels long | true |
 | REL01 | workflow structure | parse the YAML | triggers on `v*`; matrix linux and darwin by amd64 and arm64; both flavours |
-| REL02 | acceptance gate | | runs accept for all specs before publishing |
+| REL02 | acceptance gate | | runs `scripts/accept --all` before publishing, which globs every spec |
 | REL03 | flags | | `CGO_ENABLED=0`, `-trimpath`, `-s -w`, the version variables |
 | REL04 | archive names and contents | dry run of the packaging step | as specified |
 | REL05 | checksums file | | one line per archive |

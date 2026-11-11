@@ -309,7 +309,12 @@ make splash        # what the pull request gate runs for tui/splash: the same te
 `matrixcheck-all` and `linecount-all` replace the per-chunk `accept` as the way solved
 areas are held steady: they run over every archived spec, with no status filter, and
 fail if the specs cannot be found. `go run ./scripts/accept <chunk>` still runs the full
-gate for one archived chunk when you want a narrower loop.
+gate for one archived chunk when you want a narrower loop, and `go run ./scripts/accept
+--all` runs it for every chunk — what `release.yml` does. A chunk's gate is two phases:
+the module-wide steps (`gofmt`, `vet`, `build`, `build-notui`, `importcheck`) run once,
+then the chunk's own (`test`, `matrixcheck`, `linecount`). There is one test step, with
+`-race`; the earlier `-short` run was a strict subset and only doubled the detector's
+cost.
 
 Beyond the gates: the tests for the change were written first and watched failing, the
 docs the change touches are updated, and anything unfinished is stated in the issue or

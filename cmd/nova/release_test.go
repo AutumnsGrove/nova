@@ -88,8 +88,11 @@ func TestRelease_REL02_AcceptanceGate(t *testing.T) {
 	for _, s := range accept.Steps {
 		runs = append(runs, s.Run)
 	}
+	// `--all` is what covers every spec, including one added after this test was
+	// written: it globs docs/archive/chunks itself, and ACC09/ACC10 in
+	// scripts/accept prove that it names each chunk and stops on a failure.
 	joined := strings.Join(runs, "\n")
-	if !strings.Contains(joined, "scripts/accept") || !strings.Contains(joined, "docs/archive/chunks") {
+	if !strings.Contains(joined, "scripts/accept --all") {
 		t.Fatalf("accept job does not run every spec:\n%s", joined)
 	}
 }

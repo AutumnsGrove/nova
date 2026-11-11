@@ -32,13 +32,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Accept every chunk
-        run: |
-          set -eu
-          for spec in docs/archive/chunks/C*.md; do
-            chunk=$(basename "$spec" | cut -d- -f1)
-            echo "== accept $chunk =="
-            go run ./scripts/accept "$chunk"
-          done
+        # One invocation, so the module-wide steps run once rather than once per
+        # chunk: the same work 23 times over was a fifth of the gate (#97).
+        run: go run ./scripts/accept --all
 
   build:
     needs: accept

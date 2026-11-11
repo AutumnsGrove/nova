@@ -316,11 +316,17 @@ func TestSpeak_A40_APinToAnAbsentProviderIsUnknown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Speak: %v", err)
 	}
-	var roster bool
+	var asked, roster bool
 	for _, r := range srv.Requests() {
+		if strings.HasSuffix(r.Path, "/endpoints") {
+			asked = true
+		}
 		if strings.HasSuffix(r.Path, "/models") {
 			roster = true
 		}
+	}
+	if !asked {
+		t.Fatal("the pinned endpoint list was never requested")
 	}
 	if roster {
 		t.Error("the roster was read for an unattributable pin, so the cost may be the cheapest rate")

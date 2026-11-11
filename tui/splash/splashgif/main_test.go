@@ -241,11 +241,26 @@ func freshFrames(t *testing.T) []*image.RGBA {
 // source colour into a different mapping for the whole animation.
 func mapToPalette(frames []*image.RGBA, pal color.Palette) []*image.Paletted {
 	out := make([]*image.Paletted, len(frames))
+	// One lookup per distinct colour, not per pixel: the scene draws a few
+	// hundred colours across 150 frames of 197k pixels, and scanning the
+	// palette for each of those 29.6M pixels was 95% of this test's 413 s on a
+	// runner (see #97). Reading Pix directly also drops a bounds check per pixel.
+	seen := make(map[uint32]uint8, 1024)
+	index := func(c color.RGBA) uint8 {
+		key := uint32(c.R)<<24 | uint32(c.G)<<16 | uint32(c.B)<<8 | uint32(c.A)
+		if i, ok := seen[key]; ok {
+			return i
+		}
+		i := uint8(nearest(pal, c))
+		seen[key] = i
+		return i
+	}
 	for i, f := range frames {
 		p := image.NewPaletted(f.Bounds(), pal)
 		for y := f.Rect.Min.Y; y < f.Rect.Max.Y; y++ {
 			for x := f.Rect.Min.X; x < f.Rect.Max.X; x++ {
-				p.SetColorIndex(x, y, uint8(nearest(pal, f.RGBAAt(x, y))))
+				off := f.PixOffset(x, y)
+				p.Pix[p.PixOffset(x, y)] = index(color.RGBA{f.Pix[off], f.Pix[off+1], f.Pix[off+2], f.Pix[off+3]})
 			}
 		}
 		out[i] = p

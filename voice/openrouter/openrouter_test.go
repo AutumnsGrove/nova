@@ -261,9 +261,11 @@ func TestSpeak_A38_APinIsPricedAtItsEndpoint(t *testing.T) {
 // understatement this estimate exists to avoid, so an unreadable pinned price
 // leaves the cost unknown instead.
 func TestSpeak_A39_APinnedPriceThatCannotBeReadIsUnknown(t *testing.T) {
+	// A pinned request makes exactly one catalog call, so the 500 must be the
+	// second turn: scripting the roster first would serve it to /endpoints and
+	// leave the failure unexercised.
 	client, srv := newCostClient(t,
 		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
-		testkit.VoiceServerTurn{Body: kokoroRoster},
 		testkit.VoiceServerTurn{Status: 500, Body: `{"error":{"message":"nope"}}`},
 	)
 	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
@@ -276,14 +278,22 @@ func TestSpeak_A39_APinnedPriceThatCannotBeReadIsUnknown(t *testing.T) {
 	if len(clip.Bytes) != 1 {
 		t.Errorf("clip bytes = %v, want the audio", clip.Bytes)
 	}
-	asked := false
+	var asked, roster bool
 	for _, r := range srv.Requests() {
 		if strings.HasSuffix(r.Path, "/endpoints") {
 			asked = true
 		}
+		if strings.HasSuffix(r.Path, "/models") {
+			roster = true
+		}
 	}
 	if !asked {
 		t.Fatal("the pinned endpoint list was never requested")
+	}
+	// No roster read either: falling back to the cheapest rate is the failure
+	// this case guards against, so the fallback must not even be attempted.
+	if roster {
+		t.Error("the roster was read after the pinned price failed, so the cost may be the cheapest rate")
 	}
 	if clip.Usage.CostUSD != 0 || clip.Usage.CostSource != "" {
 		t.Errorf("usage = %+v, want an unknown cost rather than the cheapest rate", clip.Usage)

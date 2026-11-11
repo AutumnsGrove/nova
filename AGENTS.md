@@ -185,7 +185,11 @@ bump, release, or tag a version:
    or edit it, and note that the step falls back to the changelog section on its own, so a release never depends on
    the model answering. Flags come before the refs: Go's `flag` stops at the first one, so `--out` after the range is
    a usage error. The exit status says which body you got: 0 the agent's summary, 3 the changelog fallback, so
-   `go run ... ; echo $?` reads 1 for 3 and you should read the warning line instead.
+   `go run ... ; echo $?` reads 1 for 3 and you should read the warning line instead. Rehearse the CI path itself
+   with `gh workflow run release.yml --ref <branch> -f dry_run=true [-f tag=vX.Y.Z]`: the release job runs for real
+   and writes the body to the job summary and an artifact instead of publishing, so the job is exercised before a
+   tag exists. `tag` names the version the notes are for; it does not have to be a tag yet, and the git range then
+   ends at `HEAD`.
 6. **Verify.** Watch the `release` workflow to success, and check the module resolves:
    `go list -m github.com/AutumnsGrove/nova@vX.Y.Z` from a scratch module.
 7. **Tell the consumers.** Polaris (and any other importer) moves with `go get github.com/AutumnsGrove/nova@vX.Y.Z`

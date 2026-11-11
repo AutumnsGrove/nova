@@ -40,7 +40,9 @@ const (
 	// backend work behind it (the largest real one wanted 13 KiB) while still
 	// catching an answer that has started dumping the commit log.
 	defaultMaxBytes = 16 << 10
-	defaultTimeout  = 5 * time.Minute
+	// A CI run took 4m41s for one release, so five minutes left no headroom
+	// and a slower runner would fall back to the changelog by accident.
+	defaultTimeout = 12 * time.Minute
 	// emptyTree is git's hash of an empty tree. It is the diff base for a first
 	// release, which has no previous tag to compare against.
 	emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -56,6 +58,7 @@ func main() {
 // options is the parsed command line.
 type options struct {
 	from, to   string
+	version    string
 	repo       string
 	changelog  string
 	out        string
@@ -115,6 +118,7 @@ func parse(args []string) (options, error) {
 	fs.SetOutput(io.Discard)
 	fs.StringVar(&o.repo, "repo", o.repo, "repository to read")
 	fs.StringVar(&o.changelog, "changelog", o.changelog, "changelog path, relative to the repository")
+	fs.StringVar(&o.version, "version", "", "version whose changelog section to use (default: <tag> without the v)")
 	fs.StringVar(&o.out, "out", "", "write the body to this file instead of stdout")
 	fs.StringVar(&o.provider, "provider", o.provider, "agent provider")
 	fs.StringVar(&o.model, "model", o.model, "agent model")
@@ -152,7 +156,11 @@ type evidence struct {
 
 // collect gathers the tag range from git and the release's changelog section.
 func collect(ctx context.Context, o options, env []string) (evidence, error) {
-	ev := evidence{from: o.from, to: o.to, version: strings.TrimPrefix(o.to, "v")}
+	version := o.version
+	if version == "" {
+		version = o.to
+	}
+	ev := evidence{from: o.from, to: o.to, version: strings.TrimPrefix(version, "v")}
 	if _, err := os.Stat(o.repo); err != nil {
 		return ev, fmt.Errorf("repository: %w", err)
 	}
@@ -251,7 +259,7 @@ func buildPrompt(ev evidence) string {
 	b.WriteString(rules)
 	b.WriteString("\n# Evidence\n\n")
 
-	fmt.Fprintf(&b, "## The changelog section for %s\n\n", ev.to)
+	fmt.Fprintf(&b, "## The changelog section for %s\n\n", ev.version)
 	if ev.changelog == "" {
 		fmt.Fprintf(&b, "None: the changelog has no section for %s, so the commit log is the only evidence.\n\n", ev.version)
 	} else {

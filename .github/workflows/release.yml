@@ -6,8 +6,19 @@ on:
       - "v*"
   # The gate is the part that fails, and it has failed on three tags in a row.
   # A manual run checks the whole accept loop on the branch before anything is
-  # tagged; only the accept job runs, because build and release need a tag ref.
+  # tagged. `dry_run` goes further and runs the release job too, writing the
+  # body to the job summary instead of publishing it, so the path that turns a
+  # tag into a release page is rehearsed before a tag exists.
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run the release job without publishing (writes the body to the summary)"
+        type: boolean
+        default: false
+      tag:
+        description: "Version to write notes for (defaults to the ref name)"
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -31,6 +42,11 @@ jobs:
 
   build:
     needs: accept
+    # A dry run rehearses the release job alone: the archives are what a tag
+    # publishes, and package.sh names them from the ref, which a branch name
+    # with a slash breaks. Written against the event rather than `!inputs.dry_run`
+    # so a tag push never depends on how a missing input evaluates.
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run != true }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -63,10 +79,14 @@ jobs:
           path: dist/*.tar.gz
 
   release:
-    needs: build
-    # The only job that needs a tag: a workflow_dispatch run builds the four
-    # archives and stops, which is how a broken script is found before a tag.
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [accept, build]
+    # Publishing needs a green tree, a tag and its build. A dispatch run skips
+    # the build and stops before the steps that need artifacts or write to
+    # GitHub, so the job is rehearsed without a tag.
+    if: |
+      always() &&
+      needs.accept.result == 'success' &&
+      (inputs.dry_run == true || (startsWith(github.ref, 'refs/tags/') && needs.build.result == 'success'))
     runs-on: ubuntu-latest
     # The only job that publishes, so the only one that may write.
     permissions:
@@ -89,10 +109,12 @@ jobs:
         with:
           node-version: "22"
       - uses: actions/download-artifact@v4
+        if: ${{ inputs.dry_run != true }}
         with:
           path: dist
           merge-multiple: true
       - name: Write checksums
+        if: ${{ inputs.dry_run != true }}
         run: |
           set -eu
           cd dist
@@ -111,21 +133,33 @@ jobs:
         # run, because `go run` collapses every non-zero status to 1 and status 3
         # is how the script says the fallback produced the body.
         continue-on-error: true
-        timeout-minutes: 8
+        # The script's own deadline is 12 minutes; this is the backstop above it.
+        timeout-minutes: 15
         env:
           OPENCODE_API_KEY: ${{ secrets.PI_REVIEW_API_KEY }}
+          # A tag push names the tag; a dry run names the branch, or the version
+          # typed into the dispatch form.
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -u
-          previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
-          echo "release-notes range: ${previous:-<first release>}..${GITHUB_REF_NAME}"
           if ! go build -o "$RUNNER_TEMP/release-notes" ./scripts/release-notes; then
             echo "::warning::scripts/release-notes did not build; the release will publish with no body"
             exit 0
           fi
+          # The version and the ref are separate: a rehearsal is for a version
+          # that may not be tagged yet, so the range ends at HEAD when the name
+          # does not resolve, while the changelog lookup still uses the name.
+          to="$TAG"
+          if ! git rev-parse --verify --quiet "${TAG}^{commit}" >/dev/null; then
+            to=HEAD
+            echo "::warning::${TAG} is not a ref yet; the range ends at HEAD"
+          fi
+          previous=$(git describe --tags --abbrev=0 "${to}^" 2>/dev/null || true)
+          echo "release-notes range: ${previous:-<first release>}..${to} for ${TAG}"
           # Flags come first: Go's flag package stops at the first ref, so a
           # flag after the range is a usage error and no body at all.
           status=0
-          "$RUNNER_TEMP/release-notes" --out body.md "$previous" "$GITHUB_REF_NAME" || status=$?
+          "$RUNNER_TEMP/release-notes" --out body.md --version "$TAG" "$previous" "$to" || status=$?
           if [ "$status" = 3 ]; then
             echo "::warning::the release body is the changelog fallback, not a summary: see release-notes above"
           elif [ "$status" != 0 ]; then
@@ -134,9 +168,34 @@ jobs:
           if [ -s body.md ]; then
             echo "body=body.md" >>"$GITHUB_OUTPUT"
           else
-            echo "::warning::no release body: the agent failed and the changelog has no section for ${GITHUB_REF_NAME}"
+            echo "::warning::no release body: the agent failed and the changelog has no section for ${TAG}"
           fi
+      # A dry run shows the body where a reviewer reads it and keeps it as an
+      # artifact, so the only thing left unproven is the publish call itself.
+      - name: Show the body
+        if: inputs.dry_run
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          {
+            echo "## Release body for ${TAG}"
+            echo
+            if [ -s body.md ]; then
+              cat body.md
+            else
+              echo "No body: the agent failed and the changelog has no section for ${TAG}."
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: inputs.dry_run
+        with:
+          name: release-notes
+          path: body.md
+          if-no-files-found: ignore
       - uses: softprops/action-gh-release@v2
+        # The ref is checked here as well: publishing is the one step a tag must
+        # always reach, so it does not rest on input handling alone.
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.dry_run != true }}
         with:
           # Empty when there is nothing to say, and action-gh-release ignores an
           # empty body_path, so the release publishes with no body as before.

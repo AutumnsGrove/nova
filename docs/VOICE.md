@@ -112,8 +112,8 @@ type Clip struct {
 The speech endpoint returns a raw byte stream with no usage block, and
 `GET /generation` answers with an all-null record for a `gen-tts-*` id, so there
 is no exact cost to read. `Clip.Usage` therefore carries **an estimate** derived
-from the model's catalog price: `CostSource` is `"catalog"`, and empty when the
-price is unknown. An app that needs to reconcile spend against its bill must do
+from the model's catalog price, priced per character: `CostSource` is
+`"catalog"`, and empty when the price is unknown. An app that needs to reconcile spend against its bill must do
 so from its own records; `GenerationID` is captured for that, but it does not
 resolve today.
 
@@ -352,6 +352,7 @@ Three wire decisions worth recording, and what the live API actually did on
 |---|---|
 | `audio/speech` `pcm` | `Content-Type: audio/pcm;rate=24000;channels=1`, `X-Generation-Id: gen-tts-…` |
 | `audio/speech` `mp3` | `Content-Type: audio/mpeg`, body starts `ff f3` (frame sync, no ID3) |
+| `GET /models/{id}/endpoints` | per-provider `pricing.prompt`: Kokoro is `0.00000062` (DeepInfra) and `0.000004` (Together) |
 | `GET /generation?id=gen-tts-…` | **all nulls** — `total_cost`, `usage`, `model` and `provider_name`; an earlier measurement of `total_cost: 1.86e-06` on a Kokoro generation no longer reproduces |
 | multipart with `file=@clip.bin` | **400** — the format is inferred from the filename extension |
 | multipart with `file=@clip.mp3` | 200, `{"text":"Hi.","usage":{"seconds":1,"cost":0.0001}}` |
@@ -379,30 +380,38 @@ Three wire decisions worth recording, and what the live API actually did on
    maps to a `*provider.Error` like any other status. An empty object is
    omitted rather than sent, because it is not the same request as none.
    Nova deliberately does **not** hardcode a pin: the trade is reliability
-   against a 6.5× token price, which is the operator's to make. See D162 and
+   against a 6.5× character price, which is the operator's to make. See D162 and
    D170.
 3. **Speech cost is a catalog estimate, because there is no exact one.** The
    speech response is raw audio with no usage block, and `GET
    {base}/generation?id=<X-Generation-Id>` returns all nulls for a `gen-tts-*`
    id, so the lookup this adapter used to make was one wasted request per clip
-   for a number that never came back. Instead the adapter reads the speech
-   roster once per client and prices each synthesis as `chars/4` tokens at the
-   model's per-million-token rate, with `CostSource: "catalog"`.
+   for a number that never came back. Instead the adapter prices each synthesis
+   from the catalog, with `CostSource: "catalog"`.
 
-   `chars/4` is an estimate of the provider's tokeniser, which Nova does not
-   have. That matters for the *unit*: the roster's `pricing.prompt` is dollars
-   per **token**, not per character — Kokoro is `0.00000062` ($0.62/M tokens on
-   DeepInfra) and Together's endpoint for the same model is `0.000004` ($4.00/M).
-   Pricing characters at the token rate without the ratio would overstate prose
-   by about 4×, which is the flaw in the hand-maintained table this replaces.
-   The estimate can still be wrong by the tokeniser's real ratio, so it is
-   reported with `CostSource: "catalog"` and never as a provider figure.
+   **The unit is characters, not tokens.** OpenRouter bills media models "per
+   character or minute of audio", and a speech model's `pricing.prompt` is
+   dollars per character in the unit its provider bills, so a synthesis costs
+   `runes * pricePerMillion / 1e6` and no tokeniser is involved. Kokoro is
+   `0.00000062` ($0.62/M characters on DeepInfra) and Together's endpoint for
+   the same model is `0.000004` ($4.00/M).
+
+   **The roster reports the cheapest endpoint, so a pin is priced separately.**
+   `GET /models?output_modalities=speech` gave `0.00000062` for Kokoro, which is
+   DeepInfra; a request pinned to Together is billed 6.5× that. A pin naming
+   exactly one provider is therefore priced from
+   `GET /models/{id}/endpoints`, and if that table cannot be read the cost is
+   left **unknown** rather than reported at the cheapest rate, since understating
+   a deliberately pricier route is the error this estimate exists to avoid. A pin
+   that names several providers, or routes by `order` or `ignore`, leaves the
+   choice to the API and is priced at the roster's cheapest rate; that case is
+   the one approximation left, and it is in the direction of a lower number.
 
 `voice/openrouter.Config.CostLookup` defaults to **false**: a voice agent that
-calls `Speak` on every reply should not pay for a roster read it never uses.
+calls `Speak` on every reply should not pay for a catalog read it never uses.
 Nova's own front doors set it from `voice.cost_lookup`, which defaults to true,
-because they are the ones that report spend. The roster is cached, so the cost
-is one extra request per client rather than one per clip.
+because they are the ones that report spend. Both tables are cached, so the cost
+is at most one extra request per client and per priced model, not one per clip.
 
 Errors are `*provider.Error` with the status and `provider.Classify`'s
 retryability, the body truncated to 500 characters, and the request bounded by
@@ -523,7 +532,7 @@ are a contract between this document and the tests, not a gate.
 | A07 | A role resolves model, voice, format and speed; a direct id with a slash passes through and needs its own voice |
 | A08 | A fallback uses its own model and voice, and a fallback whose format the model cannot produce is refused |
 | A09 | A `-latest` or `~` id is refused unless `allow_aliases` is set |
-| A10 | A synthesis is priced from the catalog: `chars/4` tokens at the model's per-million-token rate, with `CostSource: "catalog"`, and no `/generation` request is made |
+| A10 | A synthesis is priced from the catalog per character: `runes * pricePerMillion / 1e6`, with `CostSource: "catalog"`, and no `/generation` request is made |
 | A11 | A cancelled context returns `ctx.Err` with no clip, and the body is closed |
 | A12 | A transcription is sent as multipart with `file` **named `clip.<format>`**, `model`, `language`, `temperature` and the response format, and the recorded form fields match |
 | A13 | A json transcript maps text and cost into `Transcript` (`CostSource: "provider"`), trims the text, and tolerates a usage block with no token counts |
@@ -551,6 +560,8 @@ are a contract between this document and the tests, not a gate.
 | A35 | The speech roster is read once per client: a second clip costs no extra request, and both clips carry a cost |
 | A36 | A model absent from the roster, a model priced at zero, or a failed roster leaves the cost at zero with no source, and the clip is still returned |
 | A37 | `CostLookup` false makes no roster request at all |
+| A38 | A pin naming one provider is priced from that endpoint's rate, not the roster's cheapest one, and the endpoint list is read for it |
+| A39 | A pin whose endpoint price cannot be read leaves the cost unknown rather than falling back to the cheapest rate, and the clip is still returned |
 
 ## Budgets
 
@@ -606,7 +617,7 @@ makes it true:
   name is model-specific.
 - Chunking, joining and the WAV header live in the contract; markdown stripping
   does not.
-- Speech cost is a catalog estimate (`chars/4` tokens at the roster price), off in the library and on in
+- Speech cost is a catalog estimate (`runes` at the priced endpoint's per-million-character rate), off in the library and on in
   Nova's front doors; a failed lookup is not a failed synthesis.
 - Transcription uses multipart in v1; base64 JSON waits for a consumer that
   needs over 25 MiB on a non-multipart provider.

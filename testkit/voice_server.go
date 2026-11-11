@@ -123,13 +123,15 @@ func (s *VoiceServer) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 // knownVoiceRequest reports whether a method and path is one of the voice
-// surfaces: the two audio endpoints, the model roster, or the generation lookup.
+// surfaces: the two audio endpoints, the model roster, one model's endpoint
+// list, or the generation lookup.
 func knownVoiceRequest(method, path string) bool {
 	switch method {
 	case http.MethodPost:
 		return strings.HasSuffix(path, "/audio/speech") || strings.HasSuffix(path, "/audio/transcriptions")
 	case http.MethodGet:
-		return strings.HasSuffix(path, "/models") || strings.HasSuffix(path, "/generation")
+		return strings.HasSuffix(path, "/models") || strings.HasSuffix(path, "/generation") ||
+			strings.HasSuffix(path, "/endpoints")
 	}
 	return false
 }

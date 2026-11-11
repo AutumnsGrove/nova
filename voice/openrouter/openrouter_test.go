@@ -168,22 +168,30 @@ func TestSpeak_A06_NoAudio(t *testing.T) {
 	}
 }
 
-// kokoroRoster is a one-model speech roster priced at Together's $4.00 per
-// million tokens, the pin the issue measured against DeepInfra's 429s.
-const kokoroRoster = `{"data":[{"id":"hexgrad/kokoro-82m","name":"Kokoro",
-	"pricing":{"prompt":"0.000004"},
+// The live prices for hexgrad/kokoro-82m, from GET /models?output_modalities=speech
+// and GET /models/hexgrad/kokoro-82m/endpoints on 2026-11-11. OpenRouter prices
+// speech per character, in the unit each provider bills, so the roster's
+// 0.00000062 is DeepInfra at $0.62/M characters and the roster reports the
+// cheapest endpoint. Together's endpoint is 6.5x that.
+const (
+	kokoroRoster = `{"data":[{"id":"hexgrad/kokoro-82m","name":"Kokoro",
+	"pricing":{"prompt":"0.00000062"},
 	"architecture":{"output_modalities":["speech"]}}]}`
+	kokoroEndpoints = `{"data":{"endpoints":[
+		{"provider_name":"DeepInfra","pricing":{"prompt":"0.00000062"}},
+		{"provider_name":"Together","pricing":{"prompt":"0.000004"}}]}}`
+)
 
 // TestSpeak_A10_CostIsEstimatedFromTheCatalog: /generation answers with an
 // all-null record for a gen-tts id, so a synthesis's cost is estimated from the
-// roster price instead: chars/4 tokens at the model's per-million-token rate.
+// catalog price instead. OpenRouter bills speech per character, so the runes
+// are priced directly and no tokeniser is needed.
 func TestSpeak_A10_CostIsEstimatedFromTheCatalog(t *testing.T) {
 	client, srv := newCostClient(t,
 		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg", Headers: map[string]string{"X-Generation-Id": "gen-tts-1"}},
 		testkit.VoiceServerTurn{Body: kokoroRoster},
 	)
-	// 100 characters is 25 tokens at the chars-per-token estimate, and Kokoro on
-	// Together is $4.00 per million.
+	// 100 characters at the roster's $0.62 per million, DeepInfra's rate.
 	input := strings.Repeat("a", 100)
 	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
 		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: input,
@@ -191,7 +199,7 @@ func TestSpeak_A10_CostIsEstimatedFromTheCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Speak: %v", err)
 	}
-	want := 25 * 4.00 / 1e6
+	want := 100 * 0.62 / 1e6
 	if diff := clip.Usage.CostUSD - want; diff > 1e-12 || diff < -1e-12 {
 		t.Errorf("cost = %v, want %v", clip.Usage.CostUSD, want)
 	}
@@ -209,6 +217,76 @@ func TestSpeak_A10_CostIsEstimatedFromTheCatalog(t *testing.T) {
 		if r.Path == "/generation" {
 			t.Error("a generation lookup was made for a speech clip")
 		}
+	}
+}
+
+// TestSpeak_A38_APinIsPricedAtItsEndpoint: the roster reports the cheapest
+// endpoint, so a request pinned elsewhere must be priced from the endpoint it
+// pinned. Kokoro on Together is 6.5x DeepInfra, and this is the one case where
+// using the roster price would understate by that much.
+func TestSpeak_A38_APinIsPricedAtItsEndpoint(t *testing.T) {
+	// A pinned request reads the endpoint table, not the roster: two turns.
+	client, srv := newCostClient(t,
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Body: kokoroEndpoints},
+	)
+	input := strings.Repeat("a", 100)
+	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: input,
+		Provider: map[string]any{"only": []string{"Together"}},
+	})
+	if err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	want := 100 * 4.00 / 1e6
+	if diff := clip.Usage.CostUSD - want; diff > 1e-12 || diff < -1e-12 {
+		t.Errorf("cost = %v, want %v (Together's rate, not DeepInfra's)", clip.Usage.CostUSD, want)
+	}
+	if clip.Usage.CostSource != "catalog" {
+		t.Errorf("cost source = %q, want catalog", clip.Usage.CostSource)
+	}
+	gotEndpoints := false
+	for _, r := range srv.Requests() {
+		if strings.HasSuffix(r.Path, "/endpoints") {
+			gotEndpoints = true
+		}
+	}
+	if !gotEndpoints {
+		t.Error("the endpoint list was never read, so the pin was priced at the cheapest rate")
+	}
+}
+
+// TestSpeak_A39_APinnedPriceThatCannotBeReadIsUnknown: reporting the cheapest
+// rate for a request deliberately routed to a pricier endpoint is the silent
+// understatement this estimate exists to avoid, so an unreadable pinned price
+// leaves the cost unknown instead.
+func TestSpeak_A39_APinnedPriceThatCannotBeReadIsUnknown(t *testing.T) {
+	client, srv := newCostClient(t,
+		testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Body: kokoroRoster},
+		testkit.VoiceServerTurn{Status: 500, Body: `{"error":{"message":"nope"}}`},
+	)
+	clip, err := client.Speak(context.Background(), voice.SpeechRequest{
+		Model: "hexgrad/kokoro-82m", Voice: "af_heart", Input: "Hello there.",
+		Provider: map[string]any{"only": []string{"Somewhere"}},
+	})
+	if err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	if len(clip.Bytes) != 1 {
+		t.Errorf("clip bytes = %v, want the audio", clip.Bytes)
+	}
+	asked := false
+	for _, r := range srv.Requests() {
+		if strings.HasSuffix(r.Path, "/endpoints") {
+			asked = true
+		}
+	}
+	if !asked {
+		t.Fatal("the pinned endpoint list was never requested")
+	}
+	if clip.Usage.CostUSD != 0 || clip.Usage.CostSource != "" {
+		t.Errorf("usage = %+v, want an unknown cost rather than the cheapest rate", clip.Usage)
 	}
 }
 

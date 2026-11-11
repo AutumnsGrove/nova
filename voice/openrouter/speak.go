@@ -86,9 +86,9 @@ func (c *Client) Speak(ctx context.Context, req voice.SpeechRequest) (*voice.Cli
 		clip.SampleRate, clip.Channels, clip.BitsPerSample = pcmLayout(resp.Header.Get("Content-Type"))
 	}
 	if c.costLookup {
-		if perMillion, ok := c.pricePerMillion(ctx, req.Model); ok {
-			tokens := float64(utf8.RuneCountInString(req.Input)) / catalogRunesPerToken
-			clip.Usage = provider.Usage{CostUSD: tokens * perMillion / 1e6, CostSource: "catalog"}
+		if perMillion, ok := c.pricePerMillion(ctx, req.Model, req.Provider); ok {
+			runes := float64(utf8.RuneCountInString(req.Input))
+			clip.Usage = provider.Usage{CostUSD: runes * perMillion / 1e6, CostSource: "catalog"}
 		}
 	}
 	return clip, nil

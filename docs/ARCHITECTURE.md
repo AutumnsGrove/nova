@@ -57,7 +57,7 @@ nova/
     openrouter/   preset: embeddings and live roster            ≤ 220
   voice/          speech and transcription contract, roles,
                   text prep and the WAV header                 ≤ 540
-    openrouter/   preset: speech, transcriptions, live roster   ≤ 620
+    openrouter/   preset: speech, transcriptions, live roster   ≤ 700
   auth/           OAuth PKCE login, key store                   ≤ 500
   tool/           Tool contract, registry, schema validation    ≤ 660
   tools/          fs (read write edit list)                     ≤ 1060
@@ -463,9 +463,9 @@ PCM gets one header at the end.
 
 The speech endpoint returns raw audio with no usage block, and the generation
 endpoint answers with nulls for a `gen-tts` id, so a synthesis's cost is a
-catalog estimate: `chars/4` tokens at the model's per-million-token price, marked
-`CostSource: "catalog"`. The roster that carries the price is read once per
-client. It is off in the library, where a voice agent would pay for a number it
+catalog estimate: the runes priced per character at the model's rate — and at the
+endpoint a pin names, since the roster reports the cheapest one — marked
+`CostSource: "catalog"`. The catalog tables behind it are cached per client. It is off in the library, where a voice agent would pay for a number it
 never reads, and on in Nova's own front doors, which report spend. Transcription
 returns its own usage: cost and seconds always, token counts only when the model
 reports them.

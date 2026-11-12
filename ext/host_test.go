@@ -164,6 +164,8 @@ func startHost(t *testing.T, dirs []string, opt HostOptions) *Host {
 					if clk, ok := opt.Clock.(*testkit.FakeClock); ok {
 						clk.Advance(time.Second)
 					}
+					// Yield so the goroutine the advance woke can run; the shutdown being waited
+					// for is a real process.
 					time.Sleep(time.Millisecond)
 				}
 			}

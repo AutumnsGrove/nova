@@ -212,16 +212,47 @@ func TestBash_BSH17_Timeout(t *testing.T) {
 
 func TestBash_BSH21_CancelMidCommand(t *testing.T) {
 	dir := t.TempDir()
+	marker := filepath.Join(dir, "started")
+	// The command writes the marker before it blocks, so the cancel can wait
+	// for the subprocess to have started rather than guess how long spawning a
+	// shell takes on a loaded runner.
+	raw, _ := json.Marshal(map[string]any{"command": `touch "$PWD/started"; sleep 10`})
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { time.Sleep(100 * time.Millisecond); cancel() }()
-	raw, _ := json.Marshal(map[string]any{"command": "sleep 10"})
+	defer cancel()
+	// The helper reports over a channel instead of failing itself: it runs on
+	// its own goroutine, and testing.T must not be used from one once the test
+	// has returned.
+	reported := make(chan bool, 1)
+	go func() { reported <- cancelWhenFileExists(marker, cancel) }()
 	res, err := Bash(WithTimeout(30*time.Second)).Run(ctx, raw, &tool.Context{WorkDir: dir})
+	sawMarker := <-reported
 	if err != nil {
 		t.Fatalf("Run returned a Go error: %v", err)
+	}
+	if !sawMarker {
+		t.Fatalf("the command never wrote %s, so nothing was cancelled mid-command", marker)
 	}
 	if !res.IsError || !strings.Contains(res.Content, "command cancelled") {
 		t.Fatalf("result = %+v, want cancellation", res)
 	}
+}
+
+// cancelWhenFileExists polls for path and cancels once it exists, reporting
+// whether it was seen. The command that writes it is a real subprocess, so this
+// is a bounded poll: the deadline is the retry budget and the interval only
+// bounds how often the file is checked. It cancels either way, so a missing
+// marker cannot hang the run waiting for a cancel that never comes.
+func cancelWhenFileExists(path string, cancel context.CancelFunc) bool {
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			cancel()
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	return false
 }
 
 func TestBash_BSH22_CancelBeforeStart(t *testing.T) {

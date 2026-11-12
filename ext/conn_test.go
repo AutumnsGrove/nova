@@ -60,6 +60,8 @@ func TestConn_RequestHonoursDeadlineWhenPeerStopsReading(t *testing.T) {
 			t.Fatal("request hung past its deadline with a full write queue")
 		default:
 			clk.Advance(time.Second)
+			// Yield so the goroutine the advance woke can run; the deadline being waited
+			// for is real.
 			time.Sleep(time.Millisecond)
 		}
 	}

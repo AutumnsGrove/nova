@@ -475,6 +475,7 @@ func waitForPrintedURL(t *testing.T, printed *syncBuffer) *url.URL {
 				return u
 			}
 		}
+		// Bounded poll: the deadline fails the test, so this is only the retry interval.
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("no authorization URL was printed; output was %q", printed.String())

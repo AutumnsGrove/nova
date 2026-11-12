@@ -307,6 +307,7 @@ func TestSDK_SDK11_SchemaHelpers(t *testing.T) {
 func TestSDK_SDK12_Concurrent(t *testing.T) {
 	p := startSDK(t, func(h *Host) error {
 		h.Tool(Tool{Name: "slow"}, func(c *Call) (Result, error) {
+			// A slow handler, so two calls are genuinely in flight at once.
 			time.Sleep(5 * time.Millisecond)
 			return Text("ok"), nil
 		})

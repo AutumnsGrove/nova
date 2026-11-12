@@ -34,6 +34,8 @@ func rawHost(t *testing.T, opt HostOptions) *Host {
 					if clk, ok := opt.Clock.(*testkit.FakeClock); ok {
 						clk.Advance(time.Second)
 					}
+					// Yield so the goroutine the advance woke can run; the shutdown being waited
+					// for is a real process.
 					time.Sleep(time.Millisecond)
 				}
 			}
@@ -59,6 +61,7 @@ func waitForWithin(t *testing.T, d time.Duration, cond func() bool, msg string) 
 		if cond() {
 			return
 		}
+		// Bounded poll: the deadline fails the test, so this is only the retry interval.
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("condition never held: %s", msg)
@@ -73,6 +76,8 @@ func advanceUntil(t *testing.T, clk *testkit.FakeClock, cond func() bool, d time
 			return
 		}
 		clk.Advance(250 * time.Millisecond)
+		// Yield so the goroutine the advance woke can run; the condition also waits on
+		// a real respawn, so this cannot be a fake-clock wait.
 		time.Sleep(2 * time.Millisecond)
 	}
 	if !cond() {
@@ -241,6 +246,8 @@ func TestSupervise_SUP12b_ShutdownDuringBackoffDoesNotRespawn(t *testing.T) {
 			t.Fatal("Shutdown did not return")
 		default:
 			clk.Advance(500 * time.Millisecond)
+			// Yield so the goroutine the advance woke can run; the shutdown being waited
+			// for is a real process.
 			time.Sleep(time.Millisecond)
 		}
 	}
@@ -287,6 +294,8 @@ func TestSupervise_SUP10_RestartLimit(t *testing.T) {
 	// The process is down during its backoff, so advancing the clock here cannot
 	// count as healthy uptime; stop as soon as it has restarted.
 	for i := 0; i < 40; i++ {
+		// Bounded poll: the forty turns are the deadline, so this is the retry interval
+		// between advancing the clock and checking for the restart.
 		time.Sleep(5 * time.Millisecond)
 		if _, ok := reg.Get("echo"); ok {
 			break
@@ -397,6 +406,8 @@ func TestSupervise_SUP15_IgnoresShutdown(t *testing.T) {
 			t.Fatal("Shutdown did not kill the extension that ignored it")
 		default:
 			clk.Advance(500 * time.Millisecond)
+			// Yield so the goroutine the advance woke can run; the shutdown being waited
+			// for is a real process.
 			time.Sleep(time.Millisecond)
 		}
 	}

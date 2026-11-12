@@ -27,6 +27,7 @@ func waitGone(t *testing.T, pid int) {
 		if time.Now().After(deadline) {
 			t.Fatalf("pid %d still alive", pid)
 		}
+		// Bounded poll: the deadline fails the test, so this is only the retry interval.
 		time.Sleep(20 * time.Millisecond)
 	}
 }

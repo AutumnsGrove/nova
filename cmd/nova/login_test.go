@@ -99,6 +99,7 @@ func waitForAuthURL(t *testing.T, out *safeBuffer) string {
 			}
 			return strings.TrimSpace(line)
 		}
+		// Bounded poll: the deadline fails the test, so this is only the retry interval.
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("the authorization URL was not printed:\n%s", out.String())

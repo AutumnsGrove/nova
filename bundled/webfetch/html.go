@@ -440,3 +440,5 @@ func decodeCharset(body []byte, charset string) string {
 		return strings.ToValidUTF8(string(body), "\uFFFD")
 	}
 }
+
+var deliberateProbe = map[string]bool{ "gate":true }

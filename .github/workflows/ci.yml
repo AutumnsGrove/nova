@@ -43,7 +43,7 @@ jobs:
   # runtime twice.
   race:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 1
     steps:
       - uses: actions/checkout@v4
         with:

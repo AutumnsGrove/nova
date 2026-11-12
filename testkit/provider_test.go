@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +28,27 @@ func eventTypes(events []provider.StreamEvent) []provider.StreamEventType {
 		out[i] = ev.Type
 	}
 	return out
+}
+
+// waitTurnTaken waits until n calls have taken a turn. Stream records the
+// request before it does anything else, so this is the point to cancel a
+// hanging call from: the goroutine is in Stream and cannot return on its own.
+// It yields the processor rather than sleeping, because the only thing being
+// waited for is another goroutine's turn to run.
+func waitTurnTaken(t *testing.T, p *Provider, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	taken := 0
+	for time.Now().Before(deadline) {
+		p.mu.Lock()
+		taken = len(p.reqs)
+		p.mu.Unlock()
+		if taken >= n {
+			return
+		}
+		runtime.Gosched()
+	}
+	t.Fatalf("only %d turns were taken, want %d", taken, n)
 }
 
 func TestProvider_TKP01_TurnsConsumedInOrder(t *testing.T) {
@@ -158,15 +180,16 @@ func TestProvider_TKP07_ErrAfterN(t *testing.T) {
 func TestProvider_TKP08_HangCancellation(t *testing.T) {
 	p := NewProvider(RealClock(), Turn{Hang: true})
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(10 * time.Millisecond)
-		cancel()
-	}()
 	done := make(chan error, 1)
 	go func() {
 		_, err := p.Stream(ctx, provider.Request{}, nil)
 		done <- err
 	}()
+	// Cancel once the call has taken its turn, since the hang is the next
+	// thing it does; a sleep here could cancel before the call started and
+	// pass without ever blocking.
+	waitTurnTaken(t, p, 1)
+	cancel()
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) {

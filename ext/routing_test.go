@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -70,13 +71,21 @@ func TestHost_HST03_CrashDuringCall(t *testing.T) {
 func TestHost_HST04_CancelDuringCall(t *testing.T) {
 	reg := tool.NewRegistry()
 	dir := echoDir(t, "echo", "")
-	startHost(t, []string{dir}, HostOptions{Registry: reg, Env: envWith("ECHO_SLOW_TOOL_MS=3000")})
+	trace := filepath.Join(t.TempDir(), "trace")
+	startHost(t, []string{dir}, HostOptions{
+		Registry: reg,
+		Env:      envWith("ECHO_SLOW_TOOL_MS=3000", "ECHO_TRACE="+trace),
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan tool.Result, 1)
 	go func() {
 		done <- reg.Execute(ctx, "echo", json.RawMessage(`{}`), &tool.Context{})
 	}()
-	time.Sleep(50 * time.Millisecond)
+	// Wait for the extension to report the call it is holding open, rather
+	// than guessing that 50ms is long enough for it to arrive. Without this
+	// the cancel can land before the frame is sent, and the test passes
+	// without ever cancelling a call that was in flight.
+	waitContains(t, trace, "tool_call", 3*time.Second)
 	cancel()
 	select {
 	case res := <-done:

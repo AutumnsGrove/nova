@@ -181,6 +181,7 @@ func TestStatus_STS03_StyleMapping(t *testing.T) {
 func TestStatus_SLN11_HostileValuesAreCleaned(t *testing.T) {
 	mono := styles.Build(styles.Mono(), colorprofile.ASCII)
 	d := sample()
+	//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 	hostile := "\x1b]0;pwned\x07\x1b[2J‮\n"
 	d.CWD, d.Branch, d.Model, d.Provider, d.Thinking, d.Hint, d.Run = "/w"+hostile, "b"+hostile, "m"+hostile, "p"+hostile, "t"+hostile, "ctrl+o "+hostile, "r"+hostile
 	cfg := Default()
@@ -194,6 +195,7 @@ func TestStatus_SLN11_HostileValuesAreCleaned(t *testing.T) {
 		t.Fatalf("a newline in a value made %d lines, want %d", len(out), len(cfg.Lines))
 	}
 	for _, line := range out {
+		//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 		if strings.ContainsAny(line, "\x1b\x07‮") {
 			t.Fatalf("status line carries control bytes: %q", line)
 		}

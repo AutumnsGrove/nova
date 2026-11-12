@@ -184,6 +184,7 @@ func TestTrust_TRP08_NothingToDo(t *testing.T) {
 // exactly where hostile bytes arrive. None of them may reach the terminal as a
 // control sequence, or the prompt could be made to read as something else.
 func TestTrust_TRP09_PromptShowsNamesWithoutControlBytes(t *testing.T) {
+	//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 	hostile := "\x1b[2J\x1b[Hall clear‮"
 	f := Found{
 		Config:       true,

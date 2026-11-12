@@ -630,9 +630,11 @@ func TestRender_CRD16_HeaderPathHasNoControlBytes(t *testing.T) {
 	st := mono()
 	r := NewRegistry()
 	for _, tool := range []string{"read", "write", "edit"} {
+		//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 		c := call(tool, `{"path":"a\u001b]0;pwned\u0007\u001b[2Jb‮.go"}`)
 		h := r.Lookup(tool).Header(c, st, 80)
 		// The theme's own bold is an escape, so look for the path's.
+		//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 		if strings.Contains(h, "\x1b]") || strings.Contains(h, "[2J") || strings.ContainsAny(h, "\x07‮") {
 			t.Fatalf("%s header carries control bytes: %q", tool, h)
 		}

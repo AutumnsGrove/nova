@@ -1,4 +1,4 @@
-.PHONY: test test-full race race-splash splash fmt vet build build-notui accept ci importcheck matrixcheck-all linecount-all
+.PHONY: test test-full race race-splash splash fuzz-short fmt vet lint vuln build build-notui accept ci importcheck matrixcheck-all linecount-all
 
 test:
 	go test -short -p 2 ./...
@@ -30,6 +30,37 @@ fmt:
 vet:
 	go vet ./...
 
+# The linters are pinned here rather than in go.mod: they are build tools, not
+# dependencies, and a tools entry would put honnef.co/go/tools into the import
+# allow-list (D46) and into every consumer's module graph. Pinning here also
+# means a local run and the workflow run the same version.
+staticcheck = honnef.co/go/tools/cmd/staticcheck@v0.8.2
+govulncheck = golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+lint:
+	go run $(staticcheck) ./...
+
+# Not part of `ci`: govulncheck downloads its advisory database, and the gate has
+# to work offline. ci.yml runs it on every pull request and weekly.
+vuln:
+	go run $(govulncheck) ./...
+
+# Every package holding a fuzz target. The list is derived rather than written
+# down, so a new target cannot be forgotten and a moved one cannot go stale.
+fuzz-pkgs = $(sort $(dir $(shell grep -rl '^func Fuzz' --include='*_test.go' .)))
+
+# A smoke run: ten seconds per target, the same shape fuzz.yml runs for a minute
+# each. A green run is a smoke alarm, not a proof that the parser is safe, and
+# anything longer belongs to a deliberate fuzz campaign rather than a build.
+fuzz-short:
+	@test -n "$(fuzz-pkgs)" || { echo "no fuzz targets found"; exit 1; }
+	@for pkg in $(fuzz-pkgs); do \
+		for target in $$(go test -list '^Fuzz' $$pkg | sed -n '/^Fuzz/p'); do \
+			echo "fuzzing $$target in $$pkg"; \
+			go test -run '^$$' -fuzz "^$$target$$" -fuzztime=10s $$pkg || exit 1; \
+			done; \
+		done
+
 build:
 	go build ./...
 
@@ -42,7 +73,7 @@ importcheck:
 accept:
 	go run ./scripts/accept $(C)
 
-ci: fmt vet build build-notui race importcheck matrixcheck-all linecount-all
+ci: fmt vet lint build build-notui race importcheck matrixcheck-all linecount-all
 
 # The chunk specs are archived (docs/archive/chunks): the build-out is finished,
 # so every spec is a regression contract. Each matrix row must still have a

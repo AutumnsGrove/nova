@@ -114,11 +114,16 @@ Every TUI file carries `//go:build !notui`, so both builds must compile: `make c
 A change is done when **`make ci`** passes. It runs the same checks as the `ci` workflow:
 
 ```
-make ci            # fmt, vet, build, build-notui, race, importcheck, matrixcheck-all, linecount-all
+make ci            # fmt, vet, lint, build, build-notui, race, importcheck, matrixcheck-all, linecount-all
 make race-splash   # also, when you touched tui/splash (the GIF tests are slow under -race, so CI runs them apart)
+make vuln          # govulncheck, which is out of `ci` because it fetches the advisory database
+make fuzz-short    # ten seconds per fuzz target; the nightly workflow runs them for longer
 ```
 
-- `fmt` fails on any file `gofmt -l` lists. `vet`, `build`, and `build-notui` must be clean.
+- `fmt` fails on any file `gofmt -l` lists. `vet`, `lint`, `build`, and `build-notui` must be clean.
+- `lint` is `staticcheck`, pinned in the `Makefile` rather than in `go.mod` so a linter never enters the import
+  allow-list or a consumer's module graph. A finding is fixed, or suppressed on the line with `//lint:ignore`
+  and a reason; the thirteen bidi fixtures do the latter, because the character is the thing under test.
 - `race` runs the whole suite under `-race`. For a quick loop use `make test` (`go test -short`) or a single
   package, and run `make ci` before you finish.
 - `importcheck` enforces the layer rules and the UI import boundary.

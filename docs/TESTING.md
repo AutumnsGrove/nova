@@ -294,6 +294,7 @@ A change is done when `make ci` passes. It is the same set the `ci` workflow run
 make ci
   fmt              # gofmt -l prints nothing (any listed file fails the gate)
   vet              # go vet ./...
+  lint             # staticcheck ./..., pinned to a version in the Makefile
   build            # go build ./...
   build-notui      # go build -tags notui ./...
   race             # go test -race over every package except tui/splash/splashgif
@@ -302,6 +303,8 @@ make ci
   linecount-all    # every package is within its budget
 make race-splash   # when tui/splash changed: the GIF tests are slow under -race, so CI runs them apart
 make splash        # what the pull request gate runs for tui/splash: the same tests, without -race
+make vuln          # govulncheck: not in `ci`, because it fetches the advisory database
+make fuzz-short    # ten seconds per fuzz target: a smoke alarm, not a proof
 ```
 
 `make test` (`go test -short`) is the fast loop while you work; it is not the gate.

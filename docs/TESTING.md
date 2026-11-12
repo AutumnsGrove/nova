@@ -324,6 +324,11 @@ the commit message. An empty list is a valid result. A silent gap is not. See
 ## 7. What not to test
 
 - Do not test the Go standard library, or the exact wording of log messages.
-- Do not assert on timing with real sleeps; use the fake clock.
+- Do not assert on timing with real sleeps; use the fake clock. A sleep that waits
+  for something to have happened is a guess, and a loaded runner makes it wrong:
+  wait for the state instead (`BlockUntil`, an event the fake reports, a file the
+  subject writes). Where the thing being waited on is real I/O — a subprocess, a
+  socket, a terminal — a bounded poll is allowed, but say in a comment why real
+  time is the only driver.
 - Do not make a test depend on another test's side effects.
 - Do not write a test that passes if the code under test is deleted.

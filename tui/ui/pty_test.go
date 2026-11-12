@@ -134,10 +134,17 @@ func startTUI(t *testing.T, srv *mode.Server) (*ptyReader, *os.File, chan error)
 	return reader, master, done
 }
 
-// quit sends ctrl+c twice, which the model treats as quit.
-func quit(master *os.File) {
+// quit sends ctrl+c twice, which the model treats as quit. The second press
+// waits for the footer to say the first one armed quit, so a slow runner cannot
+// coalesce the pair, and a first press that never lands fails here instead of
+// looking like the UI ignored it. The wait is half the armed window, leaving
+// the rest of the window for the second press to land inside.
+func quit(t *testing.T, r *ptyReader, master *os.File) {
+	t.Helper()
 	master.Write([]byte{3})
-	time.Sleep(150 * time.Millisecond)
+	if _, ok := r.waitFor("ctrl+c again to quit", quitWindow/2); !ok {
+		t.Fatal("the first ctrl+c never armed quit")
+	}
 	master.Write([]byte{3})
 }
 
@@ -162,7 +169,7 @@ func TestPTY_PTY01_StartsAndQuits(t *testing.T) {
 	if _, ok := reader.waitFor("nova", 6*time.Second); !ok {
 		t.Fatal("the TUI never rendered")
 	}
-	quit(master)
+	quit(t, reader, master)
 	waitQuit(t, done)
 }
 
@@ -189,6 +196,6 @@ func TestPTY_PTY02_PromptRoundTrip(t *testing.T) {
 	if out, ok := reader.waitFor("hello from nova", 15*time.Second); !ok {
 		t.Fatalf("reply not shown; screen was:\n%s", ansi.Strip(out))
 	}
-	quit(master)
+	quit(t, reader, master)
 	waitQuit(t, done)
 }

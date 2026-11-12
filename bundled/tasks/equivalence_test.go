@@ -137,6 +137,7 @@ func waitEntries(s *fakeSession, n int) error {
 		if countEntries(s) >= n {
 			return nil
 		}
+		// Bounded poll: the deadline fails the test, so this is only the retry interval.
 		time.Sleep(5 * time.Millisecond)
 	}
 	return fmt.Errorf("got %d entries, want %d", countEntries(s), n)

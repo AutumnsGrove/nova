@@ -76,6 +76,7 @@ func waitGone(probe func() error, within time.Duration) error {
 			}
 			return err
 		}
+		// Bounded poll: the deadline fails the test, so this is only the retry interval.
 		time.Sleep(5 * time.Millisecond)
 	}
 }

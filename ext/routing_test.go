@@ -31,6 +31,7 @@ func waitContains(t *testing.T, path, substr string, d time.Duration) string {
 		if strings.Contains(last, substr) {
 			return last
 		}
+		// Bounded poll: the deadline fails the test, so this is only the retry interval.
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("trace %s never contained %q; got:\n%s", path, substr, last)
@@ -376,6 +377,7 @@ func TestHost_HST23_FlagsInInit(t *testing.T) {
 		if strings.Contains(logs.all(), "color") {
 			return
 		}
+		// Bounded poll: the deadline fails the test, so this is only the retry interval.
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("flags not seen in init: %s", logs.all())

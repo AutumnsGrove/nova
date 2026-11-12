@@ -114,6 +114,7 @@ func (r *ptyReader) waitFor(want string, d time.Duration) (string, bool) {
 		if strings.Contains(ansi.Strip(s), want) {
 			return s, true
 		}
+		// Bounded poll: the deadline fails the test, so this is only the retry interval.
 		time.Sleep(20 * time.Millisecond)
 	}
 	r.mu.Lock()

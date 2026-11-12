@@ -293,6 +293,7 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | PDI07 | line validation | right-side added line; context line; removed line (left); outside any hunk | accepted; accepted; accepted on `LEFT`; rejected |
 | PDI08 | CRLF diff text | | parsed |
 | PDI09 | hunk header edge cases | `@@ -0,0 +1 @@`, no counts | parsed |
+| PDI10 | a body that disagrees with its header counts | two context lines under `@@ -0 +0 @@` | no line marked outside the hunk; a well-formed patch marks every line |
 | RVW01 | happy path | model makes 2 comments and a summary | one review posted with 2 inline comments, `event: COMMENT`, marker |
 | RVW02 | comment on a line outside the diff | | tool returns an explanatory error; not posted inline |
 | RVW03 | duplicate comment | | rejected |

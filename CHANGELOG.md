@@ -46,6 +46,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- A fetched page that is not UTF-8 no longer puts raw bytes into the model's context:
+  `htmlToMarkdown` replaces them with U+FFFD. The first finding of the new fuzz job (#107).
+- `ParseFileDiff` no longer marks a line outside the hunk that declares it. A body that disagrees
+  with its own header counts could reach a line the diff does not contain, and `FileDiff.Valid`
+  would then authorise a review comment there (#108).
 - Nova's voice documentation claimed OpenRouter ignores `only` on the audio endpoints, so a
   provider pin could not work. It does work: `only: [Together]` answered in 0.6 s against a 45 s
   hang unpinned. `docs/VOICE.md` and D162's successor, D170, correct the record (#92).

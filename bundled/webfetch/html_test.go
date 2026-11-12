@@ -3,6 +3,7 @@ package webfetch
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestWebfetch_WFT39_PreKeepsLinesAndIndent(t *testing.T) {
@@ -42,5 +43,24 @@ func TestWebfetch_WFT42_UnsafeLinkTargets(t *testing.T) {
 	}
 	if !strings.Contains(got, "x") || !strings.Contains(got, "z") {
 		t.Fatalf("link text was lost: %q", got)
+	}
+}
+
+// A fetched page is bytes, and bytes are not required to be UTF-8. Everything
+// downstream of the converter is: the model context, the session tree, the
+// golden views. The fuzzer found this with a single 0xff (#107).
+func TestWebfetch_WFT49_InvalidUTF8IsReplaced(t *testing.T) {
+	got := htmlToMarkdown([]byte{0xff}, nil)
+	if !utf8.ValidString(got) {
+		t.Fatalf("markdown is not valid UTF-8: %q", got)
+	}
+	if !strings.Contains(got, "\uFFFD") {
+		t.Fatalf("the bad byte was dropped instead of replaced: %q", got)
+	}
+	// The surrounding text survives, so the replacement is surgical rather than
+	// "throw the body away".
+	got = htmlToMarkdown([]byte("<p>before \xff after</p>"), nil)
+	if !utf8.ValidString(got) || !strings.Contains(got, "before") || !strings.Contains(got, "after") {
+		t.Fatalf("markdown = %q", got)
 	}
 }

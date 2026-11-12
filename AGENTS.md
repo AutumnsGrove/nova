@@ -126,6 +126,11 @@ make fuzz-short    # ten seconds per fuzz target; the nightly workflow runs them
   and a reason; the thirteen bidi fixtures do the latter, because the character is the thing under test.
 - `race` runs the whole suite under `-race`. For a quick loop use `make test` (`go test -short`) or a single
   package, and run `make ci` before you finish.
+- `make nightly` is the whole suite twice, shuffled, and it is what `nightly.yml` runs. A
+  `-shuffle` failure files an issue with the seed, so quote it when you reproduce one.
+- The workflows that are not the pull request gate are listed in `docs/TESTING.md` section 6. A new
+  dependency arrives through Dependabot; if you must raise the Go floor, do it for a reason and say so in the
+  `CHANGELOG`, because consumers inherit it.
 - `importcheck` enforces the layer rules and the UI import boundary.
 - `matrixcheck-all` and `linecount-all` hold the solved areas steady: every matrix row in the archived specs
   still has a test, and every package is inside its budget. See "Solved areas".

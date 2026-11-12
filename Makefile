@@ -8,7 +8,8 @@ test-full:
 
 # splashgif rasterises 150 frames for every test, so -race there costs minutes
 # and finds nothing (the package is pure rendering). Keep it out of the fast
-# gate; the ci workflow runs `race-splash` in a parallel job.
+# gate: the ci workflow runs `make splash` in its own job, and the release gate
+# runs this with -race on every tag.
 slow-pkg = /tui/splash/splashgif
 
 race:
@@ -47,7 +48,8 @@ lint:
 	go run $(staticcheck) ./...
 
 # Not part of `ci`: govulncheck downloads its advisory database, and the gate has
-# to work offline. ci.yml runs it on every pull request and weekly.
+# to work offline. security.yml runs it on every pull request, on main, weekly,
+# and in the release gate.
 vuln:
 	go run $(govulncheck) ./...
 

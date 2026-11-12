@@ -269,8 +269,10 @@ This turns "did you test the edge cases" from a judgement into a check.
 
 - **Fuzz targets** for every parser that takes untrusted bytes: SSE, the JSONL framer,
   tool-argument decoding, the session loader, the manifest parser, the YAML tool
-  templates. Each fuzz target has a seed corpus of the nasty cases above and runs for a
-  few seconds in CI.
+  templates. Each fuzz target has a seed corpus of the nasty cases above and runs in CI,
+  which is `fuzz.yml`: one job per package, ten seconds per target on a pull request and
+  sixty overnight. A green run means "no crash in the time it was given", not "this
+  parser is safe"; `make fuzz-short` is the same shape locally.
 - **Property tests** (table of random cases from a seeded generator) for: edit
   application (apply, then check the result contains `new_text` exactly once and nothing
   else changed), compaction cut points (never splits a tool pair), the session tree
@@ -278,13 +280,15 @@ This turns "did you test the edge cases" from a judgement into a check.
 - **`-race`** on every package, always (`make race`). The splash renderer is the one exception: it
   starts no goroutine, and the detector turns its 25 seconds into seven minutes, so the pull request
   gate runs it plain (`make splash`), `make race-splash` covers it when `tui/splash` changes, and the
-  release gate runs it with `-race` on every tag.
+  release gate runs it with `-race` on every tag. `nightly.yml` runs the whole suite twice, shuffled
+  (`make nightly`), because a single ordered run cannot see a test that only fails beside another one.
 - **Leak checks** (`testkit.NoLeaks`) on anything that starts goroutines or processes.
 - **Golden files** for TUI views and for the protocol event sequence of each scenario.
 - **Coverage floor**: 85% for core packages, 70% for `tui/`, measured with
   `go test -cover`. A floor is a smoke alarm, not a goal; the matrix is the goal.
 - **Determinism**: no test depends on wall-clock time, map order, the network, or the
-  machine's locale. Seeds are fixed and printed on failure.
+  machine's locale. Seeds are fixed and printed on failure. A `-shuffle` failure keeps its
+  seed, which is how the nightly issue quotes it.
 
 ## 6. Definition of done for a change
 
@@ -308,6 +312,18 @@ make fuzz-short    # ten seconds per fuzz target: a smoke alarm, not a proof
 ```
 
 `make test` (`go test -short`) is the fast loop while you work; it is not the gate.
+
+The `ci` workflow runs that same set as two independent jobs, `static` and `race`, and a third
+running `make splash`. There is no `needs:` between `static` and `race` on purpose: the detector
+starts at the same second the linter does, so a formatting failure reports in a minute without
+having cost the race suite's runtime first.
+
+Three more workflows cover what a pull request cannot: `security.yml` runs `make vuln` on every pull
+request, on `main` and weekly, because an advisory is published against a version that was fine
+yesterday; `fuzz.yml` runs every fuzz target for a timed smoke; `nightly.yml` runs `make nightly` and
+files an issue naming the failing test and the shuffle seed. `release.yml` runs `make lint` and
+`make vuln` in its accept job and executes the linux/amd64 artifacts before publishing them, so a
+binary that starts broken never reaches a release page.
 
 `matrixcheck-all` and `linecount-all` replace the per-chunk `accept` as the way solved
 areas are held steady: they run over every archived spec, with no status filter, and

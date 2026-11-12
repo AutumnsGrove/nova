@@ -219,33 +219,40 @@ func TestBash_BSH21_CancelMidCommand(t *testing.T) {
 	raw, _ := json.Marshal(map[string]any{"command": `touch "$PWD/started"; sleep 10`})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go cancelWhenFileExists(t, marker, cancel)
+	// The helper reports over a channel instead of failing itself: it runs on
+	// its own goroutine, and testing.T must not be used from one once the test
+	// has returned.
+	reported := make(chan bool, 1)
+	go func() { reported <- cancelWhenFileExists(marker, cancel) }()
 	res, err := Bash(WithTimeout(30*time.Second)).Run(ctx, raw, &tool.Context{WorkDir: dir})
+	sawMarker := <-reported
 	if err != nil {
 		t.Fatalf("Run returned a Go error: %v", err)
+	}
+	if !sawMarker {
+		t.Fatalf("the command never wrote %s, so nothing was cancelled mid-command", marker)
 	}
 	if !res.IsError || !strings.Contains(res.Content, "command cancelled") {
 		t.Fatalf("result = %+v, want cancellation", res)
 	}
 }
 
-// cancelWhenFileExists cancels once path exists. The command that writes it is
-// a real subprocess, so this is a bounded poll: the deadline is what fails the
-// test, and the interval only bounds how often the file is checked.
-func cancelWhenFileExists(t *testing.T, path string, cancel context.CancelFunc) {
-	t.Helper()
+// cancelWhenFileExists polls for path and cancels once it exists, reporting
+// whether it was seen. The command that writes it is a real subprocess, so this
+// is a bounded poll: the deadline is the retry budget and the interval only
+// bounds how often the file is checked. It cancels either way, so a missing
+// marker cannot hang the run waiting for a cancel that never comes.
+func cancelWhenFileExists(path string, cancel context.CancelFunc) bool {
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(path); err == nil {
 			cancel()
-			return
+			return true
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	// Cancel anyway, so a marker that never appears fails the test instead of
-	// hanging the run forever.
 	cancel()
-	t.Errorf("the command never wrote %s", path)
+	return false
 }
 
 func TestBash_BSH22_CancelBeforeStart(t *testing.T) {

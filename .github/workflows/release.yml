@@ -35,6 +35,15 @@ jobs:
         # One invocation, so the module-wide steps run once rather than once per
         # chunk: the same work 23 times over was a fifth of the gate (#97).
         run: go run ./scripts/accept --all
+      # The cheap half first: a tag should not spend ten minutes being accepted
+      # before it finds out it would publish a binary with a known vulnerability.
+      # Both are the same targets the pull request gate runs, so a green pull
+      # request is the only way this can be the first time they are seen.
+      - name: Lint and scan
+        run: |
+          set -eu
+          make lint
+          make vuln
 
   build:
     needs: accept
@@ -69,6 +78,39 @@ jobs:
           go build -trimpath -tags notui -ldflags "$ldflags" -o dist/nova-min ./cmd/nova
       - name: Package and checksum
         run: ./scripts/package.sh "${GITHUB_REF_NAME}" "${{ matrix.os }}" "${{ matrix.arch }}" dist/nova dist/nova-min dist
+      # The one platform that can execute on the runner, so the only one that can
+      # be proved rather than compiled. Until this step existed the archives were
+      # built and uploaded without anything ever running them, which is exactly
+      # the failure a build tag or a missing embed produces: it compiles, and
+      # then dies at startup.
+      - name: Prove the artifact runs
+        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME}"
+          for flavour in nova nova-min; do
+            dir="smoke-${flavour}"
+            mkdir -p "$dir"
+            tar -xzf "dist/${flavour}_${version}_linux_amd64.tar.gz" -C "$dir"
+            # The version comes from -ldflags at build time, so this proves the
+            # stamp landed rather than defaulting to "dev".
+            "$dir/nova" --version | grep -qF "${version}"
+            # The docs topics are embedded, and a broken embed still compiles.
+            "$dir/nova" docs | grep -qx protocol
+            "$dir/nova" docs | grep -qx testing
+          done
+          # doctor reports on a keyless, config-less machine with warnings and a
+          # non-zero status, so assert it produced its report rather than that it
+          # liked what it found.
+          report=$(./smoke-nova/nova doctor 2>&1 || true)
+          printf '%s\n' "$report"
+          case "$report" in
+            *panic:*) echo "::error::nova doctor panicked"; exit 1 ;;
+          esac
+          printf '%s\n' "$report" | grep -q '^config ' || {
+            echo "::error::nova doctor printed no report"
+            exit 1
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: nova-${{ matrix.os }}-${{ matrix.arch }}

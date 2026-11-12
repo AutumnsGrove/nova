@@ -65,12 +65,19 @@ fuzz-packages:
 # A smoke run: ten seconds per target, the same shape fuzz.yml runs for a minute
 # each. A green run is a smoke alarm, not a proof that the parser is safe, and
 # anything longer belongs to a deliberate fuzz campaign rather than a build.
+# The target list is captured before the loop: a command substitution in a for
+# list is not a command, so a failing `go test -list` there would run zero
+# targets and exit 0. A fuzz job that silently tests nothing is worse than no
+# fuzz job.
 fuzz-short:
 	@test -n "$(fuzz-pkgs)" || { echo "no fuzz targets found"; exit 1; }
-	@for pkg in $(fuzz-pkgs); do \
-		for target in $$(go test -list '^Fuzz' $$pkg | sed -n '/^Fuzz/p'); do \
+	@set -eu; for pkg in $(fuzz-pkgs); do \
+		listing=$$(go test -list '^Fuzz' $$pkg); \
+		targets=$$(printf '%s\n' "$$listing" | sed -n '/^Fuzz/p'); \
+		test -n "$$targets" || { echo "no fuzz targets in $$pkg"; exit 1; }; \
+		for target in $$targets; do \
 			echo "fuzzing $$target in $$pkg"; \
-			go test -run '^$$' -fuzz "^$$target$$" -fuzztime=10s $$pkg || exit 1; \
+			go test -run '^$$' -fuzz "^$$target$$" -fuzztime=10s $$pkg; \
 			done; \
 		done
 

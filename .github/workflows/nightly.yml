@@ -53,9 +53,14 @@ jobs:
           # same seed in the rerun hint, so a failure can be reproduced exactly.
           seed=$(grep -oE '^-test\.shuffle [0-9]+' nightly.log | head -1 | awk '{print $2}')
           failing=$(grep -oE '^--- FAIL: [^ ]+' nightly.log | sed 's/^--- FAIL: //' | sort -u | head -5 | paste -sd, -)
-          title="nightly: ${failing:-the race suite} failed under -shuffle (seed ${seed:-unknown})"
+          # The title is the identity the dedupe below compares, so it carries
+          # the failing tests and nothing that changes between runs: the shuffle
+          # seed is random, so including it filed a new issue every night.
+          title="nightly: ${failing:-the race suite} failed under -shuffle"
           {
             echo "The nightly \`-race -count=2 -shuffle=on\` run failed on \`main\`."
+            echo
+            echo "Shuffle seed: \`${seed:-unknown}\` (random per run, so it is here rather than in the title)"
             echo
             echo "Reproduce with:"
             echo

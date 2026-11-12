@@ -67,7 +67,13 @@ jobs:
       - name: Fuzz every target in ${{ matrix.package }}
         run: |
           set -eu
-          for target in $(go test -list '^Fuzz' "./${{ matrix.package }}" | sed -n '/^Fuzz/p'); do
+          # The list is captured first, because a command substitution in a for
+          # list is not a command: a failing `go test -list` there would run the
+          # loop zero times and report success.
+          listing=$(go test -list '^Fuzz' "./${{ matrix.package }}")
+          targets=$(printf '%s\n' "${listing}" | sed -n '/^Fuzz/p')
+          test -n "${targets}" || { echo "::error::no fuzz targets found in ./${{ matrix.package }}"; exit 1; }
+          for target in ${targets}; do
             echo "::group::${target} in ${{ matrix.package }} (${FUZZTIME})"
             go test -run '^$' -fuzz "^${target}$" -fuzztime "${FUZZTIME}" "./${{ matrix.package }}"
             echo "::endgroup::"

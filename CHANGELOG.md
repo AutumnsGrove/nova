@@ -46,8 +46,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
-- A fetched page that is not UTF-8 no longer puts raw bytes into the model's context:
-  `htmlToMarkdown` replaces them with U+FFFD. The first finding of the new fuzz job (#107).
+- `htmlToMarkdown` returns valid UTF-8 for any input, replacing bad bytes with U+FFFD. The fetch
+  path already repaired them in `decodeCharset`, so nothing a user sees changes; the helper was
+  disobeying its own contract, which is what its fuzz target asserts. The first finding of the new
+  fuzz job (#107).
 - `ParseFileDiff` no longer marks a line outside the hunk that declares it. A body that disagrees
   with its own header counts could reach a line the diff does not contain, and `FileDiff.Valid`
   would then authorise a review comment there (#108).

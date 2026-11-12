@@ -1,0 +1,31 @@
+# The module and the actions are both dependencies, and both move: a charm minor
+# can break a build, and a pinned `uses: action@v4` tag can be retargeted or
+# gain a fix. Dependabot keeps both current without anyone remembering to look.
+#
+# Majors are left ungrouped on purpose. A charm major is a migration with a
+# reading list, and it deserves its own pull request rather than a footnote in a
+# bundle of patch bumps.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: fix
+    groups:
+      gomod-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]

@@ -1,0 +1,84 @@
+name: nightly
+
+# The pull request gate runs the suite once, in the order the compiler happened
+# to give it. That cannot find a test that only fails beside another one, or a
+# second run that inherits state from the first, and it never sees a Go patch
+# release or a module bump that lands after the fact.
+#
+# So: the race suite twice over, in a shuffled order, every night on main. A
+# failure is filed as an issue with the shuffle seed, because a red run nobody
+# reads is worse than no run at all.
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  # So the workflow can be rehearsed from a branch before it is trusted.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # The one thing this workflow does besides testing is file the issue.
+  issues: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  shuffle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # `make nightly` is the same command a local run uses.
+      - name: Race, twice over, in a shuffled order
+        id: run
+        # The failure is reported by the next step, which needs the log; letting
+        # this one fail would skip it.
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          make nightly 2>&1 | tee nightly.log
+      - name: File or update the issue
+        if: steps.run.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # Go prints `-test.shuffle 12345` at the top of a shuffled run and the
+          # same seed in the rerun hint, so a failure can be reproduced exactly.
+          seed=$(grep -oE '^-test\.shuffle [0-9]+' nightly.log | head -1 | awk '{print $2}')
+          failing=$(grep -oE '^--- FAIL: [^ ]+' nightly.log | sed 's/^--- FAIL: //' | sort -u | head -5 | paste -sd, -)
+          title="nightly: ${failing:-the race suite} failed under -shuffle (seed ${seed:-unknown})"
+          {
+            echo "The nightly \`-race -count=2 -shuffle=on\` run failed on \`main\`."
+            echo
+            echo "Reproduce with:"
+            echo
+            echo '```'
+            if [ -n "${seed}" ]; then
+              echo "go test -race -count=2 -shuffle=${seed} ./<package>"
+            else
+              echo "make nightly"
+            fi
+            echo '```'
+            echo
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo '```'
+            tail -c 12000 nightly.log
+            echo '```'
+          } >issue.md
+          # One issue per distinct failure: the same nightly going red twice
+          # should be a comment, not a second issue with the same title.
+          existing=$(gh issue list --state open --label bug --limit 100 --json number,title \
+            --jq '.[] | "\(.number)\t\(.title)"' | awk -F'\t' -v t="${title}" '$2 == t {print $1; exit}')
+          if [ -n "${existing}" ]; then
+            gh issue comment "${existing}" --body-file issue.md
+          else
+            gh issue create --title "${title}" --body-file issue.md --label bug
+          fi

@@ -1,4 +1,4 @@
-.PHONY: test test-full race race-splash splash fuzz-short fmt vet lint vuln build build-notui accept ci importcheck matrixcheck-all linecount-all
+.PHONY: test test-full race race-splash splash fuzz-short fmt vet lint vuln build build-notui build-cross tidy-diff actionlint static ci importcheck matrixcheck-all linecount-all
 
 test:
 	go test -short -p 2 ./...
@@ -67,13 +67,36 @@ build:
 build-notui:
 	go build -tags notui ./...
 
+# The release matrix crosses four platforms, and until this target existed the
+# first time two of them were compiled was on the tag that published them. They
+# cannot be tested here, but they can be made to compile.
+build-cross:
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build ./...
+
+tidy-diff:
+	go mod tidy -diff
+
+# pi-review.yml is generated from .github/pi-review.json by the review bot, and
+# its one finding is inside the script that generator writes, so it is not ours
+# to fix here. Everything else in the directory is hand-written and must lint.
+own-workflows = $(filter-out .github/workflows/pi-review.yml,$(wildcard .github/workflows/*.yml))
+actionlint:
+	@test -n "$(own-workflows)" || { echo "no workflows found"; exit 1; }
+	go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 $(own-workflows)
+
 importcheck:
 	go run ./scripts/importcheck
 
 accept:
 	go run ./scripts/accept $(C)
 
-ci: fmt vet lint build build-notui race importcheck matrixcheck-all linecount-all
+# Everything that does not need the race detector, in the order that reports the
+# cheapest failure first. The ci workflow runs this as its own job so it does not
+# wait for the race suite, and `ci` below is still the whole gate.
+static: fmt vet lint tidy-diff actionlint build build-notui build-cross importcheck matrixcheck-all linecount-all
+
+ci: static race
 
 # The chunk specs are archived (docs/archive/chunks): the build-out is finished,
 # so every spec is a regression contract. Each matrix row must still have a

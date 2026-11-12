@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- The minimum Go is now 1.26.11, up from 1.26.6: `net/http` below that patch carries
+  GO-2026-6859, a reachable crash in the HTTP/1 server that `nova serve` runs and that
+  `provider/ssestream` and `auth` both reach. A consumer building with an older patch inherits the
+  advisory, so `go get github.com/AutumnsGrove/nova` now requires 1.26.11 or newer. Nothing in the
+  language changes; the raised floor is a patch release of the same minor (#104).
 - Speech cost is now an estimate from the model's catalog price, and it is always reported: a
   synthesis is priced per character, `runes * pricePerMillion / 1e6`, with `CostSource: "catalog"`.
   A role pinned to one provider is priced from that endpoint, so a pin to Together costs what

@@ -1,4 +1,4 @@
-.PHONY: test test-full race race-splash splash fuzz-short fmt vet lint vuln build build-notui build-cross tidy-diff actionlint static ci importcheck matrixcheck-all linecount-all
+.PHONY: test test-full race race-splash splash nightly fuzz-short fuzz-packages fmt vet lint vuln build build-notui build-cross tidy-diff actionlint static ci importcheck matrixcheck-all linecount-all
 
 test:
 	go test -short -p 2 ./...
@@ -16,6 +16,12 @@ race:
 
 race-splash:
 	go test -race -timeout 25m -p 2 ./tui/splash/splashgif
+
+# What nightly.yml runs. -count=2 catches a test that leaves state behind for
+# the next run, and -shuffle=on catches one that only fails beside another. Go
+# prints the seed, so a failure is reproducible with -shuffle=<seed>.
+nightly:
+	go test -race -count=2 -shuffle=on -p 2 $$(go list ./... | grep -v '$(slow-pkg)')
 
 # The pull request gate runs the same package without -race: the renderer takes
 # 25s that way and seven minutes with the detector, which finds nothing in a
@@ -48,6 +54,11 @@ vuln:
 # Every package holding a fuzz target. The list is derived rather than written
 # down, so a new target cannot be forgotten and a moved one cannot go stale.
 fuzz-pkgs = $(sort $(dir $(shell grep -rl '^func Fuzz' --include='*_test.go' .)))
+
+# Printed for fuzz.yml, which shards a job per line of it.
+fuzz-packages:
+	@test -n "$(fuzz-pkgs)" || { echo "no fuzz targets found"; exit 1; }
+	@echo $(fuzz-pkgs)
 
 # A smoke run: ten seconds per target, the same shape fuzz.yml runs for a minute
 # each. A green run is a smoke alarm, not a proof that the parser is safe, and

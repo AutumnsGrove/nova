@@ -1,0 +1,83 @@
+name: fuzz
+
+# docs/TESTING.md section 5 has always said the fuzz targets run "for a few
+# seconds in CI". This is that: every target in the tree, one job per package,
+# ten seconds each on a pull request and a minute each overnight.
+on:
+  pull_request:
+  schedule:
+    - cron: "43 4 * * *"
+
+concurrency:
+  group: fuzz-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # The matrix is derived rather than written down, so a new fuzz target is
+  # picked up by being committed and a moved one cannot leave a job behind.
+  packages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      packages: ${{ steps.list.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - id: list
+        name: List the packages holding fuzz targets
+        run: |
+          set -eu
+          # make fuzz-packages is the same source a local run uses.
+          packages=$(make -s fuzz-packages | tr ' ' '\n' | sed 's|^\./||; s|/$||' | grep -v '^$' | jq -R . | jq -sc .)
+          test "${packages}" != "[]" || { echo "::error::no fuzz targets found"; exit 1; }
+          echo "packages=${packages}" >>"$GITHUB_OUTPUT"
+          echo "sharding over ${packages}"
+
+  fuzz:
+    needs: packages
+    runs-on: ubuntu-latest
+    # A package with five targets costs five minutes overnight; nothing has more.
+    timeout-minutes: 30
+    strategy:
+      # One crashing package must not cancel the other thirty-seven: the point of
+      # a shard per package is to see every failure in one run.
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.packages.outputs.packages) }}
+    env:
+      # Go's -fuzz takes one target, so the loop below is per target, and a
+      # package with three targets gets three times this.
+      FUZZTIME: ${{ github.event_name == 'schedule' && '60s' || '10s' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # A green run means "no crash in the time it was given", not "this parser
+      # is safe". Longer than this belongs to a deliberate campaign, not a gate.
+      - name: Fuzz every target in ${{ matrix.package }}
+        run: |
+          set -eu
+          for target in $(go test -list '^Fuzz' "./${{ matrix.package }}" | sed -n '/^Fuzz/p'); do
+            echo "::group::${target} in ${{ matrix.package }} (${FUZZTIME})"
+            go test -run '^$' -fuzz "^${target}$" -fuzztime "${FUZZTIME}" "./${{ matrix.package }}"
+            echo "::endgroup::"
+          done
+      # A crash is only actionable with its input: that is what the corpus is.
+      - name: Keep the failing input
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ strategy.job-index }}
+          path: "**/testdata/fuzz/**"
+          if-no-files-found: ignore
+          retention-days: 7

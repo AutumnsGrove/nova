@@ -169,12 +169,16 @@ func TestSSEStream_TMO03_ConnectionRefused(t *testing.T) {
 
 func TestSSEStream_TMO04_CancelDuringConnect(t *testing.T) {
 	release := make(chan struct{})
+	entered := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
 		<-release
 	}))
 	t.Cleanup(func() { close(release); srv.Close() })
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { time.Sleep(20 * time.Millisecond); cancel() }()
+	// Cancel once the request has reached the server, so the connection is
+	// genuinely in flight; a sleep here could cancel before it was opened.
+	go func() { <-entered; cancel() }()
 	began := time.Now()
 	_, err := open(ctx, t, Config{ConnectTimeout: 5 * time.Second}, srv.URL)
 	if !errors.Is(err, context.Canceled) {

@@ -27,6 +27,7 @@ func openPTY(t *testing.T) (*os.File, *os.File) {
 		t.Skipf("unlockpt: %v", err)
 	}
 	var buf [128]byte
+	//lint:ignore SA1019 x/sys wraps the ioctls it has libSystem entry points for; TIOCPTYGNAME has none
 	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, master.Fd(), unix.TIOCPTYGNAME, uintptr(unsafe.Pointer(&buf[0]))); errno != 0 {
 		master.Close()
 		t.Skipf("TIOCPTYGNAME: %v", errno)

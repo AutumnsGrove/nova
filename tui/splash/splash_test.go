@@ -3,7 +3,6 @@
 package splash
 
 import (
-	"image/color"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -388,9 +387,4 @@ func FuzzRender(f *testing.F) {
 			}
 		}
 	})
-}
-
-// blendWarm is the shadow colour at the given opacity, for sequence tests.
-func blendWarm(st styles.Styles, opacity float64) color.Color {
-	return mixColors(role(st, "bg"), role(st, "warm"), opacity)
 }

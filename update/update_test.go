@@ -88,16 +88,6 @@ func (f *fakeExec) exec(_ context.Context, dir string, env []string, name string
 	return []byte("nova v0.0.0\n"), nil
 }
 
-// last returns the most recent call, or false when there was none.
-func (f *fakeExec) last() (execCall, bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.calls) == 0 {
-		return execCall{}, false
-	}
-	return f.calls[len(f.calls)-1], true
-}
-
 // goCall returns the single go build call, failing when there was not exactly
 // one. The staged binary's version check is a second call and is not a build.
 func (f *fakeExec) goCall(t *testing.T) execCall {

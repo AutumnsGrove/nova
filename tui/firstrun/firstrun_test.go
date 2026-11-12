@@ -356,7 +356,7 @@ func TestFirstRun_FRS16_PasteFillsTheKey(t *testing.T) {
 	if text := view(m); strings.Contains(text, "sk-pasted-secret") || !strings.Contains(text, strings.Repeat("•", len("sk-pasted-secret"))) {
 		t.Fatalf("the pasted key must be masked and counted:\n%s", text)
 	}
-	m = act(t, m, "enter")
+	act(t, m, "enter")
 	if h.savedCred.Key != "sk-pasted-secret" {
 		t.Fatalf("saved key = %q, want the pasted key without its line ending", h.savedCred.Key)
 	}

@@ -444,6 +444,7 @@ func TestWebfetch_WFT30_HugePageFast(t *testing.T) {
 func TestWebfetch_WFT31_NoCookiesNoAuth(t *testing.T) {
 	var mu sync.Mutex
 	var sawCookie, sawAuth bool
+	//lint:ignore S1021 the handler captures target, so it cannot be declared in the same statement
 	var target *httptest.Server
 	target = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()

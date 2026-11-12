@@ -47,6 +47,9 @@ func TestDiff_DFV02_GutterNumbers(t *testing.T) {
 	if strings.Trim(strings.Join(itoas(old), ","), ",") == "" {
 		t.Fatalf("no old numbers: %+v", lines)
 	}
+	if strings.Trim(strings.Join(itoas(new), ","), ",") == "" {
+		t.Fatalf("no new numbers: %+v", lines)
+	}
 	want := "10"
 	out := Render("@@ -10,1 +10,1 @@\n-d\n+e\n", "x.go", 40, mono(), Options{ShowNumbers: true})
 	if !strings.Contains(out, want) {

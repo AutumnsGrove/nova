@@ -51,16 +51,6 @@ func (s *fakeSession) Entries(kind string) []json.RawMessage {
 	return out
 }
 
-func (s *fakeSession) push(snap State) {
-	data, _ := Encode(State{V: stateVersion, Next: snap.Next, Tasks: snap.Tasks})
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.branches) == 0 {
-		s.branches = [][]json.RawMessage{{}}
-	}
-	s.branches[s.active] = append(s.branches[s.active], data)
-}
-
 func (s *fakeSession) newBranch(snap State) {
 	data, _ := Encode(State{V: stateVersion, Next: snap.Next, Tasks: snap.Tasks})
 	s.mu.Lock()
@@ -180,7 +170,7 @@ func TestTasks_TSK04_TaskLimit(t *testing.T) {
 	for batch := 0; batch < 4; batch++ {
 		var items []string
 		for i := 0; i < 50; i++ {
-			items = append(items, fmt.Sprintf(`{"title":"t"}`))
+			items = append(items, `{"title":"t"}`)
 		}
 		if _, isErr := call(t, e, `{"action":"create","tasks":[`+strings.Join(items, ",")+`]}`); isErr {
 			t.Fatalf("batch %d failed", batch)
@@ -357,14 +347,6 @@ func TestTasks_TSK20_StateAfterCompaction(t *testing.T) {
 	sess := &fakeSession{}
 	e, _ := setup(sess, &fakeUI{})
 	mustCreate(t, e, "survivor")
-	// Compaction drops non-keep entries; the fake applies the same rule.
-	sess.mu.Lock()
-	branch := sess.branches[sess.active][:0]
-	for _, raw := range sess.branches[sess.active] {
-		branch = append(branch, raw)
-	}
-	sess.branches[sess.active] = branch
-	sess.mu.Unlock()
 	e.rebuild()
 	if len(e.state.Tasks) != 1 || e.state.Tasks[0].Title != "survivor" {
 		t.Fatalf("after compaction = %+v", e.state.Tasks)

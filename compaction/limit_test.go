@@ -1,6 +1,7 @@
 package compaction
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -117,7 +118,7 @@ func Test_LIM12_LimitBelowSystemPrompt(t *testing.T) {
 		t.Fatal("a 5k system prompt exceeds a 1k limit")
 	}
 	c := &Compactor{}
-	if _, err := c.Compact(nil, msgs, ""); !errors.Is(err, ErrNothingToCompact) {
+	if _, err := c.Compact(context.Background(), msgs, ""); !errors.Is(err, ErrNothingToCompact) {
 		t.Fatalf("Compact err = %v, want ErrNothingToCompact", err)
 	}
 }

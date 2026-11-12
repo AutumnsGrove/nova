@@ -25,7 +25,6 @@ var (
 	tabKey      = tea.KeyPressMsg{Code: tea.KeyTab}
 	upKey       = tea.KeyPressMsg{Code: tea.KeyUp}
 	downKey     = tea.KeyPressMsg{Code: tea.KeyDown}
-	pgupKey     = tea.KeyPressMsg{Code: tea.KeyPgUp}
 	pgdownKey   = tea.KeyPressMsg{Code: tea.KeyPgDown}
 	spaceKey    = tea.KeyPressMsg{Code: tea.KeySpace}
 	shiftTabKey = tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}

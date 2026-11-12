@@ -20,7 +20,7 @@
       "reopened"
     ],
     "skipDrafts": true,
-    "skipBots": false,
+    "skipBots": true,
     "mention": true
   },
   "review": {

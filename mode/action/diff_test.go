@@ -171,3 +171,27 @@ func contains(list []string, want string) bool {
 	}
 	return false
 }
+
+// The header's counts are what bound a hunk; a body that disagrees with them
+// must not put a line marker past the hunk it belongs to, or Valid would allow a
+// comment on a line the diff does not contain. The fuzzer found this (#108).
+func TestAction_PDI10_BodyLinesObeyHeaderCounts(t *testing.T) {
+	fd := ParseFileDiff("f", "@@ -0 +0 @@\n \n 0")
+	if fd.Left[1] || fd.Right[1] {
+		t.Fatalf("line 1 marked outside hunk 0..0: left=%v right=%v", fd.Left, fd.Right)
+	}
+	if !fd.Left[0] || !fd.Right[0] {
+		t.Fatalf("the first context line was lost: left=%v right=%v", fd.Left, fd.Right)
+	}
+	// A well-formed patch marks every line on both sides, counts exhausted
+	// exactly at its last body line.
+	fd = ParseFileDiff("f", "@@ -1,2 +1,2 @@\n a\n-b\n+B\n")
+	if !fd.Left[1] || !fd.Left[2] || !fd.Right[1] || !fd.Right[2] {
+		t.Fatalf("well-formed patch: left=%v right=%v", fd.Left, fd.Right)
+	}
+	// A surplus added line once the counts are spent is not marked.
+	fd = ParseFileDiff("f", "@@ -1 +1 @@\n-a\n+B\n+C\n")
+	if fd.Right[2] {
+		t.Fatalf("surplus line marked: right=%v", fd.Right)
+	}
+}

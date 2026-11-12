@@ -22,7 +22,9 @@ func TestText(t *testing.T) {
 		{"vertical tab and form feed", "a\vb\fc", "abc"},
 		{"c1 control", "a\u0085b\u009fc", "abc"},
 		// Bidirectional overrides reorder what is drawn without changing the bytes.
+		//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 		{"right-to-left override", "safe ‮txt.exe", "safe txt.exe"},
+		//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 		{"bidi isolates and marks", "a⁦b⁩c‎d‏e؜f", "abcdef"},
 		{"line and paragraph separators", "a b c", "abc"},
 		{"invalid utf-8", "a\xffb\xc3", "ab"},

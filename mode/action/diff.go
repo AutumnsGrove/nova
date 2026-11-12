@@ -43,12 +43,19 @@ var hunkRe = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
 func ParseFileDiff(path, patch string) *FileDiff {
 	fd := &FileDiff{Path: path, Left: map[int]bool{}, Right: map[int]bool{}}
 	oldLine, newLine, valid := 0, 0, false
+	// The header's counts are what git itself walks a hunk by: when a body
+	// disagrees with them the surplus belongs to no line, and marking it would
+	// let a comment be placed outside the hunk that would carry it. For a
+	// well-formed diff the counts and the body match exactly, so this only
+	// changes what a hostile or truncated patch can reach (#108).
+	oldLeft, newLeft := 0, 0
 	for _, raw := range strings.Split(patch, "\n") {
 		line := strings.TrimSuffix(raw, "\r")
 		if strings.HasPrefix(line, "@@") {
 			if h, ok := parseHunk(line); ok {
 				fd.Hunks = append(fd.Hunks, h)
 				oldLine, newLine, valid = h.OldStart, h.NewStart, true
+				oldLeft, newLeft = h.OldCount, h.NewCount
 			}
 			continue
 		}
@@ -57,14 +64,22 @@ func ParseFileDiff(path, patch string) *FileDiff {
 		}
 		switch {
 		case strings.HasPrefix(line, "+"):
-			fd.Right[newLine], newLine = true, newLine+1
+			if newLeft > 0 {
+				fd.Right[newLine], newLine, newLeft = true, newLine+1, newLeft-1
+			}
 		case strings.HasPrefix(line, "-"):
-			fd.Left[oldLine], oldLine = true, oldLine+1
+			if oldLeft > 0 {
+				fd.Left[oldLine], oldLine, oldLeft = true, oldLine+1, oldLeft-1
+			}
 		case strings.HasPrefix(line, `\`):
 			// "\ No newline at end of file" is not a line of either side.
 		case strings.HasPrefix(line, " "):
-			fd.Left[oldLine], fd.Right[newLine] = true, true
-			oldLine, newLine = oldLine+1, newLine+1
+			if oldLeft > 0 {
+				fd.Left[oldLine], oldLine, oldLeft = true, oldLine+1, oldLeft-1
+			}
+			if newLeft > 0 {
+				fd.Right[newLine], newLine, newLeft = true, newLine+1, newLeft-1
+			}
 		}
 	}
 	return fd

@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- The minimum Go is now 1.26.11, up from 1.26.6: `net/http` below that patch carries
+  GO-2026-6859, a reachable crash in the HTTP/1 server that `nova serve` runs and that
+  `provider/ssestream` and `auth` both reach. A consumer building with an older patch inherits the
+  advisory, so `go get github.com/AutumnsGrove/nova` now requires 1.26.11 or newer. Nothing in the
+  language changes; the raised floor is a patch release of the same minor (#104).
 - Speech cost is now an estimate from the model's catalog price, and it is always reported: a
   synthesis is priced per character, `runes * pricePerMillion / 1e6`, with `CostSource: "catalog"`.
   A role pinned to one provider is priced from that endpoint, so a pin to Together costs what
@@ -22,6 +27,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- The gate now reacts to more than a commit. `security.yml` runs a vulnerability scan on every pull
+  request, on `main` and weekly, and it found three reachable advisories the day it was written;
+  `fuzz.yml` runs all 63 fuzz targets for a timed smoke, which `docs/TESTING.md` had promised since the
+  build-out and no workflow had ever done; `nightly.yml` runs the race suite twice, shuffled, and files
+  an issue naming the failing test and the shuffle seed. Dependabot keeps the module and the actions
+  current weekly (#104).
+- `make lint` (staticcheck), `make vuln` (govulncheck), `make fuzz-short` and `make nightly` are the same
+  commands the workflows run, and `make static` is the pull request gate's fast half (#104).
+- The release gate runs the linter and the vulnerability scan, and executes the linux/amd64 artifacts
+  `--version`, `docs` and `doctor` before publishing them, so a binary that compiles and then dies at
+  startup no longer reaches a release page (#104).
 - A speech role can pin the endpoint that serves it. `voice.speech.roles.<name>.provider` (and
   the same key on a fallback) is sent to `POST /audio/speech` as the `provider` object, verbatim,
   so `only`, `order`, `ignore` and the data-policy keys all work. No pin still means the provider
@@ -30,6 +46,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- `htmlToMarkdown` returns valid UTF-8 for any input, replacing bad bytes with U+FFFD. The fetch
+  path already repaired them in `decodeCharset`, so nothing a user sees changes; the helper was
+  disobeying its own contract, which is what its fuzz target asserts. The first finding of the new
+  fuzz job (#107).
+- `ParseFileDiff` no longer marks a line outside the hunk that declares it. A body that disagrees
+  with its own header counts could reach a line the diff does not contain, and `FileDiff.Valid`
+  would then authorise a review comment there (#108).
 - Nova's voice documentation claimed OpenRouter ignores `only` on the audio endpoints, so a
   provider pin could not work. It does work: `only: [Together]` answered in 0.6 s against a 45 s
   hang unpinned. `docs/VOICE.md` and D162's successor, D170, correct the record (#92).

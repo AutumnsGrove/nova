@@ -110,15 +110,6 @@ func (s *fakeSession) wasClosed() bool {
 	return s.closed
 }
 
-func (s *fakeSession) lastSubmit() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.submitted) == 0 {
-		return ""
-	}
-	return s.submitted[len(s.submitted)-1]
-}
-
 // fakeRegister registers a provider with the given methods and store.
 func fakeRegister(t *testing.T, id string, methods []providerauth.Method, store *fakeStore, begin map[providerauth.Method]providerauth.BeginFunc) {
 	t.Helper()

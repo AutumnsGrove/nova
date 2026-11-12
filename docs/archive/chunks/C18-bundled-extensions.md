@@ -410,6 +410,7 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 | WFT46 | redirect target validated like the URL | redirect to `http://u:p@host/` | credentials refused; not echoed |
 | WFT47 | other reserved ranges | `0/8`, `240/4`, documentation, NAT64, 6to4, Teredo | blocked; tunnelled forms follow the inner address |
 | WFT48 | allow-list matching | trailing dots, leading-dot suffix | normalised; dot boundary only |
+| WFT49 | a page that is not UTF-8 | a body holding `0xff` | valid UTF-8, the bad byte replaced with U+FFFD, the surrounding text kept |
 
 ## Fuzz and property tests
 

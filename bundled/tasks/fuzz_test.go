@@ -25,7 +25,7 @@ func FuzzTaskOps(f *testing.F) {
 			case 0:
 				body = fmt.Sprintf(`{"action":"create","title":"task %d"}`, i)
 			case 1:
-				body = fmt.Sprintf(`{"action":"update","id":"t1","status":"doing"}`)
+				body = `{"action":"update","id":"t1","status":"doing"}`
 			case 2:
 				body = `{"action":"delete","id":"t1"}`
 			case 3:

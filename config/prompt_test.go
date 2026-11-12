@@ -48,7 +48,8 @@ func TestPrompt_SYS02_EmptyPartsOmitted(t *testing.T) {
 
 func TestPrompt_SYS03_Deterministic(t *testing.T) {
 	in := fullPromptInput()
-	if BuildSystemPrompt(in) != BuildSystemPrompt(in) {
+	first, second := BuildSystemPrompt(in), BuildSystemPrompt(in)
+	if first != second {
 		t.Fatal("the same input should produce the same prompt")
 	}
 }

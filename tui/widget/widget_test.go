@@ -284,12 +284,14 @@ func FuzzWidgetContent(f *testing.F) {
 // A widget's text comes from an extension. Whatever kind it is, a control or
 // bidirectional character in it must not reach the screen.
 func TestWidget_WDG20_ExtensionTextIsCleaned(t *testing.T) {
+	//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 	hostile := "ok\rrm -rf /\b\a ‮exe"
 	s := NewStore()
 	s.SetWidget("a", "above_editor", &Content{Kind: "text", Lines: []string{hostile}})
 	s.SetWidget("b", "above_editor", &Content{Kind: "list", Items: []Item{{Text: hostile, Detail: hostile}}})
 	s.SetWidget("c", "above_editor", &Content{Kind: "table", Rows: [][]string{{hostile, hostile}}})
 	for _, line := range s.Lines("above_editor", 60, 20, ascii()) {
+		//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 		for _, bad := range []string{"\r", "\b", "\a", "‮"} {
 			if strings.Contains(line, bad) {
 				t.Errorf("line %q contains %q", line, bad)

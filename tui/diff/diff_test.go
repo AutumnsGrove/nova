@@ -47,6 +47,9 @@ func TestDiff_DFV02_GutterNumbers(t *testing.T) {
 	if strings.Trim(strings.Join(itoas(old), ","), ",") == "" {
 		t.Fatalf("no old numbers: %+v", lines)
 	}
+	if strings.Trim(strings.Join(itoas(new), ","), ",") == "" {
+		t.Fatalf("no new numbers: %+v", lines)
+	}
 	want := "10"
 	out := Render("@@ -10,1 +10,1 @@\n-d\n+e\n", "x.go", 40, mono(), Options{ShowNumbers: true})
 	if !strings.Contains(out, want) {
@@ -205,11 +208,13 @@ func FuzzDiffRender(f *testing.F) {
 // function name from the file, and a non-diff text is drawn as it came) has to
 // reach the terminal without bytes it acts on, in colour and without.
 func TestDiff_DFV16_NoControlBytesInAnyLineKind(t *testing.T) {
+	//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 	hostile := "\x1b]0;pwned\x07\x1b[2J‮"
 	diff := "--- a/x.go\n+++ b/x.go\n@@ -1,2 +1,2 @@ func f" + hostile + "\n-old" + hostile + "\n+new" + hostile + "\n ctx" + hostile + "\n"
 	for name, st := range map[string]styles.Styles{"mono": mono(), "colour": styles.Build(styles.Dark(), colorprofile.TrueColor)} {
 		for _, input := range []string{diff, "plain text" + hostile} {
 			out := Render(input, "x.go", 120, st, Options{})
+			//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 			if strings.Contains(out, "\x1b]") || strings.Contains(out, "[2J") || strings.ContainsAny(out, "\x07‮") {
 				t.Errorf("%s: control bytes survived: %q", name, out)
 			}

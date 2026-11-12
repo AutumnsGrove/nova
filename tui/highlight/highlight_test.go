@@ -22,9 +22,11 @@ func TestHighlight_HLT01_ReturnsOneLinePerInputLine(t *testing.T) {
 // the model or a repository holds, so colour must not let a control sequence
 // ride through inside the token text.
 func TestHighlight_HLT02_FileEscapesNeverReachTheOutput(t *testing.T) {
+	//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 	code := "x := \"a\x1b]0;pwned\x07b\x1b[2Jc‮d\"\nreturn\r\n"
 	for _, color := range []bool{false, true} {
 		out := strings.Join(Lines(code, "x.go", color), "\n")
+		//lint:ignore ST1018 the U+202E in this fixture is the thing under test
 		if strings.Contains(out, "\x1b]") || strings.Contains(out, "[2J") || strings.ContainsAny(out, "\x07\r‮") {
 			t.Errorf("color=%v: control bytes survived: %q", color, out)
 		}

@@ -1,0 +1,43 @@
+name: security
+
+# A module can go vulnerable while nothing in this repository changes: an
+# advisory is published, and the pinned version in go.mod is suddenly known-bad.
+# That is what the weekly run is for. The pull request run is for the other
+# direction -- a change that reaches a vulnerable path, or a go.mod bump that
+# brings one in.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"
+
+# A force-push supersedes the scan it replaced. A scheduled run is never
+# cancelled by anything, so only pull requests cancel.
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # The scan is only as current as the toolchain that runs it, and a
+      # standard library advisory is reported against the Go in use rather than
+      # against go.mod. That is why this resolves the toolchain from go.mod
+      # instead of taking whatever the runner image ships.
+      #
+      # govulncheck exits 3 when it finds a reachable vulnerability and fails
+      # the job. It also fails when it cannot reach the advisory database, which
+      # is deliberate: a scan that errored must not read as a clean scan.
+      - run: make vuln

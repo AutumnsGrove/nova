@@ -8,15 +8,50 @@ on:
     branches: [main]
   pull_request:
 
+# A force-push supersedes the run it replaced. Two pipelines racing to report on
+# the same commit is noise, and the older one is answering a question nobody is
+# asking any more.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Nothing here writes to the repository, so nothing here may.
+permissions:
+  contents: read
+
 jobs:
-  ci:
+  # Everything that does not need the race detector: formatting, vet, the
+  # linter, both build flavours, the cross-compile, tidy, the workflows
+  # themselves, and the two archive gates. `make static` is the same set, so a
+  # local run and this job cannot drift apart.
+  static:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: make ci
+      - run: make static
+
+  # Deliberately no `needs: static`. The race suite is the slow half of the gate
+  # and there is no reason for it to wait behind a linter; running them
+  # side by side means a whitespace failure reports in a minute while the
+  # detector is still warming up, and a real one never costs the fast job's
+  # runtime twice.
+  race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make race
 
   # The splash GIF package renders 150 frames per test, which costs seven
   # minutes under -race and finds nothing (it starts no goroutine). The pull
@@ -25,8 +60,11 @@ jobs:
   # same package with -race on every tag.
   splash:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

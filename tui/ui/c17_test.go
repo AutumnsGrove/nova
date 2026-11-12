@@ -27,14 +27,6 @@ func pushUI(m *Model, req proto.UIRequest) { execAll(update(m, client.UIRequestM
 // key sends one key and runs the resulting commands.
 func key(m *Model, k tea.KeyPressMsg) { execAll(update(m, k)) }
 
-// lastSend returns the last command the fake client recorded.
-func lastSend(f *fakeClient) proto.Command {
-	if len(f.sends) == 0 {
-		return proto.Command{}
-	}
-	return f.sends[len(f.sends)-1]
-}
-
 // sent reports whether any recorded command has the given type.
 func sent(f *fakeClient, typ string) bool {
 	for _, c := range f.sends {

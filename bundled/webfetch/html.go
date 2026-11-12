@@ -22,6 +22,14 @@ var dropElements = map[string]bool{"script": true, "style": true, "template": tr
 // htmlToMarkdown converts an HTML document to markdown. Relative URLs in links
 // and images resolve against base.
 func htmlToMarkdown(body []byte, base *url.URL) string {
+	return strings.ToValidUTF8(convertHTML(body, base), "\uFFFD")
+}
+
+// convertHTML is htmlToMarkdown without the UTF-8 repair. A fetched page is not
+// required to be UTF-8 and neither path below checks, so the caller replaces
+// bad bytes with the same U+FFFD the HTML parser would have used: the model's
+// context is UTF-8, and a raw byte there is invalid output, not a round trip.
+func convertHTML(body []byte, base *url.URL) string {
 	doc, err := html.Parse(bytes.NewReader(body))
 	if err != nil {
 		return string(body)

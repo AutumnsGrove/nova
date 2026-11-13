@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -25,9 +26,25 @@ func mustPanic(t *testing.T, what string, fn func()) {
 	fn()
 }
 
+// uniqueName returns a provider name the registry does not hold yet.
+//
+// The registry is process-wide and a test binary runs its tests more than once
+// under -count=2, which the nightly does. A fixed name therefore panics on the
+// second run with the very duplicate PRV16 exists to provoke, and the failure
+// points at the registry rather than at the test (#114).
+func uniqueName(prefix string) string {
+	for i := 0; ; i++ {
+		name := fmt.Sprintf("%s-%d", prefix, i)
+		if _, ok := Get(name); !ok {
+			return name
+		}
+	}
+}
+
 func TestProvider_PRV16_RegistryDuplicatePanics(t *testing.T) {
-	Register(namedProvider{name: "prv16"})
-	mustPanic(t, "duplicate registration", func() { Register(namedProvider{name: "prv16"}) })
+	name := uniqueName("prv16")
+	Register(namedProvider{name: name})
+	mustPanic(t, "duplicate registration", func() { Register(namedProvider{name: name}) })
 }
 
 func TestProvider_PRV17_RegistryNilOrUnnamedPanics(t *testing.T) {
@@ -36,8 +53,8 @@ func TestProvider_PRV17_RegistryNilOrUnnamedPanics(t *testing.T) {
 }
 
 func TestProvider_PRV18_RegistryGetAndNames(t *testing.T) {
-	Register(namedProvider{name: "prv18-b"})
-	Register(namedProvider{name: "prv18-a"})
+	Register(namedProvider{name: uniqueName("prv18-b")})
+	Register(namedProvider{name: uniqueName("prv18-a")})
 	if _, ok := Get("prv18-missing"); ok {
 		t.Error("Get of a missing provider returned true")
 	}

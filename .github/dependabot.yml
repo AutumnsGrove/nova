@@ -2,9 +2,10 @@
 # can break a build, and a pinned `uses: action@v4` tag can be retargeted or
 # gain a fix. Dependabot keeps both current without anyone remembering to look.
 #
-# Majors are left ungrouped on purpose. A charm major is a migration with a
-# reading list, and it deserves its own pull request rather than a footnote in a
-# bundle of patch bumps.
+# Majors are left ungrouped on purpose, in both ecosystems: a charm major is a
+# migration with a reading list, and an action major can rename an input, so
+# either deserves its own pull request rather than a footnote in a bundle of
+# patch bumps.
 version: 2
 updates:
   - package-ecosystem: gomod
@@ -29,3 +30,7 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+        # Without this the group swallowed actions/upload-artifact v4 -> v7,
+        # three majors in one pull request (#110). A major can rename an input or
+        # change a runtime; it gets its own pull request so it can be read.
+        update-types: [minor, patch]

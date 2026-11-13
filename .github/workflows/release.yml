@@ -27,8 +27,8 @@ jobs:
   accept:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Accept every chunk
@@ -58,8 +58,8 @@ jobs:
         os: [linux, darwin]
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Build both flavours
@@ -111,7 +111,7 @@ jobs:
             echo "::error::nova doctor printed no report"
             exit 1
           }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: nova-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/*.tar.gz
@@ -130,7 +130,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The body is written from the tag range, so the whole history and
           # every tag have to be here.
@@ -138,15 +138,15 @@ jobs:
       # The toolchain below exists only for the release body, so none of it may
       # fail the release: a bad install leaves the script to fall back on its own
       # and the body is written from the changelog section instead.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         continue-on-error: true
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         continue-on-error: true
         with:
           node-version: "22"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: ${{ inputs.dry_run != true }}
         with:
           path: dist
@@ -224,13 +224,13 @@ jobs:
               echo "No body: the agent failed and the changelog has no section for ${TAG}."
             fi
           } >>"$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: inputs.dry_run
         with:
           name: release-notes
           path: body.md
           if-no-files-found: ignore
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         # The ref is checked here as well: publishing is the one step a tag must
         # always reach, so it does not rest on input handling alone.
         if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.dry_run != true }}

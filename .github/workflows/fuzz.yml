@@ -39,10 +39,10 @@ jobs:
     outputs:
       packages: ${{ steps.list.outputs.packages }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - id: list
@@ -71,10 +71,10 @@ jobs:
       # package with three targets gets three times this.
       FUZZTIME: ${{ inputs.fuzztime || '60s' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       # A green run means "no crash in the time it was given", not "this parser
@@ -97,7 +97,7 @@ jobs:
       # glob used to reach into every other package's committed corpus too.
       - name: Keep the failing input
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-corpus-${{ strategy.job-index }}
           path: "${{ matrix.package }}/testdata/fuzz/**"

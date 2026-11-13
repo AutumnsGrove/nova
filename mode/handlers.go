@@ -144,9 +144,11 @@ type sessionInfo struct {
 	Current  bool      `json:"current"`
 }
 
-// handleSessionList lists sessions for the working directory, newest first.
+// handleSessionList lists the sessions for the working directory that hold a
+// conversation, newest first. A file with no entries is a stub left by a crash
+// or a quit before anything was said, so it is not a row to return to.
 func (s *Server) handleSessionList(cmd proto.Command) proto.Response {
-	infos, err := session.List(session.DefaultDir(s.cwd))
+	infos, err := session.ListHistory(session.DefaultDir(s.cwd))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return failResponse(cmd, proto.CodeInternal, "session.list: "+err.Error())
 	}
@@ -686,16 +688,11 @@ func (s *Server) swapStore(store *session.Store, path string) {
 
 // findSession resolves a session id to a path in cwd's session directory.
 func findSession(cwd, id string) (string, error) {
-	infos, err := session.List(session.DefaultDir(cwd))
-	if err != nil {
-		return "", err
+	info, ok := session.Find(session.DefaultDir(cwd), id)
+	if !ok {
+		return "", fmt.Errorf("session %q not found", id)
 	}
-	for _, info := range infos {
-		if info.ID == id {
-			return info.Path, nil
-		}
-	}
-	return "", fmt.Errorf("session %q not found", id)
+	return info.Path, nil
 }
 
 // handleBash runs a user shell command and records it as a custom message.

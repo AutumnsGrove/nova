@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/agent"
+	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
 	"github.com/AutumnsGrove/nova/provider"
@@ -114,6 +115,41 @@ func TestHandlers_SVA03_SessionListOrder(t *testing.T) {
 	}
 	if rows[0]["current"] != true {
 		t.Fatalf("newest session is not marked current: %v", rows[0])
+	}
+}
+
+// A file with no entries is a stub, not a conversation: the resume picker and
+// --continue must not offer it, and it must not claim to be the current one.
+func TestHandlers_SVA18_SessionListSkipsEmptySessions(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s, _ := testServer(t)
+	dir := session.DefaultDir(s.cwd)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	full := filepath.Join(dir, "full.jsonl")
+	writeSession(t, full, "keep me")
+	// A stub is kept open, which is exactly the state of the session a TUI run
+	// created at startup: on disk, with a header and nothing else.
+	stubPath := filepath.Join(dir, "stub.jsonl")
+	stub, err := session.Open(stubPath, session.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stub.Close()
+	base := time.Now().Add(-2 * time.Hour)
+	_ = os.Chtimes(full, base, base)
+	_ = os.Chtimes(stubPath, base.Add(time.Hour), base.Add(time.Hour))
+
+	rows := decodeArray(t, s.Handle(context.Background(), proto.Command{Type: proto.CmdSessionList}))
+	if len(rows) != 1 || rows[0]["path"] != full {
+		t.Fatalf("session.list = %v, want only %s", rows, full)
+	}
+	if rows[0]["current"] != false {
+		t.Fatalf("a filtered session should not be current: %v", rows[0])
+	}
+	if rows[0]["name"] != "keep me" {
+		t.Fatalf("name = %v, want the session_info name", rows[0]["name"])
 	}
 }
 
@@ -234,7 +270,7 @@ func TestSession_SVA09_RememberWithoutOK(t *testing.T) {
 	}
 }
 
-// writeSession creates a one-entry session file.
+// writeSession creates a one-message session file named name.
 func writeSession(t *testing.T, path, name string) {
 	t.Helper()
 	st, err := session.Open(path, session.Options{})
@@ -242,6 +278,10 @@ func writeSession(t *testing.T, path, name string) {
 		t.Fatal(err)
 	}
 	defer st.Close()
+	msg := message.User(name)
+	if _, err := st.Append(session.Entry{Type: session.TypeMessage, Message: &msg}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := st.Append(session.Entry{Type: session.TypeSessionInfo, Name: name}); err != nil {
 		t.Fatal(err)
 	}

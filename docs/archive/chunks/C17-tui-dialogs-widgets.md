@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/status, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
-budgets: { ./tui/sanitize: 100, ./tui/dialog: 2400, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 160,  ./mode: 2980, ./mode/attach: 160, ./tui/ui: 3050, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1560 }
+budgets: { ./tui/sanitize: 100, ./tui/dialog: 2400, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 160,  ./mode: 2980, ./mode/attach: 160, ./tui/ui: 3070, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1560 }
 depends: [C15, C13]
 ---
 
@@ -319,6 +319,8 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | SSL03 | fork | `ctrl+f` | fork choice |
 | SSL04 | not while running | | notice |
 | SSL05 | empty list | | message |
+| SSL06 | default row | a stub above a populated session | the newest row with entries is highlighted, and enter chooses it |
+| SSL07 | only stubs | | rows say `empty`, not `0 entries` |
 | TRV01 | tree shows the active path | | highlighted |
 | TRV02 | navigate | `enter` | `session.navigate` |
 | TRV03 | deep and wide trees | 1,000 entries | responsive; scrolls |
@@ -330,6 +332,9 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | KYA02 | `ctrl+t` cycles | four presses | off, low, medium, high, off |
 | KYA03 | `?` with an empty editor | | opens help; with text, types `?` |
 | RSM01 | `--resume` opens the picker | `Options.OpenSessions` set, then `Init` | `session.list` is requested at start; an ordinary start does not request it |
+| RSM03 | the exit resume hint | a session with entries | `nova --session <id>` is printed after the UI stops |
+| RSM04 | no hint without a conversation | an empty or unwritten session | nothing printed |
+| RSM05 | the hint is sanitized | an id carrying an escape sequence | the escape never reaches the terminal |
 | WDG01 | set a text widget | above | shown above the editor |
 | WDG02 | clear a widget | `nil` | removed |
 | WDG03 | order by first appearance | A, B, then update A | A stays first |
@@ -387,6 +392,7 @@ func Prompt(dir string, f Found, in io.Reader, out io.Writer) (Decision, error)
 | SVA15 | a steer attachment is queued when the model takes images | steer with a PNG while a run is active, vision model | `ok`; one steering message queued |
 | SVA16 | a stored attachment resolves by id | `StoreAttachment`, then a prompt referencing the id | the message carries the image; an unknown id errors |
 | SVA17 | the upload store has a ceiling | uploads past a lowered byte cap | the upload past it is refused and the stored ones still resolve |
+| SVA18 | `session.list` skips empty sessions | a stub and a populated session | only the populated one, with its name; neither is `current` |
 | CLB01 | osascript pasteboard data is decoded | `«data PNGf<hex>»`; junk | the PNG bytes; `ErrNoImage` |
 | CLB02 | command reader errors | a missing binary; a command with no output | `ErrUnavailable`; `ErrNoImage` |
 | CLB03 | the test fake | a configured image; a configured error | returns them and counts calls |

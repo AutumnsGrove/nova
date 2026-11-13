@@ -576,6 +576,18 @@ func (s *Server) Display() (thinkingLines, toolLines int, showImages bool, image
 // StatusConfig returns the saved status-region layout.
 func (s *Server) StatusConfig() config.StatusConfig { return s.cfg.Display.Status }
 
+// Session reports the open session's id, path, and entry count, or empty values
+// when the transcript lives in memory only. The TUI reads it after its program
+// stops to print the resume hint, when no more commands can be answered.
+func (s *Server) Session() (id, path string, entries int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store == nil {
+		return "", "", 0
+	}
+	return s.store.Header().ID, s.path, len(s.store.Entries())
+}
+
 // Close releases the session. It is idempotent.
 func (s *Server) Close() error {
 	s.mu.Lock()

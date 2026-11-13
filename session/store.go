@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -61,6 +62,7 @@ type Store struct {
 	leaf     string
 	warnings []Warning
 	closed   bool
+	created  bool  // this store wrote the header, so an unused file is its stub
 	offset   int64 // bytes consumed so far
 	lines    int   // complete lines consumed so far
 }
@@ -97,6 +99,7 @@ func open(path string, opt Options, template *Header) (*Store, error) {
 		return nil, err
 	}
 	if len(data) == 0 {
+		s.created = true
 		h := Header{Type: headerType, Version: Version}
 		if template != nil {
 			h = *template
@@ -458,7 +461,9 @@ func (s *Store) refresh() error {
 	return nil
 }
 
-// Close releases the file. It is idempotent.
+// Close releases the file and removes a session file this store created but
+// never wrote an entry to, so starting the UI and quitting leaves nothing
+// behind to resume. It is idempotent.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -466,7 +471,21 @@ func (s *Store) Close() error {
 		return nil
 	}
 	s.closed = true
-	return s.file.Close()
+	// Another process may have appended after this store opened, so re-read
+	// under the file lock before deciding the file is unused.
+	if s.created {
+		if err := lockFile(s.file); err == nil {
+			_ = s.refresh()
+			_ = unlockFile(s.file)
+		}
+	}
+	err := s.file.Close()
+	if s.created && len(s.entries) == 0 {
+		if rmErr := os.Remove(s.path); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+			err = errors.Join(err, rmErr)
+		}
+	}
+	return err
 }
 
 // withDefaults fills the zero Options fields.

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/message"
@@ -275,5 +276,107 @@ func TestCLI_CLI20_DamagedLockfileIsReported(t *testing.T) {
 	}
 	if strings.Contains(out, "warning") {
 		t.Fatalf("the warning went to stdout: %q", out)
+	}
+}
+
+// writeEmptySession leaves a header-only file behind, which is what a crashed
+// run or an older Nova leaves in the session directory.
+func writeEmptySession(t *testing.T, path, id string) {
+	t.Helper()
+	body := `{"type":"session","v":1,"id":"` + id + `","cwd":"/project"}` + "\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A stub is the newest file on disk after an empty TUI run, so --continue has
+// to skip it and pick the newest session that actually holds a conversation.
+func TestCLI_CLI23_ContinueSkipsEmptySessions(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	withServer(t, srv)
+	cwd := t.TempDir()
+	dir := session.DefaultDir(cwd)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prior := filepath.Join(dir, "prior.jsonl")
+	st, err := session.Open(prior, session.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := message.User("REMEMBER THIS")
+	if _, err := st.Append(session.Entry{Type: session.TypeMessage, Message: &msg}); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+	base := time.Now().Add(-2 * time.Hour)
+	_ = os.Chtimes(prior, base, base)
+	stub := filepath.Join(dir, "stub.jsonl")
+	writeEmptySession(t, stub, "stub")
+	_ = os.Chtimes(stub, base.Add(time.Hour), base.Add(time.Hour))
+
+	code, _, errOut := runCLI(t, "--cwd", cwd, "--continue", "-p", "next")
+	if code != 0 {
+		t.Fatalf("exit = %d stderr = %q", code, errOut)
+	}
+	if body := string(srv.Requests()[0].Body); !strings.Contains(body, "REMEMBER THIS") {
+		t.Fatalf("--continue picked the empty stub: %s", body)
+	}
+}
+
+// With nothing but stubs on disk there is no session to continue, and the
+// message must say so rather than opening an empty conversation.
+func TestCLI_CLI24_ContinueWithoutHistory(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	withServer(t, srv)
+	cwd := t.TempDir()
+	dir := session.DefaultDir(cwd)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeEmptySession(t, filepath.Join(dir, "stub.jsonl"), "stub")
+	code, _, errOut := runCLI(t, "--cwd", cwd, "--continue", "-p", "next")
+	if code == 0 || !strings.Contains(errOut, "no session to continue") {
+		t.Fatalf("exit = %d stderr = %q, want no session to continue", code, errOut)
+	}
+}
+
+// The TUI's exit hint prints the session id, so --session has to accept one as
+// well as a path.
+func TestCLI_CLI25_SessionID(t *testing.T) {
+	srv := testkit.NewServer(t, testkit.ServerTurn{Turn: testkit.Turn{Text: "ok"}})
+	withServer(t, srv)
+	cwd := t.TempDir()
+	dir := session.DefaultDir(cwd)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st, err := session.Open(filepath.Join(dir, "prior.jsonl"), session.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := message.User("REMEMBER THIS")
+	if _, err := st.Append(session.Entry{Type: session.TypeMessage, Message: &msg}); err != nil {
+		t.Fatal(err)
+	}
+	id := st.Header().ID
+	_ = st.Close()
+
+	code, _, errOut := runCLI(t, "--cwd", cwd, "--session", id, "-p", "next")
+	if code != 0 {
+		t.Fatalf("exit = %d stderr = %q", code, errOut)
+	}
+	if body := string(srv.Requests()[0].Body); !strings.Contains(body, "REMEMBER THIS") {
+		t.Fatalf("--session %s did not open that session: %s", id, body)
+	}
+}
+
+// An id that names nothing is a mistake worth reporting, not a new session in
+// the working directory.
+func TestCLI_CLI26_UnknownSessionID(t *testing.T) {
+	withServer(t, testkit.NewServer(t))
+	code, _, errOut := runCLI(t, "--cwd", t.TempDir(), "--session", "0123456789abcdef", "-p", "next")
+	if code == 0 || !strings.Contains(errOut, "0123456789abcdef") {
+		t.Fatalf("exit = %d stderr = %q, want an error naming the id", code, errOut)
 	}
 }

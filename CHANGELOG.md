@@ -45,6 +45,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   so `only`, `order`, `ignore` and the data-policy keys all work. No pin still means the provider
   picks, which is the cheapest endpoint rather than the most reliable one: an unpinned Kokoro
   synthesis hung for 45 s because the cheapest endpoint was returning 429 (#92).
+- Sessions are named in the resume picker: the last `/name`, or a one-line preview of the first user
+  message when the session was never named, instead of `untitled` for every row.
+- Quitting the TUI prints the way back to the conversation, `To resume this session: nova --session
+  <id>`, and `--session` accepts that id as well as a file path.
 
 ### Fixed
 
@@ -58,6 +62,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Nova's voice documentation claimed OpenRouter ignores `only` on the audio endpoints, so a
   provider pin could not work. It does work: `only: [Together]` answered in 0.6 s against a 45 s
   hang unpinned. `docs/VOICE.md` and D162's successor, D170, correct the record (#92).
+- Resuming no longer lands in an empty session (#57). A launch that says nothing leaves no session
+  file behind — a file that receives no entry is removed when the process closes — and the files an
+  older Nova or a crash already left are skipped by `--resume`, `nova sessions` and `--continue`, so
+  all three mean "the newest session that holds a conversation". The picker also starts on the
+  newest row with entries, so pressing enter resumes the conversation rather than starting over.
 
 ### Removed
 

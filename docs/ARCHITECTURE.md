@@ -85,7 +85,7 @@ nova/
   bundled/        in-tree extensions: tasks, ask, plan,
                   subagent, webfetch                            ≤ 2560 total
   tui/            the terminal UI                               ≤ 10300
-    ui/           the Bubble Tea model and its views           ≤ 3050
+    ui/           the Bubble Tea model and its views           ≤ 3070
     status/       the multi-line status region                 ≤ 320
     sanitize/     make untrusted text safe to draw              ≤ 100
     git/          branch and working-tree counts for status    ≤ 120

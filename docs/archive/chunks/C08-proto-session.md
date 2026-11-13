@@ -323,6 +323,9 @@ func DefaultDir(cwd string) string                   // ~/.local/share/nova/sess
 | SES25 | unicode and escapes in content | | round trip |
 | SES26 | `Header` fields | | id, cwd, created |
 | SES27 | empty file (0 bytes) | | treated as missing: header written |
+| SES33 | a session that receives no entry | open, then close | the file is removed |
+| SES34 | a session with an entry | reopen, then close | the file is kept; a headerless file is removed |
+| SES35 | a creator closes after another process appended | two stores on one file | the file and the other entry survive |
 | TRE01 | branch root to leaf | chain of 5 | 5 entries in order |
 | TRE02 | branch of a middle entry | | prefix |
 | TRE03 | unknown leaf | | error |
@@ -354,6 +357,12 @@ func DefaultDir(cwd string) string                   // ~/.local/share/nova/sess
 | SLS03 | name from the last `session_info` | | shown |
 | SLS04 | `DefaultDir` stable and cwd-specific | | same input same output; different cwds differ; no raw path |
 | SLS05 | directory created 0700 | | verified |
+| SLS06 | name falls back to the first user message | no `session_info` | the first user message, whitespace collapsed, one line, truncated at 60 runes |
+| SLS07 | an explicit name wins | message then `session_info` | the `session_info` name |
+| SLS08 | blank and synthetic user messages are not a name | | the first real user message |
+| SLS09 | `ListHistory` | one empty and one populated session | only the populated one; `List` still reports both |
+| SLS10 | display-only entries are not content | `session_info` and a label | `Entries` 2, `Content` 0, `HasHistory` false |
+| SLS11 | `Find` by id | | the matching row, or false |
 | FRK01 | fork copies the branch | | ids and parents preserved |
 | FRK02 | fork header names the parent session | | `ParentSession` set |
 | FRK03 | fork leaf | | last copied entry |

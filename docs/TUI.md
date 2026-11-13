@@ -195,7 +195,7 @@ A stack of overlays. Each is a struct with `Draw` and a key handler.
 | Sign-in | `/login` and `/logout`: a provider picker (readiness comes from the server, so a key in the config counts), a method picker, a masked key input, and the OAuth/device flow dialog. The OAuth dialog shows the callback status (waiting on the loopback address, then received) and keeps a pasted-redirect fallback for remote machines. After a login the model picker opens only if the current model has no signed-in provider; after a logout from the provider serving the current model, the model switches to another signed-in provider's default, or the notice says to run `/login` |
 | **Form** | the `ask` tool: a borderless, full-width sheet sized to its content and anchored to the bottom. A tab strip shows each question as `☑` answered, `⊘` skipped, or `☐` unvisited, with `✓ Submit →` at the end; options are numbered `1`-`9` hotkeys with the cursor in the gutter and descriptions dim on their own line; typing anywhere jumps to the free-text row; `ctrl+n` adds a note; `Skip this question` is a visible row; the last tab reviews everything and submits |
 | Model picker | filterable list from the catalog, with context window and price |
-| Session list and tree | resume, fork, navigate branches |
+| Session list and tree | resume, fork, navigate branches. The row with history is selected when the list opens, so enter resumes the newest conversation rather than the stub a launch just created; a session with no entries is not listed |
 
 A dialog opened while a run is streaming does not interrupt the stream; the transcript
 keeps updating underneath. The form is the one sheet: every other dialog is a centred
@@ -280,6 +280,21 @@ whenever a change to `tui/splash` moves pixels.
 The same binary runs print and JSON modes with no TUI. In the TUI, `NO_COLOR` selects
 `mono`, a terminal under 60 columns uses a single-column layout, and a non-terminal
 stdin refuses to start the TUI and says to use `-p`.
+
+## Sessions and quitting
+
+A run opens its session file at startup, but a session that never receives an entry
+is removed when the UI closes: starting Nova and quitting, or typing nothing, leaves
+no file behind and adds no `untitled` row to the picker. Quitting after a
+conversation prints the way back:
+
+```
+To resume this session: nova --session cf40938bb280e649
+```
+
+`--session` takes an id as well as a file path, and the same id works with
+`session.resume` and appears in `nova sessions`. The picker labels a session from the
+last `/name`, or a one-line preview of its first message when it was never named.
 
 ## Bundled extension UIs
 

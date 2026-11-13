@@ -51,6 +51,33 @@ func (s *fakeSession) Entries(kind string) []json.RawMessage {
 	return out
 }
 
+// compact applies the session host's rule for a compaction pass: an entry that
+// did not ask to be kept is dropped, and the branch is rebuilt from what
+// survives. It returns how many entries went, so a test can prove the pass
+// actually had something to drop.
+func (s *fakeSession) compact() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.kept[:0]
+	var survivors []json.RawMessage
+	dropped := 0
+	for _, entry := range s.kept {
+		if !entry.keep {
+			dropped++
+			continue
+		}
+		kept = append(kept, entry)
+		if entry.kind == stateKind {
+			survivors = append(survivors, entry.data)
+		}
+	}
+	s.kept = kept
+	if len(s.branches) > 0 {
+		s.branches[s.active] = survivors
+	}
+	return dropped
+}
+
 func (s *fakeSession) newBranch(snap State) {
 	data, _ := Encode(State{V: stateVersion, Next: snap.Next, Tasks: snap.Tasks})
 	s.mu.Lock()
@@ -346,8 +373,36 @@ func TestTasks_TSK19_BranchNavigation(t *testing.T) {
 func TestTasks_TSK20_StateAfterCompaction(t *testing.T) {
 	sess := &fakeSession{}
 	e, _ := setup(sess, &fakeUI{})
-	mustCreate(t, e, "survivor")
+	// Three snapshots, so "the newest" and "the first" disagree: one task is
+	// created, deleted, and a different one created after it. A test with a
+	// single snapshot cannot tell a rebuild that reads the last one from a
+	// rebuild that reads the first, or ignores the session altogether (#105).
+	if res, isErr := call(t, e, `{"action":"create","title":"dropped"}`); isErr {
+		t.Fatalf("create: %s", res.Content)
+	}
+	if res, isErr := call(t, e, `{"action":"delete","id":"t1"}`); isErr {
+		t.Fatalf("delete: %s", res.Content)
+	}
+	// An ordinary entry, which is what a compaction pass is actually dropping:
+	// the state snapshots ask to be kept, so they are not what disappears.
+	if err := sess.AppendEntry("tool_result", json.RawMessage(`{}`), false); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if res, isErr := call(t, e, `{"action":"create","title":"survivor"}`); isErr {
+		t.Fatalf("create: %s", res.Content)
+	}
+	if dropped := sess.compact(); dropped != 1 {
+		t.Fatalf("the compaction pass dropped %d entries, want the one non-keep entry", dropped)
+	}
+	if kept := len(sess.Entries(stateKind)); kept != 3 {
+		t.Fatalf("state snapshots kept = %d, want 3", kept)
+	}
+
 	e.rebuild()
+	// One task, and it is the survivor: a rebuild that read an older snapshot
+	// would report "dropped", and one that ignored the session would report
+	// nothing. The `list` command reads this same state, so asserting on it as
+	// well would repeat this check rather than extend it.
 	if len(e.state.Tasks) != 1 || e.state.Tasks[0].Title != "survivor" {
 		t.Fatalf("after compaction = %+v", e.state.Tasks)
 	}

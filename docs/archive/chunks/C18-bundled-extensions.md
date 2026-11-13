@@ -283,7 +283,7 @@ description?, preview?}], allow_other?: bool}]}`. `plan_submit`: `{plan: string}
 | TSK17 | state rebuilt on resume | | same list |
 | TSK18 | state rebuilt on reload | | same list |
 | TSK19 | branch navigation | navigate to an older entry | list matches that branch's last snapshot |
-| TSK20 | state after compaction | | intact |
+| TSK20 | state after compaction | three snapshots and one non-keep entry dropped | intact: the newest snapshot wins, a task deleted before it does not come back |
 | TSK21 | no snapshot on the branch | | empty |
 | TSK22 | concurrent calls | 20 goroutines, `-race` | consistent; no lost updates |
 | TSK23 | widget and status | | list widget above the editor; `☐ k of N` segment |

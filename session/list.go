@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/AutumnsGrove/nova/message"
 )
 
 // Info summarizes one session file for a picker.
@@ -23,6 +25,43 @@ type Info struct {
 	Created  time.Time
 	Modified time.Time
 	Entries  int
+	Content  int
+}
+
+// HasHistory reports whether the session holds anything worth returning to.
+// Labels and session names are display-only, so an empty session has none.
+func (i Info) HasHistory() bool { return i.Content > 0 }
+
+// ListHistory is List without the sessions that hold no entries. It is the list
+// behind the resume picker and --continue: a stray file is not a conversation.
+// List still reports every file, so a caller can tell "no sessions" from "only
+// empty ones".
+func ListHistory(dir string) ([]Info, error) {
+	all, err := List(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Info, 0, len(all))
+	for _, info := range all {
+		if info.HasHistory() {
+			out = append(out, info)
+		}
+	}
+	return out, nil
+}
+
+// Find returns the session in dir whose id is id.
+func Find(dir, id string) (Info, bool) {
+	infos, err := List(dir)
+	if err != nil {
+		return Info{}, false
+	}
+	for _, info := range infos {
+		if info.ID == id {
+			return info, true
+		}
+	}
+	return Info{}, false
 }
 
 // List reports the sessions in dir, newest first. Files that cannot be parsed
@@ -47,7 +86,8 @@ func List(dir string) ([]Info, error) {
 
 // scanInfo streams a session file, parsing the header and counting entry lines
 // without holding the whole file in memory, and takes the last session_info
-// name. It reports false when the header is missing or invalid.
+// name or, failing that, a one-line preview of the first user message. It
+// reports false when the header is missing or invalid.
 func scanInfo(path string) (Info, bool) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -60,6 +100,7 @@ func scanInfo(path string) (Info, bool) {
 	}
 	info := Info{Path: path, Modified: fi.ModTime()}
 	headerSeen := false
+	firstUser := ""
 	r := bufio.NewReader(f)
 	for {
 		raw, readErr := r.ReadBytes('\n')
@@ -70,6 +111,11 @@ func scanInfo(path string) (Info, bool) {
 				CWD     string    `json:"cwd"`
 				Created time.Time `json:"created"`
 				Name    string    `json:"name"`
+				Message *struct {
+					Role      string `json:"role"`
+					Content   string `json:"content"`
+					Synthetic bool   `json:"synthetic"`
+				} `json:"message"`
 			}
 			switch err := json.Unmarshal(raw, &probe); {
 			case !headerSeen && (err != nil || probe.Type != headerType):
@@ -81,6 +127,14 @@ func scanInfo(path string) (Info, bool) {
 				info.Entries++
 				if probe.Type == TypeSessionInfo && probe.Name != "" {
 					info.Name = probe.Name
+				}
+				if probe.Type == TypeLabel || probe.Type == TypeSessionInfo {
+					continue
+				}
+				info.Content++
+				if firstUser == "" && probe.Type == TypeMessage && probe.Message != nil &&
+					probe.Message.Role == string(message.RoleUser) && !probe.Message.Synthetic {
+					firstUser = oneLine(probe.Message.Content)
 				}
 			}
 		}
@@ -94,7 +148,24 @@ func scanInfo(path string) (Info, bool) {
 	if info.ID == "" {
 		info.ID = strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	}
+	if info.Name == "" {
+		info.Name = firstUser
+	}
 	return info, true
+}
+
+// nameLimit is how much of a first message becomes a picker name. Rows are
+// truncated to the dialog width anyway; this keeps `nova sessions` and the wire
+// list to one tidy line.
+const nameLimit = 60
+
+// oneLine flattens text to a single line for use as a session name.
+func oneLine(text string) string {
+	flat := strings.Join(strings.Fields(text), " ")
+	if r := []rune(flat); len(r) > nameLimit {
+		flat = string(r[:nameLimit-1]) + "…"
+	}
+	return flat
 }
 
 // Fork writes a new session at dst holding the branch ending at from. The new

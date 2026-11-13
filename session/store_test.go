@@ -3,7 +3,9 @@ package session
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -602,6 +604,8 @@ func TestSession_SES30_ConcurrentCreateWritesOneHeader(t *testing.T) {
 	const n = 8
 	start := make(chan struct{})
 	var wg sync.WaitGroup
+	var mu sync.Mutex
+	opened := make([]*Store, 0, n)
 	for range n {
 		wg.Add(1)
 		go func() {
@@ -612,7 +616,9 @@ func TestSession_SES30_ConcurrentCreateWritesOneHeader(t *testing.T) {
 				t.Errorf("Open: %v", err)
 				return
 			}
-			s.Close()
+			mu.Lock()
+			opened = append(opened, s)
+			mu.Unlock()
 		}()
 	}
 	close(start)
@@ -625,6 +631,11 @@ func TestSession_SES30_ConcurrentCreateWritesOneHeader(t *testing.T) {
 	}
 	if headers != 1 {
 		t.Fatalf("file has %d header lines, want 1", headers)
+	}
+	// Close after the check: every store is empty, so the last one out removes
+	// the file (SES33).
+	for _, s := range opened {
+		_ = s.Close()
 	}
 }
 
@@ -680,5 +691,83 @@ func TestSession_SES32_AppendAfterAnotherProcessCrashed(t *testing.T) {
 	defer reopened.Close()
 	if _, ok := reopened.Get(e.ID); !ok {
 		t.Fatalf("entry %s lost after reopen", e.ID)
+	}
+}
+
+// A session file that was created but never received an entry is a stub, not a
+// conversation: closing it removes it so the picker and --continue never see it.
+func TestSession_SES33_EmptySessionRemovedOnClose(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stub.jsonl")
+	s, err := Open(path, Options{})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("Open should write the header: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Stat after Close = %v, want the empty file removed", err)
+	}
+}
+
+// A session that has an entry keeps its file across a reopen and close, and an
+// existing empty file the user pointed at is removed, not left behind.
+func TestSession_SES34_EntryKeepsTheFile(t *testing.T) {
+	s, path := openStore(t, Options{})
+	if _, err := s.Append(userEntry("hello")); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	re, err := Open(path, Options{})
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if err := re.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("a session with an entry was removed: %v", err)
+	}
+
+	blank := filepath.Join(t.TempDir(), "blank.jsonl")
+	if err := os.WriteFile(blank, nil, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	s2, err := Open(blank, Options{})
+	if err != nil {
+		t.Fatalf("Open blank: %v", err)
+	}
+	_ = s2.Close()
+	if _, err := os.Stat(blank); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Stat blank = %v, want a headerless file removed", err)
+	}
+}
+
+// Two stores on one file: the one that wrote the header must not delete an
+// entry the other appended after it opened.
+func TestSession_SES35_EmptyStoreKeepsAnotherProcessEntry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shared.jsonl")
+	creator, err := Open(path, Options{})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	other, err := Open(path, Options{})
+	if err != nil {
+		t.Fatalf("second Open: %v", err)
+	}
+	defer other.Close()
+	if _, err := other.Append(userEntry("from the other process")); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := creator.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the creator removed a file another store had appended to: %v", err)
 	}
 }

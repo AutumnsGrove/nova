@@ -1,11 +1,14 @@
 package session
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/AutumnsGrove/nova/message"
 )
 
 // createSession makes a session file with the given entries.
@@ -81,6 +84,119 @@ func TestSession_SLS03_NameFromLastSessionInfo(t *testing.T) {
 	}
 	if infos[0].Entries != 3 {
 		t.Fatalf("entries = %d, want 3", infos[0].Entries)
+	}
+}
+
+// emptySession writes a header-only file by hand. createSession cannot stand in
+// here because a store that never receives an entry removes its file on Close.
+// The hand-written file is what an older Nova or a crashed run leaves behind.
+func emptySession(t *testing.T, path string) {
+	t.Helper()
+	h := Header{Type: headerType, Version: Version, ID: strings.TrimSuffix(filepath.Base(path), ".jsonl"), CWD: "/project", Created: time.Unix(1000, 0)}
+	b, err := json.Marshal(h)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if err := os.WriteFile(path, append(b, '\n'), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+func TestSession_SLS06_NameFromFirstUserMessage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	createSession(t, path,
+		Entry{Type: TypeModelChange, Model: "m"},
+		userEntry("  fix the   login bug\nplease "),
+		assistantEntry("ok"),
+		userEntry("second question"),
+	)
+	infos, err := List(filepath.Dir(path))
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("List: %v %+v", err, infos)
+	}
+	if infos[0].Name != "fix the login bug please" {
+		t.Fatalf("name = %q, want the first user message on one line", infos[0].Name)
+	}
+}
+
+func TestSession_SLS07_SessionInfoNameWins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	createSession(t, path,
+		userEntry("first message"),
+		Entry{Type: TypeSessionInfo, Name: "chosen name"},
+	)
+	infos, err := List(filepath.Dir(path))
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("List: %v %+v", err, infos)
+	}
+	if infos[0].Name != "chosen name" {
+		t.Fatalf("name = %q, want the session_info name", infos[0].Name)
+	}
+}
+
+func TestSession_SLS08_BlankAndSyntheticMessagesSkipped(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	synthetic := userEntry("image")
+	synthetic.Message = &message.Message{Role: message.RoleUser, Content: "image", Synthetic: true}
+	createSession(t, path,
+		Entry{Type: TypeMessage, Message: synthetic.Message},
+		userEntry("   "),
+		userEntry("the real first thing"),
+	)
+	infos, err := List(filepath.Dir(path))
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("List: %v %+v", err, infos)
+	}
+	if infos[0].Name != "the real first thing" {
+		t.Fatalf("name = %q, want the first real user message", infos[0].Name)
+	}
+}
+
+func TestSession_SLS09_ListHistorySkipsEmptySessions(t *testing.T) {
+	dir := t.TempDir()
+	emptySession(t, filepath.Join(dir, "empty.jsonl"))
+	createSession(t, filepath.Join(dir, "full.jsonl"), userEntry("hi"))
+	all, err := List(dir)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("List: %v %+v, want both files", err, all)
+	}
+	withHistory, err := ListHistory(dir)
+	if err != nil || len(withHistory) != 1 {
+		t.Fatalf("ListHistory: %v %+v, want only the populated session", err, withHistory)
+	}
+	if !strings.HasSuffix(withHistory[0].Path, "full.jsonl") || !withHistory[0].HasHistory() {
+		t.Fatalf("ListHistory row = %+v, want the populated session", withHistory[0])
+	}
+}
+
+func TestSession_SLS10_ContentCountsOnlyRealEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	createSession(t, path,
+		Entry{Type: TypeSessionInfo, Name: "titled"},
+		Entry{Type: TypeLabel, Target: "x", Label: "here"},
+	)
+	infos, _ := List(filepath.Dir(path))
+	if len(infos) != 1 {
+		t.Fatalf("List = %+v", infos)
+	}
+	if infos[0].Entries != 2 || infos[0].Content != 0 || infos[0].HasHistory() {
+		t.Fatalf("info = %+v, want two entries and no history", infos[0])
+	}
+}
+
+func TestSession_SLS11_FindByID(t *testing.T) {
+	dir := t.TempDir()
+	createSession(t, filepath.Join(dir, "s.jsonl"), userEntry("hi"))
+	infos, _ := List(dir)
+	if len(infos) != 1 {
+		t.Fatalf("List = %+v", infos)
+	}
+	got, ok := Find(dir, infos[0].ID)
+	if !ok || got.Path != infos[0].Path {
+		t.Fatalf("Find(%q) = %+v %v, want %s", infos[0].ID, got, ok, infos[0].Path)
+	}
+	if _, ok := Find(dir, "nope"); ok {
+		t.Fatal("Find of an unknown id should report false")
 	}
 }
 

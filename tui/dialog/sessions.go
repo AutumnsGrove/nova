@@ -41,11 +41,20 @@ type sessionList struct {
 	value  SessionChoice
 }
 
-// NewSessionList builds the picker, newest first.
+// NewSessionList builds the picker, newest first, with the cursor on the newest
+// row that holds a conversation. A stub left at the top of the list is the one
+// row that must not be the default: pressing enter there loses the thread.
 func NewSessionList(items []SessionInfo) Dialog {
 	sorted := append([]SessionInfo(nil), items...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Modified.After(sorted[j].Modified) })
-	return &sessionList{items: sorted, now: time.Now()}
+	cursor := 0
+	for i, it := range sorted {
+		if it.Entries > 0 {
+			cursor = i
+			break
+		}
+	}
+	return &sessionList{items: sorted, cursor: cursor, now: time.Now()}
 }
 
 // ID is empty for a local dialog.
@@ -103,7 +112,7 @@ func (s *sessionList) View(w, h int, st styles.Styles) string {
 	inner, rows := w-2, h-3
 	var body []string
 	if len(s.items) == 0 {
-		body = append(body, "no sessions")
+		body = append(body, "nothing to resume yet")
 	} else {
 		start, end := window(s.cursor, s.scroll, rows, len(s.items))
 		s.scroll = start
@@ -126,7 +135,11 @@ func (s *sessionList) line(i, inner int, st styles.Styles) string {
 		name = "untitled"
 	}
 	line := marker + sanitize.Text(name)
-	line += "  " + st.Muted.Render(fmt.Sprintf("%s · %d entries", age(it.Modified, s.now), it.Entries))
+	count := fmt.Sprintf("%d entries", it.Entries)
+	if it.Entries == 0 {
+		count = "empty"
+	}
+	line += "  " + st.Muted.Render(fmt.Sprintf("%s · %s", age(it.Modified, s.now), count))
 	if it.Current {
 		line += " " + st.Success.Render("(current)")
 	}

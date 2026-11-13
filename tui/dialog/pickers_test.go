@@ -105,7 +105,7 @@ func TestSessions_SSL03_Fork(t *testing.T) {
 
 func TestSessions_SSL05_Empty(t *testing.T) {
 	d := NewSessionList(nil)
-	if v := d.View(60, 10, styles.Styles{}); !strings.Contains(v, "no sessions") {
+	if v := d.View(60, 10, styles.Styles{}); !strings.Contains(v, "nothing to resume") {
 		t.Fatalf("view:\n%s", v)
 	}
 }
@@ -223,5 +223,35 @@ func TestModels_MPK06_SpaceInFilter(t *testing.T) {
 	}
 	if vis := d.(*modelPicker).visible(); len(vis) != 1 || vis[0].ID != "a" {
 		t.Fatalf("visible = %+v", vis)
+	}
+}
+
+// The newest row is not always the row to resume: a stub sits at the top of the
+// list, so the cursor starts on the newest row that holds a conversation.
+func TestSessions_SSL06_DefaultSkipsEmptyRows(t *testing.T) {
+	base := time.Unix(1000, 0)
+	d := NewSessionList([]SessionInfo{
+		{ID: "stub", Path: "/stub", Name: "stub", Modified: base.Add(2 * time.Hour)},
+		{ID: "old", Path: "/old", Name: "old", Modified: base, Entries: 4},
+	})
+	if got := d.(*sessionList).cursor; got != 1 {
+		t.Fatalf("cursor = %d, want 1 (the newest row with entries)", got)
+	}
+	choice, ok := d.HandleKey(enterKey).Value.(SessionChoice)
+	if !ok || choice.Path != "/old" {
+		t.Fatalf("enter chose %+v, want /old", d.HandleKey(enterKey).Value)
+	}
+}
+
+// With nothing but stubs there is no conversation to resume, and the rows say
+// so rather than counting to zero.
+func TestSessions_SSL07_EmptyRowsAreLabelled(t *testing.T) {
+	d := NewSessionList([]SessionInfo{{ID: "stub", Path: "/stub", Modified: time.Unix(1000, 0)}})
+	if got := d.(*sessionList).cursor; got != 0 {
+		t.Fatalf("cursor = %d, want 0", got)
+	}
+	v := d.View(60, 10, styles.Styles{})
+	if !strings.Contains(v, "empty") || strings.Contains(v, "0 entries") {
+		t.Fatalf("view:\n%s", v)
 	}
 }

@@ -87,3 +87,10 @@ jobs:
           else
             gh issue create --title "${title}" --body-file issue.md --label bug
           fi
+      # The run step carries `continue-on-error` so the step above can read its
+      # log, which also means a red suite would otherwise leave this job green --
+      # the scheduled run on 2026-11-13 did exactly that. This is the red, and it
+      # comes last so the issue is filed before the job fails.
+      - name: Fail the run
+        if: steps.run.outcome == 'failure'
+        run: exit 1

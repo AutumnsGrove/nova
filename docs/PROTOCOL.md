@@ -90,7 +90,7 @@ or `{…,"ok":false,"error":{"code":…,"message":…}}`.
 | `get_commands` | | slash commands, including extension and prompt-template ones |
 | `list_models` | `text?` | the model catalog: id, name, provider, context window, prices; `text` keeps the models whose id or name contains it |
 | `get_usage` | | the OpenCode Go usage meters: `{meters, rows, footer}`, or the same with an `error` message when the host is not signed in |
-| `session.list` | | sessions for the working directory: id, name, modified, entry count. A directory that does not exist yet is an empty list; one that cannot be read is `internal` |
+| `session.list` | | sessions for the working directory that hold at least one entry, newest first: id, name, modified, entry count. `name` is the last `session.name` if one was set, else a one-line preview of the first user message. A file with a header and nothing else, such as the one a run creates before anything is said, is not listed: it is a stub, not a conversation. A directory that does not exist yet is an empty list; one that cannot be read is `internal` |
 | `get_extensions` | | each extension's name, version, state, restarts, last error |
 | `run_command` | `name`, `args` | execute a slash command; `quit` and `exit` are aliases for `shutdown`, and `new` and `clear` start a fresh session (the `session.new` command) |
 | `bash` | `command` | run a user shell command and record it in the session |

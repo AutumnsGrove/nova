@@ -269,10 +269,13 @@ This turns "did you test the edge cases" from a judgement into a check.
 
 - **Fuzz targets** for every parser that takes untrusted bytes: SSE, the JSONL framer,
   tool-argument decoding, the session loader, the manifest parser, the YAML tool
-  templates. Each fuzz target has a seed corpus of the nasty cases above and runs in CI,
-  which is `fuzz.yml`: one job per package, ten seconds per target on a pull request and
-  sixty overnight. A green run means "no crash in the time it was given", not "this
-  parser is safe"; `make fuzz-short` is the same shape locally.
+  templates. Each fuzz target has a seed corpus of the nasty cases above, and `go test` — so
+  `make race` — replays it on every pull request. Live fuzzing is `fuzz.yml`, overnight
+  only: one job per package, sixty seconds per target. A green run means "no crash in the
+  time it was given", not "this parser is safe"; `make fuzz-short` is the same shape
+  locally. It is deliberately not a pull request check: a ten-second budget is
+  probabilistic, and one trivial target failed with "context deadline exceeded" while
+  finding nothing (#116), which is exactly the cry-wolf check a required job must not be.
 - **Property tests** (table of random cases from a seeded generator) for: edit
   application (apply, then check the result contains `new_text` exactly once and nothing
   else changed), compaction cut points (never splits a tool pair), the session tree

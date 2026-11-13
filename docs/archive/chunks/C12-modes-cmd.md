@@ -317,6 +317,10 @@ L2 rows build the real `nova` binary (once, in `TestMain`) and drive it against
 | CLI20 | a damaged lockfile is reported | `ext list` with an unreadable `extensions.lock` | a `warning:` line on stderr, nothing on stdout |
 | CLI21 | `--max-tokens` reaches the wire | `--max-tokens 32` | the request body has `"max_tokens":32` |
 | CLI22 | `--tools` accepts a bundled extension tool | `--tools read,subagent` | exit 0, no "unknown tool" |
+| CLI23 | `--continue` skips empty sessions | a stub newer than a populated session | the populated session resumes |
+| CLI24 | `--continue` with only stubs | | `no session to continue in <dir>` |
+| CLI25 | `--session <id>` | the id of an existing session | that session opens; its messages reach the request |
+| CLI26 | `--session` with an unknown id | | an error naming the id; no new file in the working directory |
 | FUL01 | the whole stack | scripted: read a file, edit it, answer | file changed; events as expected; session file valid |
 | FUL02 | tool permission denied by config | policy denies `write` | tool blocked; file unchanged; model sees the error |
 | FUL03 | compaction in a real run | small limit | compacted; the next request contains the summary |

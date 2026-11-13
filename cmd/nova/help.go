@@ -18,7 +18,7 @@ const helpModes = "Modes:\n" +
 
 // helpSessionFlags groups the flags that shape a session.
 const helpSessionFlags = "Session flags:\n" +
-	"  --session <path>  use a specific session file\n" +
+	"  --session <id|path>  use a specific session, by id or file\n" +
 	"  --continue        resume the most recent session for this directory\n" +
 	"  --resume          pick a session to resume (TUI)\n" +
 	"  --no-session      do not write a session file"

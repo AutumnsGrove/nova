@@ -142,7 +142,7 @@ func newRoot(stdin io.Reader, stdout, stderr io.Writer, tty bool, exit *int) *co
 	flags.StringVar(&modeFlag, "mode", "", "print | json | rpc | tui")
 	flags.StringVar(&modelFlag, "model", "", "model id")
 	flags.StringVar(&thinkingFlag, "thinking", "", "off | low | medium | high")
-	flags.StringVar(&sessionFlag, "session", "", "session file path")
+	flags.StringVar(&sessionFlag, "session", "", "session id or file path")
 	flags.BoolVar(&noSession, "no-session", false, "do not write a session file")
 	flags.BoolVar(&continueFlag, "continue", false, "resume the most recent session for the cwd")
 	flags.BoolVar(&resumeFlag, "resume", false, "resume a session (TUI picker)")
@@ -217,6 +217,10 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 	sessionPath := o.session
 	if o.continueRun {
 		if sessionPath, err = newestSession(cwd); err != nil {
+			return 0, err
+		}
+	} else if sessionPath != "" {
+		if sessionPath, err = resolveSession(cwd, sessionPath); err != nil {
 			return 0, err
 		}
 	}
@@ -363,9 +367,27 @@ func resolveCWD(flag string) (string, error) {
 	return abs, nil
 }
 
-// newestSession returns the most recent session path for cwd.
+// resolveSession turns a --session value into a path. A value that exists, or
+// that looks like a path, is used as it is, so a new file can still be created;
+// anything else is read as a session id in cwd's session directory, which is
+// the form the TUI's exit hint prints.
+func resolveSession(cwd, value string) (string, error) {
+	if _, err := os.Stat(value); err == nil {
+		return value, nil
+	}
+	if strings.ContainsAny(value, `/\`) || strings.HasSuffix(value, ".jsonl") {
+		return value, nil
+	}
+	if info, ok := session.Find(session.DefaultDir(cwd), value); ok {
+		return info.Path, nil
+	}
+	return "", fmt.Errorf("nova: no session %q in %s", value, cwd)
+}
+
+// newestSession returns the most recent session for cwd that holds a
+// conversation. A stub is not something to continue.
 func newestSession(cwd string) (string, error) {
-	infos, err := session.List(session.DefaultDir(cwd))
+	infos, err := session.ListHistory(session.DefaultDir(cwd))
 	if err != nil || len(infos) == 0 {
 		return "", fmt.Errorf("nova: no session to continue in %s", cwd)
 	}
@@ -406,7 +428,7 @@ func sessionsCommand(stdout io.Writer) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			infos, err := session.List(session.DefaultDir(cwd))
+			infos, err := session.ListHistory(session.DefaultDir(cwd))
 			if err != nil {
 				return err
 			}

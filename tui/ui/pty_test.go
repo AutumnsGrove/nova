@@ -5,6 +5,7 @@ package ui
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -199,4 +200,50 @@ func TestPTY_PTY02_PromptRoundTrip(t *testing.T) {
 	}
 	quit(t, reader, master)
 	waitQuit(t, done)
+}
+
+// ptySessionServer is ptyServer with a session file, so the UI has an id to
+// leave behind when it stops.
+func ptySessionServer(t *testing.T, reply string) *mode.Server {
+	t.Helper()
+	srv, err := mode.New(mode.Options{
+		Config:   &config.Config{Model: "test/model"},
+		CWD:      t.TempDir(),
+		Home:     t.TempDir(),
+		Session:  filepath.Join(t.TempDir(), "s.jsonl"),
+		NoTools:  true,
+		Provider: scriptProvider{reply: reply},
+		Clock:    modeClock{},
+		Version:  "test",
+		Mode:     "tui",
+	})
+	if err != nil {
+		t.Fatalf("mode.New: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+	return srv
+}
+
+// TestPTY_PTY04_ResumeHint leaves a command behind that names this session, so
+// the conversation can be resumed without the picker.
+func TestPTY_PTY04_ResumeHint(t *testing.T) {
+	requirePTY(t)
+	srv := ptySessionServer(t, "hello from nova")
+	reader, master, done := startTUI(t, srv)
+	if _, ok := reader.waitFor("nova", 6*time.Second); !ok {
+		t.Fatal("the TUI never rendered")
+	}
+	master.Write([]byte("hi\r"))
+	if out, ok := reader.waitFor("hello from nova", 15*time.Second); !ok {
+		t.Fatalf("reply not shown; screen was:\n%s", ansi.Strip(out))
+	}
+	quit(t, reader, master)
+	waitQuit(t, done)
+	id, _, entries := srv.Session()
+	if id == "" || entries == 0 {
+		t.Fatalf("session id = %q entries = %d, want a conversation to resume", id, entries)
+	}
+	if out, ok := reader.waitFor("nova --session "+id, 5*time.Second); !ok {
+		t.Fatalf("the resume hint was never printed:\n%s", ansi.Strip(out))
+	}
 }

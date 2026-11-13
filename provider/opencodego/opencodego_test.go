@@ -257,6 +257,10 @@ func TestOpencodego_OPG20_BothCatalogs(t *testing.T) {
 }
 
 func TestOpencodego_DSC01_DiscoveryRefresh(t *testing.T) {
+	// The overlay is process-wide and OPG09 validates the whole Catalog, so a
+	// test that refreshes without restoring leaves entries with no price behind
+	// for whichever test runs next -- which -shuffle decides (#114).
+	t.Cleanup(func() { setOverlay(nil) })
 	modelsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[{"id":"glm-5.3"},{"id":"new-model"},{"id":"claude-new"}]}`))
 	}))
@@ -331,6 +335,9 @@ func TestOpencodego_DSC03_EmptyListKeepsTheOverlay(t *testing.T) {
 // routing, so a refresh must not race the readers of the endpoint table. Run
 // under -race this fails on the unsynchronised map and overlay.
 func TestOpencodego_DSC02_RefreshIsSafeWhileRouting(t *testing.T) {
+	// Same overlay, same reason as DSC01: restore it or the next test validates
+	// this test's fake catalog (#114).
+	t.Cleanup(func() { setOverlay(nil) })
 	modelsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[{"id":"claude-new"},{"id":"other-new"}]}`))
 	}))

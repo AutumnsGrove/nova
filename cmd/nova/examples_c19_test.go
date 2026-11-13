@@ -144,11 +144,42 @@ func (u *fakeUI) methods() []string {
 	return out
 }
 
+// ensureExampleBuilt runs an example's build step when its binary is missing.
+//
+// The host forks the manifest's run command relative to the example directory,
+// so a test that starts a host needs that file to exist. Until #114 it existed
+// by luck: EXM03/04 call ext.Check over every example, which runs the build, and
+// they were defined first. Under -shuffle a host test can run before them and
+// fails with "fork/exec ...: no such file or directory". This makes each host
+// test self-sufficient, and costs one stat when the binary is already there.
+func ensureExampleBuilt(t *testing.T, name string) {
+	t.Helper()
+	dir := exampleDir(t, name)
+	m, err := ext.LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("example %s: %v", name, err)
+	}
+	// A declarative example has no build step and no binary: it runs in-process.
+	if len(m.Build) == 0 || len(m.Run) == 0 {
+		return
+	}
+	bin := filepath.Join(dir, filepath.FromSlash(strings.TrimPrefix(m.Run[0], "./")))
+	if info, err := os.Stat(bin); err == nil && !info.IsDir() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	if problems := ext.Check(ctx, dir, ext.CheckOptions{Timeout: 120 * time.Second}); len(problems) > 0 {
+		t.Fatalf("example %s failed ext.Check: %v", name, problems)
+	}
+}
+
 // startExampleHost starts a host over the given example directories.
 func startExampleHost(t *testing.T, names []string, opt ext.HostOptions) *ext.Host {
 	t.Helper()
 	dirs := make([]string, len(names))
 	for i, name := range names {
+		ensureExampleBuilt(t, name)
 		dirs[i] = exampleDir(t, name)
 	}
 	opt.Dirs = dirs

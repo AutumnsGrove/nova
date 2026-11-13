@@ -1,16 +1,31 @@
 name: fuzz
 
-# docs/TESTING.md section 5 has always said the fuzz targets run "for a few
-# seconds in CI". This is that: every target in the tree, one job per package,
-# ten seconds each on a pull request and a minute each overnight.
+# Live fuzzing runs on a schedule, not on a pull request.
+#
+# The pull request job was removed after its first week: `go test -fuzz` with a
+# ten-second budget is probabilistic, and on #116 a trivially cheap target
+# (`FuzzEstimate` calls Estimate once) failed with "context deadline exceeded"
+# while the deadline tripped during shutdown. No failing input was written --
+# the uploaded corpus held only the committed seeds -- so a required check
+# reported failure without finding anything. A gate that cries wolf on a busy
+# runner is worse than one that runs at night.
+#
+# Nothing is lost on a pull request: `go test`, and so `make race`, already
+# replays every committed seed corpus in testdata/fuzz. What a PR cannot do is
+# explore new inputs, and that is what this workflow is for.
 on:
-  pull_request:
   schedule:
     - cron: "43 4 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: "Seconds per fuzz target"
+        type: string
+        default: "60s"
 
 concurrency:
-  group: fuzz-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: fuzz
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -43,7 +58,7 @@ jobs:
   fuzz:
     needs: packages
     runs-on: ubuntu-latest
-    # A package with five targets costs five minutes overnight; nothing has more.
+    # A package with five targets costs five minutes; nothing has more.
     timeout-minutes: 30
     strategy:
       # One crashing package must not cancel the other thirty-seven: the point of
@@ -54,7 +69,7 @@ jobs:
     env:
       # Go's -fuzz takes one target, so the loop below is per target, and a
       # package with three targets gets three times this.
-      FUZZTIME: ${{ github.event_name == 'schedule' && '60s' || '10s' }}
+      FUZZTIME: ${{ inputs.fuzztime || '60s' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,12 +93,13 @@ jobs:
             go test -run '^$' -fuzz "^${target}$" -fuzztime "${FUZZTIME}" "./${{ matrix.package }}"
             echo "::endgroup::"
           done
-      # A crash is only actionable with its input: that is what the corpus is.
+      # A crash is only actionable with its input. Scoped to this shard: the
+      # glob used to reach into every other package's committed corpus too.
       - name: Keep the failing input
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-corpus-${{ strategy.job-index }}
-          path: "**/testdata/fuzz/**"
+          path: "${{ matrix.package }}/testdata/fuzz/**"
           if-no-files-found: ignore
           retention-days: 7

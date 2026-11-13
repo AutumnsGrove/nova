@@ -128,6 +128,8 @@ make fuzz-short    # ten seconds per fuzz target; the nightly workflow runs them
   package, and run `make ci` before you finish.
 - `make nightly` is the whole suite twice, shuffled, and it is what `nightly.yml` runs. A
   `-shuffle` failure files an issue with the seed, so quote it when you reproduce one.
+- `make fuzz-short` is ten seconds per fuzz target. Live fuzzing is a nightly job, not a pull request
+  check, because a short budget is probabilistic; `make race` already replays every committed seed.
 - The workflows that are not the pull request gate are listed in `docs/TESTING.md` section 6. A new
   dependency arrives through Dependabot; if you must raise the Go floor, do it for a reason and say so in the
   `CHANGELOG`, because consumers inherit it.

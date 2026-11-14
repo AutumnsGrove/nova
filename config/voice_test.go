@@ -169,3 +169,116 @@ func TestLoad_VoiceExtensionCaps(t *testing.T) {
 		t.Errorf("warnings = %s, want a negative-cap warning", text)
 	}
 }
+
+func TestLoad_VoiceEndpoints(t *testing.T) {
+	home, cwd := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(home, ".config", "nova", "config.yaml"), `
+voice:
+  providers:
+    local:
+      base_url: http://127.0.0.1:8000/v1
+    openai:
+      base_url: https://api.openai.com/v1
+      api_key_env: OPENAI_API_KEY
+      transcribe_json: true
+  speech:
+    roles:
+      narrate:
+        model: kokoro
+        voice: af_heart
+        endpoint: local
+        fallback:
+          model: hosted-tts
+          voice: alloy
+          endpoint: openai
+  transcribe:
+    roles:
+      default:
+        model: whisper-1
+        endpoint: local
+`)
+	cfg, warnings := loadAt(t, cwd, home, LoadOptions{})
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", warnings)
+	}
+	local, ok := cfg.Voice.Providers["local"]
+	if !ok {
+		t.Fatalf("providers = %v, want local", cfg.Voice.Providers)
+	}
+	if local.BaseURL != "http://127.0.0.1:8000/v1" {
+		t.Errorf("base_url = %q", local.BaseURL)
+	}
+	if local.APIKeyEnv != "" || local.APIKey != "" {
+		t.Errorf("local endpoint = %+v, want no key at all", local)
+	}
+	hosted := cfg.Voice.Providers["openai"]
+	if hosted.APIKeyEnv != "OPENAI_API_KEY" || !hosted.TranscribeJSON {
+		t.Errorf("openai endpoint = %+v", hosted)
+	}
+	speech := cfg.Voice.Speech.Roles["narrate"]
+	if speech.Endpoint != "local" {
+		t.Errorf("speech endpoint = %q, want local", speech.Endpoint)
+	}
+	if speech.Fallback == nil || speech.Fallback.Endpoint != "openai" {
+		t.Errorf("fallback = %+v, want its own endpoint", speech.Fallback)
+	}
+	if got := cfg.Voice.Transcribe.Roles["default"].Endpoint; got != "local" {
+		t.Errorf("transcribe endpoint = %q, want local", got)
+	}
+}
+
+func TestLoad_VoiceWarnsOnUnknownEndpoint(t *testing.T) {
+	home, cwd := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(home, ".config", "nova", "config.yaml"), `
+voice:
+  speech:
+    roles:
+      narrate:
+        model: kokoro
+        voice: af_heart
+        endpoint: nowhere
+        fallback:
+          model: hosted-tts
+          voice: alloy
+          endpoint: also-missing
+  transcribe:
+    roles:
+      default:
+        model: whisper-1
+        endpoint: nowhere
+`)
+	_, warnings := loadAt(t, cwd, home, LoadOptions{})
+	text := warnText(warnings)
+	for _, want := range []string{
+		"voice.speech.roles.narrate.endpoint",
+		"voice.speech.roles.narrate.fallback.endpoint",
+		"voice.transcribe.roles.default.endpoint",
+		"nowhere",
+		"also-missing",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("warnings = %s, want %q", text, want)
+		}
+	}
+}
+
+func TestLoad_VoiceWarnsOnEndpointWithoutBaseURL(t *testing.T) {
+	home, cwd := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(home, ".config", "nova", "config.yaml"), `
+voice:
+  providers:
+    broken: {}
+    both:
+      base_url: https://api.openai.com/v1
+      api_key: sk-inline
+      api_key_env: OPENAI_API_KEY
+`)
+	_, warnings := loadAt(t, cwd, home, LoadOptions{})
+	text := warnText(warnings)
+	if !strings.Contains(text, "voice.providers.broken.base_url") {
+		t.Errorf("warnings = %s, want one for the endpoint with no base_url", text)
+	}
+	if !strings.Contains(text, "voice.providers.both.api_key") {
+		t.Errorf("warnings = %s, want one for the endpoint with two keys", text)
+	}
+}

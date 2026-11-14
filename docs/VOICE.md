@@ -498,8 +498,9 @@ that shells out to the `piper` binary would add an `os/exec` lifecycle, a `PATH`
 assumption and a stderr contract to cover one engine the server route already
 reaches. her-go's `scripts/tts_server.py` and `tts_server` are the reference for
 how to run one locally, not a design to copy. A process engine that takes text
-on stdin and answers WAV on stdout is a real option for a box with no supervisor
-and is filed separately rather than folded in here.
+on stdin and answers WAV on stdout is a real option for a box with no supervisor,
+and it is not part of this change: no `os/exec` path, no `PATH` lookup and no
+stderr contract enters the tree until something asks for one.
 
 ## Catalog
 

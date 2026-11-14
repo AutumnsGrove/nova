@@ -342,3 +342,28 @@ func TestSpeak_L01_ValidateLocally(t *testing.T) {
 		t.Errorf("requests = %d, want none", len(reqs))
 	}
 }
+
+// TestVoice_L08_NoLeaks: a speak and a transcribe leave no goroutine behind,
+// including a cancelled one, because a long-lived `nova serve` makes one per
+// request.
+func TestVoice_L08_NoLeaks(t *testing.T) {
+	testkit.NoLeaks(t)
+	client, _ := newClient(t,
+		testkit.VoiceServerTurn{Audio: []byte{0xff, 0xf3}, ContentType: "audio/mpeg"},
+		testkit.VoiceServerTurn{Body: `{"text":"hi"}`},
+		testkit.VoiceServerTurn{Hang: true},
+	)
+	if _, err := client.Speak(context.Background(), voice.SpeechRequest{Model: "kokoro", Voice: "af", Input: "Hi."}); err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if _, err := client.Transcribe(context.Background(), voice.TranscribeRequest{
+		Model: "whisper-1", Audio: []byte("a"), Format: voice.FormatMP3,
+	}); err != nil {
+		t.Fatalf("Transcribe() = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := client.Speak(ctx, voice.SpeechRequest{Model: "kokoro", Voice: "af", Input: "Hi."}); !errors.Is(err, context.Canceled) {
+		t.Errorf("cancelled Speak() = %v, want context.Canceled", err)
+	}
+}

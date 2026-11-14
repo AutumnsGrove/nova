@@ -57,6 +57,7 @@ nova/
     openrouter/   preset: embeddings and live roster            ≤ 220
   voice/          speech and transcription contract, roles,
                   endpoints, text prep and the WAV header     ≤ 600
+    openai/       OpenAI-compatible speech and transcriptions   ≤ 480
     openrouter/   preset: speech, transcriptions, live roster   ≤ 700
   auth/           OAuth PKCE login, key store                   ≤ 500
   tool/           Tool contract, registry, schema validation    ≤ 660

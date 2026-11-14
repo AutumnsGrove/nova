@@ -16,6 +16,10 @@ Upgrade notes for library consumers (#91, #92, #104, #86):
   and the constant; nothing else changes.
 - `voice/openrouter.DefaultSpeechModel` and `voice/openrouter.DefaultTranscribeModel` are removed.
   A model always came from a role, so the constants named a default that did not exist.
+- `voice/openrouter.Config.CostLookup: true` keeps its meaning — report spend on a synthesis — but the
+  number is now a catalog estimate (`CostSource: "catalog"`) rather than the retired `/generation`
+  lookup, which answered all nulls. A pinned role is priced at the endpoint the pin names, so the
+  figure can move by the price ratio between endpoints.
 - The minimum Go is **1.26.11**, up from 1.26.6. `go get github.com/AutumnsGrove/nova` on an older
   patch now fails until the toolchain moves; no language feature changes.
 - Additive, no edit needed: `voice.VoiceRole`, `voice.VoiceAttempt`, `voice.TranscribeRole` and

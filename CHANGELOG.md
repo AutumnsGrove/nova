@@ -27,6 +27,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Voice roles can point at a self-hosted engine. `voice.providers.<name>` is an
+  OpenAI-compatible `base_url` with an optional key, and a role names one with `endpoint:`; a keyless
+  endpoint sends no `Authorization` header, and a missing key is not an error. `voice/openai` speaks
+  `/audio/speech` and `/audio/transcriptions` against that address, so faster-whisper-server,
+  whisper.cpp server, Kokoro-FastAPI, openedai-speech, OpenAI itself and any gateway all work with no
+  extra code. A transcription is multipart by default, or `input_audio` with `transcribe_json: true`.
+  A speech fallback restates its own endpoint, so a free local engine can fall back to a hosted one.
+  A local synthesis reports zero cost with no source rather than an unknown one, and a local
+  transcription is priced from its usage only when the server reports it (#86).
+
 - The gate now reacts to more than a commit. `security.yml` runs a vulnerability scan on every pull
   request, on `main` and weekly, and it found three reachable advisories the day it was written;
   `fuzz.yml` runs all 63 fuzz targets for a timed smoke overnight, which `docs/TESTING.md` had

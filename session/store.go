@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 )
@@ -461,6 +462,15 @@ func (s *Store) refresh() error {
 	return nil
 }
 
+// HasHistory reports whether the session holds an entry that is not
+// display-only, which is what makes it worth resuming: a session whose only
+// entries are a name or a label has nothing to show.
+func (s *Store) HasHistory() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.ContainsFunc(s.entries, func(e Entry) bool { return !e.displayOnly() })
+}
+
 // Close releases the file and removes a session file this store created but
 // never wrote an entry to, so starting the UI and quitting leaves nothing
 // behind to resume. It is idempotent.
@@ -472,15 +482,24 @@ func (s *Store) Close() error {
 	}
 	s.closed = true
 	// Another process may have appended after this store opened, so re-read
-	// under the file lock before deciding the file is unused.
+	// under the file lock before deciding the file is unused. The unlink happens
+	// while that lock is still held, because an append between the check and the
+	// removal would otherwise be deleted with the file. A platform that cannot
+	// unlink an open file falls back to removing after the close below, and a
+	// lock or re-read that fails means the file is kept: deleting on a stale view
+	// is the one outcome that loses data.
+	checked, removed := false, false
 	if s.created {
 		if err := lockFile(s.file); err == nil {
-			_ = s.refresh()
+			if s.refresh() == nil && len(s.entries) == 0 {
+				checked = true
+				removed = os.Remove(s.path) == nil
+			}
 			_ = unlockFile(s.file)
 		}
 	}
 	err := s.file.Close()
-	if s.created && len(s.entries) == 0 {
+	if checked && !removed {
 		if rmErr := os.Remove(s.path); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
 			err = errors.Join(err, rmErr)
 		}

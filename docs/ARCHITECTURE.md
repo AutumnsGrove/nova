@@ -68,7 +68,7 @@ nova/
   proto/          wire types and JSONL framing                  ≤ 600
   agent/          the loop, hooks, queues, retry                ≤ 1440
     sub/          child agent runs: scoping, tagging, limits   ≤ 340
-  session/        JSONL tree store, branches, custom entries    ≤ 900
+  session/        JSONL tree store, branches, custom entries    ≤ 910
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
   config/         YAML config, trust, context files, skills     ≤ 1640
@@ -85,7 +85,7 @@ nova/
   bundled/        in-tree extensions: tasks, ask, plan,
                   subagent, webfetch                            ≤ 2560 total
   tui/            the terminal UI                               ≤ 10300
-    ui/           the Bubble Tea model and its views           ≤ 3070
+    ui/           the Bubble Tea model and its views           ≤ 3090
     status/       the multi-line status region                 ≤ 320
     sanitize/     make untrusted text safe to draw              ≤ 100
     git/          branch and working-tree counts for status    ≤ 120

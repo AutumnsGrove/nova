@@ -2,7 +2,7 @@
 chunk: C08
 title: "Protocol types and the session store"
 packages: [./proto, ./session]
-budgets: { ./proto: 600, ./session: 900 }
+budgets: { ./proto: 600, ./session: 910 }
 depends: [C01]
 ---
 
@@ -326,6 +326,7 @@ func DefaultDir(cwd string) string                   // ~/.local/share/nova/sess
 | SES33 | a session that receives no entry | open, then close | the file is removed |
 | SES34 | a session with an entry | reopen, then close | the file is kept; a headerless file is removed |
 | SES35 | a creator closes after another process appended | two stores on one file | the file and the other entry survive |
+| SES36 | `HasHistory` | a name and a label, then a message | false, then true |
 | TRE01 | branch root to leaf | chain of 5 | 5 entries in order |
 | TRE02 | branch of a middle entry | | prefix |
 | TRE03 | unknown leaf | | error |

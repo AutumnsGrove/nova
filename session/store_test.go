@@ -771,3 +771,27 @@ func TestSession_SES35_EmptyStoreKeepsAnotherProcessEntry(t *testing.T) {
 		t.Fatalf("the creator removed a file another store had appended to: %v", err)
 	}
 }
+
+// A name or a label is display-only: a session holding nothing else has no
+// conversation to resume, even though it has entries and keeps its file.
+func TestSession_SES36_HasHistory(t *testing.T) {
+	s, _ := openStore(t, Options{})
+	if s.HasHistory() {
+		t.Fatal("a new session should have no history")
+	}
+	if _, err := s.Append(Entry{Type: TypeSessionInfo, Name: "named"}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if _, err := s.Append(Entry{Type: TypeLabel, Target: "x", Label: "here"}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if s.HasHistory() {
+		t.Fatal("display-only entries are not history")
+	}
+	if _, err := s.Append(userEntry("hello")); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if !s.HasHistory() {
+		t.Fatal("a message is history")
+	}
+}

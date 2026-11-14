@@ -367,3 +367,103 @@ func TestVoice_L08_NoLeaks(t *testing.T) {
 		t.Errorf("cancelled Speak() = %v, want context.Canceled", err)
 	}
 }
+
+// wavBytes builds a minimal RIFF/WAVE file: a fmt chunk then a data chunk.
+func wavBytes(rate, channels uint16, bits uint16, samples []byte) []byte {
+	var buf bytes.Buffer
+	le32 := func(v uint32) { buf.Write([]byte{byte(v), byte(v >> 8), byte(v >> 16), byte(v >> 24)}) }
+	le16 := func(v uint16) { buf.Write([]byte{byte(v), byte(v >> 8)}) }
+	buf.WriteString("RIFF")
+	le32(uint32(36 + len(samples)))
+	buf.WriteString("WAVE")
+	buf.WriteString("fmt ")
+	le32(16)
+	le16(1) // PCM
+	le16(channels)
+	le32(uint32(rate))
+	le32(uint32(rate) * uint32(channels) * uint32(bits) / 8)
+	le16(channels * bits / 8)
+	le16(bits)
+	buf.WriteString("data")
+	le32(uint32(len(samples)))
+	buf.Write(samples)
+	return buf.Bytes()
+}
+
+// TestSpeak_L15_WAVBecomesPCM: a server that answers WAV (a Piper server does)
+// is repackaged as the pcm clip it is, so chunked output joins into one file
+// instead of carrying a header per chunk.
+func TestSpeak_L15_WAVBecomesPCM(t *testing.T) {
+	samples := []byte{0, 1, 2, 3, 4, 5, 6, 7}
+	client, _ := newClient(t, testkit.VoiceServerTurn{
+		Audio:       wavBytes(16000, 2, 16, samples),
+		ContentType: "audio/wav",
+	})
+	clip, err := client.Speak(context.Background(), voice.SpeechRequest{Model: "piper", Voice: "en_US", Input: "Hi."})
+	if err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if clip.Format != voice.FormatPCM {
+		t.Fatalf("format = %q, want pcm from a wav body", clip.Format)
+	}
+	if !bytes.Equal(clip.Bytes, samples) {
+		t.Errorf("bytes = %v, want the samples without the header", clip.Bytes)
+	}
+	if clip.SampleRate != 16000 || clip.Channels != 2 || clip.BitsPerSample != 16 {
+		t.Errorf("layout = %d/%d/%d, want 16000/2/16 from the fmt chunk", clip.SampleRate, clip.Channels, clip.BitsPerSample)
+	}
+	if clip.MIME != voice.FormatPCM.MIME() {
+		t.Errorf("mime = %q, want the pcm media type: the bytes carry no header", clip.MIME)
+	}
+}
+
+// TestSpeak_L16_JoinedWAVChunksStayPlayable: the chunked `nova speak` path must
+// survive a wav-answering engine, which is the case the repackaging exists for.
+func TestSpeak_L16_JoinedWAVChunksStayPlayable(t *testing.T) {
+	first := []byte{0, 1, 2, 3}
+	second := []byte{4, 5, 6, 7}
+	client, _ := newClient(t,
+		testkit.VoiceServerTurn{Audio: wavBytes(24000, 1, 16, first), ContentType: "audio/wav"},
+		testkit.VoiceServerTurn{Audio: wavBytes(24000, 1, 16, second), ContentType: "audio/wav"},
+	)
+	clips := make([]voice.Clip, 0, 2)
+	for i, input := range []string{"one.", "two."} {
+		clip, err := client.Speak(context.Background(), voice.SpeechRequest{Model: "piper", Voice: "en", Input: input})
+		if err != nil {
+			t.Fatalf("Speak %d = %v", i, err)
+		}
+		clips = append(clips, *clip)
+	}
+	joined, err := voice.Join(clips...)
+	if err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	if !bytes.Equal(joined.Bytes, append(append([]byte(nil), first...), second...)) {
+		t.Errorf("joined bytes = %v, want the two sample runs", joined.Bytes)
+	}
+	wav := voice.WAV(joined)
+	if len(wav) != 44+len(first)+len(second) {
+		t.Errorf("wav length = %d, want one header and both runs", len(wav))
+	}
+	if len(wav) < 44 {
+		t.Fatalf("wav = %d bytes, want a header and the samples", len(wav))
+	}
+	if string(wav[:4]) != "RIFF" || string(wav[8:12]) != "WAVE" {
+		t.Errorf("wav header = %q, want RIFF/WAVE", wav[:12])
+	}
+}
+
+// TestSpeak_L17_MalformedWAVIsAnError: a body labelled wav that is not one is
+// reported rather than written out as something a player cannot open.
+func TestSpeak_L17_MalformedWAVIsAnError(t *testing.T) {
+	client, _ := newClient(t, testkit.VoiceServerTurn{
+		Audio: []byte("definitely not a wav file"), ContentType: "audio/wav",
+	})
+	_, err := client.Speak(context.Background(), voice.SpeechRequest{Model: "piper", Voice: "en", Input: "Hi."})
+	if err == nil {
+		t.Fatal("Speak() = nil, want an error for a body that is not a wav")
+	}
+	if !strings.Contains(err.Error(), "wav") {
+		t.Errorf("error = %v, want it to name the wav body", err)
+	}
+}

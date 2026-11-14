@@ -302,9 +302,9 @@ func TestTranscribe_NoTranscriber(t *testing.T) {
 	}
 }
 
-// TestSpeak_A33_EndpointNamesItsSpeaker: a role that names an endpoint is served
+// TestSpeak_L09_EndpointNamesItsSpeaker: a role that names an endpoint is served
 // by that endpoint's client, not the default one.
-func TestSpeak_A33_EndpointNamesItsSpeaker(t *testing.T) {
+func TestSpeak_L09_EndpointNamesItsSpeaker(t *testing.T) {
 	def := &fakeSpeaker{steps: []speakStep{{clip: &Clip{Format: FormatMP3}}}}
 	local := &fakeSpeaker{steps: []speakStep{{clip: &Clip{Format: FormatPCM}}}}
 	roles := NewRoles(RolesConfig{
@@ -326,9 +326,9 @@ func TestSpeak_A33_EndpointNamesItsSpeaker(t *testing.T) {
 	}
 }
 
-// TestSpeak_A34_NoEndpointUsesTheDefault: the zero value routes as it always
+// TestSpeak_L10_NoEndpointUsesTheDefault: the zero value routes as it always
 // did, so an existing config sends nothing new.
-func TestSpeak_A34_NoEndpointUsesTheDefault(t *testing.T) {
+func TestSpeak_L10_NoEndpointUsesTheDefault(t *testing.T) {
 	def := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
 	local := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
 	roles := NewRoles(RolesConfig{
@@ -346,9 +346,9 @@ func TestSpeak_A34_NoEndpointUsesTheDefault(t *testing.T) {
 	}
 }
 
-// TestSpeak_A35_FallbackRestatesItsEndpoint: a fallback is served by its own
+// TestSpeak_L11_FallbackRestatesItsEndpoint: a fallback is served by its own
 // endpoint, so a local primary can fall back to a hosted one.
-func TestSpeak_A35_FallbackRestatesItsEndpoint(t *testing.T) {
+func TestSpeak_L11_FallbackRestatesItsEndpoint(t *testing.T) {
 	local := &fakeSpeaker{steps: []speakStep{{err: errors.New("502")}}}
 	hosted := &fakeSpeaker{steps: []speakStep{{clip: &Clip{Model: "hosted-tts"}}}}
 	roles := NewRoles(RolesConfig{
@@ -375,9 +375,9 @@ func TestSpeak_A35_FallbackRestatesItsEndpoint(t *testing.T) {
 	}
 }
 
-// TestSpeak_A36_UnknownEndpointFailsBeforeAnyRequest: a name with no client is a
+// TestSpeak_L12_UnknownEndpointFailsBeforeAnyRequest: a name with no client is a
 // configuration error, learned without spending a request.
-func TestSpeak_A36_UnknownEndpointFailsBeforeAnyRequest(t *testing.T) {
+func TestSpeak_L12_UnknownEndpointFailsBeforeAnyRequest(t *testing.T) {
 	def := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
 	roles := NewRoles(RolesConfig{
 		Speaker: def,
@@ -397,9 +397,9 @@ func TestSpeak_A36_UnknownEndpointFailsBeforeAnyRequest(t *testing.T) {
 	}
 }
 
-// TestTranscribe_A37_EndpointNamesItsTranscriber: the transcription direction
+// TestTranscribe_L13_EndpointNamesItsTranscriber: the transcription direction
 // routes by the same name, because a local whisper server is the other half.
-func TestTranscribe_A37_EndpointNamesItsTranscriber(t *testing.T) {
+func TestTranscribe_L13_EndpointNamesItsTranscriber(t *testing.T) {
 	def := &fakeTranscriber{steps: []transcribeStep{{transcript: &Transcript{Text: "default"}}}}
 	local := &fakeTranscriber{steps: []transcribeStep{{transcript: &Transcript{Text: "local"}}}}
 	roles := NewRoles(RolesConfig{
@@ -421,9 +421,9 @@ func TestTranscribe_A37_EndpointNamesItsTranscriber(t *testing.T) {
 	}
 }
 
-// TestTranscribe_A38_UnknownEndpointFailsBeforeAnyRequest mirrors the speech
+// TestTranscribe_L14_UnknownEndpointFailsBeforeAnyRequest mirrors the speech
 // direction: a typo costs no request.
-func TestTranscribe_A38_UnknownEndpointFailsBeforeAnyRequest(t *testing.T) {
+func TestTranscribe_L14_UnknownEndpointFailsBeforeAnyRequest(t *testing.T) {
 	def := &fakeTranscriber{steps: []transcribeStep{{transcript: &Transcript{Text: "x"}}}}
 	roles := NewRoles(RolesConfig{
 		Transcriber: def,

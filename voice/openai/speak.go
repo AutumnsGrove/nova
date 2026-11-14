@@ -80,8 +80,21 @@ func (c *Client) Speak(ctx context.Context, req voice.SpeechRequest) (*voice.Cli
 	if mt, _ := mediaType(contentType); mt != "" {
 		clip.MIME = mt
 	}
-	if clip.Format == voice.FormatPCM {
+	switch clip.Format {
+	case voice.FormatPCM:
 		clip.SampleRate, clip.Channels, clip.BitsPerSample = pcmLayout(contentType)
+	case voice.FormatWAV:
+		// A WAV body is PCM with a header, and a chunked caller would otherwise
+		// concatenate whole files into one unplayable stream. Report the samples
+		// and the layout the fmt chunk gives, so Join and WAV stay correct.
+		pcm, rate, channels, bits, ok := wavToPCM(data)
+		if !ok {
+			return nil, errBadWAV
+		}
+		clip.Bytes = pcm
+		clip.Format = voice.FormatPCM
+		clip.MIME = voice.FormatPCM.MIME()
+		clip.SampleRate, clip.Channels, clip.BitsPerSample = rate, channels, bits
 	}
 	// No cost is read or estimated: a local engine bills nothing and reports
 	// nothing, so Usage stays zero with an empty CostSource.

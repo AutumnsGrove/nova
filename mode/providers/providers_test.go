@@ -591,7 +591,7 @@ func TestBuildTranscriber_L06_LocalRoleNeedsNoKey(t *testing.T) {
 // TestBuildSpeaker_EndpointWithoutBaseURLIsNotA Client: an endpoint the config
 // refused to warn about is one with no address, so the role that names it fails
 // instead of quietly calling OpenAI's own API.
-func TestBuildSpeaker_EndpointWithoutBaseURLFails(t *testing.T) {
+func TestBuildSpeaker_L18_EndpointWithoutBaseURLFails(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Voice.Providers = map[string]config.VoiceProviderConfig{"broken": {}}
 	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{

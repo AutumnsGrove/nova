@@ -34,6 +34,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   whisper.cpp server, Kokoro-FastAPI, openedai-speech, OpenAI itself and any gateway all work with no
   extra code. A transcription is multipart by default, or `input_audio` with `transcribe_json: true`.
   A speech fallback restates its own endpoint, so a free local engine can fall back to a hosted one.
+  An engine that answers WAV (a Piper server does) is repackaged as the pcm clip it is, so a chunked
+  `nova speak` still produces one playable file.
   A local synthesis reports zero cost with no source rather than an unknown one, and a local
   transcription is priced from its usage only when the server reports it (#86).
 

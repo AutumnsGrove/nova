@@ -482,8 +482,10 @@ roster and no cost estimate:
 - **A synthesis is zero cost with an empty `CostSource`.** A local response
   carries no usage block, and a free call is not an unknown one. `Clip.MIME` and
   the pcm layout still come from the response's `Content-Type`, so an engine
-  answering 16 kHz stereo is written as such, and one answering `audio/wav`
-  (as a Piper server does) keeps the format it named.
+  answering 16 kHz stereo is written as such. One answering `audio/wav` — as a
+  Piper server does — is repackaged as the pcm clip it is, samples without the
+  header and the layout from its `fmt` chunk, because a chunked `nova speak`
+  would otherwise concatenate whole files into one unplayable stream.
 - **A transcription is priced from its own usage when it reports one.** A
   reported block is `CostSource: "provider"` even at zero, because that is a
   real free call rather than a failed lookup; an absent block leaves the zero
@@ -647,6 +649,30 @@ are a contract between this document and the tests, not a gate.
 | A38 | A pin naming one provider is priced from that endpoint's rate, not the roster's cheapest one, and the endpoint list is read for it |
 | A39 | A pin whose endpoint price cannot be read leaves the cost unknown rather than falling back to the cheapest rate, and the clip is still returned |
 | A40 | A pin naming a provider the endpoint list does not carry leaves the cost unknown for the same reason, and the roster is not read as a fallback |
+
+The named endpoints and `voice/openai` ([#86](https://github.com/AutumnsGrove/nova/issues/86)) add
+their own rows. `L07` is deliberately absent: it covered a Piper process engine, and the server route
+was chosen instead.
+
+| Id | Behaviour |
+|---|---|
+| L01 | A speech response maps to a clip: bytes, MIME and pcm layout from the response, no generation id from a generation-less server, and zero usage with an empty `CostSource`; a malformed request is refused locally |
+| L02 | A keyless engine is sent no `Authorization` header at all, a keyed one is sent a bearer, a key func wins over a static key, and an endpoint's own key env is the one read rather than the harness's credential |
+| L03 | Transcription sends multipart by default with `file` named `clip.<format>` and every documented field, and `transcribe_json` sends `input_audio` with the base64 bytes and the format |
+| L04 | A response with no usage block is zero cost with an empty `CostSource` and is not mistaken for a failed lookup; a reported block is `CostSource: "provider"` with its tokens and duration; whitespace-only text is a successful empty transcript |
+| L05 | A local server's 400 is a `*provider.Error` with the body and no retryability, a gateway that echoes a rejected key does not put it in the error, and a 200 with no bytes is an error rather than a clip |
+| L06 | A role whose endpoint is local resolves with nothing in the environment and nothing in the key store |
+| L08 | A speak, a transcribe and a cancelled speak leave no goroutine behind (`testkit.NoLeaks`), and a cancellation stays a cancellation |
+| L09 | A role that names an endpoint is served by that endpoint's client, and one that names none keeps the default client |
+| L10 | (See L09: the zero value routes exactly as it did before endpoints existed.) |
+| L11 | A fallback is served by its own endpoint, so a local primary may fall back to a hosted engine |
+| L12 | An endpoint name with no client is refused while the attempts are built, before any request, and the error names it |
+| L13 | A transcription role's endpoint selects its transcriber, and the fallback stays on the role's endpoint because a transcription fallback is another model, not another role |
+| L14 | An unknown transcription endpoint is refused before any request, as for speech |
+| L15 | A WAV body is repackaged as the pcm clip it is: the samples without the header, the layout from the `fmt` chunk, and the pcm media type |
+| L16 | Two WAV chunks joined produce one playable file: the samples concatenate and `WAV` writes a single header |
+| L17 | A body labelled wav that is not one is an error, not a file a player cannot open |
+| L18 | An endpoint with no `base_url` is not a client, so the role that names it fails rather than calling a vendor nobody named |
 
 ## Budgets
 

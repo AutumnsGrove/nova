@@ -7,6 +7,25 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-14
+
+Upgrade notes for library consumers (#91, #92, #104, #86):
+
+- `voice/openrouter.Config.CostTimeout` and `voice/openrouter.DefaultCostTimeout` are removed. Speech
+  cost is now an estimate from the catalog, so there is no separate lookup to bound. Drop the field
+  and the constant; nothing else changes.
+- `voice/openrouter.DefaultSpeechModel` and `voice/openrouter.DefaultTranscribeModel` are removed.
+  A model always came from a role, so the constants named a default that did not exist.
+- `voice/openrouter.Config.CostLookup: true` keeps its meaning — report spend on a synthesis — but the
+  number is now a catalog estimate (`CostSource: "catalog"`) rather than the retired `/generation`
+  lookup, which answered all nulls. A pinned role is priced at the endpoint the pin names, so the
+  figure can move by the price ratio between endpoints.
+- The minimum Go is **1.26.11**, up from 1.26.6. `go get github.com/AutumnsGrove/nova` on an older
+  patch now fails until the toolchain moves; no language feature changes.
+- Additive, no edit needed: `voice.VoiceRole`, `voice.VoiceAttempt`, `voice.TranscribeRole` and
+  `voice.RolesConfig` gain endpoint fields and maps whose zero values keep today's behaviour, and
+  `voice/openai` is a new package.
+
 ### Changed
 
 - The minimum Go is now 1.26.11, up from 1.26.6: `net/http` below that patch carries
@@ -636,7 +655,8 @@ Nova is `v0.x`, so a minor release may break callers. **Read these before upgrad
 - The first release: the agent loop, tools, sessions, config, the TUI, the
   extension host, the bundled extensions, serve mode, and the GitHub Action.
 
-[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/AutumnsGrove/nova/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.5.0
 [0.4.1]: https://github.com/AutumnsGrove/nova/releases/tag/v0.4.1
 [0.4.0]: https://github.com/AutumnsGrove/nova/releases/tag/v0.4.0
 [0.3.5]: https://github.com/AutumnsGrove/nova/releases/tag/v0.3.5

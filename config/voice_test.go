@@ -282,3 +282,26 @@ voice:
 		t.Errorf("warnings = %s, want one for the endpoint with two keys", text)
 	}
 }
+
+func TestLoad_VoiceWarnsWhenAPinMeetsAnEndpoint(t *testing.T) {
+	home, cwd := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(home, ".config", "nova", "config.yaml"), `
+voice:
+  providers:
+    local:
+      base_url: http://127.0.0.1:8000/v1
+  speech:
+    roles:
+      narrate:
+        model: kokoro
+        voice: af_heart
+        endpoint: local
+        provider:
+          only: [Together]
+`)
+	_, warnings := loadAt(t, cwd, home, LoadOptions{})
+	text := warnText(warnings)
+	if !strings.Contains(text, "voice.speech.roles.narrate.provider") {
+		t.Errorf("warnings = %s, want one saying the pin is not sent to an endpoint", text)
+	}
+}

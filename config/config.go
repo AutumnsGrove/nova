@@ -617,6 +617,9 @@ func normaliseVoice(cfg *Config, warnings *[]Warning) {
 		if role.Endpoint != "" && !known(role.Endpoint) {
 			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice.speech.roles.%s.endpoint names %q, which is not in voice.providers", name, role.Endpoint)})
 		}
+		if role.Endpoint != "" && len(role.Provider) > 0 {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice.speech.roles.%s.provider is OpenRouter's routing pin, and endpoint %q does not receive it", name, role.Endpoint)})
+		}
 		if role.Fallback != nil && role.Fallback.Model == "" {
 			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice speech role %q fallback has no model", name)})
 		}

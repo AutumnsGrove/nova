@@ -135,9 +135,30 @@ type VoiceConfig struct {
 	// CostLookup estimates each synthesis's cost from the model's catalog price.
 	// It is a pointer so an unset block still reports spend; set it false for
 	// the fast path, which skips the roster read.
-	CostLookup *bool                 `yaml:"cost_lookup"`
-	Speech     VoiceSpeechConfig     `yaml:"speech"`
-	Transcribe VoiceTranscribeConfig `yaml:"transcribe"`
+	CostLookup *bool `yaml:"cost_lookup"`
+	// Providers names the engines a role may point at. A local one needs no
+	// key at all, which is the whole reason the table is named per engine
+	// rather than being one global base URL: a local speech server and a
+	// hosted transcriber are one config.
+	Providers  map[string]VoiceProviderConfig `yaml:"providers"`
+	Speech     VoiceSpeechConfig              `yaml:"speech"`
+	Transcribe VoiceTranscribeConfig          `yaml:"transcribe"`
+}
+
+// VoiceProviderConfig is one speech or transcription engine: an
+// OpenAI-compatible base URL and the credential it needs, if any.
+type VoiceProviderConfig struct {
+	// BaseURL is the API root the two audio endpoints hang off. Required.
+	BaseURL string `yaml:"base_url"`
+	// APIKey is an inline token. A local server needs none, so an empty key is
+	// not an error and sends no Authorization header.
+	APIKey string `yaml:"api_key"`
+	// APIKeyEnv names the environment variable that holds the token, so a
+	// config file need not carry a secret.
+	APIKeyEnv string `yaml:"api_key_env"`
+	// TranscribeJSON sends a base64 input_audio body instead of multipart, for
+	// a server that only implements the JSON shape.
+	TranscribeJSON bool `yaml:"transcribe_json"`
 }
 
 // CostLookupEnabled reports whether Nova's front doors estimate speech cost. The
@@ -155,24 +176,30 @@ type VoiceSpeechConfig struct {
 // SpeechRoleConfig is one text-to-speech role. Format is "mp3" or "pcm"; Speed
 // is a playback multiplier.
 type SpeechRoleConfig struct {
-	Model        string                `yaml:"model"`
-	Voice        string                `yaml:"voice"`
-	Format       string                `yaml:"format"`
-	Speed        *float64              `yaml:"speed"`
-	Instructions string                `yaml:"instructions"`
-	TimeoutMS    int                   `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
-	Provider     map[string]any        `yaml:"provider"`
-	Fallback     *SpeechFallbackConfig `yaml:"fallback"`
+	Model        string   `yaml:"model"`
+	Voice        string   `yaml:"voice"`
+	Format       string   `yaml:"format"`
+	Speed        *float64 `yaml:"speed"`
+	Instructions string   `yaml:"instructions"`
+	TimeoutMS    int      `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
+	// Endpoint names an entry in voice.providers. Empty means the harness's own
+	// client, so a config that names none behaves as it always did.
+	Endpoint string                `yaml:"endpoint"`
+	Provider map[string]any        `yaml:"provider"`
+	Fallback *SpeechFallbackConfig `yaml:"fallback"`
 }
 
 // SpeechFallbackConfig is a second attempt. It restates its own model and voice,
 // because a voice name is model-specific and cannot be inherited. Provider is
 // restated for the same reason: a pinned primary may want another pin or none.
 type SpeechFallbackConfig struct {
-	Model    string         `yaml:"model"`
-	Voice    string         `yaml:"voice"`
-	Format   string         `yaml:"format"`
-	Speed    *float64       `yaml:"speed"`
+	Model  string   `yaml:"model"`
+	Voice  string   `yaml:"voice"`
+	Format string   `yaml:"format"`
+	Speed  *float64 `yaml:"speed"`
+	// Endpoint is restated rather than inherited, because a local primary
+	// falling back to a hosted engine is the case this exists for.
+	Endpoint string         `yaml:"endpoint"`
 	Provider map[string]any `yaml:"provider"`
 }
 
@@ -183,8 +210,10 @@ type VoiceTranscribeConfig struct {
 
 // TranscribeRoleConfig is one speech-to-text role.
 type TranscribeRoleConfig struct {
-	Model     string `yaml:"model"`
-	Fallback  string `yaml:"fallback"`
+	Model    string `yaml:"model"`
+	Fallback string `yaml:"fallback"`
+	// Endpoint names an entry in voice.providers, as for speech.
+	Endpoint  string `yaml:"endpoint"`
 	TimeoutMS int    `yaml:"timeout_ms"` // per attempt; 0 means only the caller's context bounds it
 }
 
@@ -566,14 +595,36 @@ func normaliseEmbed(cfg *Config, warnings *[]Warning) {
 // load time, so a typo is visible before the first call. A bad format or speed
 // is left to the call, which names the value it refused.
 func normaliseVoice(cfg *Config, warnings *[]Warning) {
+	for _, name := range slices.Sorted(maps.Keys(cfg.Voice.Providers)) {
+		provider := cfg.Voice.Providers[name]
+		if provider.BaseURL == "" {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice.providers.%s.base_url is empty, so the engine cannot be reached", name)})
+		}
+		if provider.APIKey != "" && provider.APIKeyEnv != "" {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice.providers.%s.api_key wins over api_key_env", name)})
+		}
+	}
+	known := func(endpoint string) bool {
+		_, ok := cfg.Voice.Providers[endpoint]
+		return ok
+	}
 	for _, name := range slices.Sorted(maps.Keys(cfg.Voice.Speech.Roles)) {
 		role := cfg.Voice.Speech.Roles[name]
 		nonNegative(&role.TimeoutMS, "voice.speech.roles."+name+".timeout_ms", warnings)
 		if role.Model == "" {
 			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice speech role %q has no model", name)})
 		}
+		if role.Endpoint != "" && !known(role.Endpoint) {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice.speech.roles.%s.endpoint names %q, which is not in voice.providers", name, role.Endpoint)})
+		}
+		if role.Endpoint != "" && len(role.Provider) > 0 {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice.speech.roles.%s.provider is OpenRouter's routing pin, and endpoint %q does not receive it", name, role.Endpoint)})
+		}
 		if role.Fallback != nil && role.Fallback.Model == "" {
 			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice speech role %q fallback has no model", name)})
+		}
+		if role.Fallback != nil && role.Fallback.Endpoint != "" && !known(role.Fallback.Endpoint) {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice.speech.roles.%s.fallback.endpoint names %q, which is not in voice.providers", name, role.Fallback.Endpoint)})
 		}
 		cfg.Voice.Speech.Roles[name] = role
 	}
@@ -582,6 +633,9 @@ func normaliseVoice(cfg *Config, warnings *[]Warning) {
 		nonNegative(&role.TimeoutMS, "voice.transcribe.roles."+name+".timeout_ms", warnings)
 		if role.Model == "" {
 			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice transcription role %q has no model", name)})
+		}
+		if role.Endpoint != "" && !known(role.Endpoint) {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("voice.transcribe.roles.%s.endpoint names %q, which is not in voice.providers", name, role.Endpoint)})
 		}
 		cfg.Voice.Transcribe.Roles[name] = role
 	}

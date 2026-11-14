@@ -6,7 +6,7 @@ reach every front door, and what the caller still owns. This document is the
 reference for issue [#85](https://github.com/AutumnsGrove/nova/issues/85); the
 follow-up for local engines is [#86](https://github.com/AutumnsGrove/nova/issues/86).
 
-Status: **built.** The decisions are D161 to D167 in
+Status: **built.** The decisions are D161 to D172 and D180 in
 [`DECISIONS.md`](DECISIONS.md). Each slice changed this document in the commit
 that changed the contract, the way [`IMAGE.md`](IMAGE.md) did.
 
@@ -335,9 +335,10 @@ A provider object that contains no keys is the same as none and is omitted.
 
 `voice/openrouter` is the preset: base URL, attribution headers, the key
 resolved per request (so `/login` takes effect mid-run), the two endpoints, and
-the live roster. A later `voice/openai` and the local engines
-([#86](https://github.com/AutumnsGrove/nova/issues/86)) plug into the same
-contract.
+the live roster. `voice/openai` ([#86](https://github.com/AutumnsGrove/nova/issues/86))
+speaks the same two endpoints without the attribution headers, the roster or the
+catalog, which is what a self-hosted engine, OpenAI itself and any gateway need;
+the section after this one covers it and the config that points a role at one.
 
 | Direction | Wire |
 |---|---|
@@ -366,7 +367,7 @@ Three wire decisions worth recording, and what the live API actually did on
    (`clip.mp3`), because the provider infers the codec from it: the same bytes
    as `clip.bin` are a 400. Polaris and her-go both use base64 JSON; base64
    remains the path for files over the 25 MiB multipart cap on OpenAI and Groq,
-   and arrives with `voice/openai` if a consumer needs it.
+   and is available in `voice/openai` as `transcribe_json`.
 2. **`provider` is a passthrough, and the pin matters more than the price.**
    OpenRouter's docs say `order`, `only` and `ignore` are not applied to the
    audio endpoints. **That is false in practice**: `only` is honoured, and a
@@ -417,6 +418,91 @@ Errors are `*provider.Error` with the status and `provider.Classify`'s
 retryability, the body truncated to 500 characters, and the request bounded by
 `ctx`. A non-200 body is JSON; a 200 body is audio, and a body over
 `MaxClipBytes` is an error rather than a truncated clip.
+
+## Named endpoints and `voice/openai`
+
+A self-hosted engine is not OpenRouter, so it is not addressed by a model id: it
+is an address. `voice.providers.<name>` is that address, and a role names one
+with `endpoint:`.
+
+```yaml
+voice:
+  providers:
+    local:                        # a keyless engine on this machine
+      base_url: http://127.0.0.1:8000/v1
+    local-stt:
+      base_url: http://127.0.0.1:8080/v1
+      transcribe_json: true       # a server that has no multipart shape
+    openai:
+      base_url: https://api.openai.com/v1
+      api_key_env: OPENAI_API_KEY
+  speech:
+    roles:
+      narrate:
+        model: kokoro
+        voice: af_heart
+        endpoint: local
+        fallback:
+          model: gpt-4o-mini-tts
+          voice: alloy
+          endpoint: openai        # restated: a fallback may live elsewhere
+  transcribe:
+    roles:
+      default:
+        model: whisper-1
+        endpoint: local-stt
+```
+
+Four decisions this shape carries:
+
+1. **A table, not one base URL.** A local text-to-speech server and a hosted
+transcriber are one config, and a voice assistant that runs on a small box
+wants exactly that pair. One global `base_url` cannot serve both.
+2. **`endpoint:`, not `provider:`.** `provider:` on a speech role is already the
+OpenRouter routing pin (D170), and a key cannot mean both an engine and a route.
+A role that names no endpoint uses the harness's own client, so an existing
+config is unchanged.
+3. **The endpoint is restated by a fallback**, like the voice and the pin: a
+free local primary falling back to a paid hosted one is the case this exists for,
+so the choice cannot be inherited from the primary.
+4. **An empty key is not an error.** A missing key sends no `Authorization`
+header at all: a local engine needs none, and borrowing the harness's OpenRouter
+credential for it would leak a secret to an address that never asked.
+
+The `provider` pin is **not sent** by this adapter: it is OpenRouter's routing
+object and an OpenAI-compatible server has no such field. Config warns when a
+role both pins and names an endpoint, so the silence is visible.
+
+`voice/openai` is one client over `{base}/audio/speech` and
+`{base}/audio/transcriptions`, and it is what every OpenAI-shaped engine speaks:
+`faster-whisper-server`, `whisper.cpp` server, `parakeet-mlx-fastapi`,
+`Kokoro-FastAPI`, `openedai-speech`, OpenAI itself, and any gateway. It has no
+roster and no cost estimate:
+
+- **A synthesis is zero cost with an empty `CostSource`.** A local response
+  carries no usage block, and a free call is not an unknown one. `Clip.MIME` and
+  the pcm layout still come from the response's `Content-Type`, so an engine
+  answering 16 kHz stereo is written as such. One answering `audio/wav` — as a
+  Piper server does — is repackaged as the pcm clip it is, samples without the
+  header and the layout from its `fmt` chunk, because a chunked `nova speak`
+  would otherwise concatenate whole files into one unplayable stream.
+- **A transcription is priced from its own usage when it reports one.** A
+  reported block is `CostSource: "provider"` even at zero, because that is a
+  real free call rather than a failed lookup; an absent block leaves the zero
+  usage alone.
+- **Multipart by default, `input_audio` on request.** `transcribe_json: true`
+  sends `{model, input_audio: {data, format}}` with the audio base64, for a
+  server that implements only that shape.
+
+**Piper runs as a server, not as a child process.** `piper-http`,
+`Kokoro-FastAPI` and `openedai-speech` all speak the OpenAI shape, so a wrapper
+that shells out to the `piper` binary would add an `os/exec` lifecycle, a `PATH`
+assumption and a stderr contract to cover one engine the server route already
+reaches. her-go's `scripts/tts_server.py` and `tts_server` are the reference for
+how to run one locally, not a design to copy. A process engine that takes text
+on stdin and answers WAV on stdout is a real option for a box with no supervisor,
+and it is not part of this change: no `os/exec` path, no `PATH` lookup and no
+stderr contract enters the tree until something asks for one.
 
 ## Catalog
 
@@ -564,6 +650,30 @@ are a contract between this document and the tests, not a gate.
 | A39 | A pin whose endpoint price cannot be read leaves the cost unknown rather than falling back to the cheapest rate, and the clip is still returned |
 | A40 | A pin naming a provider the endpoint list does not carry leaves the cost unknown for the same reason, and the roster is not read as a fallback |
 
+The named endpoints and `voice/openai` ([#86](https://github.com/AutumnsGrove/nova/issues/86)) add
+their own rows. `L07` is deliberately absent: it covered a Piper process engine, and the server route
+was chosen instead.
+
+| Id | Behaviour |
+|---|---|
+| L01 | A speech response maps to a clip: bytes, MIME and pcm layout from the response, no generation id from a generation-less server, and zero usage with an empty `CostSource`; a malformed request is refused locally |
+| L02 | A keyless engine is sent no `Authorization` header at all, a keyed one is sent a bearer, a key func wins over a static key, and an endpoint's own key env is the one read rather than the harness's credential |
+| L03 | Transcription sends multipart by default with `file` named `clip.<format>` and every documented field, and `transcribe_json` sends `input_audio` with the base64 bytes and the format |
+| L04 | A response with no usage block is zero cost with an empty `CostSource` and is not mistaken for a failed lookup; a reported block is `CostSource: "provider"` with its tokens and duration; whitespace-only text is a successful empty transcript |
+| L05 | A local server's 400 is a `*provider.Error` with the body and no retryability, a gateway that echoes a rejected key does not put it in the error, and a 200 with no bytes is an error rather than a clip |
+| L06 | A role whose endpoint is local resolves with nothing in the environment and nothing in the key store |
+| L08 | A speak, a transcribe and a cancelled speak leave no goroutine behind (`testkit.NoLeaks`), and a cancellation stays a cancellation |
+| L09 | A role that names an endpoint is served by that endpoint's client, and one that names none keeps the default client |
+| L10 | (See L09: the zero value routes exactly as it did before endpoints existed.) |
+| L11 | A fallback is served by its own endpoint, so a local primary may fall back to a hosted engine |
+| L12 | An endpoint name with no client is refused while the attempts are built, before any request, and the error names it |
+| L13 | A transcription role's endpoint selects its transcriber, and the fallback stays on the role's endpoint because a transcription fallback is another model, not another role |
+| L14 | An unknown transcription endpoint is refused before any request, as for speech |
+| L15 | A WAV body is repackaged as the pcm clip it is: the samples without the header, the layout from the `fmt` chunk, and the pcm media type |
+| L16 | Two WAV chunks joined produce one playable file: the samples concatenate and `WAV` writes a single header |
+| L17 | A body labelled wav that is not one is an error, not a file a player cannot open |
+| L18 | An endpoint with no `base_url` is not a client, so the role that names it fails rather than calling a vendor nobody named |
+
 ## Budgets
 
 Two new packages, and the packages that gain a seam. The raises are deliberate
@@ -607,6 +717,12 @@ Each slice is one commit with its tests, and this document changes with it.
 10. Docs: `PROTOCOL.md`, `EXTENSIONS.md`, `ARCHITECTURE.md`, `INTEGRATION.md`,
     `DECISIONS.md`, `CHANGELOG.md`.
 
+[#86](https://github.com/AutumnsGrove/nova/issues/86) added the second adapter
+and the endpoints it needs, in four commits: `voice` routes a role and an attempt
+to a named client, `config` carries `voice.providers` and `endpoint:`,
+`voice/openai` speaks the two OpenAI-shaped endpoints, and `mode/providers`
+builds one client per configured address.
+
 ## Decisions to record
 
 Each of these gets a row in [`DECISIONS.md`](DECISIONS.md) in the slice that
@@ -629,3 +745,9 @@ makes it true:
 - `nova speak` chunks and joins by default, because a model's input cap is far
   below Nova's guard and "read this file aloud" should be one command.
 - There is no TUI entry point: a terminal is not an audio device.
+- A role addresses a local engine with `endpoint:`, named in a
+  `voice.providers` table, because one base URL cannot serve both a local
+  speech server and a hosted transcriber, and `provider:` was already the
+  OpenRouter pin.
+- A second adapter speaks the OpenAI shape, and Piper is covered by its server
+  rather than by a child process.

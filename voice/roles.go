@@ -3,6 +3,7 @@ package voice
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/AutumnsGrove/nova/provider"
@@ -28,6 +29,9 @@ type VoiceRole struct {
 	// fallback for the same reason the voice is not: it names the endpoints of
 	// one model, and the fallback is another model.
 	Provider map[string]any
+	// Endpoint names the client that serves this role. Empty means the default
+	// client, which is what every config without a voice endpoint gets.
+	Endpoint string
 	// Timeout is per attempt; zero means only the caller's context bounds it.
 	Timeout  time.Duration
 	Fallback *VoiceAttempt
@@ -40,6 +44,10 @@ type VoiceAttempt struct {
 	Format   Format
 	Speed    *float64
 	Provider map[string]any
+	// Endpoint is restated for the same reason the voice is: it names the
+	// client of one model, and the fallback is another model that may live on
+	// another engine entirely.
+	Endpoint string
 }
 
 // TranscribeRole maps an application role to a transcription model and its
@@ -48,6 +56,8 @@ type VoiceAttempt struct {
 type TranscribeRole struct {
 	Model    string
 	Fallback string
+	// Endpoint names the client that serves this role, as for speech.
+	Endpoint string
 	// Timeout is per attempt; zero means only the caller's context bounds it.
 	Timeout time.Duration
 }
@@ -58,6 +68,11 @@ type TranscribeRole struct {
 type RolesConfig struct {
 	Speaker     Speaker
 	Transcriber Transcriber
+	// Speakers names an endpoint per client. A role whose Endpoint is empty
+	// uses Speaker, so a config that names none behaves as it always did.
+	Speakers map[string]Speaker
+	// Transcribers names an endpoint per client, as Speakers does.
+	Transcribers map[string]Transcriber
 	// Speech maps an application role name to its model, voice and bounds.
 	Speech map[string]VoiceRole
 	// Transcribe maps an application role name to its model and bounds.
@@ -74,7 +89,10 @@ type RolesConfig struct {
 type Roles struct {
 	speaker         Speaker
 	transcriber     Transcriber
+	speakers        map[string]Speaker
+	transcribers    map[string]Transcriber
 	speech          map[string]VoiceRole
+	transcribe      map[string]TranscribeRole
 	speechTable     *roles.Table
 	transcribeTable *roles.Table
 }
@@ -97,14 +115,19 @@ func NewRoles(cfg RolesConfig) *Roles {
 		}
 		speechRoles[name] = entry
 	}
+	transcribe := make(map[string]TranscribeRole, len(cfg.Transcribe))
 	transcribeRoles := make(map[string]roles.Role, len(cfg.Transcribe))
 	for name, role := range cfg.Transcribe {
+		transcribe[name] = role
 		transcribeRoles[name] = roles.Role{Model: role.Model, Fallback: role.Fallback, Timeout: role.Timeout}
 	}
 	return &Roles{
-		speaker:     cfg.Speaker,
-		transcriber: cfg.Transcriber,
-		speech:      speech,
+		speaker:      cfg.Speaker,
+		transcriber:  cfg.Transcriber,
+		speakers:     cfg.Speakers,
+		transcribers: cfg.Transcribers,
+		speech:       speech,
+		transcribe:   transcribe,
 		speechTable: roles.New(roles.Config{
 			Roles: speechRoles, Clock: cfg.Clock, AllowAliases: cfg.AllowAliases, Subsystem: "voice",
 		}),
@@ -118,7 +141,7 @@ func NewRoles(cfg RolesConfig) *Roles {
 // bounds. Every attempt is validated before the first request, so a bad fallback
 // fails fast instead of after the primary has already been paid for.
 func (r *Roles) Speak(ctx context.Context, req SpeechRequest) (*Clip, error) {
-	if r.speaker == nil {
+	if r.speaker == nil && len(r.speakers) == 0 {
 		return nil, errors.New("voice: no speaker configured")
 	}
 	attempts, timeout, err := r.speechAttempts(req)
@@ -129,9 +152,9 @@ func (r *Roles) Speak(ctx context.Context, req SpeechRequest) (*Clip, error) {
 	var firstErr error
 	var usage provider.Usage
 	for _, attempt := range attempts {
-		request := attempt
+		request, speaker := attempt.request, attempt.speaker
 		u, err := r.speechTable.Attempt(ctx, request.Model, timeout, func(ctx context.Context, _ string) (provider.Usage, error) {
-			clip, err := r.speaker.Speak(ctx, request)
+			clip, err := speaker.Speak(ctx, request)
 			if clip == nil {
 				if err == nil {
 					err = errors.New("voice: speaker returned no clip")
@@ -162,18 +185,30 @@ func (r *Roles) Speak(ctx context.Context, req SpeechRequest) (*Clip, error) {
 	return &Clip{Usage: usage}, firstErr
 }
 
+// speechAttempt is one model in a role's chain with the client that serves it.
+// The endpoint is a property of the attempt rather than the role, because a
+// fallback may live on another engine: a local summariser falling back to a
+// hosted one is the case that makes it worth carrying.
+type speechAttempt struct {
+	request SpeechRequest
+	speaker Speaker
+}
+
 // speechAttempts resolves the request's model chain and builds one validated
 // request per attempt, filling the role's voice, format, speed and instructions.
-func (r *Roles) speechAttempts(req SpeechRequest) ([]SpeechRequest, time.Duration, error) {
+// It resolves every attempt's client here, so an unknown endpoint name is
+// refused before any request is made.
+func (r *Roles) speechAttempts(req SpeechRequest) ([]speechAttempt, time.Duration, error) {
 	chain, err := r.speechTable.Resolve(req.Model)
 	if err != nil {
 		return nil, 0, err
 	}
 	role, named := r.speech[req.Model]
-	attempts := make([]SpeechRequest, 0, len(chain.Models))
+	attempts := make([]speechAttempt, 0, len(chain.Models))
 	for i, model := range chain.Models {
 		attempt := req
 		attempt.Model = model
+		endpoint := ""
 		switch {
 		case i == 0 && named:
 			attempt.Voice = firstNonEmpty(attempt.Voice, role.Voice)
@@ -181,6 +216,7 @@ func (r *Roles) speechAttempts(req SpeechRequest) ([]SpeechRequest, time.Duratio
 			attempt.Speed = firstSpeed(attempt.Speed, role.Speed)
 			attempt.Instructions = firstNonEmpty(attempt.Instructions, role.Instructions)
 			attempt.Provider = firstProvider(attempt.Provider, role.Provider)
+			endpoint = role.Endpoint
 		case i > 0 && named && role.Fallback != nil:
 			attempt.Voice = role.Fallback.Voice
 			attempt.Format = firstFormat(role.Fallback.Format, attempt.Format)
@@ -189,25 +225,65 @@ func (r *Roles) speechAttempts(req SpeechRequest) ([]SpeechRequest, time.Duratio
 			// primary's pin that leaked into a fallback would be routed against a
 			// model it never named. A fallback without a pin means no pin.
 			attempt.Provider = role.Fallback.Provider
+			endpoint = role.Fallback.Endpoint
 		}
 		if err := attempt.Validate(); err != nil {
 			return nil, 0, err
 		}
-		attempts = append(attempts, attempt)
+		speaker, err := r.speakerFor(endpoint)
+		if err != nil {
+			return nil, 0, err
+		}
+		attempts = append(attempts, speechAttempt{request: attempt, speaker: speaker})
 	}
 	return attempts, chain.Timeout, nil
+}
+
+// speakerFor returns the client a role's attempt names. An empty name is the
+// default client, which is what every config without a voice endpoint uses.
+func (r *Roles) speakerFor(endpoint string) (Speaker, error) {
+	if endpoint == "" {
+		if r.speaker == nil {
+			return nil, errors.New("voice: no speaker configured")
+		}
+		return r.speaker, nil
+	}
+	if speaker, ok := r.speakers[endpoint]; ok && speaker != nil {
+		return speaker, nil
+	}
+	return nil, fmt.Errorf("voice: endpoint %q is not configured", endpoint)
+}
+
+// transcriberFor is speakerFor for the transcription direction.
+func (r *Roles) transcriberFor(endpoint string) (Transcriber, error) {
+	if endpoint == "" {
+		if r.transcriber == nil {
+			return nil, errors.New("voice: no transcriber configured")
+		}
+		return r.transcriber, nil
+	}
+	if transcriber, ok := r.transcribers[endpoint]; ok && transcriber != nil {
+		return transcriber, nil
+	}
+	return nil, fmt.Errorf("voice: endpoint %q is not configured", endpoint)
 }
 
 // Transcribe resolves req.Model and calls the transcriber with the role's
 // bounds, summing the usage of every attempt.
 func (r *Roles) Transcribe(ctx context.Context, req TranscribeRequest) (*Transcript, error) {
-	if r.transcriber == nil {
+	if r.transcriber == nil && len(r.transcribers) == 0 {
 		return nil, errors.New("voice: no transcriber configured")
 	}
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
 	chain, err := r.transcribeTable.Resolve(req.Model)
+	if err != nil {
+		return nil, err
+	}
+	// A transcription fallback is another model, not another role, so the
+	// endpoint is the role's and covers both attempts.
+	transcriber, err := r.transcriberFor(r.transcribe[req.Model].Endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +294,7 @@ func (r *Roles) Transcribe(ctx context.Context, req TranscribeRequest) (*Transcr
 		attempt := req
 		attempt.Model = model
 		u, err := r.transcribeTable.Attempt(ctx, model, chain.Timeout, func(ctx context.Context, _ string) (provider.Usage, error) {
-			transcript, err := r.transcriber.Transcribe(ctx, attempt)
+			transcript, err := transcriber.Transcribe(ctx, attempt)
 			if transcript == nil {
 				if err == nil {
 					err = errors.New("voice: transcriber returned no transcript")

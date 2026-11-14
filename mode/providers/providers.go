@@ -25,6 +25,7 @@ import (
 	"github.com/AutumnsGrove/nova/provider/openrouter"
 	"github.com/AutumnsGrove/nova/provider/route"
 	"github.com/AutumnsGrove/nova/voice"
+	voiceopenai "github.com/AutumnsGrove/nova/voice/openai"
 	voiceor "github.com/AutumnsGrove/nova/voice/openrouter"
 )
 
@@ -221,11 +222,46 @@ func voiceClient(opt Options) *voiceor.Client {
 	})
 }
 
+// voiceEndpoints builds one OpenAI-compatible client per configured endpoint. A
+// local engine needs no key, so an endpoint with nothing to resolve gets no
+// Authorization header; a keyed one takes its token from its own config key or
+// the environment variable it names, never from OpenRouter's credential.
+//
+// An endpoint with no base_url is skipped rather than defaulted to OpenAI's own
+// API. Config already warns about it, and a role that names it should fail than
+// quietly spend money at a vendor nobody asked for.
+func voiceEndpoints(opt Options) (map[string]voice.Speaker, map[string]voice.Transcriber) {
+	getenv := opt.Getenv
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	speakers := make(map[string]voice.Speaker, len(opt.Config.Voice.Providers))
+	transcribers := make(map[string]voice.Transcriber, len(opt.Config.Voice.Providers))
+	for name, endpoint := range opt.Config.Voice.Providers {
+		if endpoint.BaseURL == "" {
+			continue
+		}
+		key := endpoint.APIKey
+		if key == "" && endpoint.APIKeyEnv != "" {
+			key = getenv(endpoint.APIKeyEnv)
+		}
+		client := voiceopenai.New(voiceopenai.Config{
+			BaseURL:        endpoint.BaseURL,
+			APIKey:         key,
+			TranscribeJSON: endpoint.TranscribeJSON,
+		})
+		speakers[name] = client
+		transcribers[name] = client
+	}
+	return speakers, transcribers
+}
+
 // BuildSpeaker returns the voice client wrapped in the speech roles from the
 // config. A speech role carries its own voice, because a voice name belongs to
 // one model and a fallback restates its own.
 func BuildSpeaker(opt Options) voice.Speaker {
 	client := voiceClient(opt)
+	speakers, _ := voiceEndpoints(opt)
 	roles := make(map[string]voice.VoiceRole, len(opt.Config.Voice.Speech.Roles))
 	for name, role := range opt.Config.Voice.Speech.Roles {
 		entry := voice.VoiceRole{
@@ -235,6 +271,7 @@ func BuildSpeaker(opt Options) voice.Speaker {
 			Speed:        role.Speed,
 			Instructions: role.Instructions,
 			Provider:     role.Provider,
+			Endpoint:     role.Endpoint,
 			Timeout:      time.Duration(role.TimeoutMS) * time.Millisecond,
 		}
 		if role.Fallback != nil {
@@ -244,12 +281,14 @@ func BuildSpeaker(opt Options) voice.Speaker {
 				Format:   voice.Format(role.Fallback.Format),
 				Speed:    role.Fallback.Speed,
 				Provider: role.Fallback.Provider,
+				Endpoint: role.Fallback.Endpoint,
 			}
 		}
 		roles[name] = entry
 	}
 	return voice.NewRoles(voice.RolesConfig{
 		Speaker:      client,
+		Speakers:     speakers,
 		Speech:       roles,
 		AllowAliases: opt.Config.Voice.AllowAliases,
 	})
@@ -259,16 +298,19 @@ func BuildSpeaker(opt Options) voice.Speaker {
 // from the config.
 func BuildTranscriber(opt Options) voice.Transcriber {
 	client := voiceClient(opt)
+	_, transcribers := voiceEndpoints(opt)
 	roles := make(map[string]voice.TranscribeRole, len(opt.Config.Voice.Transcribe.Roles))
 	for name, role := range opt.Config.Voice.Transcribe.Roles {
 		roles[name] = voice.TranscribeRole{
 			Model:    role.Model,
 			Fallback: role.Fallback,
+			Endpoint: role.Endpoint,
 			Timeout:  time.Duration(role.TimeoutMS) * time.Millisecond,
 		}
 	}
 	return voice.NewRoles(voice.RolesConfig{
 		Transcriber:  client,
+		Transcribers: transcribers,
 		Transcribe:   roles,
 		AllowAliases: opt.Config.Voice.AllowAliases,
 	})

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -507,5 +508,101 @@ func TestBuildTranscriber_A07_RoleTable(t *testing.T) {
 	}
 	if reqs := srv.Requests(); len(reqs) != 1 || reqs[0].Path != "/audio/transcriptions" {
 		t.Errorf("requests = %+v", reqs)
+	}
+}
+
+// TestBuildSpeaker_L02_EndpointWinsOverTheDefault points one role at a local
+// engine and leaves another on the harness's own client: the request must land
+// on the engine named, with no credential borrowed from the other one.
+func TestBuildSpeaker_L02_EndpointWinsOverTheDefault(t *testing.T) {
+	local := testkit.NewVoiceServer(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
+	cfg := &config.Config{}
+	cfg.Voice.Providers = map[string]config.VoiceProviderConfig{
+		"local": {BaseURL: local.URL},
+	}
+	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
+		"narrate": {Model: "kokoro", Voice: "af_heart", Endpoint: "local"},
+	}
+	speaker := BuildSpeaker(Options{
+		Config: cfg,
+		Getenv: envFrom(map[string]string{"OPENROUTER_API_KEY": "or-key"}),
+	})
+	if _, err := speaker.Speak(context.Background(), voice.SpeechRequest{Model: "narrate", Input: "hi"}); err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	reqs := local.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("local requests = %d, want 1", len(reqs))
+	}
+	if got := reqs[0].Header.Get("Authorization"); got != "" {
+		t.Errorf("Authorization = %q, want none: a local engine borrows no key", got)
+	}
+}
+
+// TestBuildSpeaker_L02_EndpointKeyComesFromItsEnv: a hosted endpoint takes its
+// own key, named in config, rather than the harness's OpenRouter credential.
+func TestBuildSpeaker_L02_EndpointKeyComesFromItsEnv(t *testing.T) {
+	hosted := testkit.NewVoiceServer(t, testkit.VoiceServerTurn{Audio: []byte{1}, ContentType: "audio/mpeg"})
+	cfg := &config.Config{}
+	cfg.Voice.Providers = map[string]config.VoiceProviderConfig{
+		"hosted": {BaseURL: hosted.URL, APIKeyEnv: "MY_TTS_KEY"},
+	}
+	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
+		"narrate": {Model: "gpt-4o-mini-tts", Voice: "alloy", Endpoint: "hosted"},
+	}
+	speaker := BuildSpeaker(Options{
+		Config: cfg,
+		Getenv: envFrom(map[string]string{"MY_TTS_KEY": "sk-endpoint-key-123", "OPENROUTER_API_KEY": "or-key"}),
+	})
+	if _, err := speaker.Speak(context.Background(), voice.SpeechRequest{Model: "narrate", Input: "hi"}); err != nil {
+		t.Fatalf("Speak: %v", err)
+	}
+	if got := hosted.Requests()[0].Header.Get("Authorization"); got != "Bearer sk-endpoint-key-123" {
+		t.Errorf("Authorization = %q, want the endpoint's own key", got)
+	}
+}
+
+// TestBuildTranscriber_L06_LocalRoleNeedsNoKey: a local transcription role
+// resolves with nothing in the environment and nothing in the key store.
+func TestBuildTranscriber_L06_LocalRoleNeedsNoKey(t *testing.T) {
+	local := testkit.NewVoiceServer(t, testkit.VoiceServerTurn{Body: `{"text":"hi"}`})
+	cfg := &config.Config{}
+	cfg.Voice.Providers = map[string]config.VoiceProviderConfig{
+		"local": {BaseURL: local.URL},
+	}
+	cfg.Voice.Transcribe.Roles = map[string]config.TranscribeRoleConfig{
+		"default": {Model: "whisper-1", Endpoint: "local"},
+	}
+	transcriber := BuildTranscriber(Options{Config: cfg, Getenv: envFrom(nil)})
+	got, err := transcriber.Transcribe(context.Background(), voice.TranscribeRequest{
+		Model: "default", Audio: []byte{1}, Format: voice.FormatMP3,
+	})
+	if err != nil {
+		t.Fatalf("Transcribe with no key at all: %v", err)
+	}
+	if got.Text != "hi" {
+		t.Errorf("text = %q, want hi", got.Text)
+	}
+	if got.Usage.CostSource != "" {
+		t.Errorf("cost source = %q, want none from a local server", got.Usage.CostSource)
+	}
+}
+
+// TestBuildSpeaker_EndpointWithoutBaseURLIsNotA Client: an endpoint the config
+// refused to warn about is one with no address, so the role that names it fails
+// instead of quietly calling OpenAI's own API.
+func TestBuildSpeaker_L18_EndpointWithoutBaseURLFails(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Voice.Providers = map[string]config.VoiceProviderConfig{"broken": {}}
+	cfg.Voice.Speech.Roles = map[string]config.SpeechRoleConfig{
+		"narrate": {Model: "kokoro", Voice: "af_heart", Endpoint: "broken"},
+	}
+	speaker := BuildSpeaker(Options{Config: cfg, Getenv: envFrom(nil)})
+	_, err := speaker.Speak(context.Background(), voice.SpeechRequest{Model: "narrate", Input: "hi"})
+	if err == nil {
+		t.Fatal("Speak() = nil, want an unknown endpoint error rather than a call to api.openai.com")
+	}
+	if !strings.Contains(err.Error(), "broken") {
+		t.Errorf("error = %v, want it to name the endpoint", err)
 	}
 }

@@ -48,7 +48,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Sessions are named in the resume picker: the last `/name`, or a one-line preview of the first user
   message when the session was never named, instead of `untitled` for every row.
 - Quitting the TUI prints the way back to the conversation, `To resume this session: nova --session
-  <id>`, and `--session` accepts that id as well as a file path.
+  <id>`, and `--session` accepts that id as well as a file path. A session started with `--cwd` or
+  `--session` is outside this directory's session directory, so the hint prints its quoted path instead.
 
 ### Fixed
 

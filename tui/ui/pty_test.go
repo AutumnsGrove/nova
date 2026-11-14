@@ -239,11 +239,13 @@ func TestPTY_PTY04_ResumeHint(t *testing.T) {
 	}
 	quit(t, reader, master)
 	waitQuit(t, done)
-	id, _, entries := srv.Session()
-	if id == "" || entries == 0 {
-		t.Fatalf("session id = %q entries = %d, want a conversation to resume", id, entries)
+	id, _, resumable := srv.Session()
+	if id == "" || !resumable {
+		t.Fatalf("session id = %q resumable = %v, want a conversation to resume", id, resumable)
 	}
-	if out, ok := reader.waitFor("nova --session "+id, 5*time.Second); !ok {
+	// The session path is not under this process's session directory, so the
+	// hint names it by path; the id form is covered by RSM03.
+	if out, ok := reader.waitFor("To resume this session: nova --session", 5*time.Second); !ok {
 		t.Fatalf("the resume hint was never printed:\n%s", ansi.Strip(out))
 	}
 }

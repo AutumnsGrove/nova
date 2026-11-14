@@ -293,8 +293,10 @@ To resume this session: nova --session cf40938bb280e649
 ```
 
 `--session` takes an id as well as a file path, and the same id works with
-`session.resume` and appears in `nova sessions`. The picker labels a session from the
-last `/name`, or a one-line preview of its first message when it was never named.
+`session.resume` and appears in `nova sessions`. A session started with `--cwd` or
+`--session` does not live in this directory's session directory, so the hint prints its
+quoted path instead of an id that would not resolve. The picker labels a session from
+the last `/name`, or a one-line preview of its first message when it was never named.
 
 ## Bundled extension UIs
 

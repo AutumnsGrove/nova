@@ -98,8 +98,8 @@ func runWith(ctx context.Context, srv *mode.Server, opt RunOptions, in io.Reader
 	reportProgramError(os.Stderr, err)
 	// The alt screen is restored by now, so this lands in the user's terminal
 	// rather than on a screen that is about to be thrown away.
-	id, _, entries := srv.Session()
-	_, _ = fmt.Fprint(out, resumeHint(id, entries))
+	id, path, resumable := srv.Session()
+	_, _ = fmt.Fprint(out, resumeHint(cwd, id, path, resumable))
 	return err
 }
 

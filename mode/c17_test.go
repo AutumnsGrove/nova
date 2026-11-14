@@ -494,3 +494,23 @@ func TestHandlers_SVA17_UploadStoreHasACeiling(t *testing.T) {
 		t.Fatalf("a refused upload must not evict a stored one: %v", err)
 	}
 }
+
+// The exit hint is built from Server.Session, so a session whose only entry is
+// a name must not look resumable: the picker filters it out, and following the
+// hint would open an empty conversation.
+func TestHandlers_SVA19_SessionWithoutHistoryIsNotResumable(t *testing.T) {
+	s, _ := testServer(t)
+	if resp := s.Handle(context.Background(), proto.Command{Type: proto.CmdSessionName, Name: "named"}); !resp.OK {
+		t.Fatalf("session.name = %+v", resp)
+	}
+	if id, path, resumable := s.Session(); id == "" || path == "" || resumable {
+		t.Fatalf("Session() = %q %q %v, want an id and path but no history", id, path, resumable)
+	}
+	msg := message.User("hello")
+	if _, err := s.store.Append(session.Entry{Type: session.TypeMessage, Message: &msg}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if _, _, resumable := s.Session(); !resumable {
+		t.Fatal("a session with a message should be resumable")
+	}
+}

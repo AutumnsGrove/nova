@@ -301,3 +301,144 @@ func TestTranscribe_NoTranscriber(t *testing.T) {
 		t.Fatal("Transcribe() = nil, want an error")
 	}
 }
+
+// TestSpeak_A33_EndpointNamesItsSpeaker: a role that names an endpoint is served
+// by that endpoint's client, not the default one.
+func TestSpeak_A33_EndpointNamesItsSpeaker(t *testing.T) {
+	def := &fakeSpeaker{steps: []speakStep{{clip: &Clip{Format: FormatMP3}}}}
+	local := &fakeSpeaker{steps: []speakStep{{clip: &Clip{Format: FormatPCM}}}}
+	roles := NewRoles(RolesConfig{
+		Speaker:  def,
+		Speakers: map[string]Speaker{"local": local},
+		Speech: map[string]VoiceRole{
+			"narrate": {Model: "kokoro", Voice: "af_heart", Endpoint: "local"},
+		},
+	})
+	got, err := roles.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"})
+	if err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if len(local.calls) != 1 || len(def.calls) != 0 {
+		t.Fatalf("local calls = %d, default calls = %d, want 1 and 0", len(local.calls), len(def.calls))
+	}
+	if got.Format != FormatPCM {
+		t.Errorf("clip format = %q, want the local speaker's pcm", got.Format)
+	}
+}
+
+// TestSpeak_A34_NoEndpointUsesTheDefault: the zero value routes as it always
+// did, so an existing config sends nothing new.
+func TestSpeak_A34_NoEndpointUsesTheDefault(t *testing.T) {
+	def := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
+	local := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
+	roles := NewRoles(RolesConfig{
+		Speaker:  def,
+		Speakers: map[string]Speaker{"local": local},
+		Speech: map[string]VoiceRole{
+			"narrate": {Model: "openai/gpt-4o-mini-tts", Voice: "alloy"},
+		},
+	})
+	if _, err := roles.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"}); err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if len(def.calls) != 1 || len(local.calls) != 0 {
+		t.Fatalf("default calls = %d, local calls = %d, want 1 and 0", len(def.calls), len(local.calls))
+	}
+}
+
+// TestSpeak_A35_FallbackRestatesItsEndpoint: a fallback is served by its own
+// endpoint, so a local primary can fall back to a hosted one.
+func TestSpeak_A35_FallbackRestatesItsEndpoint(t *testing.T) {
+	local := &fakeSpeaker{steps: []speakStep{{err: errors.New("502")}}}
+	hosted := &fakeSpeaker{steps: []speakStep{{clip: &Clip{Model: "hosted-tts"}}}}
+	roles := NewRoles(RolesConfig{
+		Speakers: map[string]Speaker{"local": local, "openai": hosted},
+		Speech: map[string]VoiceRole{
+			"narrate": {
+				Model: "kokoro", Voice: "af_heart", Endpoint: "local",
+				Fallback: &VoiceAttempt{Model: "hosted-tts", Voice: "alloy", Endpoint: "openai"},
+			},
+		},
+	})
+	got, err := roles.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"})
+	if err != nil {
+		t.Fatalf("Speak() = %v", err)
+	}
+	if len(local.calls) != 1 || len(hosted.calls) != 1 {
+		t.Fatalf("local calls = %d, hosted calls = %d, want 1 each", len(local.calls), len(hosted.calls))
+	}
+	if hosted.calls[0].Model != "hosted-tts" || hosted.calls[0].Voice != "alloy" {
+		t.Errorf("fallback call = %+v", hosted.calls[0])
+	}
+	if got.Model != "hosted-tts" {
+		t.Errorf("clip model = %q, want the fallback's", got.Model)
+	}
+}
+
+// TestSpeak_A36_UnknownEndpointFailsBeforeAnyRequest: a name with no client is a
+// configuration error, learned without spending a request.
+func TestSpeak_A36_UnknownEndpointFailsBeforeAnyRequest(t *testing.T) {
+	def := &fakeSpeaker{steps: []speakStep{{clip: &Clip{}}}}
+	roles := NewRoles(RolesConfig{
+		Speaker: def,
+		Speech: map[string]VoiceRole{
+			"narrate": {Model: "kokoro", Voice: "af_heart", Endpoint: "nowhere"},
+		},
+	})
+	_, err := roles.Speak(context.Background(), SpeechRequest{Model: "narrate", Input: "hi"})
+	if err == nil {
+		t.Fatal("Speak() = nil, want an unknown endpoint error")
+	}
+	if !strings.Contains(err.Error(), "nowhere") {
+		t.Errorf("error = %v, want it to name the endpoint", err)
+	}
+	if len(def.calls) != 0 {
+		t.Errorf("speaker was called %d times, want 0", len(def.calls))
+	}
+}
+
+// TestTranscribe_A37_EndpointNamesItsTranscriber: the transcription direction
+// routes by the same name, because a local whisper server is the other half.
+func TestTranscribe_A37_EndpointNamesItsTranscriber(t *testing.T) {
+	def := &fakeTranscriber{steps: []transcribeStep{{transcript: &Transcript{Text: "default"}}}}
+	local := &fakeTranscriber{steps: []transcribeStep{{transcript: &Transcript{Text: "local"}}}}
+	roles := NewRoles(RolesConfig{
+		Transcriber:  def,
+		Transcribers: map[string]Transcriber{"local": local},
+		Transcribe: map[string]TranscribeRole{
+			"default": {Model: "whisper-1", Endpoint: "local"},
+		},
+	})
+	got, err := roles.Transcribe(context.Background(), TranscribeRequest{Model: "default", Audio: []byte{1}, Format: FormatMP3})
+	if err != nil {
+		t.Fatalf("Transcribe() = %v", err)
+	}
+	if got.Text != "local" {
+		t.Errorf("text = %q, want the local transcriber's", got.Text)
+	}
+	if len(def.calls) != 0 {
+		t.Errorf("default transcriber was called %d times, want 0", len(def.calls))
+	}
+}
+
+// TestTranscribe_A38_UnknownEndpointFailsBeforeAnyRequest mirrors the speech
+// direction: a typo costs no request.
+func TestTranscribe_A38_UnknownEndpointFailsBeforeAnyRequest(t *testing.T) {
+	def := &fakeTranscriber{steps: []transcribeStep{{transcript: &Transcript{Text: "x"}}}}
+	roles := NewRoles(RolesConfig{
+		Transcriber: def,
+		Transcribe: map[string]TranscribeRole{
+			"default": {Model: "whisper-1", Endpoint: "nowhere"},
+		},
+	})
+	_, err := roles.Transcribe(context.Background(), TranscribeRequest{Model: "default", Audio: []byte{1}, Format: FormatMP3})
+	if err == nil {
+		t.Fatal("Transcribe() = nil, want an unknown endpoint error")
+	}
+	if !strings.Contains(err.Error(), "nowhere") {
+		t.Errorf("error = %v, want it to name the endpoint", err)
+	}
+	if len(def.calls) != 0 {
+		t.Errorf("transcriber was called %d times, want 0", len(def.calls))
+	}
+}

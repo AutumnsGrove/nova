@@ -56,7 +56,7 @@ nova/
     ollama/       local /api/embed                              ≤ 180
     openrouter/   preset: embeddings and live roster            ≤ 220
   voice/          speech and transcription contract, roles,
-                  text prep and the WAV header                 ≤ 540
+                  endpoints, text prep and the WAV header     ≤ 600
     openrouter/   preset: speech, transcriptions, live roster   ≤ 700
   auth/           OAuth PKCE login, key store                   ≤ 500
   tool/           Tool contract, registry, schema validation    ≤ 660

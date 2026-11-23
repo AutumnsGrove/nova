@@ -137,6 +137,7 @@ func (h *Host) connect(ctx context.Context, st *serverState) error {
 	h.mu.Lock()
 	st.connecting = true
 	st.reported = false
+	st.err = nil
 	h.mu.Unlock()
 	defer func() {
 		h.mu.Lock()
@@ -159,26 +160,29 @@ func (h *Host) connect(ctx context.Context, st *serverState) error {
 		h.mu.Unlock()
 		return err
 	}
+	// Store the connection before checking it: a death that lands after this
+	// assignment is then seen either by the check below or by died, which finds a
+	// non-nil client to close. Checking first left a window where neither path
+	// owned the connection, and the process outlived the host.
 	h.mu.Lock()
+	st.client = client
 	st.pid = client.Pid()
 	h.mu.Unlock()
 	if err := client.Err(); err != nil {
-		// The reader stopped before the connection was stored, so died had
-		// nothing to close: the process may still be alive and must not outlive
-		// the host.
+		// The reader stopped before the check: close it here, because died may
+		// have run while there was nothing stored to close.
 		_ = client.Close()
 		lost := fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, err)
 		h.mu.Lock()
+		if st.client == client {
+			st.client = nil
+		}
 		if st.err == nil {
 			st.err = lost
 		}
 		h.mu.Unlock()
 		return lost
 	}
-	h.mu.Lock()
-	st.client = client
-	st.err = nil
-	h.mu.Unlock()
 	if err := h.refresh(ctx, st); err != nil {
 		h.mu.Lock()
 		st.err = err

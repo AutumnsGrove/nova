@@ -313,6 +313,10 @@ Error codes are stable strings: `bad_request`, `busy`, `not_found`,
 
 - `POST /v1/commands` takes one command frame and returns its response frame.
 - `GET /v1/events` is a server-sent-event stream; each event frame is one `data:` line.
+  Comment frames carry no event: `: ping` keeps an idle stream alive, and
+  `: closing` is the last frame before the server hangs up on a shutdown, so a
+  client can tell a shutdown from a dropped connection and not reconnect. A
+  client that falls behind is dropped without it.
 - `POST /v1/ui_response` answers a `ui_request`.
 - `GET /v1/state` is the same as `get_state`.
 - `POST /v1/attachments` stores one image's raw bytes (an optional `?name=` is the

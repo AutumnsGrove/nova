@@ -181,6 +181,16 @@ func (h *Host) refresh(ctx context.Context, st *serverState) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.unregister(st)
+	// The listing took a round trip, and the process may have died during it: a
+	// server that answered and then exited must not leave its tools registered.
+	// The death reports itself once, in died or in the caller, so this returns
+	// nil rather than reporting it a second time.
+	if client.Err() != nil || st.client != client {
+		if client.Err() != nil {
+			st.err = fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, client.Err())
+		}
+		return nil
+	}
 	var (
 		names []string
 		warns []error
@@ -221,10 +231,11 @@ func (h *Host) died(st *serverState, err error) {
 		return
 	}
 	h.unregister(st)
-	st.err = fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, err)
+	lost := fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, err)
+	st.err = lost
 	st.client = nil
 	h.mu.Unlock()
-	h.warn(st.err)
+	h.warn(lost)
 }
 
 // unregister removes the names one server contributed. It is safe when the

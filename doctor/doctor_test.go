@@ -10,14 +10,22 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/diag"
+)
+
+var (
+	mcpServerOnce sync.Once
+	mcpServerPath string
+	mcpServerErr  error
 )
 
 // roundTripFunc adapts a function to http.RoundTripper.
@@ -488,5 +496,136 @@ func TestDoctor_DRX_UnreadableConfigFails(t *testing.T) {
 	c := find(t, checks, "config")
 	if c.Status != Fail {
 		t.Fatalf("config = %s %q, want fail", c.Status, c.Detail)
+	}
+}
+
+func TestDoctor_MCPChecks(t *testing.T) {
+	opt := testOptions(t)
+	writeAgentConfig(t, opt.Home, `
+mcp:
+  servers:
+    - name: alpha
+      command: alpha-server
+    - name: beta
+      command: beta-server
+      timeout_ms: 250
+`)
+	opt.MCPDial = func(_ context.Context, srv config.MCPServer) (int, error) {
+		if srv.Name == "beta" {
+			return 0, errors.New("mcp: beta: start beta-server: executable file not found in $PATH")
+		}
+		return 3, nil
+	}
+	checks := Run(context.Background(), opt)
+
+	ok := find(t, checks, "mcp/alpha")
+	if ok.Status != OK || !strings.Contains(ok.Detail, "3 tool(s)") {
+		t.Fatalf("alpha check = %+v, want ok with its tool count", ok)
+	}
+	bad := find(t, checks, "mcp/beta")
+	if bad.Status != Warn || !strings.Contains(bad.Detail, "not found") {
+		t.Fatalf("beta check = %+v, want a warning with the reason", bad)
+	}
+	if bad.Fix == "" {
+		t.Fatal("a failed server needs a fix line")
+	}
+	// Order follows the config, between the extensions and the project.
+	index := func(name string) int {
+		for i, c := range checks {
+			if c.Name == name {
+				return i
+			}
+		}
+		return -1
+	}
+	if !(index("extensions") < index("mcp/alpha") && index("mcp/alpha") < index("mcp/beta") && index("mcp/beta") < index("project")) {
+		t.Fatalf("checks = %v, want alpha then beta between extensions and project", names(checks))
+	}
+}
+
+func TestDoctor_NoMCPServers(t *testing.T) {
+	checks := Run(context.Background(), testOptions(t))
+	for _, c := range checks {
+		if strings.HasPrefix(c.Name, "mcp/") {
+			t.Fatalf("check %q without a configured server", c.Name)
+		}
+	}
+}
+
+// writeAgentConfig writes the user config for a doctor test.
+func writeAgentConfig(t *testing.T, home, body string) {
+	t.Helper()
+	path := filepath.Join(config.UserConfigDir(home), "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// mcpserverBin builds the scripted MCP server once for the package.
+func mcpserverBin(t *testing.T) string {
+	t.Helper()
+	mcpServerOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "nova-mcpserver-doctor")
+		if err != nil {
+			mcpServerErr = err
+			return
+		}
+		mcpServerPath = filepath.Join(dir, "mcpserver")
+		out, err := exec.Command("go", "build", "-o", mcpServerPath, "../mcp/testdata/mcpserver").CombinedOutput()
+		if err != nil {
+			mcpServerErr = fmt.Errorf("build mcpserver: %v\n%s", err, out)
+		}
+	})
+	if mcpServerErr != nil {
+		t.Fatal(mcpServerErr)
+	}
+	return mcpServerPath
+}
+
+func TestDoctor_DialMCPKeepsTheEnvironment(t *testing.T) {
+	// The real dial: a server that declares env: still needs PATH and HOME, so
+	// doctor must not report a failure the running server would not have.
+	cfg := config.Defaults()
+	srv := config.MCPServer{
+		Name: "srv", Command: mcpserverBin(t),
+		Args: []string{"-role", "ok"},
+		Env:  map[string]string{"SERVER_OWN": "yes"},
+	}
+	tools, err := dialMCP(context.Background(), &cfg, srv)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if tools != 4 {
+		t.Fatalf("tools = %d, want the server's four", tools)
+	}
+}
+
+func TestDoctor_MCPInheritScrubsCredentials(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "sk-doctor-secret")
+	t.Setenv("GITHUB_TOKEN", "gh-doctor")
+	t.Setenv("HIDDEN_ME", "hidden")
+	cfg := config.Defaults()
+	// The config's own lists are honoured here, because doctor must give a
+	// server the same environment the run does.
+	cfg.Extensions.ScrubEnv = []string{"_TOKEN", "HIDDEN_ME"}
+	cfg.Extensions.PassEnv = []string{"GITHUB_TOKEN"}
+	inherit := mcpInherit(&cfg)
+	for _, kv := range inherit {
+		if strings.HasPrefix(kv, "OPENROUTER_API_KEY=") {
+			t.Fatalf("inherit carries the credential: %q", kv)
+		}
+	}
+	joined := strings.Join(inherit, "\n")
+	if !strings.Contains(joined, "PATH=") {
+		t.Fatalf("inherit = %v, want the rest of the environment", inherit)
+	}
+	if !strings.Contains(joined, "GITHUB_TOKEN=gh-doctor") {
+		t.Fatalf("inherit = %v, want the passed-through name kept", inherit)
+	}
+	if strings.Contains(joined, "HIDDEN_ME=hidden") {
+		t.Fatalf("inherit = %v, want the config's scrub_env honoured", inherit)
 	}
 }

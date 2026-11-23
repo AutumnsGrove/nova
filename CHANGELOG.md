@@ -7,8 +7,30 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- MCP servers, declared in config, so Nova can reach third-party tools: an `mcp.servers` entry names
+  a command, and Nova starts it, speaks Model Context Protocol to it over stdio, and offers its tools
+  to the model beside the built-in ones. A tool is registered as `<server>__<tool>` with the server's
+  description prefixed, its JSON Schema and its annotation hints, so the permission policy decides it
+  like any other tool. Text results join into the tool's content, images become parts the model sees,
+  `isError` is a failed result, and anything else is an omission note rather than a dropped result.
+  Servers connect at load and after `reload`, a `tools/list_changed` notification is followed without
+  one, one call is bounded by `timeout_ms`, and shutdown escalates stdin → SIGTERM → SIGKILL with
+  every wait bounded. A server inherits Nova's environment minus its credentials and everything in
+  `extensions.scrub_env`, a server that dies after the handshake loses its tools and is reported
+  failed, and each dead server is one warning. A server
+  that will not start is a warning, a `get_extensions` row and a `/mcp` line, never a broken run
+  (#51). `nova doctor` starts each configured server and reports it. See `docs/MCP.md`.
+- The `mcp` extension capability is now reserved and warns: an extension cannot start a process the
+  host does not supervise, so a server is declared in config instead. A manifest that declares it
+  still loads, and the warning names `mcp.servers` (#51).
+
 ### Fixed
 
+- A manifest warning now reaches the user. `ext` collected them (an unknown key, and now a reserved
+  capability) and reported none of them; each one is an `extension_error` carrying the extension's
+  name, so a typo in `extension.yaml` is visible instead of silent (#51).
 - `nova serve` always ends an event stream with the `: closing` comment on shutdown. Closing the
   server closed its done channel and every client channel together, so the stream loop's select had
   two ready cases and took either at random; the channel case returned without the comment, leaving
@@ -26,6 +48,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- `tool.ScrubEnvPatterns` takes a third argument: the names to pass through even when a pattern
+  matches. It is a new helper for this release, so nothing outside Nova calls it, but the signature
+  is exported and code that adopted it from this branch needs the extra argument (#51).
 - `tui/cli.Execute` takes a `context.Context` as its first argument instead of creating a
   background one, so an embedder can hand the command tree the same signal context the `nova`
   binary does. Code that calls it with one argument needs to pass a context (#126).

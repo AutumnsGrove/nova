@@ -12,12 +12,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AutumnsGrove/nova/auth"
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/diag"
+	"github.com/AutumnsGrove/nova/mcp"
+	"github.com/AutumnsGrove/nova/tool"
 )
+
+// dialTimeout bounds starting one MCP server and listing its tools, so doctor
+// never hangs on a server that is asleep at the wheel.
+const dialTimeout = 5 * time.Second
 
 // Status is how a check ended.
 type Status int
@@ -104,6 +112,10 @@ type Options struct {
 	// ReadFile is injected by tests; nil means os.ReadFile.
 	ReadFile func(string) ([]byte, error)
 
+	// MCPDial starts one configured MCP server and returns its tool count. It is
+	// a function so a test can answer without starting a process.
+	MCPDial func(ctx context.Context, srv config.MCPServer) (int, error)
+
 	// Timeout bounds the whole run, default 30s.
 	Timeout time.Duration
 	// NetworkTimeout bounds the network check, default 5s.
@@ -130,8 +142,9 @@ func Run(ctx context.Context, opt Options) []Check {
 		terminalCheck(opt),
 		logCheck(opt),
 	}
-	checks = append(checks, configCheck(opt), dirsCheck(opt), trustCheck(opt), extensionsCheck(opt), projectCheck(opt))
-	return checks
+	checks = append(checks, configCheck(opt), dirsCheck(opt), trustCheck(opt), extensionsCheck(opt))
+	checks = append(checks, mcpChecks(ctx, opt)...)
+	return append(checks, projectCheck(opt))
 }
 
 // withDefaults fills the zero options.
@@ -431,6 +444,71 @@ func extensionsCheck(opt Options) Check {
 		fix = "run `nova ext check <dir>` for the failing extension"
 	}
 	return Check{Name: "extensions", Status: status, Detail: strings.Join(parts, "; "), Fix: fix}
+}
+
+// mcpChecks starts every configured MCP server, lists its tools and reports one
+// line per server. A server that will not start is a warning with its reason and
+// the config path to look at, never a failure: a broken MCP server must not stop
+// Nova working. Nothing a server prints is echoed: it is another program's
+// output, and no server text reaches a doctor line.
+func mcpChecks(ctx context.Context, opt Options) []Check {
+	cfg, _, err := config.Load(config.LoadOptions{
+		CWD: opt.CWD, Home: opt.Home, Env: opt.Env, ReadFile: opt.ReadFile,
+	})
+	if err != nil || len(cfg.MCP.Servers) == 0 {
+		return nil
+	}
+	if opt.MCPDial == nil {
+		opt.MCPDial = func(ctx context.Context, srv config.MCPServer) (int, error) {
+			return dialMCP(ctx, cfg, srv)
+		}
+	}
+	checks := make([]Check, len(cfg.MCP.Servers))
+	var wg sync.WaitGroup
+	for i, srv := range cfg.MCP.Servers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tools, err := opt.MCPDial(ctx, srv)
+			check := Check{Name: "mcp/" + srv.Name, Status: OK, Detail: fmt.Sprintf("%d tool(s)", tools)}
+			if err != nil {
+				check = Check{Name: "mcp/" + srv.Name, Status: Warn, Detail: err.Error(),
+					Fix: "check mcp.servers: run the command by hand to see why it fails"}
+			}
+			checks[i] = check
+		}()
+	}
+	wg.Wait()
+	return checks
+}
+
+// mcpInherit is the environment doctor gives a server: the same one mode gives
+// it — Nova's own, minus its credentials and anything the config hides, plus
+// anything the config passes through — so doctor reports what a real run would.
+func mcpInherit(cfg *config.Config) []string {
+	return tool.ScrubEnvPatterns(os.Environ(), append(providerauth.CredentialEnv(), cfg.Extensions.ScrubEnv...), cfg.Extensions.PassEnv)
+}
+
+// dialMCP is the real dial: start the server, list its tools, then stop it.
+func dialMCP(ctx context.Context, cfg *config.Config, srv config.MCPServer) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
+	// The server starts from the same environment the real run gives it, minus
+	// Nova's credentials: without this a server with an `env:` block would start
+	// with no PATH and doctor would report a failure Nova does not have.
+	client, err := mcp.Dial(ctx, mcp.Options{
+		Name: srv.Name, Command: srv.Command, Args: srv.Args, Env: srv.Env, Dir: srv.CWD,
+		Inherit: mcpInherit(cfg), Timeout: dialTimeout,
+	})
+	if err != nil {
+		return 0, err
+	}
+	defer client.Close()
+	tools, err := client.ListTools(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return len(tools), nil
 }
 
 func projectCheck(opt Options) Check {

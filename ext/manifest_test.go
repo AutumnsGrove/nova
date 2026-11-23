@@ -237,3 +237,27 @@ func FuzzManifest(f *testing.F) {
 		}
 	})
 }
+
+func TestManifest_MCP13_ReservedCapabilityWarns(t *testing.T) {
+	dir := writeManifest(t, "name: helper\nversion: 1.0.0\ndescription: Declares mcp.\nrun: [echo]\ncapabilities: [tools, mcp]\n")
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("a manifest declaring mcp must still load: %v", err)
+	}
+	var found bool
+	for _, w := range m.Warnings {
+		if strings.Contains(w, "mcp capability is reserved") && strings.Contains(w, "mcp.servers") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %v, want one naming config mcp.servers", m.Warnings)
+	}
+	// Validating again does not double the warning.
+	if err := m.Validate(); err != nil {
+		t.Fatalf("validate again: %v", err)
+	}
+	if len(m.Warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly one", m.Warnings)
+	}
+}

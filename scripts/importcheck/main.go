@@ -74,6 +74,7 @@ var layerAllowed = map[string][]string{
 	"agent":      {"message", "provider", "tool", "permission", "proto", "diag", "decide", "embed", "voice"},
 	"auth":       {"message", "provider", "tool", "proto", "permission", "config", "session", "usage"},
 	"config":     {"message", "provider", "tool", "permission", "proto"},
+	"mcp":        {"message", "tool", "proc", "config"},
 	"ext":        {"message", "provider", "tool", "proc", "proto", "permission", "agent", "config", "session", "usage", "compaction", "diag", "decide", "embed", "voice"},
 	"bundled":    {"message", "provider", "tool", "proto", "permission", "agent", "ext", "config", "session", "usage", "compaction", "decide", "embed", "voice"},
 	"testkit":    {"message", "provider", "tool", "proto", "decide", "voice"},

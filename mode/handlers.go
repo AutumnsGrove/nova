@@ -23,7 +23,7 @@ import (
 )
 
 // builtinCommands are the slash commands handled in-process.
-var builtinCommands = []string{"model", "thinking", "decide", "embed", "context", "compact", "new", "clear", "name", "cost", "help", "reload", "quit", "exit"}
+var builtinCommands = []string{"model", "thinking", "decide", "embed", "context", "compact", "new", "clear", "name", "cost", "mcp", "help", "reload", "quit", "exit"}
 
 // handleGetMessages returns the active branch as model messages. Without a
 // session store the transcript is the in-memory one, which has no branches, so
@@ -169,9 +169,27 @@ func (s *Server) handleSessionList(cmd proto.Command) proto.Response {
 	return okResponse(cmd, out)
 }
 
-// handleGetExtensions returns the extension host's supervision status.
+// handleGetExtensions returns the extension host's supervision status, and one
+// row per MCP server. An MCP row carries kind "mcp" and its tool count: a server
+// that will not start shows up here with its error rather than disappearing, and
+// a client that does not know the extra keys can ignore them.
 func (s *Server) handleGetExtensions(cmd proto.Command) proto.Response {
-	return okResponse(cmd, s.ext.Status())
+	extensions := s.ext.Status()
+	rows := make([]any, 0, len(extensions)+len(s.cfg.MCP.Servers))
+	for _, status := range extensions {
+		rows = append(rows, status)
+	}
+	for _, status := range s.mcpStatus() {
+		rows = append(rows, struct {
+			Name      string `json:"name"`
+			State     string `json:"state"`
+			LastError string `json:"last_error,omitempty"`
+			Kind      string `json:"kind"`
+			Tools     int    `json:"tools"`
+			Command   string `json:"command"`
+		}{status.Name, status.State, status.Error, "mcp", status.Tools, status.Command})
+	}
+	return okResponse(cmd, rows)
 }
 
 // handleGetCommands lists built-in commands and prompt templates.
@@ -219,6 +237,8 @@ func (s *Server) handleRunCommand(ctx context.Context, cmd proto.Command) proto.
 	case "context":
 		msgs := s.history()
 		return okResponse(cmd, map[string]any{"text": fmt.Sprintf("estimated context: %d tokens", compaction.Estimate(msgs))})
+	case "mcp":
+		return okResponse(cmd, map[string]any{"text": mcpReport(s.mcpStatus())})
 	case "model":
 		if args == "" {
 			s.mu.Lock()

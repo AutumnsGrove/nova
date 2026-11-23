@@ -47,6 +47,29 @@ type Config struct {
 	Decide       DecideConfig      `yaml:"decide"`
 	Embed        EmbedConfig       `yaml:"embed"`
 	Voice        VoiceConfig       `yaml:"voice"`
+	MCP          MCPConfig         `yaml:"mcp"`
+}
+
+// DefaultMCPTimeoutMS bounds one MCP tool call when the server does not say.
+const DefaultMCPTimeoutMS = 60000
+
+// MCPConfig declares Model Context Protocol servers reached over stdio. v1 is
+// config-declared on purpose (#51): an extension's manifest cannot start a
+// process the host does not supervise, so a `mcp` capability there would be a
+// promise with nothing behind it, and config already reloads.
+type MCPConfig struct {
+	Servers []MCPServer `yaml:"servers"`
+}
+
+// MCPServer is one stdio MCP server. Env is added to the inherited environment,
+// never replacing it, and is never logged or echoed in an error.
+type MCPServer struct {
+	Name      string            `yaml:"name"`
+	Command   string            `yaml:"command"`
+	Args      []string          `yaml:"args"`
+	Env       map[string]string `yaml:"env"`
+	CWD       string            `yaml:"cwd"`
+	TimeoutMS int               `yaml:"timeout_ms"`
 }
 
 // DisplayConfig holds the TUI's rendering preferences. Both line counts are
@@ -555,6 +578,7 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 	displayLines(&cfg.Display.ThinkingLines, Defaults().Display.ThinkingLines, "display.thinking_lines", warnings)
 	displayLines(&cfg.Display.ToolLines, Defaults().Display.ToolLines, "display.tool_lines", warnings)
 	displayCells(&cfg.Display.ImageWidthCells, Defaults().Display.ImageWidthCells, "display.image_width_cells", warnings)
+	normaliseMCP(cfg, home, warnings)
 	normaliseDecide(cfg, warnings)
 	normaliseEmbed(cfg, warnings)
 	normaliseVoice(cfg, warnings)
@@ -562,6 +586,57 @@ func normalise(cfg *Config, home string, warnings *[]Warning) {
 		*warnings = append(*warnings, Warning{Source: "config", Message: "invalid permissions: " + err.Error()})
 		cfg.Permissions = Defaults().Permissions
 	}
+}
+
+// normaliseMCP drops a server that cannot work and names it: a server with no
+// name or no command, a name that is not a legal tool-name component, or a name
+// already taken. Silence is what this feature was filed about (#51), so every
+// dropped server is a warning carrying its index.
+func normaliseMCP(cfg *Config, home string, warnings *[]Warning) {
+	var kept []MCPServer
+	seen := make(map[string]bool, len(cfg.MCP.Servers))
+	for i, srv := range cfg.MCP.Servers {
+		if srv.Name == "" {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("mcp.servers[%d] has no name; ignoring it", i)})
+			continue
+		}
+		if !validMCPName(srv.Name) {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("mcp server %q is not a legal name (lowercase letters, digits, - and _); ignoring it", srv.Name)})
+			continue
+		}
+		if srv.Command == "" {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("mcp server %q has no command; ignoring it", srv.Name)})
+			continue
+		}
+		if seen[srv.Name] {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("mcp server %q is declared twice; keeping the first", srv.Name)})
+			continue
+		}
+		seen[srv.Name] = true
+		srv.CWD = expandHome(srv.CWD, home)
+		if srv.TimeoutMS < 0 {
+			*warnings = append(*warnings, Warning{Source: "config", Message: fmt.Sprintf("negative timeout_ms for mcp server %q; using the default", srv.Name)})
+			srv.TimeoutMS = 0
+		}
+		if srv.TimeoutMS == 0 {
+			srv.TimeoutMS = DefaultMCPTimeoutMS
+		}
+		kept = append(kept, srv)
+	}
+	cfg.MCP.Servers = kept
+}
+
+// validMCPName accepts the characters a tool name can carry, because the server
+// name becomes the first half of every tool name it contributes.
+func validMCPName(name string) bool {
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // normaliseDecide clamps a negative timeout and names a role with no model at

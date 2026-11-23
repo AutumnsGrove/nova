@@ -302,6 +302,13 @@ Rules:
   times, then disabled until `/reload`).
 - Extension stdout is protocol only. Its stderr is captured to the Nova log.
 
+### MCP server rows in `get_extensions`
+
+`get_extensions` returns the extension host's status, and one row per configured MCP server. An MCP
+row carries `kind: "mcp"`, `tools` (how many it contributed) and `command`, alongside `name`,
+`state` and `last_error`, so a server that will not start is visible with its reason instead of
+absent. The extra keys are additive: a client that does not know them can ignore them.
+
 ## Errors
 
 Error codes are stable strings: `bad_request`, `busy`, `not_found`,

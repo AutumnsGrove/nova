@@ -61,7 +61,7 @@ func (s *Server) reload(ctx context.Context) (reloadResult, error) {
 			return reloadResult{}, err
 		}
 	}
-	res := reloadResult{Reloaded: []string{"skills", "templates", "extensions"}}
+	res := reloadResult{Reloaded: []string{"skills", "templates", "extensions", "mcp"}}
 	if s.opt.Reload != nil {
 		if warnings, err := s.reloadConfig(); err != nil {
 			res.ConfigError = err.Error()
@@ -76,6 +76,7 @@ func (s *Server) reload(ctx context.Context) (reloadResult, error) {
 	for _, err := range s.ext.Reload(ctx) {
 		s.emitExtensionError(err)
 	}
+	s.reloadMCP()
 	s.emitState()
 	return res, nil
 }

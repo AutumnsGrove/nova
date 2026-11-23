@@ -41,10 +41,15 @@ gap in the protocol, to be filed and closed, not a permanent privilege.
 | Speak text | `model:speech` | `speak` |
 | Transcribe audio | `model:transcribe` | `transcribe` |
 | Add a model provider | `providers` | `register.providers` |
-| Add an MCP server | `mcp` | `register.mcp` |
+| Add an MCP server | *(reserved)* | — (declare it in config: [`MCP.md`](MCP.md)) |
 
 The `provider_stream_event` hook name is reserved for a future extension-facing live-delta hook. The
 in-process equivalent is `agent.Hooks.StreamDelta`; subprocess extensions cannot use it yet.
+
+The `mcp` capability is **reserved and does nothing**. An extension cannot start a process the host
+does not supervise, so a server is declared in config under `mcp.servers` instead, and Nova starts and
+supervises it ([`MCP.md`](MCP.md)). A manifest that declares `mcp` still loads, and warns that the
+capability is reserved — a promise with nothing behind it is worse than no promise (#51).
 
 ### UI available to third-party extensions
 

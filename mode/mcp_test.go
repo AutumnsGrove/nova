@@ -181,8 +181,8 @@ func TestMCP_ReloadKeepsTheToolsRegistered(t *testing.T) {
 	if _, ok := s.tools.Get("srv__echo"); !ok {
 		t.Fatalf("registered = %v, want the tools back after a reload", s.tools.Names())
 	}
-	if status := s.mcpStatus(); len(status) != 1 || status[0].Tools != 3 {
-		t.Fatalf("status = %+v, want one running server with three tools", status)
+	if status := s.mcpStatus(); len(status) != 1 || status[0].Tools != 4 {
+		t.Fatalf("status = %+v, want one running server with four tools", status)
 	}
 }
 
@@ -198,7 +198,7 @@ func TestMCP_CommandReportsTheServers(t *testing.T) {
 	if err := json.Unmarshal(resp.Data, &out); err != nil {
 		t.Fatalf("decode: %v (data=%s)", err, resp.Data)
 	}
-	if !strings.Contains(out.Text, "srv: running, 3 tool(s)") {
+	if !strings.Contains(out.Text, "srv: running, 4 tool(s)") {
 		t.Fatalf("/mcp = %q, want the server, its state and its tool count", out.Text)
 	}
 }
@@ -214,5 +214,87 @@ func TestMCP_CommandWithNoServers(t *testing.T) {
 	}
 	if !strings.Contains(out.Text, "no MCP servers configured") {
 		t.Fatalf("/mcp = %q, want the empty answer", out.Text)
+	}
+}
+
+func TestMCP_OneWarningPerDeadServer(t *testing.T) {
+	// A connect failure is reported once: the host returns it and the mode start
+	// reports that, so a Warn callback here would double every dead server.
+	s, _ := newServerWithMCP(t, "exit", nil)
+	events := drainExtensionErrors(s)
+	if len(events) != 1 {
+		t.Fatalf("extension_error events = %d (%v), want one per dead server", len(events), events)
+	}
+}
+
+func TestMCP_ServersDoNotInheritCredentials(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "sk-mode-secret")
+	s := mcpServer(t, "ok", nil,
+		testkit.Turn{ToolCalls: []testkit.Call{{ID: "c1", Name: "srv__env", Args: `{"name":"OPENROUTER_API_KEY"}`}}},
+		testkit.Turn{ToolCalls: []testkit.Call{{ID: "c2", Name: "srv__env", Args: `{"name":"PATH"}`}}},
+		testkit.Turn{Text: "done"},
+	)
+	events, cancel := s.Subscribe(256)
+	defer cancel()
+	s.Handle(context.Background(), proto.Command{Type: proto.CmdPrompt, Text: "go"})
+	collect(t, events)
+	results := toolResults(s)
+	if len(results) != 2 {
+		t.Fatalf("tool results = %q, want two", results)
+	}
+	if strings.Contains(results[0], "sk-mode-secret") {
+		t.Fatalf("server saw the credential: %q", results[0])
+	}
+	// The loop records an empty tool result as a placeholder, which is what a
+	// scrubbed variable looks like from the server's side.
+	if results[0] != "(empty result)" {
+		t.Fatalf("server saw %q for the credential, want an empty value", results[0])
+	}
+	if results[1] == "" {
+		t.Fatal("server saw no PATH, want the rest of the environment")
+	}
+}
+
+// newServerWithMCP builds a server without waiting for the MCP start, so a test
+// can watch what the start reports.
+func newServerWithMCP(t *testing.T, role string, mutate func(*config.Config)) (*Server, *testkit.Provider) {
+	t.Helper()
+	cwd, home := t.TempDir(), t.TempDir()
+	prov := testkit.NewProvider(testkit.RealClock())
+	cfg := config.Defaults()
+	cfg.Model = "test/model"
+	cfg.Tools.Active = []string{"read"}
+	off := false
+	cfg.Compaction.Enabled = &off
+	cfg.Extensions.Disable = bundledNames()
+	cfg.MCP.Servers = []config.MCPServer{{Name: "srv", Command: mcpserverBin(t), Args: []string{"-role", role}, TimeoutMS: 10000}}
+	if mutate != nil {
+		mutate(&cfg)
+	}
+	s, err := New(Options{Config: &cfg, CWD: cwd, Home: home, Provider: prov, NoSession: true, Version: "test"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s, prov
+}
+
+// drainExtensionErrors waits for the MCP start and returns the messages it
+// reported as extension_error.
+func drainExtensionErrors(s *Server) []string {
+	events, cancel := s.Subscribe(64)
+	defer cancel()
+	<-s.mcpStarted
+	var out []string
+	for {
+		select {
+		case ev := <-events:
+			if ev.Type == proto.EventExtensionError && ev.Error != nil {
+				out = append(out, ev.Error.Message)
+			}
+			continue
+		default:
+			return out
+		}
 	}
 }

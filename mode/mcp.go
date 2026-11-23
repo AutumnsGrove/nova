@@ -3,9 +3,11 @@ package mode
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/mcp"
 )
@@ -19,8 +21,22 @@ func (s *Server) buildMCPHost(cfg *config.Config) *mcp.Host {
 	return mcp.NewHost(cfg.MCP, mcp.HostOptions{
 		Registry: s.tools,
 		Version:  s.opt.Version,
+		Scrub:    mcpScrub(cfg),
 		Warn:     s.emitExtensionError,
 	})
+}
+
+// mcpScrub names the variables an MCP server never inherits: Nova's own
+// credentials, plus anything the user asked to hide from extension processes,
+// minus the names they asked to pass through anyway. A server is a third-party
+// program, and the credential of a provider it does not call is a key it can
+// leak.
+func mcpScrub(cfg *config.Config) []string {
+	patterns := append(providerauth.CredentialEnv(), cfg.Extensions.ScrubEnv...)
+	if len(cfg.Extensions.PassEnv) == 0 {
+		return patterns
+	}
+	return slices.DeleteFunc(patterns, func(p string) bool { return slices.Contains(cfg.Extensions.PassEnv, p) })
 }
 
 // startMCP connects every configured server in the background and reports a

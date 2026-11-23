@@ -41,10 +41,9 @@ func TestClient_MCP11_CloseEscalatesPastIgnoredSigterm(t *testing.T) {
 }
 
 func TestHost_MCP11_ReloadReplacesTheProcess(t *testing.T) {
-	h, reg, warns := hostFor(t, "ok")
-	h.Start(context.Background())
-	if len(*warns) != 0 {
-		t.Fatalf("warnings = %v", *warns)
+	h, reg, warned := hostFor(t, "ok")
+	if errs := h.Start(context.Background()); len(errs)+len(warned.all()) != 0 {
+		t.Fatalf("warnings = %v / %v", errs, warned.all())
 	}
 	first := h.servers[0].client.Pid()
 	if !alive(first) {

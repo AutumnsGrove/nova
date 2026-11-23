@@ -27,9 +27,11 @@ mcp:
   tool name the server contributes.
 - A server with no name, no command, a name that is not legal or a duplicate is dropped at load with
   a warning naming it and its index. It is never silently ignored.
-- `env` is added to the environment the host inherits. A server's environment is never logged or
-  echoed in an error, and the credential variables listed in `extensions.scrub_env` are not passed
-  to one.
+- `env` is added to the environment the host inherits. Nova's own credentials
+  (`OPENROUTER_API_KEY`, the provider keys, `NOVA_SERVE_TOKEN`) and anything in
+  `extensions.scrub_env` are removed from it first, unless `extensions.pass_env` names them; a
+  server is a third-party program, and a key it never needed is a key it can leak. A server's
+  environment is never logged or echoed in an error.
 
 ## What a server contributes
 
@@ -58,10 +60,13 @@ A `tools/call` result maps onto the tool contract:
   error, so a dead server is visible rather than absent.
 - `notifications/tools/list_changed` re-lists that server and makes the registry match, without a
   reload.
+- A server that dies after the handshake is noticed: its tools leave the registry, its row reports
+  the failure, and one warning names it.
 - `reload` re-reads the config and replaces every connection: a changed command, argument or
   environment arrives that way. The old processes are gone before the new ones start.
 - Shutdown closes each server's stdin, waits two seconds, sends SIGTERM to its process group, waits
-  two seconds, then SIGKILLs. No process survives it, including anything the server started.
+  two seconds, then kills the process itself. No process survives it, including anything the server
+  started, and every wait is bounded so a server that will not die cannot hold up Nova's own exit.
 - One call is bounded by `timeout_ms` and by the run's own cancellation. A message line over 16 MiB,
   malformed JSON, or a crash disconnects that server with a typed error rather than being retried.
 

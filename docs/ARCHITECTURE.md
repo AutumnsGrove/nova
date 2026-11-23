@@ -60,7 +60,7 @@ nova/
     openai/       OpenAI-compatible speech, transcribe, WAV     ≤ 560
     openrouter/   preset: speech, transcriptions, live roster   ≤ 700
   auth/           OAuth PKCE login, key store                   ≤ 500
-  tool/           Tool contract, registry, schema validation    ≤ 660
+  tool/           Tool contract, registry, schema validation    ≤ 690
   tools/          fs (read write edit list)                     ≤ 1060
                   search (glob grep)                            ≤ 700
                   bash                                          ≤ 400
@@ -78,7 +78,7 @@ nova/
     serve/        the protocol over HTTP and SSE                ≤ 440
     action/       the GitHub review action                      ≤ 750
     providers/    build both providers, route by model          ≤ 320
-  mcp/            Model Context Protocol client: stdio, tools    ≤ 780
+  mcp/            Model Context Protocol client: stdio, tools    ≤ 810
   ext/            extension host, manifest, check, reload,
                   in-process API for bundled extensions         ≤ 3220
     install/      install, update, remove, lockfile, git        ≤ 660

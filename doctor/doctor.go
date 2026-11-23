@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"github.com/AutumnsGrove/nova/auth"
+	"github.com/AutumnsGrove/nova/auth/providerauth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/mcp"
+	"github.com/AutumnsGrove/nova/tool"
 )
 
 // dialTimeout bounds starting one MCP server and listing its tools, so doctor
@@ -478,13 +480,22 @@ func mcpChecks(ctx context.Context, opt Options) []Check {
 	return checks
 }
 
+// mcpInherit is the environment doctor gives a server: Nova's own, minus its
+// credentials, because a server is a third-party program.
+func mcpInherit() []string {
+	return tool.ScrubEnvPatterns(os.Environ(), providerauth.CredentialEnv())
+}
+
 // dialMCP is the real dial: start the server, list its tools, then stop it.
 func dialMCP(ctx context.Context, srv config.MCPServer) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
+	// The server starts from the same environment the real run gives it, minus
+	// Nova's credentials: without this a server with an `env:` block would start
+	// with no PATH and doctor would report a failure Nova does not have.
 	client, err := mcp.Dial(ctx, mcp.Options{
 		Name: srv.Name, Command: srv.Command, Args: srv.Args, Env: srv.Env, Dir: srv.CWD,
-		Timeout: dialTimeout,
+		Inherit: mcpInherit(), Timeout: dialTimeout,
 	})
 	if err != nil {
 		return 0, err

@@ -27,9 +27,13 @@ type Host struct {
 type HostOptions struct {
 	// Registry receives the tools. It is required.
 	Registry *tool.Registry
-	// Inherit is the environment every server starts from, normally
-	// os.Environ().
+	// Inherit is the environment every server starts from. Empty means
+	// os.Environ() minus Scrub.
 	Inherit []string
+	// Scrub names the variables a server never inherits: Nova's own credentials
+	// and anything the user asked to hide. A server is a third-party program,
+	// and a key it never needed is a key it can leak.
+	Scrub []string
 	// Version names this client in clientInfo.
 	Version string
 	// Warn receives one warning per problem: a server that will not start, a
@@ -66,9 +70,13 @@ type Status struct {
 
 // NewHost builds a host for the configured servers without starting anything.
 func NewHost(cfg config.MCPConfig, opt HostOptions) *Host {
-	if len(opt.Inherit) == 0 {
-		opt.Inherit = osEnv()
+	// The scrub applies to whatever base the caller gave, so a server never
+	// sees a variable the host was told to hide.
+	base := opt.Inherit
+	if len(base) == 0 {
+		base = osEnv()
 	}
+	opt.Inherit = tool.ScrubEnvPatterns(base, opt.Scrub)
 	h := &Host{opt: opt}
 	for _, srv := range cfg.Servers {
 		h.servers = append(h.servers, &serverState{cfg: srv})
@@ -95,25 +103,21 @@ func (h *Host) Start(ctx context.Context) []error {
 	states := slices.Clone(h.servers)
 	h.mu.Unlock()
 
+	// Connect failures are returned, not also handed to Warn: a caller that
+	// reports the return value would otherwise report every dead server twice.
 	var (
 		mu    sync.Mutex
 		warns []error
 		wg    sync.WaitGroup
 	)
-	warn := func(err error) {
-		mu.Lock()
-		warns = append(warns, err)
-		mu.Unlock()
-		if h.opt.Warn != nil {
-			h.opt.Warn(err)
-		}
-	}
 	for _, st := range states {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			if err := h.connect(ctx, st); err != nil {
-				warn(err)
+				mu.Lock()
+				warns = append(warns, err)
+				mu.Unlock()
 			}
 		}()
 	}
@@ -152,6 +156,7 @@ func (h *Host) connect(ctx context.Context, st *serverState) error {
 			h.warn(err)
 		}
 	}
+	client.opt.OnClosed = func(err error) { h.died(st, err) }
 	if err := h.refresh(ctx, st); err != nil {
 		h.mu.Lock()
 		st.err = err
@@ -203,6 +208,23 @@ func (h *Host) refresh(ctx context.Context, st *serverState) error {
 		}
 	}
 	return nil
+}
+
+// died records a connection that ended after the handshake and takes its tools
+// out of the registry, so a dead server is reported as failed and the model is
+// never offered a tool that cannot run. A shutdown is not a death: Shutdown
+// clears the client first and sets closed.
+func (h *Host) died(st *serverState, err error) {
+	h.mu.Lock()
+	if h.closed || st.client == nil {
+		h.mu.Unlock()
+		return
+	}
+	h.unregister(st)
+	st.err = fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, err)
+	st.client = nil
+	h.mu.Unlock()
+	h.warn(st.err)
 }
 
 // unregister removes the names one server contributed. It is safe when the
@@ -280,8 +302,14 @@ func (h *Host) Status() []Status {
 			status.State = StateStarting
 		case st.client == nil:
 			status.State = StateFailed
+		case st.client.Err() != nil:
+			// The reader stopped: the process crashed or the pipe broke after a
+			// good handshake, so the server is not running any more.
+			status.State = StateFailed
+			status.Error = st.client.Err().Error()
+			status.Tools = 0
 		}
-		if status.State != StateRunning && status.State != StateStarting {
+		if status.State != StateRunning && status.State != StateStarting && status.Error == "" {
 			if st.err != nil {
 				status.Error = st.err.Error()
 			} else {

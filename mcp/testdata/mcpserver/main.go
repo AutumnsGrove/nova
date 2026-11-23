@@ -107,6 +107,12 @@ func baseTools() []wireTool {
 			InputSchema: map[string]any{"type": "object", "properties": map[string]any{}},
 			Annotations: map[string]any{"readOnlyHint": false, "destructiveHint": true},
 		},
+		{
+			Name:        "env",
+			Description: "Return the value of one environment variable.",
+			InputSchema: map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": "string"}}},
+			Annotations: map[string]any{"readOnlyHint": true},
+		},
 	}
 }
 
@@ -185,6 +191,11 @@ func (s *server) toolsList(msg frame) {
 		return
 	}
 	s.respond(msg.ID, map[string]any{"tools": s.tools})
+	if s.role == "crash-after-list" {
+		// Dies once its tools are registered, so a host can be caught holding a
+		// connection that is already gone.
+		os.Exit(4)
+	}
 	if s.role == "listchanged" && !s.changed {
 		s.changed = true
 		s.tools = append(s.tools, wireTool{
@@ -254,6 +265,9 @@ func (s *server) toolsCall(msg frame) {
 		}})
 	case "fail":
 		s.respond(msg.ID, map[string]any{"content": []block{{Type: "text", Text: "it broke"}}, "isError": true})
+	case "env":
+		name, _ := params.Arguments["name"].(string)
+		s.respond(msg.ID, map[string]any{"content": []block{{Type: "text", Text: os.Getenv(name)}}})
 	case "slow":
 		// No answer at all, so the caller's timeout is the only way out.
 	default:

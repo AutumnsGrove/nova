@@ -16,7 +16,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   like any other tool. Text results join into the tool's content, images become parts the model sees,
   `isError` is a failed result, and anything else is an omission note rather than a dropped result.
   Servers connect at load and after `reload`, a `tools/list_changed` notification is followed without
-  one, one call is bounded by `timeout_ms`, and shutdown escalates stdin → SIGTERM → SIGKILL. A server
+  one, one call is bounded by `timeout_ms`, and shutdown escalates stdin → SIGTERM → SIGKILL with
+  every wait bounded. A server inherits Nova's environment minus its credentials and everything in
+  `extensions.scrub_env`, a server that dies after the handshake loses its tools and is reported
+  failed, and each dead server is one warning. A server
   that will not start is a warning, a `get_extensions` row and a `/mcp` line, never a broken run
   (#51). `nova doctor` starts each configured server and reports it. See `docs/MCP.md`.
 - The `mcp` extension capability is now reserved and warns: an extension cannot start a process the

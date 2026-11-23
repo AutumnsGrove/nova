@@ -10,14 +10,22 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/diag"
+)
+
+var (
+	mcpServerOnce sync.Once
+	mcpServerPath string
+	mcpServerErr  error
 )
 
 // roundTripFunc adapts a function to http.RoundTripper.
@@ -553,5 +561,62 @@ func writeAgentConfig(t *testing.T, home, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// mcpserverBin builds the scripted MCP server once for the package.
+func mcpserverBin(t *testing.T) string {
+	t.Helper()
+	mcpServerOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "nova-mcpserver-doctor")
+		if err != nil {
+			mcpServerErr = err
+			return
+		}
+		mcpServerPath = filepath.Join(dir, "mcpserver")
+		out, err := exec.Command("go", "build", "-o", mcpServerPath, "../mcp/testdata/mcpserver").CombinedOutput()
+		if err != nil {
+			mcpServerErr = fmt.Errorf("build mcpserver: %v\n%s", err, out)
+		}
+	})
+	if mcpServerErr != nil {
+		t.Fatal(mcpServerErr)
+	}
+	return mcpServerPath
+}
+
+func TestDoctor_DialMCPKeepsTheEnvironment(t *testing.T) {
+	// The real dial: a server that declares env: still needs PATH and HOME, so
+	// doctor must not report a failure the running server would not have.
+	srv := config.MCPServer{
+		Name: "srv", Command: mcpserverBin(t),
+		Args: []string{"-role", "ok"},
+		Env:  map[string]string{"SERVER_OWN": "yes"},
+	}
+	tools, err := dialMCP(context.Background(), srv)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if tools != 4 {
+		t.Fatalf("tools = %d, want the server's four", tools)
+	}
+}
+
+func TestDoctor_MCPInheritScrubsCredentials(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "sk-doctor-secret")
+	inherit := mcpInherit()
+	for _, kv := range inherit {
+		if strings.HasPrefix(kv, "OPENROUTER_API_KEY=") {
+			t.Fatalf("inherit carries the credential: %q", kv)
+		}
+	}
+	var hasPath bool
+	for _, kv := range inherit {
+		if strings.HasPrefix(kv, "PATH=") {
+			hasPath = true
+		}
+	}
+	if !hasPath {
+		t.Fatalf("inherit = %v, want the rest of the environment", inherit)
 	}
 }

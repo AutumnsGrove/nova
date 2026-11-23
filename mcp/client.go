@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AutumnsGrove/nova/proc"
@@ -44,6 +45,10 @@ type Options struct {
 	// OnToolsChanged is called when the server reports that its tool list
 	// changed. It runs on its own goroutine, so it may call back into Client.
 	OnToolsChanged func()
+	// OnClosed is called once when the connection ends for a reason other than
+	// Close: a crash, a broken pipe, a malformed frame. It runs on the reader's
+	// goroutine, so it must not block on the client.
+	OnClosed func(error)
 }
 
 // Client is a live connection to one MCP server.
@@ -66,6 +71,8 @@ type Client struct {
 
 	closeOnce sync.Once
 	closeErr  error
+	shutting  atomic.Bool // Close is running: the reader's exit is not a crash
+	notified  sync.Once
 }
 
 // Dial starts a server, performs the initialize handshake, and returns the
@@ -215,7 +222,8 @@ func (c *Client) deliver(f *frame) {
 	}
 }
 
-// fail records why the reader stopped and releases every waiter.
+// fail records why the reader stopped, releases every waiter, and tells the
+// host once unless this is the shutdown the host asked for.
 func (c *Client) fail(err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -225,6 +233,9 @@ func (c *Client) fail(err error) {
 	for id, ch := range c.pending {
 		close(ch)
 		delete(c.pending, id)
+	}
+	if c.opt.OnClosed != nil && !c.shutting.Load() {
+		c.notified.Do(func() { go c.opt.OnClosed(err) })
 	}
 }
 
@@ -331,21 +342,45 @@ func (c *Client) Call(ctx context.Context, name string, args json.RawMessage) (t
 // shutdown, then SIGTERM, then SIGKILL. No process in the group survives it.
 func (c *Client) Close() error {
 	c.closeOnce.Do(func() {
+		c.shutting.Store(true)
 		_ = c.stdin.Close()
-		select {
-		case <-c.exited:
-		case <-time.After(closeGrace):
-			proc.Terminate(c.cmd.Process.Pid)
-			select {
-			case <-c.exited:
-			case <-time.After(closeGrace):
-				proc.Kill(c.cmd.Process.Pid)
-				<-c.exited
-			}
+		if c.waitExit(closeGrace) {
+			c.waitReader()
+			return
 		}
-		<-c.done
+		proc.Terminate(c.cmd.Process.Pid)
+		if c.waitExit(closeGrace) {
+			c.waitReader()
+			return
+		}
+		// The group signal is a no-op where process groups do not exist, so the
+		// process itself is killed too, and every remaining wait is bounded: a
+		// server that will not die must not hold up Nova's own shutdown.
+		_ = c.cmd.Process.Kill()
+		proc.Kill(c.cmd.Process.Pid)
+		c.waitExit(closeGrace)
+		c.waitReader()
 	})
 	return c.closeErr
+}
+
+// waitExit reports whether the process exited within d.
+func (c *Client) waitExit(d time.Duration) bool {
+	select {
+	case <-c.exited:
+		return true
+	case <-time.After(d):
+		return false
+	}
+}
+
+// waitReader waits for the reader to stop, bounded so a held-open pipe cannot
+// hang a shutdown.
+func (c *Client) waitReader() {
+	select {
+	case <-c.done:
+	case <-time.After(closeGrace):
+	}
 }
 
 // envPairs renders the added environment as KEY=value pairs.

@@ -48,6 +48,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- `tool.ScrubEnvPatterns` takes a third argument: the names to pass through even when a pattern
+  matches. It is a new helper for this release, so nothing outside Nova calls it, but the signature
+  is exported and code that adopted it from this branch needs the extra argument (#51).
 - `tui/cli.Execute` takes a `context.Context` as its first argument instead of creating a
   background one, so an embedder can hand the command tree the same signal context the `nova`
   binary does. Code that calls it with one argument needs to pass a context (#126).

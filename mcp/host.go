@@ -183,7 +183,12 @@ func (h *Host) relisted(ctx context.Context, st *serverState) {
 		return
 	}
 	if err := h.refresh(ctx, st); err != nil {
-		h.warn(err)
+		h.mu.Lock()
+		dead := st.client == nil
+		h.mu.Unlock()
+		if !dead && h.claimReport(st) {
+			h.warn(err)
+		}
 	}
 }
 
@@ -202,18 +207,26 @@ func (h *Host) refresh(ctx context.Context, st *serverState) error {
 		return fmt.Errorf("mcp: %s: tools/list: %w", st.cfg.Name, err)
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.unregister(st)
 	// The listing took a round trip, and the process may have died during it: a
 	// server that answered and then exited must not leave its tools registered.
-	// The death reports itself once, in died or in the caller, so this returns
-	// nil rather than reporting it a second time.
-	if client.Err() != nil || st.client != client {
-		if client.Err() != nil {
-			st.err = fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, client.Err())
+	// The death is recorded and reported once, by whichever path noticed it
+	// first, so this returns nil rather than reporting it a second time.
+	if err := client.Err(); err != nil {
+		lost := fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, err)
+		st.err = lost
+		h.mu.Unlock()
+		if h.claimReport(st) {
+			h.warn(lost)
 		}
 		return nil
 	}
+	if st.client != client {
+		// Another path already dropped this connection; its death is reported.
+		h.mu.Unlock()
+		return nil
+	}
+	defer h.mu.Unlock()
 	var (
 		names []string
 		warns []error
@@ -248,25 +261,36 @@ func (h *Host) refresh(ctx context.Context, st *serverState) error {
 // never offered a tool that cannot run. A shutdown is not a death: Shutdown
 // clears the client first and sets closed.
 func (h *Host) died(st *serverState, err error) {
+	lost := fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, err)
 	h.mu.Lock()
 	client := st.client
-	if h.closed || client == nil {
-		h.mu.Unlock()
+	shutting := h.closed
+	if !shutting {
+		h.unregister(st)
+		if client != nil {
+			st.err = lost
+			st.client = nil
+		} else if st.err == nil {
+			// The reader stopped before connect stored the connection: the
+			// server is failed, and saying so must not depend on which side of
+			// that assignment the death landed.
+			st.err = lost
+		}
+	}
+	h.mu.Unlock()
+	if shutting {
 		return
 	}
-	h.unregister(st)
-	lost := fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, err)
-	st.err = lost
-	st.client = nil
-	first := !st.reported
-	st.reported = true
-	h.mu.Unlock()
+	// Report before closing: Close can spend three grace windows escalating a
+	// server that will not die, and the warning is already true.
+	if h.claimReport(st) {
+		h.warn(lost)
+	}
 	// The process may still be alive — a malformed frame or a full pipe does not
 	// kill it — so the connection is closed here. Nothing else holds it now, and
 	// leaving it open would outlive the host.
-	_ = client.Close()
-	if first {
-		h.warn(lost)
+	if client != nil {
+		_ = client.Close()
 	}
 }
 
@@ -356,21 +380,21 @@ func (h *Host) Status() []Status {
 			// Between dialling and the handshake's answer: not failed, just not
 			// ready, and a /mcp or doctor read must not call it dead.
 			status.State = StateStarting
+		case st.err != nil:
+			// A dial that failed, or a death the host has already recorded: its
+			// reason is the one a user acts on.
+			status.State = StateFailed
+			status.Error = st.err.Error()
+			status.Tools = 0
 		case st.client == nil:
 			status.State = StateFailed
+			status.Error = "not connected"
 		case st.client.Err() != nil:
-			// The reader stopped: the process crashed or the pipe broke after a
-			// good handshake, so the server is not running any more.
+			// The reader stopped and the death has not been recorded yet: report
+			// what the connection says rather than call it healthy.
 			status.State = StateFailed
 			status.Error = st.client.Err().Error()
 			status.Tools = 0
-		}
-		if status.State != StateRunning && status.State != StateStarting && status.Error == "" {
-			if st.err != nil {
-				status.Error = st.err.Error()
-			} else {
-				status.Error = "not connected"
-			}
 		}
 		out = append(out, status)
 	}

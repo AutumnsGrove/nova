@@ -163,14 +163,13 @@ func (s *server) onEvent(ev proto.Event) {
 }
 
 // close stops the pump and releases every event stream. It is idempotent.
+//
+// It closes done and leaves each client channel to the handler that owns it:
+// a stream exits on done either way, and closing its channel here as well gave
+// the stream loop two ready cases, so a shutdown raced its closing comment and
+// sometimes ended a stream with nothing (#125).
 func (s *server) close() {
 	s.closed.Do(func() { close(s.done) })
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for ch := range s.clients {
-		close(ch)
-		delete(s.clients, ch)
-	}
 }
 
 // ServeHTTP applies the transport defences, then routes.

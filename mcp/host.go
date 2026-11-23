@@ -52,6 +52,7 @@ type serverState struct {
 	err        error
 	connecting bool // between the start of a dial and its outcome
 	reported   bool // this server's failure has been reported once
+	pid        int  // the last process, kept after the connection is dropped
 }
 
 // State names for Status.
@@ -159,6 +160,22 @@ func (h *Host) connect(ctx context.Context, st *serverState) error {
 		return err
 	}
 	h.mu.Lock()
+	st.pid = client.Pid()
+	h.mu.Unlock()
+	if err := client.Err(); err != nil {
+		// The reader stopped before the connection was stored, so died had
+		// nothing to close: the process may still be alive and must not outlive
+		// the host.
+		_ = client.Close()
+		lost := fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, err)
+		h.mu.Lock()
+		if st.err == nil {
+			st.err = lost
+		}
+		h.mu.Unlock()
+		return lost
+	}
+	h.mu.Lock()
 	st.client = client
 	st.err = nil
 	h.mu.Unlock()
@@ -184,11 +201,14 @@ func (h *Host) relisted(ctx context.Context, st *serverState) {
 	}
 	if err := h.refresh(ctx, st); err != nil {
 		h.mu.Lock()
-		dead := st.client == nil
+		gone := st.client == nil || st.client.Err() != nil
 		h.mu.Unlock()
-		if !dead && h.claimReport(st) {
-			h.warn(err)
+		if gone {
+			// The connection is gone, so this is the death's warning to make, not
+			// a second one; the one-shot report stays unclaimed for it.
+			return
 		}
+		h.warn(err)
 	}
 }
 
@@ -214,8 +234,19 @@ func (h *Host) refresh(ctx context.Context, st *serverState) error {
 	// first, so this returns nil rather than reporting it a second time.
 	if err := client.Err(); err != nil {
 		lost := fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, err)
-		st.err = lost
+		if st.err == nil {
+			st.err = lost
+		}
+		closing := st.client == client
+		if closing {
+			st.client = nil
+		}
 		h.mu.Unlock()
+		if closing {
+			// The connection is out of the state, so this path owns closing it: a
+			// server whose output went bad is usually still running.
+			_ = client.Close()
+		}
 		if h.claimReport(st) {
 			h.warn(lost)
 		}

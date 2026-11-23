@@ -78,7 +78,7 @@ nova/
     serve/        the protocol over HTTP and SSE                ≤ 440
     action/       the GitHub review action                      ≤ 750
     providers/    build both providers, route by model          ≤ 320
-  mcp/            Model Context Protocol client: stdio, tools    ≤ 850
+  mcp/            Model Context Protocol client: stdio, tools    ≤ 890
   ext/            extension host, manifest, check, reload,
                   in-process API for bundled extensions         ≤ 3220
     install/      install, update, remove, lockfile, git        ≤ 660

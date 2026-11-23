@@ -154,6 +154,14 @@ func (s *server) handle(msg frame) {
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": s.role == "listchanged"}},
 			"serverInfo":      map[string]any{"name": "mcpserver", "version": "1.0.0"},
 		})
+		if s.role == "close-stdout" {
+			// Closes its output and stays alive: its reader stops while the
+			// process keeps running, which only a close can clean up.
+			_ = os.Stdout.Close()
+			for {
+				time.Sleep(time.Hour)
+			}
+		}
 		if s.role == "crash-after-init" {
 			// Dies after the handshake and before answering tools/list, so a
 			// death lands while the first listing is in flight.

@@ -2,7 +2,7 @@
 chunk: C13
 title: "The extension host"
 packages: [./ext, ./ext/install, ./ext/sdk, ./mcp, ./mode]
-budgets: { ./ext: 3220, ./ext/install: 660, ./ext/sdk: 700, ./mcp: 850, ./mode: 3120 }
+budgets: { ./ext: 3220, ./ext/install: 660, ./ext/sdk: 700, ./mcp: 890, ./mode: 3120 }
 depends: [C12]
 ---
 
@@ -470,7 +470,7 @@ are also covered end to end there, where the registry and the permission policy 
 | MCP12 | Permission policy applies | a `deny` rule on `srv__echo` | the call is blocked before the server sees it and the model reads the refusal |
 | MCP13 | The `mcp` capability is reserved | a manifest declaring `capabilities: [mcp]` | the extension loads, and one warning names `mcp.servers` as the place to declare a server |
 | MCP14 | The frame reader is fuzzed | arbitrary bytes as a frame | never panics; a frame that decodes answers every question the client asks of it |
-| MCP15 | A server that dies after the handshake | `crash-after-list` and `crash-after-init` roles | reported failed with its reason, its tools leave the registry, and exactly one warning is emitted however many paths noticed the death |
+| MCP15 | A server that dies after the handshake | `crash-after-list`, `crash-after-init` and `close-stdout` roles | reported failed with its reason, its tools leave the registry, exactly one warning is emitted however many paths noticed the death, and its process is closed even when the death lands before the connection was stored |
 | MCP16 | A server never inherits a credential | a host given `OPENROUTER_API_KEY`, a config `env:`, and a scrub/pass list | the server sees the rest of the environment and its own `env:`, not the key, and a name in `pass_env` survives a broad pattern; doctor builds the same environment |
 
 ## Fuzz and property tests

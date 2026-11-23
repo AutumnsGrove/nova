@@ -346,3 +346,24 @@ func TestHost_MCP08_DisconnectStopsTheProcess(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestHost_MCP15_AProcessThatOutlivesItsStreamIsStopped(t *testing.T) {
+	// The server closes its output and keeps running. Its reader stops, and the
+	// process is still there: whatever path noticed the death must close the
+	// connection, or the server outlives the host for the rest of the run.
+	h, reg, warned := hostFor(t, "close-stdout")
+	errs := h.Start(context.Background())
+	waitWarnings(t, errs, warned, 1)
+	if names := reg.Names(); len(names) != 0 {
+		t.Fatalf("registered = %v, want nothing from a server whose stream ended", names)
+	}
+	// The pid is kept on the state after the connection is dropped, so this holds
+	// whichever path noticed the death.
+	h.mu.Lock()
+	pid := h.servers[0].pid
+	h.mu.Unlock()
+	if pid == 0 {
+		t.Fatal("no server process was recorded")
+	}
+	waitGone(t, pid, 10*time.Second)
+}

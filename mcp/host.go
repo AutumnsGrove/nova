@@ -32,8 +32,10 @@ type HostOptions struct {
 	Inherit []string
 	// Scrub names the variables a server never inherits: Nova's own credentials
 	// and anything the user asked to hide. A server is a third-party program,
-	// and a key it never needed is a key it can leak.
+	// and a key it never needed is a key it can leak. A name in Pass is kept
+	// even when a pattern matches it.
 	Scrub []string
+	Pass  []string
 	// Version names this client in clientInfo.
 	Version string
 	// Warn receives one warning per problem: a server that will not start, a
@@ -49,6 +51,7 @@ type serverState struct {
 	names      []string // the registry names it contributed
 	err        error
 	connecting bool // between the start of a dial and its outcome
+	reported   bool // this server's failure has been reported once
 }
 
 // State names for Status.
@@ -76,7 +79,7 @@ func NewHost(cfg config.MCPConfig, opt HostOptions) *Host {
 	if len(base) == 0 {
 		base = osEnv()
 	}
-	opt.Inherit = tool.ScrubEnvPatterns(base, opt.Scrub)
+	opt.Inherit = tool.ScrubEnvPatterns(base, opt.Scrub, opt.Pass)
 	h := &Host{opt: opt}
 	for _, srv := range cfg.Servers {
 		h.servers = append(h.servers, &serverState{cfg: srv})
@@ -114,7 +117,10 @@ func (h *Host) Start(ctx context.Context) []error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := h.connect(ctx, st); err != nil {
+			err := h.connect(ctx, st)
+			// A death during the first listing already reported itself, so only
+			// the first reporter speaks for this server.
+			if err != nil && h.claimReport(st) {
 				mu.Lock()
 				warns = append(warns, err)
 				mu.Unlock()
@@ -129,6 +135,7 @@ func (h *Host) Start(ctx context.Context) []error {
 func (h *Host) connect(ctx context.Context, st *serverState) error {
 	h.mu.Lock()
 	st.connecting = true
+	st.reported = false
 	h.mu.Unlock()
 	defer func() {
 		h.mu.Lock()
@@ -140,6 +147,10 @@ func (h *Host) connect(ctx context.Context, st *serverState) error {
 		Env: st.cfg.Env, Dir: st.cfg.CWD, Inherit: h.opt.Inherit,
 		Timeout: time.Duration(st.cfg.TimeoutMS) * time.Millisecond,
 		Version: h.opt.Version,
+		// The reader starts inside Dial, so it must have these before it runs:
+		// setting them afterwards is a data race, and a death it missed.
+		OnToolsChanged: func() { h.relisted(ctx, st) },
+		OnClosed:       func(err error) { h.died(st, err) },
 	})
 	if err != nil {
 		h.mu.Lock()
@@ -151,12 +162,6 @@ func (h *Host) connect(ctx context.Context, st *serverState) error {
 	st.client = client
 	st.err = nil
 	h.mu.Unlock()
-	client.opt.OnToolsChanged = func() {
-		if err := h.refresh(ctx, st); err != nil {
-			h.warn(err)
-		}
-	}
-	client.opt.OnClosed = func(err error) { h.died(st, err) }
 	if err := h.refresh(ctx, st); err != nil {
 		h.mu.Lock()
 		st.err = err
@@ -166,11 +171,29 @@ func (h *Host) connect(ctx context.Context, st *serverState) error {
 	return nil
 }
 
+// relisted re-lists one server after it announces a changed tool list. A
+// notification can arrive before the connect has stored the connection, in
+// which case there is nothing to list yet and the connect's own listing covers
+// it.
+func (h *Host) relisted(ctx context.Context, st *serverState) {
+	h.mu.Lock()
+	ready := st.client != nil
+	h.mu.Unlock()
+	if !ready {
+		return
+	}
+	if err := h.refresh(ctx, st); err != nil {
+		h.warn(err)
+	}
+}
+
 // refresh re-lists one server's tools and makes the registry match. It is the
 // path both the initial connect and notifications/tools/list_changed take, so a
 // server that adds or removes a tool is followed without a reload.
 func (h *Host) refresh(ctx context.Context, st *serverState) error {
+	h.mu.Lock()
 	client := st.client
+	h.mu.Unlock()
 	if client == nil {
 		return fmt.Errorf("mcp: %s: not connected", st.cfg.Name)
 	}
@@ -226,7 +249,8 @@ func (h *Host) refresh(ctx context.Context, st *serverState) error {
 // clears the client first and sets closed.
 func (h *Host) died(st *serverState, err error) {
 	h.mu.Lock()
-	if h.closed || st.client == nil {
+	client := st.client
+	if h.closed || client == nil {
 		h.mu.Unlock()
 		return
 	}
@@ -234,8 +258,29 @@ func (h *Host) died(st *serverState, err error) {
 	lost := fmt.Errorf("mcp: %s: connection lost: %w", st.cfg.Name, err)
 	st.err = lost
 	st.client = nil
+	first := !st.reported
+	st.reported = true
 	h.mu.Unlock()
-	h.warn(lost)
+	// The process may still be alive — a malformed frame or a full pipe does not
+	// kill it — so the connection is closed here. Nothing else holds it now, and
+	// leaving it open would outlive the host.
+	_ = client.Close()
+	if first {
+		h.warn(lost)
+	}
+}
+
+// claimReport records that one server's failure has been reported, so a death
+// noticed twice — by the reader and by the listing that was in flight — is one
+// warning. It reports whether this caller is the first.
+func (h *Host) claimReport(st *serverState) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if st.reported {
+		return false
+	}
+	st.reported = true
+	return true
 }
 
 // unregister removes the names one server contributed. It is safe when the

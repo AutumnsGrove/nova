@@ -459,7 +459,9 @@ func mcpChecks(ctx context.Context, opt Options) []Check {
 		return nil
 	}
 	if opt.MCPDial == nil {
-		opt.MCPDial = dialMCP
+		opt.MCPDial = func(ctx context.Context, srv config.MCPServer) (int, error) {
+			return dialMCP(ctx, cfg, srv)
+		}
 	}
 	checks := make([]Check, len(cfg.MCP.Servers))
 	var wg sync.WaitGroup
@@ -480,14 +482,15 @@ func mcpChecks(ctx context.Context, opt Options) []Check {
 	return checks
 }
 
-// mcpInherit is the environment doctor gives a server: Nova's own, minus its
-// credentials, because a server is a third-party program.
-func mcpInherit() []string {
-	return tool.ScrubEnvPatterns(os.Environ(), providerauth.CredentialEnv())
+// mcpInherit is the environment doctor gives a server: the same one mode gives
+// it — Nova's own, minus its credentials and anything the config hides, plus
+// anything the config passes through — so doctor reports what a real run would.
+func mcpInherit(cfg *config.Config) []string {
+	return tool.ScrubEnvPatterns(os.Environ(), append(providerauth.CredentialEnv(), cfg.Extensions.ScrubEnv...), cfg.Extensions.PassEnv)
 }
 
 // dialMCP is the real dial: start the server, list its tools, then stop it.
-func dialMCP(ctx context.Context, srv config.MCPServer) (int, error) {
+func dialMCP(ctx context.Context, cfg *config.Config, srv config.MCPServer) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 	// The server starts from the same environment the real run gives it, minus
@@ -495,7 +498,7 @@ func dialMCP(ctx context.Context, srv config.MCPServer) (int, error) {
 	// with no PATH and doctor would report a failure Nova does not have.
 	client, err := mcp.Dial(ctx, mcp.Options{
 		Name: srv.Name, Command: srv.Command, Args: srv.Args, Env: srv.Env, Dir: srv.CWD,
-		Inherit: mcpInherit(), Timeout: dialTimeout,
+		Inherit: mcpInherit(cfg), Timeout: dialTimeout,
 	})
 	if err != nil {
 		return 0, err

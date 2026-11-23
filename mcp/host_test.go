@@ -161,6 +161,19 @@ func TestHost_MCP10_ToolListChangedRefreshes(t *testing.T) {
 	}
 }
 
+// alive reports whether a process still exists, and waitGone polls until it does
+// not: the operating system is the only evidence a child exited.
+func waitGone(t *testing.T, pid int, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for alive(pid) {
+		if time.Now().After(deadline) {
+			t.Fatalf("process %d is still alive after %v", pid, within)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // toolName returns the tool's Info, failing the test when it is missing.
 func toolName(t *testing.T, reg *tool.Registry, name string) tool.Info {
 	t.Helper()
@@ -232,7 +245,10 @@ func TestHost_MCP15_AServerThatDiesIsReported(t *testing.T) {
 func TestHost_MCP16_ServersDoNotInheritCredentials(t *testing.T) {
 	reg := tool.NewRegistry()
 	secret := "sk-should-not-be-here"
-	env := []string{"PATH=" + os.Getenv("PATH"), "OPENROUTER_API_KEY=" + secret, "MINE=" + secret}
+	env := []string{
+		"PATH=" + os.Getenv("PATH"), "OPENROUTER_API_KEY=" + secret, "MINE=" + secret,
+		"GITHUB_TOKEN=" + secret, "OTHER_API_KEY=" + secret,
+	}
 	h := NewHost(config.MCPConfig{Servers: []config.MCPServer{{
 		Name: "srv", Command: serverBin, Args: []string{"-role", "ok"}, TimeoutMS: 5000,
 		// The config's own env: is added to the inherited environment.
@@ -240,8 +256,11 @@ func TestHost_MCP16_ServersDoNotInheritCredentials(t *testing.T) {
 	}}}, HostOptions{
 		Registry: reg,
 		Inherit:  env,
-		Scrub:    []string{"OPENROUTER_API_KEY"},
-		Version:  "test",
+		// A broad pattern hides both keys; the pass list keeps the one the user
+		// asked for, exactly as ext treats extensions.pass_env.
+		Scrub:   []string{"OPENROUTER_API_KEY", "_API_KEY"},
+		Pass:    []string{"GITHUB_TOKEN"},
+		Version: "test",
 	})
 	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
 	if errs := h.Start(context.Background()); len(errs) != 0 {
@@ -254,6 +273,11 @@ func TestHost_MCP16_ServersDoNotInheritCredentials(t *testing.T) {
 	if got := answer("OPENROUTER_API_KEY"); got != "" {
 		t.Fatalf("server saw OPENROUTER_API_KEY = %q, want it scrubbed", got)
 	}
+	// The pass list keeps a name a broad pattern would have hidden, which is what
+	// extensions.pass_env means for an extension.
+	if got := answer("GITHUB_TOKEN"); got != secret {
+		t.Fatalf("server saw GITHUB_TOKEN = %q, want the passed name kept", got)
+	}
 	if got := answer("MINE"); got != secret {
 		t.Fatalf("server saw MINE = %q, want the rest of the environment", got)
 	}
@@ -262,5 +286,46 @@ func TestHost_MCP16_ServersDoNotInheritCredentials(t *testing.T) {
 	}
 	if got := answer("SERVER_OWN"); got != "yes" {
 		t.Fatalf("server saw SERVER_OWN = %q, want the config's env added", got)
+	}
+	if got := answer("OTHER_API_KEY"); got != "" {
+		t.Fatalf("server saw OTHER_API_KEY = %q, want the pattern to hide it", got)
+	}
+}
+
+func TestHost_MCP15_DeathDuringTheFirstListingIsOneWarning(t *testing.T) {
+	// The handshake succeeds and the process dies before tools/list is answered:
+	// the death and the failed listing are the same event, and saying so twice
+	// would teach a user to ignore both.
+	h, reg, warned := hostFor(t, "crash-after-init")
+	errs := h.Start(context.Background())
+	if got := len(errs) + len(warned.all()); got != 1 {
+		t.Fatalf("warnings = %d (%v / %v), want exactly one", got, errs, warned.all())
+	}
+	if names := reg.Names(); len(names) != 0 {
+		t.Fatalf("registered = %v, want nothing from a server that died", names)
+	}
+}
+
+func TestHost_MCP08_DisconnectStopsTheProcess(t *testing.T) {
+	// A malformed frame disconnects the server; the process is still alive at
+	// that moment, so the disconnect has to end it or it outlives the host.
+	h, reg, _ := hostFor(t, "malformed")
+	if errs := h.Start(context.Background()); len(errs) != 0 {
+		t.Fatalf("start = %v", errs)
+	}
+	pid := h.servers[0].client.Pid()
+	res := reg.Execute(context.Background(), "srv__echo", nil, &tool.Context{})
+	if !res.IsError {
+		t.Fatalf("call = %+v, want a failed result from a broken server", res)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if h.Status()[0].State == StateFailed && !alive(pid) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status = %+v, pid %d alive = %v: want the process gone", h.Status()[0], pid, alive(pid))
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

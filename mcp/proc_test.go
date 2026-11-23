@@ -4,28 +4,9 @@ package mcp
 
 import (
 	"context"
-	"syscall"
 	"testing"
 	"time"
 )
-
-// alive reports whether a process still exists.
-func alive(pid int) bool {
-	return pid > 0 && syscall.Kill(pid, 0) == nil
-}
-
-// waitGone polls until the process is gone, because the only evidence that a
-// child exited is the operating system.
-func waitGone(t *testing.T, pid int, within time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(within)
-	for alive(pid) {
-		if time.Now().After(deadline) {
-			t.Fatalf("process %d is still alive after %v", pid, within)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
 
 func TestClient_MCP11_CloseEscalatesPastIgnoredSigterm(t *testing.T) {
 	c := dial(t, "ignore-term")

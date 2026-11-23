@@ -29,7 +29,8 @@ mcp:
   a warning naming it and its index. It is never silently ignored.
 - `env` is added to the environment the host inherits. Nova's own credentials
   (`OPENROUTER_API_KEY`, the provider keys, `NOVA_SERVE_TOKEN`) and anything in
-  `extensions.scrub_env` are removed from it first, unless `extensions.pass_env` names them; a
+  `extensions.scrub_env` are removed from it first — a `_SUFFIX` pattern hides every name that ends
+  with it — unless `extensions.pass_env` names the variable, which wins over a broad pattern. A
   server is a third-party program, and a key it never needed is a key it can leak. A server's
   environment is never logged or echoed in an error.
 

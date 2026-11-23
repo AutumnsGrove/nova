@@ -27,10 +27,14 @@ func ScrubEnv(environ []string, names []string) []string {
 // ScrubEnvPatterns returns environ without the variables a pattern names. A
 // pattern matches a variable called exactly that, or — when it starts with an
 // underscore — any name that ends with it, so `_API_KEY` hides every provider
-// key an extension or a server has no business seeing. It is the rule the
-// extension host and the MCP client share.
-func ScrubEnvPatterns(environ []string, patterns []string) []string {
+// key an extension or a server has no business seeing. A name in pass is kept
+// even when a pattern matches: an explicit pass wins over a broad pattern, which
+// is the rule the extension host and the MCP client share.
+func ScrubEnvPatterns(environ []string, patterns []string, pass []string) []string {
 	return FilterEnv(environ, func(name string) bool {
+		if slices.Contains(pass, name) {
+			return false
+		}
 		return slices.ContainsFunc(patterns, func(p string) bool {
 			return name == p || (strings.HasPrefix(p, "_") && strings.HasSuffix(name, p))
 		})

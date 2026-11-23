@@ -154,6 +154,11 @@ func (s *server) handle(msg frame) {
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": s.role == "listchanged"}},
 			"serverInfo":      map[string]any{"name": "mcpserver", "version": "1.0.0"},
 		})
+		if s.role == "crash-after-init" {
+			// Dies after the handshake and before answering tools/list, so a
+			// death lands while the first listing is in flight.
+			os.Exit(5)
+		}
 	case "notifications/initialized":
 		// A notification carries no id and no answer. Nothing else is served
 		// until it arrives, so a client that skips it cannot use the server.

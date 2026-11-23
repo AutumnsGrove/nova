@@ -2,7 +2,7 @@
 chunk: C13
 title: "The extension host"
 packages: [./ext, ./ext/install, ./ext/sdk, ./mcp, ./mode]
-budgets: { ./ext: 3220, ./ext/install: 660, ./ext/sdk: 700, ./mcp: 810, ./mode: 3120 }
+budgets: { ./ext: 3220, ./ext/install: 660, ./ext/sdk: 700, ./mcp: 850, ./mode: 3120 }
 depends: [C12]
 ---
 
@@ -463,15 +463,15 @@ are also covered end to end there, where the registry and the permission policy 
 | MCP05 | Image content | `image` tool | image blocks become `Result.Parts` with a caption, the text block joins into `Content`, and an unsupported block becomes an omission note, never a dropped result |
 | MCP06 | A server that exits at once | `exit` role | one warning, no tools, `get_extensions` reports the server as failed with its reason, and the run still ends with exactly one `run_end` |
 | MCP07 | A call that never answers | `silent` role, `timeout_ms` 200 | cancelled at the timeout; the call fails and nothing else does |
-| MCP08 | Malformed and oversized lines | `malformed`, `oversize` roles | `ErrMalformed` and `ErrTooLarge`, and the server is disconnected rather than retried |
+| MCP08 | Malformed and oversized lines | `malformed`, `oversize` roles | `ErrMalformed` and `ErrTooLarge`, and the server is disconnected rather than retried: its tools go and its process is stopped, because a broken server may still be alive |
 | MCP09 | A tool name already taken | `srv__echo` registered before the server starts | one warning naming both, the first registration keeps the name, the server's other tools still register, nothing panics |
 | MCP10 | tools/list_changed | `listchanged` role | the new tool appears in the registry without a reload |
 | MCP11 | Reload and shutdown | `ignore-term` role; two loads | reload starts a new process and the old one is gone; shutdown escalates stdin → SIGTERM → SIGKILL and leaves no process |
 | MCP12 | Permission policy applies | a `deny` rule on `srv__echo` | the call is blocked before the server sees it and the model reads the refusal |
 | MCP13 | The `mcp` capability is reserved | a manifest declaring `capabilities: [mcp]` | the extension loads, and one warning names `mcp.servers` as the place to declare a server |
 | MCP14 | The frame reader is fuzzed | arbitrary bytes as a frame | never panics; a frame that decodes answers every question the client asks of it |
-| MCP15 | A server that dies after the handshake | `crash-after-list` role | reported failed with its reason, its tools leave the registry, and exactly one warning is emitted |
-| MCP16 | A server never inherits a credential | a host given `OPENROUTER_API_KEY` and a config `env:` | the server sees the rest of the environment and its own `env:` and not the key; doctor builds the same environment |
+| MCP15 | A server that dies after the handshake | `crash-after-list` and `crash-after-init` roles | reported failed with its reason, its tools leave the registry, and exactly one warning is emitted however many paths noticed the death |
+| MCP16 | A server never inherits a credential | a host given `OPENROUTER_API_KEY`, a config `env:`, and a scrub/pass list | the server sees the rest of the environment and its own `env:`, not the key, and a name in `pass_env` survives a broad pattern; doctor builds the same environment |
 
 ## Fuzz and property tests
 

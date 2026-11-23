@@ -588,12 +588,13 @@ func mcpserverBin(t *testing.T) string {
 func TestDoctor_DialMCPKeepsTheEnvironment(t *testing.T) {
 	// The real dial: a server that declares env: still needs PATH and HOME, so
 	// doctor must not report a failure the running server would not have.
+	cfg := config.Defaults()
 	srv := config.MCPServer{
 		Name: "srv", Command: mcpserverBin(t),
 		Args: []string{"-role", "ok"},
 		Env:  map[string]string{"SERVER_OWN": "yes"},
 	}
-	tools, err := dialMCP(context.Background(), srv)
+	tools, err := dialMCP(context.Background(), &cfg, srv)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -604,19 +605,27 @@ func TestDoctor_DialMCPKeepsTheEnvironment(t *testing.T) {
 
 func TestDoctor_MCPInheritScrubsCredentials(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "sk-doctor-secret")
-	inherit := mcpInherit()
+	t.Setenv("GITHUB_TOKEN", "gh-doctor")
+	t.Setenv("HIDDEN_ME", "hidden")
+	cfg := config.Defaults()
+	// The config's own lists are honoured here, because doctor must give a
+	// server the same environment the run does.
+	cfg.Extensions.ScrubEnv = []string{"_TOKEN", "HIDDEN_ME"}
+	cfg.Extensions.PassEnv = []string{"GITHUB_TOKEN"}
+	inherit := mcpInherit(&cfg)
 	for _, kv := range inherit {
 		if strings.HasPrefix(kv, "OPENROUTER_API_KEY=") {
 			t.Fatalf("inherit carries the credential: %q", kv)
 		}
 	}
-	var hasPath bool
-	for _, kv := range inherit {
-		if strings.HasPrefix(kv, "PATH=") {
-			hasPath = true
-		}
-	}
-	if !hasPath {
+	joined := strings.Join(inherit, "\n")
+	if !strings.Contains(joined, "PATH=") {
 		t.Fatalf("inherit = %v, want the rest of the environment", inherit)
+	}
+	if !strings.Contains(joined, "GITHUB_TOKEN=gh-doctor") {
+		t.Fatalf("inherit = %v, want the passed-through name kept", inherit)
+	}
+	if strings.Contains(joined, "HIDDEN_ME=hidden") {
+		t.Fatalf("inherit = %v, want the config's scrub_env honoured", inherit)
 	}
 }

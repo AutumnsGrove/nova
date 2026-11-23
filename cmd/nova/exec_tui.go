@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"io"
 
 	"github.com/spf13/cobra"
@@ -12,9 +13,9 @@ import (
 
 // execute runs the command tree with fang's styled help and errors. fang
 // writes to the command's own writers, so stderr is unused here.
-func execute(root *cobra.Command, stderr io.Writer) error {
+func execute(ctx context.Context, root *cobra.Command, stderr io.Writer) error {
 	_ = stderr
-	return cli.Execute(root)
+	return cli.Execute(ctx, root)
 }
 
 // buildFlavour names the build in `nova version`.

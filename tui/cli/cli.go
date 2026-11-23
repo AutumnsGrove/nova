@@ -24,13 +24,13 @@ const defaultWidth = 80
 // Execute runs root with fang's styled help and error output. Output is hard
 // wrapped to the terminal width, because fang styles but does not wrap the
 // command and flag groups, and help must never overflow the terminal.
-func Execute(root *cobra.Command) error {
+func Execute(ctx context.Context, root *cobra.Command) error {
 	w := terminalWidth()
 	out := newWrapWriter(root.OutOrStdout(), w)
 	errOut := newWrapWriter(root.ErrOrStderr(), w)
 	root.SetOut(out)
 	root.SetErr(errOut)
-	err := fang.Execute(context.Background(), root,
+	err := fang.Execute(ctx, root,
 		fang.WithoutManpage(),
 		fang.WithoutVersion(),
 		fang.WithColorSchemeFunc(fang.DefaultColorScheme),

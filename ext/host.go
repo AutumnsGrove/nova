@@ -229,6 +229,11 @@ func (h *Host) start(ctx context.Context) []error {
 			errs = append(errs, err)
 			continue
 		}
+		// A manifest warning is a problem the user can act on but that does not
+		// stop the extension loading, so it is reported and the load continues.
+		for _, warning := range m.Warnings {
+			errs = append(errs, fmt.Errorf("ext: %s: %s", m.Name, warning))
+		}
 		if h.isDisabled(m.Name) {
 			continue
 		}

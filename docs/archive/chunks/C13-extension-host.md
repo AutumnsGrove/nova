@@ -1,8 +1,8 @@
 ---
 chunk: C13
 title: "The extension host"
-packages: [./ext, ./ext/install, ./ext/sdk]
-budgets: { ./ext: 3220, ./ext/install: 660, ./ext/sdk: 700 }
+packages: [./ext, ./ext/install, ./ext/sdk, ./mcp, ./mode]
+budgets: { ./ext: 3220, ./ext/install: 660, ./ext/sdk: 700, ./mcp: 780, ./mode: 3120 }
 depends: [C12]
 ---
 
@@ -443,6 +443,33 @@ twice, answer slowly, answer twice, print garbage to stdout, exit after N calls,
 | SDK11 | schema helpers produce valid JSON Schema | `Object(String(...))` | accepted by `tool.ValidateArgs` |
 | SDK12 | concurrent calls | 20 | independent; `-race` clean |
 | EXA01 | each shipped example passes `Check` and its own test | `hello`, `block-rm`, `hello-go` | pass |
+
+### MCP servers (added after the build-out, #51)
+
+A stdio MCP server is declared in config (`mcp.servers`), not in a manifest: an extension cannot
+start a process the host does not supervise, so the `mcp` capability is reserved and warns. The
+scripted server is `mcp/testdata/mcpserver`, built once in `TestMain`, and it misbehaves on purpose
+the same way `echoext` does (exit at once, stay silent, answer with garbage, page a long list,
+announce a changed list, ignore SIGTERM). `./mode` is in this spec's package list because two rows
+are also covered end to end there, where the registry and the permission policy are wired: MCP02
+(the tools reach the model and run) and MCP12 (the policy blocks a call).
+
+| ID | Case | Input / setup | Expected |
+|---|---|---|---|
+| MCP01 | Initialize handshake | dial an `ok` server | negotiates the version the server answers with, then sends `notifications/initialized`, which the server requires before anything else |
+| MCP02 | tools/list registers every tool | `ok` server, three tools | each tool is in the registry as `<server>__<tool>`, description prefixed `[server] `, the server's input schema kept, annotation hints mapped onto `tool.Info` |
+| MCP03 | Paginated tools/list | `paginate` role, two per page | every page is followed through `nextCursor`; a repeated or endless cursor stops |
+| MCP04 | tools/call maps text and isError | `echo`, `fail` | text joins into `Result.Content`; `isError` becomes a failed result the model reads |
+| MCP05 | Image content | `image` tool | image blocks become `Result.Parts` with a caption, the text block joins into `Content`, and an unsupported block becomes an omission note, never a dropped result |
+| MCP06 | A server that exits at once | `exit` role | one warning, no tools, `get_extensions` reports the server as failed with its reason, and the run still ends with exactly one `run_end` |
+| MCP07 | A call that never answers | `silent` role, `timeout_ms` 200 | cancelled at the timeout; the call fails and nothing else does |
+| MCP08 | Malformed and oversized lines | `malformed`, `oversize` roles | `ErrMalformed` and `ErrTooLarge`, and the server is disconnected rather than retried |
+| MCP09 | A tool name already taken | `srv__echo` registered before the server starts | one warning naming both, the first registration keeps the name, the server's other tools still register, nothing panics |
+| MCP10 | tools/list_changed | `listchanged` role | the new tool appears in the registry without a reload |
+| MCP11 | Reload and shutdown | `ignore-term` role; two loads | reload starts a new process and the old one is gone; shutdown escalates stdin → SIGTERM → SIGKILL and leaves no process |
+| MCP12 | Permission policy applies | a `deny` rule on `srv__echo` | the call is blocked before the server sees it and the model reads the refusal |
+| MCP13 | The `mcp` capability is reserved | a manifest declaring `capabilities: [mcp]` | the extension loads, and one warning names `mcp.servers` as the place to declare a server |
+| MCP14 | The frame reader is fuzzed | arbitrary bytes as a frame | never panics; a frame that decodes answers every question the client asks of it |
 
 ## Fuzz and property tests
 

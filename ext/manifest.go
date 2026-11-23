@@ -204,6 +204,13 @@ func (m *Manifest) Validate() error {
 	if err := validateCapabilities(m.Capabilities); err != nil {
 		return err
 	}
+	// The capability is accepted so a manifest that declares it still loads, but
+	// it does nothing: an extension cannot start a process the host does not
+	// supervise, so a server is declared in config (mcp.servers). Saying so is
+	// the point (#51): silence is what a user could not diagnose.
+	if m.hasCapability("mcp") {
+		m.warn("the mcp capability is reserved: declare servers in config under mcp.servers; this declaration has no effect")
+	}
 	if err := m.validateRun(); err != nil {
 		return err
 	}
@@ -211,6 +218,17 @@ func (m *Manifest) Validate() error {
 		return err
 	}
 	return m.validateHooks()
+}
+
+// warn records one non-fatal problem, once, so validating twice does not double
+// the list.
+func (m *Manifest) warn(msg string) {
+	for _, have := range m.Warnings {
+		if have == msg {
+			return
+		}
+	}
+	m.Warnings = append(m.Warnings, msg)
 }
 
 // validateRun enforces that the manifest has a way to start.

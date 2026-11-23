@@ -22,6 +22,7 @@ import (
 	"github.com/AutumnsGrove/nova/diag"
 	"github.com/AutumnsGrove/nova/embed"
 	"github.com/AutumnsGrove/nova/ext"
+	"github.com/AutumnsGrove/nova/mcp"
 	"github.com/AutumnsGrove/nova/message"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/proto"
@@ -170,6 +171,10 @@ type Server struct {
 
 	// extStarted closes when the background extension start has finished.
 	extStarted chan struct{}
+	// mcp is the Model Context Protocol host, and mcpStarted closes when its
+	// background start has finished.
+	mcp        *mcp.Host
+	mcpStarted chan struct{}
 
 	// life ends when the server closes. notifyCh feeds the one goroutine that
 	// delivers fire-and-forget UI requests in order; notifying (guarded by mu)
@@ -225,6 +230,7 @@ func New(opt Options) (*Server, error) {
 		logins:    map[string]*loginFlow{},
 
 		extStarted: make(chan struct{}),
+		mcpStarted: make(chan struct{}),
 		notifyCh:   make(chan proto.UIRequest, notifyQueueSize),
 	}
 	s.life, s.stopLife = context.WithCancel(context.Background())
@@ -293,6 +299,7 @@ func New(opt Options) (*Server, error) {
 	}
 	s.system = s.systemPrompt()
 
+	s.mcp = s.buildMCPHost(cfg)
 	s.ext = s.buildExtensionHost()
 	if !opt.NoTools {
 		for _, b := range bundled.Enabled(cfg) {
@@ -357,6 +364,7 @@ func New(opt Options) (*Server, error) {
 		},
 	})
 	go s.startExtensions()
+	go s.startMCP(s.mcp, s.mcpStarted)
 	return s, nil
 }
 
@@ -613,7 +621,10 @@ func (s *Server) Close() error {
 	<-s.extStarted
 	ctx, cancel := context.WithTimeout(context.Background(), extShutdownTimeout)
 	defer cancel()
-	return errors.Join(storeErr, s.ext.Shutdown(ctx))
+	mcpCtx, mcpCancel := context.WithTimeout(context.Background(), mcpShutdownTimeout)
+	defer mcpCancel()
+	mcpErr := s.shutdownMCP(mcpCtx)
+	return errors.Join(storeErr, s.ext.Shutdown(ctx), mcpErr)
 }
 
 // SetUIHandler installs the handler used to answer permission and ui requests.

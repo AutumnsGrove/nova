@@ -490,3 +490,68 @@ func TestDoctor_DRX_UnreadableConfigFails(t *testing.T) {
 		t.Fatalf("config = %s %q, want fail", c.Status, c.Detail)
 	}
 }
+
+func TestDoctor_MCPChecks(t *testing.T) {
+	opt := testOptions(t)
+	writeAgentConfig(t, opt.Home, `
+mcp:
+  servers:
+    - name: alpha
+      command: alpha-server
+    - name: beta
+      command: beta-server
+      timeout_ms: 250
+`)
+	opt.MCPDial = func(_ context.Context, srv config.MCPServer) (int, error) {
+		if srv.Name == "beta" {
+			return 0, errors.New("mcp: beta: start beta-server: executable file not found in $PATH")
+		}
+		return 3, nil
+	}
+	checks := Run(context.Background(), opt)
+
+	ok := find(t, checks, "mcp/alpha")
+	if ok.Status != OK || !strings.Contains(ok.Detail, "3 tool(s)") {
+		t.Fatalf("alpha check = %+v, want ok with its tool count", ok)
+	}
+	bad := find(t, checks, "mcp/beta")
+	if bad.Status != Warn || !strings.Contains(bad.Detail, "not found") {
+		t.Fatalf("beta check = %+v, want a warning with the reason", bad)
+	}
+	if bad.Fix == "" {
+		t.Fatal("a failed server needs a fix line")
+	}
+	// Order follows the config, between the extensions and the project.
+	index := func(name string) int {
+		for i, c := range checks {
+			if c.Name == name {
+				return i
+			}
+		}
+		return -1
+	}
+	if !(index("extensions") < index("mcp/alpha") && index("mcp/alpha") < index("mcp/beta") && index("mcp/beta") < index("project")) {
+		t.Fatalf("checks = %v, want alpha then beta between extensions and project", names(checks))
+	}
+}
+
+func TestDoctor_NoMCPServers(t *testing.T) {
+	checks := Run(context.Background(), testOptions(t))
+	for _, c := range checks {
+		if strings.HasPrefix(c.Name, "mcp/") {
+			t.Fatalf("check %q without a configured server", c.Name)
+		}
+	}
+}
+
+// writeAgentConfig writes the user config for a doctor test.
+func writeAgentConfig(t *testing.T, home, body string) {
+	t.Helper()
+	path := filepath.Join(config.UserConfigDir(home), "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

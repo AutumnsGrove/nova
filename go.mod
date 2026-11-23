@@ -3,19 +3,19 @@ module github.com/AutumnsGrove/nova
 go 1.26.11
 
 require (
-	charm.land/bubbles/v2 v2.2.1
-	charm.land/bubbletea/v2 v2.1.1
+	charm.land/bubbles/v2 v2.2.2
+	charm.land/bubbletea/v2 v2.1.2
 	charm.land/fang/v2 v2.0.1
 	charm.land/glamour/v2 v2.0.1
-	charm.land/lipgloss/v2 v2.1.0
+	charm.land/lipgloss/v2 v2.1.1
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/charmbracelet/colorprofile v0.4.3
-	github.com/charmbracelet/x/ansi v0.11.9
+	github.com/charmbracelet/x/ansi v0.11.10
 	github.com/charmbracelet/x/exp/golden v0.1.0
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/image v0.48.0
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 	golang.org/x/sys v0.50.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -35,14 +35,14 @@ require (
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
-	github.com/mattn/go-runewidth v0.0.30 // indirect
+	github.com/mattn/go-runewidth v0.0.31 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/mango v0.1.0 // indirect
 	github.com/muesli/mango-cobra v1.2.0 // indirect
 	github.com/muesli/mango-pflag v0.1.0 // indirect
 	github.com/muesli/roff v0.1.0 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/rivo/uniseg v0.4.8-0.20261110175422-3a370411ca06 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect

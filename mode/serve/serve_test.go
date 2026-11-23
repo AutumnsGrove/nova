@@ -487,22 +487,18 @@ func TestServe_HTP13_SlowLorisHeader(t *testing.T) {
 }
 
 func TestServe_HTP14_GracefulShutdown(t *testing.T) {
+	// close() used to close every client channel as well as done, so a stream
+	// loop that reached its select after both had closed took either case at
+	// random, and the channel case ended the stream without the closing comment
+	// (#125). A stream with a ring to replay is still writing when the shutdown
+	// lands, which puts every attempt inside that window.
+	for attempt := 0; attempt < 32; attempt++ {
+		if body := replayThenShutdown(t, 64); !strings.HasSuffix(body, ": closing\n\n") {
+			t.Fatalf("attempt %d: stream ended with %q, want the closing comment", attempt, body[max(0, len(body)-40):])
+		}
+	}
+
 	s, _ := newModeServer(t, baseConfig())
-	ts, srv := newTestHTTP(t, s, Options{})
-
-	resp, err := http.Get(ts.URL + "/v1/events")
-	if err != nil {
-		t.Fatalf("events: %v", err)
-	}
-	defer resp.Body.Close()
-	// Give the handler a moment to read the initial headers, then stop.
-	srv.close()
-	_ = resp.Body.(io.Reader)
-	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), ": closing") {
-		t.Fatalf("stream did not end with a final comment: %q", body)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	start := time.Now()
@@ -512,6 +508,36 @@ func TestServe_HTP14_GracefulShutdown(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("shutdown took %v", elapsed)
 	}
+}
+
+// replayThenShutdown fills the ring with n events, opens a stream that has to
+// replay all of them, and shuts the server down while it is still writing.
+func replayThenShutdown(t *testing.T, n int) string {
+	t.Helper()
+	s, _ := newModeServer(t, baseConfig())
+	ts, srv := newTestHTTP(t, s, Options{})
+	for i := 0; i < n; i++ {
+		srv.publish(proto.Event{Type: proto.EventError})
+	}
+
+	req, err := http.NewRequest("GET", ts.URL+"/v1/events", nil)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	req.Header.Set("Last-Event-ID", "0")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+	defer resp.Body.Close()
+	// The handler flushes its headers before the replay, so this returns with
+	// the stream mid-replay and the shutdown lands behind a write or two.
+	srv.close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read stream: %v", err)
+	}
+	return string(body)
 }
 
 // deadlineRecorder records the write deadline a handler asks for, the way

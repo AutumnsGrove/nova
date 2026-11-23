@@ -7,6 +7,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- `nova serve` always ends an event stream with the `: closing` comment on shutdown. Closing the
+  server closed its done channel and every client channel together, so the stream loop's select had
+  two ready cases and took either at random; the channel case returned without the comment, leaving
+  a client unable to tell a shutdown from a dropped connection. The nightly shuffle run caught it
+  (#125).
+
 ## [0.5.0] - 2026-11-14
 
 Upgrade notes for library consumers (#91, #92, #104, #86):

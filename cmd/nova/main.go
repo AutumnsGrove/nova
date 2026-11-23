@@ -61,6 +61,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, tty bool) (co
 	// finish it, and no subcommand owns a second handler of its own (#126).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// The first signal asks the command to stop; it must not be the last word.
+	// NotifyContext keeps its handler registered after it cancels, so a command
+	// that cannot watch its context (a prompt on stdin, a shutdown that stalls)
+	// could never be ended from the keyboard again. Putting the default back as
+	// soon as the context is cancelled makes the next signal kill the process.
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 	exit := 0
 	root := newRoot(stdin, stdout, stderr, tty, &exit)
 	root.SetArgs(args)

@@ -19,6 +19,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   a context that never cancelled: `serve` never reached its shutdown, and a live event stream was
   cut off instead of ending with the `: closing` comment. The context now covers the whole command
   tree, which is also where the TUI and the modes get theirs, so one place owns the wiring (#126).
+- A second Ctrl-C still ends the process when a command cannot watch its context. The first signal
+  only cancels, and `signal.NotifyContext` leaves its handler registered, so the default disposition
+  is restored as soon as the context is cancelled: `nova ext install` at its `continue? [y/N]`
+  prompt, or a shutdown that stalls, can be escaped from the keyboard (#126).
+
+### Changed
+
+- `tui/cli.Execute` takes a `context.Context` as its first argument instead of creating a
+  background one, so an embedder can hand the command tree the same signal context the `nova`
+  binary does. Code that calls it with one argument needs to pass a context (#126).
 
 ## [0.5.0] - 2026-11-14
 

@@ -2,7 +2,7 @@
 chunk: C17
 title: "TUI dialogs, widgets, status, extension UI bridge"
 packages: [./tui/dialog, ./tui/widget, ./tui/status, ./tui/trust, ./mode, ./mode/attach, ./tui/ui, ./cmd/nova, ./clipboard, ./tui/image]
-budgets: { ./tui/sanitize: 100, ./tui/dialog: 2400, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 160,  ./mode: 2980, ./mode/attach: 160, ./tui/ui: 3090, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1560 }
+budgets: { ./tui/sanitize: 100, ./tui/dialog: 2400, ./tui/widget: 300, ./tui/status: 320, ./tui/trust: 160,  ./mode: 3120, ./mode/attach: 160, ./tui/ui: 3090, ./clipboard: 180, ./tui/image: 260, ./cmd/nova: 1560 }
 depends: [C15, C13]
 ---
 

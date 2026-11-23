@@ -72,12 +72,13 @@ nova/
   session/        JSONL tree store, branches, custom entries    ≤ 910
   compaction/     summarise-and-splice, context limit           ≤ 600
   usage/          usage ledger and cost fallback                ≤ 200
-  config/         YAML config, trust, context files, skills     ≤ 1640
-  mode/           server core, print, json, rpc                 ≤ 2980
+  config/         YAML config, trust, context files, skills     ≤ 1690
+  mode/           server core, print, json, rpc                 ≤ 3120
     attach/       protocol attachments to content parts         ≤ 160
     serve/        the protocol over HTTP and SSE                ≤ 440
     action/       the GitHub review action                      ≤ 750
     providers/    build both providers, route by model          ≤ 320
+  mcp/            Model Context Protocol client: stdio, tools    ≤ 780
   ext/            extension host, manifest, check, reload,
                   in-process API for bundled extensions         ≤ 3220
     install/      install, update, remove, lockfile, git        ≤ 660
@@ -95,7 +96,7 @@ nova/
     firstrun/     the first-run sign-in and model picker       ≤ 400
     cli/          fang-styled help and errors (full build only) ≤ 150
   cmd/nova/       main, cobra commands, doctor, version         ≤ 1560
-  doctor/         environment checks                            ≤ 440
+  doctor/         environment checks                            ≤ 490
   diag/           crash reports and debug traces                ≤ 250  update/         replace the binary from a checkout or release ≤ 450
   scripts/        matrixcheck, linecount, importcheck, accept, release-notes
   assets/         logo SVGs and the generator
@@ -143,6 +144,9 @@ message ← provider ← roles ← decide ← tool ← proto ← agent ← mode 
 - `ext` imports `proto`, `tool`, `agent`, `permission`, and the primitive contracts (`decide`,
   `embed`, `voice`) its frames carry. It never imports `tui`. A `bundled` extension that wires a
   primitive may import that contract too.
+- `mcp` imports `tool`, `message`, `proc`, and `config`, and nothing above them: it is a transport
+  that turns a server's tools into registry tools, so the policy decides them like any other. It is
+  wired by `mode` and imports no UI.
 - `diag` is a stdlib-only leaf: it holds no Nova state, so `agent` and `ext` may
   import it for crash reporting without breaking the layering.
 - `mode` wires everything (including `serve` and `action`). `cmd/nova` only parses flags and calls `mode`, `ext`, and `update`.

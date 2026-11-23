@@ -14,6 +14,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   two ready cases and took either at random; the channel case returned without the comment, leaving
   a client unable to tell a shutdown from a dropped connection. The nightly shuffle run caught it
   (#125).
+- `nova serve` shuts down gracefully on Ctrl-C and on SIGTERM instead of being killed by the
+  signal. The signal context was created inside the bare-invocation path, so every subcommand ran on
+  a context that never cancelled: `serve` never reached its shutdown, and a live event stream was
+  cut off instead of ending with the `: closing` comment. The context now covers the whole command
+  tree, which is also where the TUI and the modes get theirs, so one place owns the wiring (#126).
 
 ## [0.5.0] - 2026-11-14
 

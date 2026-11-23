@@ -56,10 +56,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, tty bool) (co
 			code = 1
 		}
 	}()
+	// The signal context covers the whole tree, subcommands included: a command
+	// that runs long-lived work (`serve`, the modes) has to see a shutdown and
+	// finish it, and no subcommand owns a second handler of its own (#126).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	// The first signal asks the command to stop; it must not be the last word.
+	// NotifyContext keeps its handler registered after it cancels, so a command
+	// that cannot watch its context (a prompt on stdin, a shutdown that stalls)
+	// could never be ended from the keyboard again. Putting the default back as
+	// soon as the context is cancelled makes the next signal kill the process.
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 	exit := 0
 	root := newRoot(stdin, stdout, stderr, tty, &exit)
 	root.SetArgs(args)
-	if err := execute(root, stderr); err != nil {
+	if err := execute(ctx, root, stderr); err != nil {
 		return 2
 	}
 	return exit
@@ -257,19 +271,16 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 	}
 	defer s.Close()
 
-	sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	switch {
 	case o.mode == "rpc":
-		if err := mode.ServeRPC(sigCtx, s, o.stdin, o.stdout); err != nil {
+		if err := mode.ServeRPC(ctx, s, o.stdin, o.stdout); err != nil {
 			return 1, err
 		}
 		return 0, nil
 	case o.mode == "json":
-		return mode.RunJSON(sigCtx, s, o.prompt, o.stdout), nil
+		return mode.RunJSON(ctx, s, o.prompt, o.stdout), nil
 	case o.mode == "tui":
-		return 0, startTUI(sigCtx, s, o.resume)
+		return 0, startTUI(ctx, s, o.resume)
 	case o.prompt != "":
 		text, err := buildPrompt(o.prompt, o.stdin, o.tty)
 		if err != nil {
@@ -282,10 +293,10 @@ func runRoot(ctx context.Context, o rootOptions) (int, error) {
 			fmt.Fprintln(o.stderr, "no API key: run `nova login` or set OPENROUTER_API_KEY")
 			return 1, nil
 		}
-		return mode.RunPrint(sigCtx, s, text, o.stdout, o.stderr), nil
+		return mode.RunPrint(ctx, s, text, o.stdout, o.stderr), nil
 	default:
 		if tuiMode {
-			return 0, startTUI(sigCtx, s, o.resume)
+			return 0, startTUI(ctx, s, o.resume)
 		}
 		return 0, fmt.Errorf("nova: no mode selected; use -p, --mode, or a subcommand")
 	}

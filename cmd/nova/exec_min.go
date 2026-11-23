@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -11,8 +12,8 @@ import (
 
 // execute runs the command tree with plain cobra help and errors, printing the
 // error here because fang is not available without the UI build.
-func execute(root *cobra.Command, stderr io.Writer) error {
-	err := root.Execute()
+func execute(ctx context.Context, root *cobra.Command, stderr io.Writer) error {
+	err := root.ExecuteContext(ctx)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 	}

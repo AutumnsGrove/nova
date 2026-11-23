@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/permission"
@@ -218,13 +219,26 @@ func TestMCP_CommandWithNoServers(t *testing.T) {
 }
 
 func TestMCP_OneWarningPerDeadServer(t *testing.T) {
-	// A connect failure is reported once: the host returns it and the mode start
-	// reports that, so a Warn callback here would double every dead server.
-	s, _ := newServerWithMCP(t, "exit", nil)
-	events := drainExtensionErrors(s)
-	if len(events) != 1 {
-		t.Fatalf("extension_error events = %d (%v), want one per dead server", len(events), events)
+	// A server that never answers its handshake fails after its timeout, which
+	// leaves time to subscribe first: the failure is reported once, and a second
+	// report — the double the review found — would arrive with it.
+	s, _ := newServerWithMCP(t, "noinit", func(cfg *config.Config) {
+		cfg.MCP.Servers[0].TimeoutMS = 1000
+	})
+	events, cancel := s.Subscribe(64)
+	defer cancel()
+	seen := waitExtensionErrors(t, events, 1)
+	if len(seen) != 1 {
+		t.Fatalf("extension_error events = %v, want one per dead server", seen)
 	}
+	select {
+	case ev := <-events:
+		if ev.Type == proto.EventExtensionError {
+			t.Fatalf("a second extension_error arrived: %+v", ev.Error)
+		}
+	case <-time.After(300 * time.Millisecond):
+	}
+	<-s.mcpStarted
 }
 
 func TestMCP_ServersDoNotInheritCredentials(t *testing.T) {
@@ -279,22 +293,23 @@ func newServerWithMCP(t *testing.T, role string, mutate func(*config.Config)) (*
 	return s, prov
 }
 
-// drainExtensionErrors waits for the MCP start and returns the messages it
-// reported as extension_error.
-func drainExtensionErrors(s *Server) []string {
-	events, cancel := s.Subscribe(64)
-	defer cancel()
-	<-s.mcpStarted
+// waitExtensionErrors waits for want extension_error messages. The report comes
+// from another goroutine, so the wait is the only thing that can say it landed.
+func waitExtensionErrors(t *testing.T, events <-chan proto.Event, want int) []string {
+	t.Helper()
 	var out []string
-	for {
+	deadline := time.Now().Add(10 * time.Second)
+	for len(out) < want {
+		if time.Now().After(deadline) {
+			t.Fatalf("extension_error events = %v, want %d", out, want)
+		}
 		select {
 		case ev := <-events:
 			if ev.Type == proto.EventExtensionError && ev.Error != nil {
 				out = append(out, ev.Error.Message)
 			}
-			continue
-		default:
-			return out
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
+	return out
 }

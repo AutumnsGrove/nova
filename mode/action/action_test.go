@@ -165,3 +165,100 @@ func hasRun(args, seq []string) bool {
 	}
 	return false
 }
+
+// selfReview is the repository's own review job: the workflow that points the
+// action at this repository's pull requests.
+type selfReview struct {
+	On          map[string]any    `yaml:"on"`
+	Permissions map[string]string `yaml:"permissions"`
+	Concurrency struct {
+		Group            string `yaml:"group"`
+		CancelInProgress bool   `yaml:"cancel-in-progress"`
+	} `yaml:"concurrency"`
+	Jobs map[string]struct {
+		If    string            `yaml:"if"`
+		Perms map[string]string `yaml:"permissions"`
+		Steps []struct {
+			Uses string            `yaml:"uses"`
+			Run  string            `yaml:"run"`
+			With map[string]string `yaml:"with"`
+		} `yaml:"steps"`
+	} `yaml:"jobs"`
+}
+
+func loadSelfReview(t *testing.T) selfReview {
+	t.Helper()
+	path := filepath.Join("..", "..", ".github", "workflows", "nova-review.yml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var doc selfReview
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return doc
+}
+
+// The job runs a pull request's own build of Nova with a write token and a paid
+// model key, so the parts that keep it safe are asserted rather than trusted:
+// it only ever runs on a branch in this repository, it asks for two permissions
+// and no more, no script interpolates an expression, and the spend is capped.
+func TestAction_ACT07_SelfReviewWorkflow(t *testing.T) {
+	doc := loadSelfReview(t)
+	for _, trigger := range []string{"pull_request", "issue_comment", "workflow_dispatch"} {
+		if _, ok := doc.On[trigger]; !ok {
+			t.Errorf("the workflow does not listen to %s: %v", trigger, doc.On)
+		}
+	}
+	if len(doc.Jobs) != 1 {
+		t.Fatalf("jobs = %v, want one", doc.Jobs)
+	}
+	job, ok := doc.Jobs["review"]
+	if !ok {
+		t.Fatalf("jobs = %v, want one named review", doc.Jobs)
+	}
+	if !strings.Contains(job.If, "github.event.pull_request.head.repo.full_name == github.repository") {
+		t.Fatalf("the job does not refuse a fork head:\n%s", job.If)
+	}
+	if !strings.Contains(job.If, "draft == false") {
+		t.Fatalf("the job does not refuse a draft:\n%s", job.If)
+	}
+	total := map[string]string{}
+	for k, v := range doc.Permissions {
+		total[k] = v
+	}
+	for k, v := range job.Perms {
+		total[k] = v
+	}
+	if len(total) != 2 || total["contents"] != "read" || total["pull-requests"] != "write" {
+		t.Fatalf("permissions = %v, want contents: read and pull-requests: write only", total)
+	}
+	if doc.Concurrency.Group == "" || !doc.Concurrency.CancelInProgress {
+		t.Fatalf("concurrency = %+v, want one group per pull request, cancelling", doc.Concurrency)
+	}
+	for _, step := range job.Steps {
+		if strings.Contains(step.Run, "${{") {
+			t.Errorf("a run script interpolates an expression:\n%s", step.Run)
+		}
+	}
+	var found bool
+	for _, step := range job.Steps {
+		if step.Uses != "./" {
+			continue
+		}
+		found = true
+		if step.With["pr"] == "" {
+			t.Errorf("the action is not given the pull request number: %v", step.With)
+		}
+		if step.With["model"] == "" {
+			t.Errorf("the action is not given a model: %v", step.With)
+		}
+		if cap := step.With["max-cost"]; cap == "" || cap == "0" {
+			t.Errorf("the review has no cost cap: %v", step.With)
+		}
+	}
+	if !found {
+		t.Fatal("no step runs this repository's own action")
+	}
+}

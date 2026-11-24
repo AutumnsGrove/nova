@@ -13,7 +13,7 @@ import (
 // actionReview builds `nova action review`.
 func actionReview(stdout io.Writer, exit *int) *cobra.Command {
 	var model, token string
-	var maxComments int
+	var maxComments, pr int
 	var maxCost float64
 	var wallClock time.Duration
 	var dryRun, jsonOut bool
@@ -24,8 +24,8 @@ func actionReview(stdout io.Writer, exit *int) *cobra.Command {
 			state := action.NewState(maxComments)
 			opt := action.Options{
 				Model: model, MaxComments: maxComments, MaxCostUSD: maxCost,
-				WallClock: wallClock,
-				DryRun:    dryRun, JSON: jsonOut, Token: token,
+				WallClock: wallClock, PR: pr,
+				DryRun: dryRun, JSON: jsonOut, Token: token,
 				HasKey: mode.HasProviderKey(""), Out: stdout, State: state,
 			}
 			if !opt.HasKey {
@@ -48,6 +48,7 @@ func actionReview(stdout io.Writer, exit *int) *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&model, "model", "", "model id")
 	f.IntVar(&maxComments, "max-comments", 15, "maximum inline comments")
+	f.IntVar(&pr, "pr", 0, "pull request number (0 reads it from the event)")
 	f.Float64Var(&maxCost, "max-cost", 0, "maximum cost in USD (0 means unlimited)")
 	f.DurationVar(&wallClock, "wall-clock", 15*time.Minute, "wall-clock limit (0 means no limit)")
 	f.BoolVar(&dryRun, "dry-run", false, "do not post the review")

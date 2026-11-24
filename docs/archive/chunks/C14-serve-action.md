@@ -142,11 +142,11 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 ### Action: setup
 
 15. `nova action review` reads `GITHUB_REPOSITORY`, `GITHUB_EVENT_PATH` (a `pull_request` or
-    `pull_request_target` payload: number, head and base SHAs), `GITHUB_API_URL` (the REST base, the
-    runner's own on a GitHub Enterprise Server and `https://api.github.com` when unset), and the
-    token from `GITHUB_TOKEN` or `--token`; flags and explicit fields override the environment. A
-    missing token or an event that is not a pull request is a usage error (exit 2) with a clear
-    message.
+    `pull_request_target` payload: number, head and base SHAs), `--pr` (the number, for a run with no
+    payload at all), `GITHUB_API_URL` (the REST base, the runner's own on a GitHub Enterprise Server
+    and `https://api.github.com` when unset), and the token from `GITHUB_TOKEN` or `--token`; flags
+    and explicit fields override the environment. A missing token, a missing number, or an event that
+    is not a pull request is a usage error (exit 2) with a clear message.
 16. **No key, no review.** If the model API key is missing (the normal case for a pull request from a
     fork, where secrets are withheld), the command prints a GitHub `::notice::` line, writes nothing to
     the pull request, and exits 0.

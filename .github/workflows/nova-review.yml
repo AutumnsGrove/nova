@@ -65,7 +65,26 @@ jobs:
     env:
       PR: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
     steps:
+      - name: Check the head is in this repository
+        id: head
+        # A pull_request payload carries the head repository and the job `if`
+        # already refuses a fork there. A comment and a manual run carry no such
+        # field, and both check out refs/pull/<n>/head, which exists for a fork
+        # too, so the API decides before anything from that checkout runs. A
+        # failed request fails closed.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ env.PR }}
+        run: |
+          if head=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq '.head.repo.full_name') &&
+             [ "${head}" = "${GITHUB_REPOSITORY}" ]; then
+            echo "fork=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Nova review skipped: pull request ${PR} does not come from ${GITHUB_REPOSITORY}"
+            echo "fork=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v7
+        if: steps.head.outputs.fork == 'false'
         with:
           # A comment and a manual run both check out the default branch, so the
           # head is named: the reviewer reads the files the diff is about.
@@ -76,6 +95,7 @@ jobs:
       # exercises. The cost of that is a pull request that does not build
       # failing its own review, which is the answer worth having.
       - uses: ./
+        if: steps.head.outputs.fork == 'false'
         with:
           model: deepseek/deepseek-v4.1
           max-comments: "15"

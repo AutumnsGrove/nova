@@ -335,7 +335,7 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | ACT04 | the REST base URL is the runner's | `GITHUB_API_URL` set; a caller-set URL; neither set | the environment's URL; the caller's; `https://api.github.com` |
 | ACT05 | a local action installs the checkout | `github.action_ref` empty; set | `go install -tags notui ./cmd/nova`; the pinned ref |
 | ACT06 | the optional inputs reach the command, and only when set | `pr`, `dry-run` unset; set | absent from the argument list; `--pr` and `--dry-run` present |
-| ACT07 | this repository's own review job keeps its guards | `.github/workflows/nova-review.yml` | one job; a fork head, a draft and a bot author refused; exactly `contents: read` and `pull-requests: write`; one cancelling concurrency group; no expression in a script; a model and a non-zero cost cap |
+| ACT07 | this repository's own review job keeps its guards | `.github/workflows/nova-review.yml` | one job; a fork head, a draft and a bot author refused, and a comment path that asks the API for the head and gates every `uses:` step on the answer; exactly `contents: read` and `pull-requests: write`; one cancelling concurrency group; no expression in a script; a model and a non-zero cost cap |
 
 ## Fuzz and property tests
 

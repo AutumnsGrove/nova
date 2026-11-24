@@ -211,6 +211,8 @@ var securityPredicates = []string{
 	"github.event.pull_request.user.type != 'Bot'",
 	"github.event.comment.user.type != 'Bot'",
 	`contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)`,
+	"github.event.issue.pull_request != null",
+	"contains(github.event.comment.body, '@nova')",
 }
 
 // The job runs a pull request's own build of Nova with a write token and a paid

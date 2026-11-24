@@ -66,7 +66,7 @@ type Options struct {
     Repo        string   // "owner/name"; default from GITHUB_REPOSITORY
     PR          int      // default from GITHUB_EVENT_PATH
     Token       string   // GITHUB_TOKEN
-    APIURL      string   // default https://api.github.com
+    APIURL      string   // default GITHUB_API_URL, else https://api.github.com
     Model       string
     MaxComments int      // default 15
     MaxCostUSD  float64  // 0 means unlimited

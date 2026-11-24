@@ -29,7 +29,7 @@ const marker = "<!-- nova-review -->"
 
 // Options configures one review run.
 type Options struct {
-	Repo, Token, APIURL, Model, StepSummary string  // owner/name, token, api.github.com, model, summary path
+	Repo, Token, APIURL, Model, StepSummary string  // owner/name, token, GITHUB_API_URL or api.github.com, model, summary path
 	PR, MaxComments, DiffMaxBytes           int     // PR number, comment cap (15), diff cap (200 KiB)
 	MaxCostUSD                              float64 // 0 means unlimited
 	DryRun, JSON, HasKey                    bool

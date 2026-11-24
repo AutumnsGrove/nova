@@ -179,6 +179,8 @@ type selfReview struct {
 		If    string            `yaml:"if"`
 		Perms map[string]string `yaml:"permissions"`
 		Steps []struct {
+			ID   string            `yaml:"id"`
+			If   string            `yaml:"if"`
 			Uses string            `yaml:"uses"`
 			Run  string            `yaml:"run"`
 			With map[string]string `yaml:"with"`
@@ -242,6 +244,34 @@ func TestAction_ACT07_SelfReviewWorkflow(t *testing.T) {
 			t.Errorf("a run script interpolates an expression:\n%s", step.Run)
 		}
 	}
+	// A pull_request payload names the head repository and the job `if` refuses
+	// a fork there, but a comment and a manual run have no such field while they
+	// still check out refs/pull/<n>/head. Both step that use the checkout are
+	// therefore gated on a check that asks the API, so a comment on a fork pull
+	// request cannot run that fork's action with this job's token and key.
+	var guard string
+	for _, step := range job.Steps {
+		if step.ID != "" && strings.Contains(step.Run, ".head.repo.full_name") {
+			guard = step.ID
+		}
+	}
+	if guard == "" {
+		t.Fatal("no step resolves the head repository, so a comment on a fork pull request would run its action")
+	}
+	uses := 0
+	for _, step := range job.Steps {
+		if step.Uses == "" {
+			continue
+		}
+		uses++
+		if !strings.Contains(step.If, "steps."+guard+".outputs.") {
+			t.Errorf("step %q is not gated on the head check:\n%s", step.Uses, step.If)
+		}
+	}
+	if uses == 0 {
+		t.Fatal("no step runs anything")
+	}
+
 	var found bool
 	for _, step := range job.Steps {
 		if step.Uses != "./" {

@@ -33,7 +33,16 @@ runs:
       shell: bash
       env:
         ACTION_REF: ${{ github.action_ref }}
-      run: go install -tags notui "github.com/AutumnsGrove/nova/cmd/nova@${ACTION_REF}"
+      run: |
+        # A local action ("uses: ./") has no ref: the runner leaves
+        # github.action_ref empty, so installing by ref is an install of the
+        # empty string. The checkout in front of this step is then the version
+        # to run, which is how a repository builds and tests its own action.
+        if [ -n "${ACTION_REF}" ]; then
+          go install -tags notui "github.com/AutumnsGrove/nova/cmd/nova@${ACTION_REF}"
+        else
+          go install -tags notui ./cmd/nova
+        fi
     - name: Review the pull request
       shell: bash
       # Inputs reach the script through the environment, never as ${{ }} text in

@@ -3,6 +3,8 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -77,5 +79,28 @@ func TestCLI_ActionReviewWithoutAPrIsAUsageError(t *testing.T) {
 	}
 	if !strings.Contains(out+errOut, "GITHUB_EVENT_PATH") {
 		t.Fatalf("the message should name the missing input: %q", out+errOut)
+	}
+}
+
+// The flag is not a fallback: when both are present the number on the command
+// line wins, which is what lets a manual run review a pull request other than
+// the one the event happened to name.
+func TestCLI_ActionReviewPrFlagOverridesTheEvent(t *testing.T) {
+	gh := &fakeGitHubREST{}
+	ts := httptest.NewServer(http.HandlerFunc(gh.record))
+	defer ts.Close()
+	actionEnv(t, ts.URL)
+	event := filepath.Join(t.TempDir(), "event.json")
+	if err := os.WriteFile(event, []byte(`{"pull_request":{"number":9}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GITHUB_EVENT_PATH", event)
+
+	if code, _, errOut := runCLI(t, "action", "review", "--pr", "7", "--dry-run"); code != 1 {
+		t.Fatalf("exit = %d, want 1: %s", code, errOut)
+	}
+	paths := gh.seen()
+	if len(paths) == 0 || paths[0] != "/repos/o/r/pulls/7" {
+		t.Fatalf("requested %v, want /repos/o/r/pulls/7 first", paths)
 	}
 }

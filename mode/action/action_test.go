@@ -165,3 +165,169 @@ func hasRun(args, seq []string) bool {
 	}
 	return false
 }
+
+// selfReview is the repository's own review job: the workflow that points the
+// action at this repository's pull requests.
+type selfReview struct {
+	On          map[string]any    `yaml:"on"`
+	Permissions map[string]string `yaml:"permissions"`
+	Concurrency struct {
+		Group            string `yaml:"group"`
+		CancelInProgress bool   `yaml:"cancel-in-progress"`
+	} `yaml:"concurrency"`
+	Jobs map[string]struct {
+		If    string            `yaml:"if"`
+		Perms map[string]string `yaml:"permissions"`
+		Steps []struct {
+			ID   string            `yaml:"id"`
+			If   string            `yaml:"if"`
+			Uses string            `yaml:"uses"`
+			Run  string            `yaml:"run"`
+			With map[string]string `yaml:"with"`
+		} `yaml:"steps"`
+	} `yaml:"jobs"`
+}
+
+func loadSelfReview(t *testing.T) selfReview {
+	t.Helper()
+	path := filepath.Join("..", "..", ".github", "workflows", "nova-review.yml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var doc selfReview
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return doc
+}
+
+// securityPredicates are the conditions that decide whether the review job may
+// run at all. The job's `if` uses them, and so does the concurrency key, which
+// is evaluated first and has to agree or a skipped run cancels a live review.
+var securityPredicates = []string{
+	"github.event.pull_request.head.repo.full_name == github.repository",
+	"github.event.pull_request.draft == false",
+	"github.event.pull_request.user.type != 'Bot'",
+	"github.event.comment.user.type != 'Bot'",
+	`contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)`,
+	"github.event.issue.pull_request != null",
+	"contains(github.event.comment.body, '@nova')",
+}
+
+// The job runs a pull request's own build of Nova with a write token and a paid
+// model key, so the parts that keep it safe are asserted rather than trusted:
+// it only ever runs on a branch in this repository, it asks for two permissions
+// and no more, no script interpolates an expression, and the spend is capped.
+func TestAction_ACT07_SelfReviewWorkflow(t *testing.T) {
+	doc := loadSelfReview(t)
+	for _, trigger := range []string{"pull_request", "issue_comment", "workflow_dispatch"} {
+		if _, ok := doc.On[trigger]; !ok {
+			t.Errorf("the workflow does not listen to %s: %v", trigger, doc.On)
+		}
+	}
+	if len(doc.Jobs) != 1 {
+		t.Fatalf("jobs = %v, want one", doc.Jobs)
+	}
+	job, ok := doc.Jobs["review"]
+	if !ok {
+		t.Fatalf("jobs = %v, want one named review", doc.Jobs)
+	}
+	// Every predicate in the job's `if` is load-bearing: the job holds a write
+	// token and a paid key, and runs the pull request's own build of Nova. A
+	// predicate that a later edit drops has to fail here, or the guard is only
+	// claimed.
+	for _, want := range securityPredicates {
+		if !strings.Contains(job.If, want) {
+			t.Fatalf("the job does not require %s:\n%s", want, job.If)
+		}
+	}
+	total := map[string]string{}
+	for k, v := range doc.Permissions {
+		total[k] = v
+	}
+	for k, v := range job.Perms {
+		total[k] = v
+	}
+	if len(total) != 2 || total["contents"] != "read" || total["pull-requests"] != "write" {
+		t.Fatalf("permissions = %v, want contents: read and pull-requests: write only", total)
+	}
+	// One group per pull request, not one for the workflow: a single shared
+	// group would let a push to one pull request cancel another's review, which
+	// vanishes green without posting anything.
+	if !doc.Concurrency.CancelInProgress {
+		t.Fatalf("concurrency = %+v, want cancelling", doc.Concurrency)
+	}
+	for _, want := range []string{"github.event.pull_request.number", "github.event.issue.number", "inputs.pr"} {
+		if !strings.Contains(doc.Concurrency.Group, want) {
+			t.Fatalf("the concurrency group does not name %s:\n%s", want, doc.Concurrency.Group)
+		}
+	}
+	// The group is evaluated before the job's `if`, so a run the job will skip
+	// still takes a group and can cancel a review that is running. A skipped run
+	// therefore has to land on a group of its own, and the run has to be
+	// ineligible by the same rules that the `if` uses.
+	if !strings.Contains(doc.Concurrency.Group, "github.run_id") {
+		t.Fatalf("a run the job skips would take the pull request's group:\n%s", doc.Concurrency.Group)
+	}
+	for _, want := range securityPredicates {
+		if !strings.Contains(doc.Concurrency.Group, want) {
+			t.Fatalf("the concurrency group does not fold in %s, so a run the job skips can cancel a review:\n%s", want, doc.Concurrency.Group)
+		}
+	}
+	for _, step := range job.Steps {
+		if strings.Contains(step.Run, "${{") {
+			t.Errorf("a run script interpolates an expression:\n%s", step.Run)
+		}
+	}
+	// A pull_request payload names the head repository and the job `if` refuses
+	// a fork there, but a comment and a manual run have no such field while they
+	// still check out refs/pull/<n>/head. Both step that use the checkout are
+	// therefore gated on a check that asks the API, so a comment on a fork pull
+	// request cannot run that fork's action with this job's token and key.
+	var guard string
+	for _, step := range job.Steps {
+		if step.ID != "" && strings.Contains(step.Run, ".head.repo.full_name") {
+			guard = step.ID
+		}
+	}
+	if guard == "" {
+		t.Fatal("no step resolves the head repository, so a comment on a fork pull request would run its action")
+	}
+	uses := 0
+	for _, step := range job.Steps {
+		if step.Uses == "" {
+			continue
+		}
+		uses++
+		// The comparison is asserted exactly, not just mentioned: `!= 'true'`
+		// is fail-open, because an empty output (a guard step that errored
+		// before writing it, or a renamed output) satisfies it.
+		if want := "steps." + guard + ".outputs.fork == 'false'"; !strings.Contains(step.If, want) {
+			t.Errorf("step %q is not gated on %q:\n%s", step.Uses, want, step.If)
+		}
+	}
+	if uses == 0 {
+		t.Fatal("no step runs anything")
+	}
+
+	var found bool
+	for _, step := range job.Steps {
+		if step.Uses != "./" {
+			continue
+		}
+		found = true
+		if step.With["pr"] == "" {
+			t.Errorf("the action is not given the pull request number: %v", step.With)
+		}
+		if step.With["model"] == "" {
+			t.Errorf("the action is not given a model: %v", step.With)
+		}
+		if cap := step.With["max-cost"]; cap == "" || cap == "0" {
+			t.Errorf("the review has no cost cap: %v", step.With)
+		}
+	}
+	if !found {
+		t.Fatal("no step runs this repository's own action")
+	}
+}

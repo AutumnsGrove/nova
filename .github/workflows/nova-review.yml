@@ -1,0 +1,87 @@
+# Nova reviews its own pull requests, with the action it ships.
+#
+# pi-review stays. It checks out the merge commit and runs the code; Nova's
+# reviewer is read-only -- read, list, glob, grep, and the two review tools --
+# so it looks at the diff rather than at behaviour. The overlap is deliberate:
+# the point of this workflow is that the action is exercised by the pull
+# requests that change it, not that a second opinion is cheap.
+name: nova-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+  # An issue_comment payload carries the pull request as `issue`, and no
+  # `pull_request`, so the number has to be passed to the action explicitly.
+  issue_comment:
+    types: [created]
+  # For a rehearsal (`-f dry_run=true`) and for re-running a review on a pull
+  # request that was reviewed before the action could be trusted to.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number to review"
+        type: string
+        required: true
+      dry_run:
+        description: "Print the review without posting it"
+        type: boolean
+        default: false
+
+# One review per pull request at a time. A push to a pull request that is being
+# reviewed supersedes the run it replaced, rather than two of them racing to
+# post and paying for the same diff twice.
+concurrency:
+  group: >-
+    nova-review-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr || github.run_id }}
+  cancel-in-progress: true
+
+# Reading the pull request and posting one review, and nothing else. The write
+# token and the model key both sit in this job, so the scope is the permission
+# set and the `if` below, not a comment.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # The job builds and runs the pull request's own copy of Nova, so it only
+    # ever runs on a branch in this repository, opened by a person, out of draft,
+    # and asked for by someone who can push here. A fork is refused twice over:
+    # its token is read-only and its secrets are withheld, so a review could not
+    # be posted from one anyway.
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.draft == false &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.type != 'Bot') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       contains(github.event.comment.body, '@nova') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+       github.event.comment.user.type != 'Bot') ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PR: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # A comment and a manual run both check out the default branch, so the
+          # head is named: the reviewer reads the files the diff is about.
+          ref: refs/pull/${{ env.PR }}/head
+          persist-credentials: false
+      # The action in this checkout, not a published tag: a change to
+      # `action.yml` or to the review itself is what the next pull request
+      # exercises. The cost of that is a pull request that does not build
+      # failing its own review, which is the answer worth having.
+      - uses: ./
+        with:
+          model: deepseek/deepseek-v4.1
+          max-comments: "15"
+          max-cost: "0.75"
+          wall-clock: 10m
+          pr: ${{ env.PR }}
+          dry-run: ${{ inputs.dry_run || 'false' }}
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
+          github-token: ${{ github.token }}

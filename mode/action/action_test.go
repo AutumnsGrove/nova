@@ -17,7 +17,8 @@ type actionYML struct {
 	Runs struct {
 		Using string `yaml:"using"`
 		Steps []struct {
-			Run string `yaml:"run"`
+			Run string            `yaml:"run"`
+			Env map[string]string `yaml:"env"`
 		} `yaml:"steps"`
 	} `yaml:"runs"`
 }
@@ -40,7 +41,7 @@ func TestAction_ACT01_ActionYAML(t *testing.T) {
 	if doc.Runs.Using != "composite" {
 		t.Fatalf("runs.using = %q, want composite", doc.Runs.Using)
 	}
-	for _, name := range []string{"model", "max-comments", "max-cost", "wall-clock", "openrouter-api-key", "github-token"} {
+	for _, name := range []string{"model", "max-comments", "max-cost", "wall-clock", "pr", "dry-run", "openrouter-api-key", "github-token"} {
 		if _, ok := doc.Inputs[name]; !ok {
 			t.Fatalf("input %q is missing from %v", name, doc.Inputs)
 		}
@@ -72,4 +73,47 @@ func TestAction_ACT03_NoExpressionInAScript(t *testing.T) {
 			t.Errorf("a run script interpolates an expression:\n%s", step.Run)
 		}
 	}
+}
+
+// A local action (`uses: ./`) has no ref: the runner leaves github.action_ref
+// empty, so installing by ref is an install of the empty string and the
+// repository cannot use its own action. The checkout in front of the step is
+// the version to run in that case.
+func TestAction_ACT05_InstallFallsBackToTheCheckout(t *testing.T) {
+	for _, step := range loadAction(t).Runs.Steps {
+		if !strings.Contains(step.Run, "go install") {
+			continue
+		}
+		if !strings.Contains(step.Run, "ACTION_REF") {
+			t.Fatalf("the install step does not read the ref it was called with: %q", step.Run)
+		}
+		if !strings.Contains(step.Run, "./cmd/nova") {
+			t.Fatalf("the install step cannot build the checkout: %q", step.Run)
+		}
+		return
+	}
+	t.Fatal("no go install step found")
+}
+
+// The pull request number and a dry run are options of the command, and an
+// unset input must not reach the command line as an empty value: `--pr ""` is a
+// parse error, not a default.
+func TestAction_ACT06_OptionalInputsReachTheCommand(t *testing.T) {
+	for _, step := range loadAction(t).Runs.Steps {
+		if !strings.Contains(step.Run, "action review") {
+			continue
+		}
+		for _, want := range []string{"--pr", "--dry-run"} {
+			if !strings.Contains(step.Run, want) {
+				t.Fatalf("the review step does not pass %s: %q", want, step.Run)
+			}
+		}
+		for _, want := range []string{"INPUT_PR", "INPUT_DRY_RUN"} {
+			if _, ok := step.Env[want]; !ok {
+				t.Fatalf("the review step does not read %s from the environment: %v", want, step.Env)
+			}
+		}
+		return
+	}
+	t.Fatal("no review step found")
 }

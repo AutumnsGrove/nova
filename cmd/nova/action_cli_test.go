@@ -174,3 +174,26 @@ func TestCLI_ActionReviewPrFlagOverridesTheEvent(t *testing.T) {
 		t.Fatalf("requested %v, want GET /repos/o/r/pulls/7 first", paths)
 	}
 }
+
+// The decision to run follows the model. Before this, any OpenRouter key counted
+// for every model, so an opencode-go review started with an OpenRouter key and
+// then authenticated with nothing; and with no OpenRouter key it skipped green
+// even though the model's own key was there.
+func TestCLI_ActionReviewAsksTheModelsProviderForKey(t *testing.T) {
+	gh := &fakeGitHubREST{}
+	ts := httptest.NewServer(http.HandlerFunc(gh.recordOnly))
+	defer ts.Close()
+	actionEnv(t, ts.URL) // sets OPENROUTER_API_KEY
+	t.Setenv("OPENCODE_GO_API_KEY", "")
+
+	code, out, errOut := runCLI(t, "action", "review", "--pr", "7", "--model", "opencode-go/deepseek-v4.1-flash")
+	if code != 0 {
+		t.Fatalf("exit = %d, want the green skip: %s%s", code, out, errOut)
+	}
+	if !strings.Contains(out+errOut, "::notice::") {
+		t.Fatalf("no skip notice: %q", out+errOut)
+	}
+	if seen := gh.seen(); len(seen) != 0 {
+		t.Fatalf("the review ran with only another provider's key: %v", seen)
+	}
+}

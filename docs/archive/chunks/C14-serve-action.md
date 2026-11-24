@@ -142,9 +142,11 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 ### Action: setup
 
 15. `nova action review` reads `GITHUB_REPOSITORY`, `GITHUB_EVENT_PATH` (a `pull_request` or
-    `pull_request_target` payload: number, head and base SHAs), and the token from `GITHUB_TOKEN`
-    or `--token`; flags override. A missing token or an event that is not a pull request is a usage
-    error (exit 2) with a clear message.
+    `pull_request_target` payload: number, head and base SHAs), `GITHUB_API_URL` (the REST base, the
+    runner's own on a GitHub Enterprise Server and `https://api.github.com` when unset), and the
+    token from `GITHUB_TOKEN` or `--token`; flags and explicit fields override the environment. A
+    missing token or an event that is not a pull request is a usage error (exit 2) with a clear
+    message.
 16. **No key, no review.** If the model API key is missing (the normal case for a pull request from a
     fork, where secrets are withheld), the command prints a GitHub `::notice::` line, writes nothing to
     the pull request, and exits 0.
@@ -325,6 +327,7 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | ACT01 | `action.yml` is valid YAML with the documented inputs | | parsed; inputs present |
 | ACT02 | install step uses `-tags notui` | | present |
 | ACT03 | no expression in a script | every `run` step of `action.yml` | none contains `${{ }}`; inputs arrive through `env` |
+| ACT04 | the REST base URL is the runner's | `GITHUB_API_URL` set; a caller-set URL; neither set | the environment's URL; the caller's; `https://api.github.com` |
 
 ## Fuzz and property tests
 

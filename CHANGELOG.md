@@ -28,6 +28,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- `nova action review` talks to the runner's GitHub, not the public one. The REST base URL was
+  hardcoded to `api.github.com`, and `GITHUB_API_URL` — the value a GitHub Enterprise Server runner
+  sets, and the only route it has — was ignored, so the action could not review there at all. The
+  variable is now read the way `GITHUB_REPOSITORY` and `GITHUB_TOKEN` already are, a caller that set
+  `Options.APIURL` still wins, and an unset variable keeps the public default (#132).
 - A manifest warning now reaches the user. `ext` collected them (an unknown key, and now a reserved
   capability) and reported none of them; each one is an `extension_error` carrying the extension's
   name, so a typo in `extension.yaml` is visible instead of silent (#51).

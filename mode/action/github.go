@@ -51,7 +51,7 @@ type ReviewComment struct {
 type ReviewRequest struct {
 	Body     string          `json:"body"`
 	Event    string          `json:"event"`
-	Comments []ReviewComment `json:"comments"`
+	Comments []ReviewComment `json:"comments,omitempty"`
 }
 
 // PostedReview is a review returned by the API.

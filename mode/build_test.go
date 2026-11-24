@@ -5,6 +5,7 @@ import (
 
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/permission"
+	"github.com/AutumnsGrove/nova/tool"
 )
 
 // TestBuild_PERM01_InteractiveDefaultsToAllow checks the TUI does not prompt
@@ -44,5 +45,32 @@ func TestBuild_PERM04_HeadlessUnchanged(t *testing.T) {
 	applyInteractiveDefault(cfg, false, true)
 	if cfg.Permissions.Default != "" {
 		t.Errorf("Default = %q, want empty", cfg.Permissions.Default)
+	}
+}
+
+// DenyAll is the action's policy: the tools the build registered are the run's
+// whole surface, and denying them too left the review with nothing it could
+// call -- every tool call was refused and the action posted nothing. Both halves
+// matter: the filtered tool names and the tools added on the side.
+func TestBuild_PERM05_DenyAllAllowsTheRegisteredTools(t *testing.T) {
+	extra := tool.New(tool.Info{Name: "review_summary", Description: "x"}, nil)
+	cfg, _, err := loadConfig(BuildOptions{
+		DenyAll:    true,
+		Tools:      []string{"read", "grep"},
+		ExtraTools: []tool.Tool{extra},
+	}, t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	for name, want := range map[string]permission.Action{
+		"read":           permission.Allow,
+		"grep":           permission.Allow,
+		"review_summary": permission.Allow,
+		"bash":           permission.Deny,
+		"write":          permission.Deny,
+	} {
+		if got := cfg.Permissions.Decide(permission.Call{Tool: name}, false).Action; got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
 	}
 }

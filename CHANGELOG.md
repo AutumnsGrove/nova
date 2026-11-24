@@ -36,6 +36,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- `nova action review` can use its own tools. The run is built with a deny-everything policy, and
+  that policy denied the read and review tools the same build had just registered, so every tool call
+  came back `blocked by policy: default: deny`: the model was refused, the report was empty, the
+  command posted nothing, and it exited 0. Denying "everything else" now means everything the build
+  did not register, which is what the action is for — and the first real review found it, because the
+  tests drove the review with a policy that allowed everything (#139).
 - `nova action review` talks to the runner's GitHub, not the public one. The REST base URL was
   hardcoded to `api.github.com`, and `GITHUB_API_URL` — the value a GitHub Enterprise Server runner
   sets, and the only route it has — was ignored, so the action could not review there at all. The

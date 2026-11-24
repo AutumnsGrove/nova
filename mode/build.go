@@ -30,7 +30,9 @@ type BuildOptions struct {
 
 	ExtraTools   []tool.Tool
 	SystemPrompt string
-	DenyAll      bool
+	// DenyAll allows each tool this build registered and denies every other
+	// one, which is the action's whole surface.
+	DenyAll bool
 }
 
 // Build loads the config for CWD, applies the flags, and builds a server. The
@@ -88,6 +90,15 @@ func loadConfig(o BuildOptions, cwd, home string) (*config.Config, []string, err
 	}
 	if o.DenyAll {
 		cfg.Permissions = permission.Policy{Default: permission.Deny, Headless: permission.Deny}
+		// Deny everything the build did not register. Denying the registered
+		// tools too leaves the agent with nothing it may call, so the review
+		// run made its tool calls, was refused, and posted nothing.
+		for _, name := range o.Tools {
+			cfg.Permissions.Rules = append(cfg.Permissions.Rules, permission.Rule{Tool: name, Action: permission.Allow})
+		}
+		for _, t := range o.ExtraTools {
+			cfg.Permissions.Rules = append(cfg.Permissions.Rules, permission.Rule{Tool: t.Info().Name, Action: permission.Allow})
+		}
 	}
 	return cfg, warnings, nil
 }

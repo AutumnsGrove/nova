@@ -220,11 +220,20 @@ func TestAction_ACT07_SelfReviewWorkflow(t *testing.T) {
 	if !ok {
 		t.Fatalf("jobs = %v, want one named review", doc.Jobs)
 	}
-	if !strings.Contains(job.If, "github.event.pull_request.head.repo.full_name == github.repository") {
-		t.Fatalf("the job does not refuse a fork head:\n%s", job.If)
-	}
-	if !strings.Contains(job.If, "draft == false") {
-		t.Fatalf("the job does not refuse a draft:\n%s", job.If)
+	// Every predicate in the job's `if` is load-bearing: the job holds a write
+	// token and a paid key, and runs the pull request's own build of Nova. A
+	// predicate that a later edit drops has to fail here, or the guard is only
+	// claimed.
+	for _, want := range []string{
+		"github.event.pull_request.head.repo.full_name == github.repository",
+		"github.event.pull_request.draft == false",
+		"github.event.pull_request.user.type != 'Bot'",
+		"github.event.comment.user.type != 'Bot'",
+		`contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)`,
+	} {
+		if !strings.Contains(job.If, want) {
+			t.Fatalf("the job does not require %s:\n%s", want, job.If)
+		}
 	}
 	total := map[string]string{}
 	for k, v := range doc.Permissions {
@@ -236,8 +245,16 @@ func TestAction_ACT07_SelfReviewWorkflow(t *testing.T) {
 	if len(total) != 2 || total["contents"] != "read" || total["pull-requests"] != "write" {
 		t.Fatalf("permissions = %v, want contents: read and pull-requests: write only", total)
 	}
-	if doc.Concurrency.Group == "" || !doc.Concurrency.CancelInProgress {
-		t.Fatalf("concurrency = %+v, want one group per pull request, cancelling", doc.Concurrency)
+	// One group per pull request, not one for the workflow: a single shared
+	// group would let a push to one pull request cancel another's review, which
+	// vanishes green without posting anything.
+	if !doc.Concurrency.CancelInProgress {
+		t.Fatalf("concurrency = %+v, want cancelling", doc.Concurrency)
+	}
+	for _, want := range []string{"github.event.pull_request.number", "github.event.issue.number", "inputs.pr"} {
+		if !strings.Contains(doc.Concurrency.Group, want) {
+			t.Fatalf("the concurrency group does not name %s:\n%s", want, doc.Concurrency.Group)
+		}
 	}
 	for _, step := range job.Steps {
 		if strings.Contains(step.Run, "${{") {

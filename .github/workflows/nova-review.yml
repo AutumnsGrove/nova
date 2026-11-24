@@ -119,11 +119,12 @@ jobs:
       - uses: ./
         if: steps.head.outputs.fork == 'false'
         with:
-          model: deepseek/deepseek-v4.1
+          model: opencode-go/deepseek-v4.1-flash
           max-comments: "15"
           max-cost: "0.75"
           wall-clock: 10m
           pr: ${{ env.PR }}
           dry-run: ${{ inputs.dry_run || 'false' }}
+          opencode-go-api-key: ${{ secrets.PI_REVIEW_API_KEY }}
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
           github-token: ${{ github.token }}

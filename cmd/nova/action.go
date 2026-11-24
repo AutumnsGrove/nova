@@ -26,7 +26,7 @@ func actionReview(stdout io.Writer, exit *int) *cobra.Command {
 				Model: model, MaxComments: maxComments, MaxCostUSD: maxCost,
 				WallClock: wallClock, PR: pr,
 				DryRun: dryRun, JSON: jsonOut, Token: token,
-				HasKey: mode.HasProviderKey(""), Out: stdout, State: state,
+				HasKey: mode.HasKeyForModel(model, ""), Out: stdout, State: state,
 			}
 			if !opt.HasKey {
 				*exit = action.Run(cmd.Context(), nil, opt)

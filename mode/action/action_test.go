@@ -202,6 +202,17 @@ func loadSelfReview(t *testing.T) selfReview {
 	return doc
 }
 
+// securityPredicates are the conditions that decide whether the review job may
+// run at all. The job's `if` uses them, and so does the concurrency key, which
+// is evaluated first and has to agree or a skipped run cancels a live review.
+var securityPredicates = []string{
+	"github.event.pull_request.head.repo.full_name == github.repository",
+	"github.event.pull_request.draft == false",
+	"github.event.pull_request.user.type != 'Bot'",
+	"github.event.comment.user.type != 'Bot'",
+	`contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)`,
+}
+
 // The job runs a pull request's own build of Nova with a write token and a paid
 // model key, so the parts that keep it safe are asserted rather than trusted:
 // it only ever runs on a branch in this repository, it asks for two permissions
@@ -224,13 +235,7 @@ func TestAction_ACT07_SelfReviewWorkflow(t *testing.T) {
 	// token and a paid key, and runs the pull request's own build of Nova. A
 	// predicate that a later edit drops has to fail here, or the guard is only
 	// claimed.
-	for _, want := range []string{
-		"github.event.pull_request.head.repo.full_name == github.repository",
-		"github.event.pull_request.draft == false",
-		"github.event.pull_request.user.type != 'Bot'",
-		"github.event.comment.user.type != 'Bot'",
-		`contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)`,
-	} {
+	for _, want := range securityPredicates {
 		if !strings.Contains(job.If, want) {
 			t.Fatalf("the job does not require %s:\n%s", want, job.If)
 		}
@@ -254,6 +259,18 @@ func TestAction_ACT07_SelfReviewWorkflow(t *testing.T) {
 	for _, want := range []string{"github.event.pull_request.number", "github.event.issue.number", "inputs.pr"} {
 		if !strings.Contains(doc.Concurrency.Group, want) {
 			t.Fatalf("the concurrency group does not name %s:\n%s", want, doc.Concurrency.Group)
+		}
+	}
+	// The group is evaluated before the job's `if`, so a run the job will skip
+	// still takes a group and can cancel a review that is running. A skipped run
+	// therefore has to land on a group of its own, and the run has to be
+	// ineligible by the same rules that the `if` uses.
+	if !strings.Contains(doc.Concurrency.Group, "github.run_id") {
+		t.Fatalf("a run the job skips would take the pull request's group:\n%s", doc.Concurrency.Group)
+	}
+	for _, want := range securityPredicates {
+		if !strings.Contains(doc.Concurrency.Group, want) {
+			t.Fatalf("the concurrency group does not fold in %s, so a run the job skips can cancel a review:\n%s", want, doc.Concurrency.Group)
 		}
 	}
 	for _, step := range job.Steps {

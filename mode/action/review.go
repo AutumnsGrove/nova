@@ -236,8 +236,13 @@ func (o *Options) resolve() error {
 	return nil
 }
 
-// prFromEvent reads the pull request number from a GitHub event payload.
+// prFromEvent reads the pull request number from a GitHub event payload. A run
+// with no payload is not a failed read: it is a run that had to be told the
+// number, so it says so instead of surfacing the empty path.
 func prFromEvent(path string) (int, error) {
+	if path == "" {
+		return 0, errors.New("GITHUB_EVENT_PATH is not set, so there is no pull request number")
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err

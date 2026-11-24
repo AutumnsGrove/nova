@@ -215,7 +215,7 @@ func post(ctx context.Context, gh *GitHub, opt Options, report *Report, omitted 
 func (o *Options) resolve() error {
 	o.Repo = cmp.Or(o.Repo, os.Getenv("GITHUB_REPOSITORY"))
 	o.Token = cmp.Or(o.Token, os.Getenv("GITHUB_TOKEN"))
-	o.APIURL = cmp.Or(o.APIURL, "https://api.github.com")
+	o.APIURL = cmp.Or(o.APIURL, os.Getenv("GITHUB_API_URL"), "https://api.github.com")
 	o.Model = cmp.Or(o.Model, "openrouter/auto")
 	if o.PR == 0 {
 		pr, err := prFromEvent(os.Getenv("GITHUB_EVENT_PATH"))

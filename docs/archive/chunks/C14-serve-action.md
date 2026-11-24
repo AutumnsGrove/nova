@@ -209,12 +209,17 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 
 ### action.yml
 
-30. A composite action with inputs `model`, `max-comments`, `max-cost`, `wall-clock`, `openrouter-api-key`,
-    `github-token`; steps: set up Go, install Nova with `go install -tags notui
-    github.com/AutumnsGrove/nova/cmd/nova@${{ github.action_ref }}`, run `nova action review`. The
-    documented minimal workflow uses `on: pull_request`, `permissions: {contents: read,
-    pull-requests: write}`, and `actions/checkout`. The README of the action states that
-    `pull_request_target` must not be used with untrusted checkouts.
+30. A composite action with inputs `model`, `max-comments`, `max-cost`, `wall-clock`, `pr`, `dry-run`,
+    `openrouter-api-key`, `github-token`; steps: set up Go, install Nova with `go install -tags notui
+    github.com/AutumnsGrove/nova/cmd/nova@${{ github.action_ref }}`, run `nova action review`. A local
+    action has no ref to install: the runner leaves `github.action_ref` empty for `uses: ./`, so the
+    install step builds the checkout in front of it (`./cmd/nova`) instead, which is what lets this
+    repository use its own action. `pr` and `dry-run` are optional and are left off the command line
+    when unset, because `--pr ""` is a parse error rather than a default, and the shell runs under
+    `-e`, so an input is added by an `if` and never by `[ -n "$X" ] && ...`. The documented minimal
+    workflow uses `on: pull_request`, `permissions: {contents: read, pull-requests: write}`, and
+    `actions/checkout`. The README of the action states that `pull_request_target` must not be used
+    with untrusted checkouts.
 
 ## Matrix
 
@@ -328,6 +333,8 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | ACT02 | install step uses `-tags notui` | | present |
 | ACT03 | no expression in a script | every `run` step of `action.yml` | none contains `${{ }}`; inputs arrive through `env` |
 | ACT04 | the REST base URL is the runner's | `GITHUB_API_URL` set; a caller-set URL; neither set | the environment's URL; the caller's; `https://api.github.com` |
+| ACT05 | a local action installs the checkout | `github.action_ref` empty; set | `go install -tags notui ./cmd/nova`; the pinned ref |
+| ACT06 | the optional inputs reach the command, and only when set | `pr`, `dry-run` unset; set | absent from the argument list; `--pr` and `--dry-run` present |
 
 ## Fuzz and property tests
 

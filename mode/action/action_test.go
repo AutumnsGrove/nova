@@ -300,8 +300,11 @@ func TestAction_ACT07_SelfReviewWorkflow(t *testing.T) {
 			continue
 		}
 		uses++
-		if !strings.Contains(step.If, "steps."+guard+".outputs.") {
-			t.Errorf("step %q is not gated on the head check:\n%s", step.Uses, step.If)
+		// The comparison is asserted exactly, not just mentioned: `!= 'true'`
+		// is fail-open, because an empty output (a guard step that errored
+		// before writing it, or a renamed output) satisfies it.
+		if want := "steps." + guard + ".outputs.fork == 'false'"; !strings.Contains(step.If, want) {
+			t.Errorf("step %q is not gated on %q:\n%s", step.Uses, want, step.If)
 		}
 	}
 	if uses == 0 {

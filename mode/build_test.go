@@ -74,3 +74,33 @@ func TestBuild_PERM05_DenyAllAllowsTheRegisteredTools(t *testing.T) {
 		}
 	}
 }
+
+// Whether a review can run is a property of the model it was asked for, not of
+// one environment variable: the action asked for an OpenRouter key and skipped
+// green on a repository whose working key was an opencode-go one.
+func TestBuild_HasKeyForModel(t *testing.T) {
+	const goModel = "opencode-go/deepseek-v4.1-flash"
+	const orModel = "deepseek/deepseek-v4.1"
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("OPENCODE_GO_API_KEY", "")
+	home := t.TempDir()
+	if HasKeyForModel(goModel, home) {
+		t.Fatal("an opencode-go model reported a key with none set")
+	}
+
+	t.Setenv("OPENCODE_GO_API_KEY", "go-key")
+	if !HasKeyForModel(goModel, home) {
+		t.Fatal("the opencode-go key did not count for an opencode-go model")
+	}
+	if HasKeyForModel(orModel, home) {
+		t.Fatal("the opencode-go key counted for an OpenRouter model")
+	}
+
+	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	if !HasKeyForModel(orModel, home) {
+		t.Fatal("the OpenRouter key did not count for an OpenRouter model")
+	}
+	if !HasKeyForModel("", home) {
+		t.Fatal("the default model no longer resolves its key")
+	}
+}

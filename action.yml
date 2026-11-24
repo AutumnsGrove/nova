@@ -24,7 +24,10 @@ inputs:
     required: false
     default: "false"
   openrouter-api-key:
-    description: OpenRouter API key. Omit on pull requests from forks.
+    description: OpenRouter API key, for an OpenRouter model. Omit on pull requests from forks.
+    required: false
+  opencode-go-api-key:
+    description: OpenCode Go API key, for an opencode-go model. Omit on pull requests from forks.
     required: false
   github-token:
     description: Token used to read the pull request and post the review.
@@ -57,6 +60,7 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        OPENCODE_GO_API_KEY: ${{ inputs.opencode-go-api-key }}
         INPUT_MODEL: ${{ inputs.model }}
         INPUT_MAX_COMMENTS: ${{ inputs.max-comments }}
         INPUT_MAX_COST: ${{ inputs.max-cost }}

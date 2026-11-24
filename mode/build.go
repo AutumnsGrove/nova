@@ -8,6 +8,8 @@ import (
 	"github.com/AutumnsGrove/nova/auth"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/permission"
+	"github.com/AutumnsGrove/nova/provider"
+	"github.com/AutumnsGrove/nova/provider/opencodego"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -126,4 +128,15 @@ func HasProviderKey(home string) bool {
 	}
 	key, _, err := auth.Resolve("", os.Getenv, auth.NewFileStore(keyPath(home)))
 	return err == nil && key != ""
+}
+
+// HasKeyForModel reports whether the key the model's provider needs is
+// available. An empty model means whatever the default provider is, which asks
+// for an OpenRouter key.
+func HasKeyForModel(model, home string) bool {
+	if m, ok := provider.GetModel(model); ok && m.Provider == opencodego.ProviderName {
+		_, _, err := auth.ResolveNamed("", auth.EnvOpenCodeGoKey, os.Getenv, nil)
+		return err == nil
+	}
+	return HasProviderKey(home)
 }

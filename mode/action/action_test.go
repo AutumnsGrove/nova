@@ -2,7 +2,10 @@ package action
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -97,23 +100,68 @@ func TestAction_ACT05_InstallFallsBackToTheCheckout(t *testing.T) {
 
 // The pull request number and a dry run are options of the command, and an
 // unset input must not reach the command line as an empty value: `--pr ""` is a
-// parse error, not a default.
+// parse error, not a default. The step's own script is run, with a stub `nova`
+// on PATH, because the promise is about the argument list rather than about the
+// text of the script: a guard removed from around `--pr` still mentions `--pr`.
 func TestAction_ACT06_OptionalInputsReachTheCommand(t *testing.T) {
-	for _, step := range loadAction(t).Runs.Steps {
-		if !strings.Contains(step.Run, "action review") {
-			continue
-		}
-		for _, want := range []string{"--pr", "--dry-run"} {
-			if !strings.Contains(step.Run, want) {
-				t.Fatalf("the review step does not pass %s: %q", want, step.Run)
-			}
-		}
-		for _, want := range []string{"INPUT_PR", "INPUT_DRY_RUN"} {
-			if _, ok := step.Env[want]; !ok {
-				t.Fatalf("the review step does not read %s from the environment: %v", want, step.Env)
-			}
-		}
-		return
+	if runtime.GOOS == "windows" {
+		t.Skip("the step runs a bash script")
 	}
-	t.Fatal("no review step found")
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash to run the step with")
+	}
+	var script string
+	for _, step := range loadAction(t).Runs.Steps {
+		if strings.Contains(step.Run, "action review") {
+			script = step.Run
+		}
+	}
+	if script == "" {
+		t.Fatal("no review step found")
+	}
+
+	bin := t.TempDir()
+	stub := "#!/usr/bin/env bash\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\n"
+	if err := os.WriteFile(filepath.Join(bin, "nova"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The other inputs are always set, so a missing name in the output is a
+	// guard that did not fire rather than a variable the step never had.
+	base := []string{"INPUT_MODEL=m", "INPUT_MAX_COMMENTS=15", "INPUT_MAX_COST=1", "INPUT_WALL_CLOCK=10m"}
+
+	run := func(t *testing.T, extra ...string) []string {
+		t.Helper()
+		cmd := exec.Command(bash, "--noprofile", "--norc", "-eo", "pipefail", "-c", script)
+		cmd.Env = append(append([]string{"PATH=" + bin + ":" + os.Getenv("PATH")}, base...), extra...)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("the step failed: %v", err)
+		}
+		return strings.Fields(string(out))
+	}
+
+	unset := run(t, "INPUT_PR=", "INPUT_DRY_RUN=false")
+	for _, absent := range []string{"--pr", "--dry-run", ""} {
+		if slices.Contains(unset, absent) {
+			t.Fatalf("an unset input reached the command line: %v", unset)
+		}
+	}
+
+	set := run(t, "INPUT_PR=42", "INPUT_DRY_RUN=true")
+	for _, want := range [][]string{{"--pr", "42"}, {"--dry-run"}} {
+		if !hasRun(set, want) {
+			t.Fatalf("the command line is missing %v: %v", want, set)
+		}
+	}
+}
+
+// hasRun reports whether args contains seq, in order.
+func hasRun(args, seq []string) bool {
+	for i := 0; i+len(seq) <= len(args); i++ {
+		if slices.Equal(args[i:i+len(seq)], seq) {
+			return true
+		}
+	}
+	return false
 }

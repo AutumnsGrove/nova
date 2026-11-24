@@ -25,6 +25,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - The `mcp` extension capability is now reserved and warns: an extension cannot start a process the
   host does not supervise, so a server is declared in config instead. A manifest that declares it
   still loads, and the warning names `mcp.servers` (#51).
+- `nova action review --pr <n>` reviews the pull request by number, so a review can be asked for from
+  an `issue_comment` mention or a manual workflow run, neither of which carries a `pull_request`
+  payload. With no flag and no payload the command exits 2 and names `GITHUB_EVENT_PATH` instead of
+  reporting the failed read of an empty path (#133).
 
 ### Fixed
 

@@ -31,8 +31,30 @@ on:
 # reviewed supersedes the run it replaced, rather than two of them racing to
 # post and paying for the same diff twice.
 concurrency:
+  # One review per pull request at a time, so a push to a pull request that is
+  # being reviewed supersedes the run it replaced rather than racing it.
+  #
+  # A run the job will skip must not take the pull request's group: this is
+  # evaluated before the job's `if`, and with `cancel-in-progress` a comment that
+  # does not ask for a review would cancel the review already running. The same
+  # eligibility condition is therefore folded into the key, so an ignored run
+  # takes a unique group of its own. It is kept in step with the job's `if`, and
+  # ACT07 asserts both name the same predicates.
   group: >-
-    nova-review-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr || github.run_id }}
+    ${{
+      ((github.event_name == 'pull_request' &&
+        github.event.pull_request.draft == false &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.type != 'Bot') ||
+       (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request != null &&
+        contains(github.event.comment.body, '@nova') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+        github.event.comment.user.type != 'Bot') ||
+       github.event_name == 'workflow_dispatch')
+      && format('nova-review-{0}', github.event.pull_request.number || github.event.issue.number || inputs.pr)
+      || format('nova-review-ignored-{0}', github.run_id)
+    }}
   cancel-in-progress: true
 
 # Reading the pull request and posting one review, and nothing else. The write

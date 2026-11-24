@@ -115,7 +115,12 @@ jobs:
       # The action in this checkout, not a published tag: a change to
       # `action.yml` or to the review itself is what the next pull request
       # exercises. The cost of that is a pull request that does not build
-      # failing its own review, which is the answer worth having.
+      # failing its own review, which is the answer worth having. It applies to
+      # every run here and not only to a dispatch or a comment: any head older
+      # than a change to `action.yml` -- a branch opened before the fallback
+      # existed, or an old branch that gets a push -- runs its own stale action
+      # and fails its own install, loudly, rather than being reviewed by the
+      # default branch's.
       - uses: ./
         if: steps.head.outputs.fork == 'false'
         with:

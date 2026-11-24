@@ -16,6 +16,13 @@ inputs:
     description: Wall-clock limit for the review, e.g. 15m or 30s (0 means no limit).
     required: false
     default: "15m"
+  pr:
+    description: Pull request number. Leave it empty when the event carries one (a pull_request event).
+    required: false
+  dry-run:
+    description: Print the review without posting it.
+    required: false
+    default: "false"
   openrouter-api-key:
     description: OpenRouter API key. Omit on pull requests from forks.
     required: false
@@ -33,7 +40,16 @@ runs:
       shell: bash
       env:
         ACTION_REF: ${{ github.action_ref }}
-      run: go install -tags notui "github.com/AutumnsGrove/nova/cmd/nova@${ACTION_REF}"
+      run: |
+        # A local action ("uses: ./") has no ref: the runner leaves
+        # github.action_ref empty, so installing by ref is an install of the
+        # empty string. The checkout in front of this step is then the version
+        # to run, which is how a repository builds and tests its own action.
+        if [ -n "${ACTION_REF}" ]; then
+          go install -tags notui "github.com/AutumnsGrove/nova/cmd/nova@${ACTION_REF}"
+        else
+          go install -tags notui ./cmd/nova
+        fi
     - name: Review the pull request
       shell: bash
       # Inputs reach the script through the environment, never as ${{ }} text in
@@ -45,9 +61,22 @@ runs:
         INPUT_MAX_COMMENTS: ${{ inputs.max-comments }}
         INPUT_MAX_COST: ${{ inputs.max-cost }}
         INPUT_WALL_CLOCK: ${{ inputs.wall-clock }}
-      run: >-
-        nova action review
-        --model "$INPUT_MODEL"
-        --max-comments "$INPUT_MAX_COMMENTS"
-        --max-cost "$INPUT_MAX_COST"
-        --wall-clock "$INPUT_WALL_CLOCK"
+        INPUT_PR: ${{ inputs.pr }}
+        INPUT_DRY_RUN: ${{ inputs.dry-run }}
+      run: |
+        # An unset input is left off the command line rather than passed empty:
+        # `--pr ""` is a parse error, not a default. Each guard is an `if`, not
+        # `[ -n "$X" ] && ...`, because this shell runs under -e and the test
+        # form returns 1 when the value is empty.
+        args=(action review
+          --model "$INPUT_MODEL"
+          --max-comments "$INPUT_MAX_COMMENTS"
+          --max-cost "$INPUT_MAX_COST"
+          --wall-clock "$INPUT_WALL_CLOCK")
+        if [ -n "$INPUT_PR" ]; then
+          args+=(--pr "$INPUT_PR")
+        fi
+        if [ "$INPUT_DRY_RUN" = "true" ]; then
+          args+=(--dry-run)
+        fi
+        nova "${args[@]}"

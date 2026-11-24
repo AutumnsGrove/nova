@@ -507,7 +507,9 @@ extensions or hooks.
 | Action | `nova action review` | print mode with a CI preset; reads the PR, posts review comments |
 
 The GitHub Action is a thin `action.yml` that installs the binary and runs
-`nova action review`. It uses the minimal build and the headless permission default.
+`nova action review`. When it is used from a local path (`uses: ./`) there is no
+ref to install, so it builds the checkout in front of it instead. It uses the
+minimal build and the headless permission default.
 
 ## 11. Concurrency
 

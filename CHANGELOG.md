@@ -29,6 +29,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   an `issue_comment` mention or a manual workflow run, neither of which carries a `pull_request`
   payload. With no flag and no payload the command exits 2 and names `GITHUB_EVENT_PATH` instead of
   reporting the failed read of an empty path (#133).
+- The GitHub Action runs from a local checkout. `uses: ./` leaves `github.action_ref` empty, and the
+  install step turned that into an install of the empty string, so the action only worked from
+  another repository; it now builds the checkout in front of it. The action also takes optional `pr`
+  and `dry-run` inputs, which is what a trigger with no `pull_request` payload needs (#134).
 
 ### Fixed
 

@@ -497,6 +497,42 @@ func TestAction_RVW17_NotAPullRequest(t *testing.T) {
 	}
 }
 
+// The API base URL is the runner's, not the public one: a GitHub Enterprise
+// Server runner sets GITHUB_API_URL and has no route to api.github.com, so a
+// hardcoded default makes the action unusable there. A caller that set the
+// field itself still wins, and an unset variable keeps the public default.
+func TestAction_ACT04_APIURLFromTheEnvironment(t *testing.T) {
+	t.Setenv("GITHUB_REPOSITORY", "o/r")
+	t.Setenv("GITHUB_TOKEN", "tok")
+	t.Setenv("GITHUB_EVENT_PATH", "")
+	t.Setenv("GITHUB_API_URL", "https://ghe.example/api/v3")
+
+	fromEnv := Options{PR: 3}
+	if err := fromEnv.resolve(); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if fromEnv.APIURL != "https://ghe.example/api/v3" {
+		t.Fatalf("APIURL = %q, want the environment's URL", fromEnv.APIURL)
+	}
+
+	explicit := Options{PR: 3, APIURL: "https://example.test/api"}
+	if err := explicit.resolve(); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if explicit.APIURL != "https://example.test/api" {
+		t.Fatalf("APIURL = %q, want the caller's URL", explicit.APIURL)
+	}
+
+	t.Setenv("GITHUB_API_URL", "")
+	fallback := Options{PR: 3}
+	if err := fallback.resolve(); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if fallback.APIURL != "https://api.github.com" {
+		t.Fatalf("APIURL = %q, want the public default", fallback.APIURL)
+	}
+}
+
 func TestAction_RVW18_MissingToken(t *testing.T) {
 	event := filepath.Join(t.TempDir(), "event.json")
 	if err := os.WriteFile(event, []byte(`{"pull_request":{"number":3}}`), 0o644); err != nil {

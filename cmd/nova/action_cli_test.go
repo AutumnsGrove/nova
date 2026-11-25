@@ -285,3 +285,32 @@ func writeHomeConfig(t *testing.T, home, body string) {
 		t.Fatal(err)
 	}
 }
+
+// A review that is going to skip green must not pay for what it will not use.
+// The decision is made on the loaded config, before a server exists, because
+// building one starts the extension host and every configured MCP server and
+// Close then waits out their handshakes -- so a notice cost a minute and left
+// subprocesses started and killed for nothing (#146).
+func TestCLI_ActionReviewSkipStartsNothing(t *testing.T) {
+	gh := &fakeGitHubREST{}
+	ts := httptest.NewServer(http.HandlerFunc(gh.recordOnly))
+	defer ts.Close()
+	actionEnv(t, ts.URL)
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("OPENCODE_GO_API_KEY", "")
+	home := os.Getenv("HOME")
+	marker := filepath.Join(home, "mcp-started")
+	writeHomeConfig(t, home, "mcp:\n  servers:\n    - name: marker\n      command: /bin/sh\n"+
+		"      args: [\"-c\", \"touch "+marker+"; sleep 30\"]\n      timeout_ms: 500\n")
+
+	code, out, errOut := runCLI(t, "action", "review", "--pr", "7")
+	if code != 0 {
+		t.Fatalf("exit = %d, want the green skip: %s%s", code, out, errOut)
+	}
+	if !strings.Contains(out+errOut, "::notice::") {
+		t.Fatalf("no skip notice: %q", out+errOut)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the skip started a configured MCP server it never used")
+	}
+}

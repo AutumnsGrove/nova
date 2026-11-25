@@ -6,7 +6,9 @@ import (
 	"os"
 
 	"github.com/AutumnsGrove/nova/auth"
+	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/config"
+	"github.com/AutumnsGrove/nova/mode/providers"
 	"github.com/AutumnsGrove/nova/permission"
 	"github.com/AutumnsGrove/nova/provider"
 	"github.com/AutumnsGrove/nova/provider/opencodego"
@@ -40,13 +42,7 @@ type BuildOptions struct {
 // Build loads the config for CWD, applies the flags, and builds a server. The
 // server can re-read the config on a reload, with the same flags applied again.
 func Build(o BuildOptions) (*Server, error) {
-	cwd, home := o.CWD, o.Home
-	if cwd == "" {
-		cwd, _ = os.Getwd()
-	}
-	if home == "" {
-		home, _ = os.UserHomeDir()
-	}
+	cwd, home := dirs(o)
 	load := func() (*config.Config, []string, error) { return loadConfig(o, cwd, home) }
 	cfg, warnings, err := load()
 	if err != nil {
@@ -66,6 +62,34 @@ func Build(o BuildOptions) (*Server, error) {
 		Tools: o.Tools, NoTools: o.NoTools,
 		ExtraTools: o.ExtraTools, SystemPrompt: o.SystemPrompt,
 	})
+}
+
+// dirs settles the working directory and home a build reads from.
+func dirs(o BuildOptions) (cwd, home string) {
+	cwd, home = o.CWD, o.Home
+	if cwd == "" {
+		cwd, _ = os.Getwd()
+	}
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	return cwd, home
+}
+
+// LoadConfig reads the config a build would use, with the flags applied, and
+// constructs nothing: no session, no tool registry, no extension host, no MCP
+// server. A caller that asks a question of the config -- "do I have a key for
+// this model?" -- has to be able to answer it without paying for a server it
+// may never use, because building one starts subprocesses and closing it waits
+// out their handshakes. Home comes back with the config because that is where a
+// stored key lives. Warnings are left to Build, which prints them.
+func LoadConfig(o BuildOptions) (cfg *config.Config, home string, err error) {
+	cwd, home := dirs(o)
+	cfg, _, err = loadConfig(o, cwd, home)
+	if err != nil {
+		return nil, "", err
+	}
+	return cfg, home, nil
 }
 
 // loadConfig reads the config for cwd and applies the command-line flags on top
@@ -130,13 +154,26 @@ func HasProviderKey(home string) bool {
 	return err == nil && key != ""
 }
 
-// HasKeyForModel reports whether the key the model's provider needs is
-// available. An empty model means whatever the default provider is, which asks
-// for an OpenRouter key.
-func HasKeyForModel(model, home string) bool {
+// HasKeyForModel reports whether a key is available for the configured model's
+// provider, so the decision to run is made on the same sources the request
+// authenticates with: the config, the environment, then the store /login wrote.
+// Deciding on the environment alone skipped reviews whose key was in one of the
+// other two. An empty model is the config's model, which is what --model left
+// unset means. The home argument defaults to the user's home directory.
+func HasKeyForModel(cfg *config.Config, home string) bool {
+	model := ""
+	if cfg != nil {
+		model = cfg.Model
+	}
 	if m, ok := provider.GetModel(model); ok && m.Provider == opencodego.ProviderName {
-		_, _, err := auth.ResolveNamed("", auth.EnvOpenCodeGoKey, os.Getenv, nil)
-		return err == nil
+		if _, _, err := providers.ResolveOpenCodeGoKey(cfg, os.Getenv); err == nil {
+			return true
+		}
+		if home == "" {
+			home, _ = os.UserHomeDir()
+		}
+		stored, err := opencode.LoadKey(opencode.DefaultKeyPath(home))
+		return err == nil && stored != ""
 	}
 	return HasProviderKey(home)
 }

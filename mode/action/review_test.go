@@ -1,6 +1,7 @@
 package action
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -777,5 +778,152 @@ func TestAction_RVW28_CommentAndSummaryLengthCapped(t *testing.T) {
 	}
 	if _, summary := st.result(); summary != "" {
 		t.Fatalf("the rejected summary was recorded: %q", summary)
+	}
+}
+
+// RVW30: a run that is cut off before it summarises posted nothing, so the job
+// did none of its work. It said "partial=true" on one line and exited 0, which
+// is a green check for a review that never happened -- the failure #142 reports
+// as "a 6-minute wall clock produced nothing at all".
+func TestAction_RVW30_CutOffWithNothingToPost(t *testing.T) {
+	fr, g := newFakeRepo(t)
+	state := NewState(15)
+	s, _ := reviewServer(t, state, reviewConfig(), testkit.Turn{Hang: true})
+	clock := testkit.NewFakeClock(time.Unix(0, 0))
+	var out bytes.Buffer
+	opt := reviewOptions(state, g)
+	opt.Out = &out
+	opt.After = clock.After
+	opt.WallClock = time.Second
+
+	codes := make(chan int, 1)
+	go func() { codes <- Run(context.Background(), s, opt) }()
+	for {
+		select {
+		case code := <-codes:
+			if code != 1 {
+				t.Fatalf("exit = %d, want 1 when nothing was posted: %s", code, out.String())
+			}
+			if !strings.Contains(out.String(), "::error::") {
+				t.Fatalf("no error line: %q", out.String())
+			}
+			if posted := fr.lastPosted(); posted.Body != "" {
+				t.Fatalf("posted a review with nothing in it: %+v", posted)
+			}
+			return
+		default:
+			clock.Advance(time.Second)
+			runtime.Gosched()
+		}
+	}
+}
+
+// RVW31: a run that was cut off but did post says so, and stays a success: the
+// review it delivered is marked partial by RVW07's note, which is the honest
+// report. Only silence is a failure.
+func TestAction_RVW31_CutOffWithAPostedReviewWarns(t *testing.T) {
+	fr, g := newFakeRepo(t)
+	state := NewState(15)
+	s, _ := reviewServer(t, state, reviewConfig(),
+		testkit.Turn{ToolCalls: []testkit.Call{
+			commentCall("c1", 2, "issue", "off by one"),
+			summaryCall("c", "One problem."),
+		}, Usage: &providerUsage},
+		testkit.Turn{Text: "done"},
+	)
+	var out bytes.Buffer
+	opt := reviewOptions(state, g)
+	opt.Out = &out
+	opt.MaxCostUSD = 0.01
+
+	if code := Run(context.Background(), s, opt); code != 0 {
+		t.Fatalf("exit = %d, want 0 for a review that was posted: %s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "::warning::") {
+		t.Fatalf("a cut-off review did not say it was cut off: %q", out.String())
+	}
+	if posted := fr.lastPosted(); !strings.Contains(posted.Body, "stopped early") {
+		t.Fatalf("the posted review is not marked partial: %q", posted.Body)
+	}
+}
+
+// RVW32: a dry run posts nothing by design, so a dry run that was cut off is
+// not the RVW30 failure. It has to be a cut-off run: a completed one returns 0
+// on !Partial before the dry-run condition is reached, which would test nothing.
+func TestAction_RVW32_CutOffDryRun(t *testing.T) {
+	fr, g := newFakeRepo(t)
+	state := NewState(15)
+	s, _ := reviewServer(t, state, reviewConfig(), testkit.Turn{Hang: true})
+	clock := testkit.NewFakeClock(time.Unix(0, 0))
+	var out bytes.Buffer
+	opt := reviewOptions(state, g)
+	opt.Out = &out
+	opt.DryRun = true
+	opt.After = clock.After
+	opt.WallClock = time.Second
+
+	codes := make(chan int, 1)
+	go func() { codes <- Run(context.Background(), s, opt) }()
+	for {
+		select {
+		case code := <-codes:
+			if code != 0 {
+				t.Fatalf("exit = %d, want 0 for a dry run: %s", code, out.String())
+			}
+			if !strings.Contains(out.String(), "::warning::") {
+				t.Fatalf("a cut-off dry run did not say it was cut off: %q", out.String())
+			}
+			if strings.Contains(out.String(), "::error::") {
+				t.Fatalf("a dry run reported the nothing-posted error: %q", out.String())
+			}
+			if posted := fr.lastPosted(); posted.Body != "" {
+				t.Fatalf("a dry run posted a review: %+v", posted)
+			}
+			return
+		default:
+			clock.Advance(time.Second)
+			runtime.Gosched()
+		}
+	}
+}
+
+// RVW33: --json is a machine contract, so the verdict rides on the exit code and
+// the report rather than on a workflow-command line that would corrupt stdout.
+// A cut-off JSON run has to fail the step like the text one does.
+func TestAction_RVW33_CutOffJSONRun(t *testing.T) {
+	fr, g := newFakeRepo(t)
+	state := NewState(15)
+	s, _ := reviewServer(t, state, reviewConfig(), testkit.Turn{Hang: true})
+	clock := testkit.NewFakeClock(time.Unix(0, 0))
+	var out bytes.Buffer
+	opt := reviewOptions(state, g)
+	opt.Out = &out
+	opt.JSON = true
+	opt.After = clock.After
+	opt.WallClock = time.Second
+
+	codes := make(chan int, 1)
+	go func() { codes <- Run(context.Background(), s, opt) }()
+	for {
+		select {
+		case code := <-codes:
+			if code != 1 {
+				t.Fatalf("exit = %d, want 1 when nothing was posted: %s", code, out.String())
+			}
+			var report Report
+			if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+				t.Fatalf("stdout is not the JSON report on its own: %q: %v", out.String(), err)
+			}
+			if !report.Partial || report.Posted {
+				t.Fatalf("report = %+v, want partial and not posted", report)
+			}
+			if posted := fr.lastPosted(); posted.Body != "" {
+				t.Fatalf("posted a review with nothing in it: %+v", posted)
+			}
+			return
+		default:
+			clock.Advance(time.Second)
+			runtime.Gosched()
+		}
 	}
 }

@@ -2,7 +2,7 @@
 chunk: C14
 title: "The serve mode and the GitHub Action"
 packages: [./mode/serve, ./mode/action]
-budgets: { ./mode/serve: 440, ./mode/action: 750 }
+budgets: { ./mode/serve: 440, ./mode/action: 780 }
 depends: [C12]
 ---
 
@@ -204,8 +204,12 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 28. Output: a Markdown report to `$GITHUB_STEP_SUMMARY` when set (counts, cost, partial or not, skipped
     comments), and the JSON report to `Out` with `--json`. With `DryRun` nothing is posted and the
     review that would have been posted is printed.
-29. Exit codes: `0` success (including "nothing to say" and "no key"); `1` API or provider failure
-    after at least one attempt; `2` usage error.
+29. Exit codes: `0` success (including "nothing to say", "no key", a dry run, and a run that was cut
+    off after it posted what it had); `1` API or provider failure after at least one attempt, and a run
+    that was cut off (wall clock or cost cap) having posted nothing, because a green check that
+    delivered no review is a silent failure (#142); `2` usage error. A cut-off run leaves a
+    `::warning::` or `::error::` line saying what happened, and `--json` carries the verdict in `partial`
+    and `posted` rather than on stdout, which must stay parseable.
 
 ### action.yml
 
@@ -327,6 +331,10 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | RVW24 | pull-request text is delimited | | inside a block fenced by lines that carry a per-run secret (RVW27) |
 | RVW25 | provider failure mid-run | 500s until retries run out | partial review posted if any comments exist; exit 1 |
 | RVW26 | exit codes | each outcome | as specified |
+| RVW30 | cut off before it summarised | the wall clock fires with no comment and no summary | nothing posted; `::error::`; exit 1 |
+| RVW31 | cut off after it summarised | the cost cap fires with a comment and a summary recorded | the review is posted with its partial note; `::warning::`; exit 0 |
+| RVW32 | dry run cut off | `--dry-run` and the wall clock fires with nothing recorded | nothing posted; `::warning::` and no `::error::`; exit 0 |
+| RVW33 | `--json` cut off | the wall clock fires with nothing recorded | stdout is the report alone (`partial`, `posted`); no workflow-command line; exit 1 |
 | RVW27 | pull text cannot close its fence | a body containing the old fixed closing line | our closing fence, which carries the run secret, appears once, at the end; each run draws a new secret |
 | RVW28 | model text is length capped | a comment and a summary over the cap | both refused and neither recorded |
 | RVW29 | a review with no inline comments is accepted | a summary and no comments | `comments` is left out, never `null`, which GitHub refuses with 422 |

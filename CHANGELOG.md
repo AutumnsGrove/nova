@@ -36,6 +36,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- `nova action review` fails the step when it was cut off before it summarised, instead of exiting 0
+  with nothing posted. A wall clock or a cost cap that fired before the model called `review_summary`
+  left the review empty, printed one line that said `partial=true`, and reported success, so a pull
+  request got no review and CI showed a green check for it. The run now prints `::error::` and exits 1
+  in that case, and prints a `::warning::` when it was cut off after posting a review (which stays
+  marked partial) (#142).
 - `nova action review` can use its own tools. The run is built with a deny-everything policy, and
   that policy denied the read and review tools the same build had just registered, so every tool call
   came back `blocked by policy: default: deny`: the model was refused, the report was empty, the

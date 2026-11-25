@@ -434,6 +434,9 @@ func TestAction_ACT09_WallClockIsChecked(t *testing.T) {
 		{clock: "90s", want: 0},
 		{clock: "1h30m", want: 0},
 		{clock: "0.5m", want: 0},
+		{clock: "400ms", want: 0},
+		{clock: "1.5ms", want: 0},
+		{clock: "2ns", want: 0},
 		{clock: "0", want: 1, wantMsg: "no limit at all"},
 		{clock: "0s", want: 1, wantMsg: "no limit at all"},
 		{clock: "0m0s", want: 1, wantMsg: "no limit at all"},
@@ -442,27 +445,31 @@ func TestAction_ACT09_WallClockIsChecked(t *testing.T) {
 		{clock: "15", want: 1, wantMsg: "must be a duration"},
 		{clock: "soon", want: 1, wantMsg: "must be a duration"},
 	} {
-		t.Run("clock="+tc.clock, func(t *testing.T) {
-			cmd := exec.Command(sh, "-e", "-c", script)
-			// A valid cap, so only the clock can decide the outcome.
-			cmd.Env = append(os.Environ(), "CAP=0.5", "CLOCK="+tc.clock)
-			out, err := cmd.CombinedOutput()
-			code := 0
-			var exit *exec.ExitError
-			if errors.As(err, &exit) {
-				code = exit.ExitCode()
-			} else if err != nil {
-				t.Fatalf("run the step: %v", err)
-			}
-			if code != tc.want {
-				t.Fatalf("exit = %d, want %d: %s", code, tc.want, out)
-			}
-			if tc.wantMsg != "" && !strings.Contains(string(out), tc.wantMsg) {
-				t.Fatalf("the error does not name the problem: %s", out)
-			}
-			if tc.want == 0 && strings.Contains(string(out), "::error::") {
-				t.Fatalf("a valid clock was reported as an error: %s", out)
-			}
-		})
+		// Both configurations: with a cap set, and with the cap variable unset,
+		// which is the default. An early exit for one limit must not leave the
+		// other unchecked, so every case runs with CAP unset as well.
+		for _, cap := range []string{"0.5", ""} {
+			t.Run("clock="+tc.clock+"/cap="+cap, func(t *testing.T) {
+				cmd := exec.Command(sh, "-e", "-c", script)
+				cmd.Env = append(os.Environ(), "CAP="+cap, "CLOCK="+tc.clock)
+				out, err := cmd.CombinedOutput()
+				code := 0
+				var exit *exec.ExitError
+				if errors.As(err, &exit) {
+					code = exit.ExitCode()
+				} else if err != nil {
+					t.Fatalf("run the step: %v", err)
+				}
+				if code != tc.want {
+					t.Fatalf("exit = %d, want %d: %s", code, tc.want, out)
+				}
+				if tc.wantMsg != "" && !strings.Contains(string(out), tc.wantMsg) {
+					t.Fatalf("the error does not name the problem: %s", out)
+				}
+				if tc.want == 0 && strings.Contains(string(out), "::error::") {
+					t.Fatalf("a valid clock was reported as an error: %s", out)
+				}
+			})
+		}
 	}
 }

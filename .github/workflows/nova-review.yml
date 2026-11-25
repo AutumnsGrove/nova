@@ -133,32 +133,32 @@ jobs:
           CAP: ${{ vars.NOVA_REVIEW_MAX_COST }}
           CLOCK: ${{ vars.NOVA_REVIEW_WALL_CLOCK }}
         run: |
-          if [ -z "${CAP}" ]; then
-            exit 0
+          # Each limit is checked on its own: an early exit for an unset one
+          # would leave the other unguarded, and unset is the default.
+          if [ -n "${CAP}" ]; then
+            if ! printf '%s' "${CAP}" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+              echo "::error::NOVA_REVIEW_MAX_COST must be a plain number of US dollars such as 0.5, not '${CAP}'"
+              exit 1
+            fi
+            # The post-condition is numeric, not a spelling: a long enough
+            # decimal underflows to 0.0 when it reaches the float flag, and 0 is
+            # no cap at all, so the value that parses to zero is the one refused.
+            if ! awk -v c="${CAP}" 'BEGIN { exit !(c + 0 > 0) }'; then
+              echo "::error::NOVA_REVIEW_MAX_COST must be more than 0; 0 means no cap at all. Delete the variable for the 0.5 default, or set a positive number"
+              exit 1
+            fi
           fi
-          if ! printf '%s' "${CAP}" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
-            echo "::error::NOVA_REVIEW_MAX_COST must be a plain number of US dollars such as 0.5, not '${CAP}'"
-            exit 1
-          fi
-          # The post-condition is numeric, not a spelling: a long enough
-          # decimal underflows to 0.0 when it reaches the float flag, and 0 is
-          # no cap at all, so the value that parses to zero is the one refused.
-          if ! awk -v c="${CAP}" 'BEGIN { exit !(c + 0 > 0) }'; then
-            echo "::error::NOVA_REVIEW_MAX_COST must be more than 0; 0 means no cap at all. Delete the variable for the 0.5 default, or set a positive number"
-            exit 1
-          fi
-          if [ -z "${CLOCK}" ]; then
-            exit 0
-          fi
-          # Zero first: "0" is a duration the flag accepts, and it means no
-          # limit, so it is refused with that reason rather than as bad syntax.
-          if [ -z "$(printf '%s' "${CLOCK}" | tr -d '0.hms')" ]; then
-            echo "::error::NOVA_REVIEW_WALL_CLOCK is 0, and 0 means no limit at all; delete the variable for the 15m default, or set a positive duration"
-            exit 1
-          fi
-          if ! printf '%s' "${CLOCK}" | grep -Eq '^([0-9]+(\.[0-9]+)?(h|m|s))+$'; then
-            echo "::error::NOVA_REVIEW_WALL_CLOCK must be a duration such as 15m, 90s or 1h30m, not '${CLOCK}'"
-            exit 1
+          if [ -n "${CLOCK}" ]; then
+            # Zero first: "0" is a duration the flag accepts, and it means no
+            # limit, so it is refused with that reason rather than as bad syntax.
+            if [ -z "$(printf '%s' "${CLOCK}" | tr -d '0.hmsnuµ')" ]; then
+              echo "::error::NOVA_REVIEW_WALL_CLOCK is 0, and 0 means no limit at all; delete the variable for the 15m default, or set a positive duration"
+              exit 1
+            fi
+            if ! printf '%s' "${CLOCK}" | grep -Eq '^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|h|m|s))+$'; then
+              echo "::error::NOVA_REVIEW_WALL_CLOCK must be a duration such as 15m, 90s or 1h30m, not '${CLOCK}'"
+              exit 1
+            fi
           fi
       - uses: ./
         if: steps.head.outputs.fork == 'false'

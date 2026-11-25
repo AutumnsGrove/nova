@@ -116,6 +116,12 @@ jobs:
       # `action.yml` or to the review itself is what the next pull request
       # exercises. The cost of that is a pull request that does not build
       # failing its own review, which is the answer worth having.
+      #
+      # This holds for every run here, not only for a dispatch or a comment: the
+      # checkout is refs/pull/<n>/head, so a head older than a change to
+      # `action.yml` is reviewed by its own action rather than this branch's. A
+      # head older than the fallback in #134 fails its own `go install` outright
+      # (that is what #136 hit), which is loud rather than silent.
       - uses: ./
         if: steps.head.outputs.fork == 'false'
         with:

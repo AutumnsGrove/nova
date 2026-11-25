@@ -329,6 +329,7 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | RVW26 | exit codes | each outcome | as specified |
 | RVW27 | pull text cannot close its fence | a body containing the old fixed closing line | our closing fence, which carries the run secret, appears once, at the end; each run draws a new secret |
 | RVW28 | model text is length capped | a comment and a summary over the cap | both refused and neither recorded |
+| RVW29 | a review with no inline comments is accepted | a summary and no comments | `comments` is left out, never `null`, which GitHub refuses with 422 |
 | ACT01 | `action.yml` is valid YAML with the documented inputs | | parsed; inputs present |
 | ACT02 | install step uses `-tags notui` | | present |
 | ACT03 | no expression in a script | every `run` step of `action.yml` | none contains `${{ }}`; inputs arrive through `env` |

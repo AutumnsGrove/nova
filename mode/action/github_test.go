@@ -252,3 +252,21 @@ func TestAction_GHC13_ResponseSizeIsCapped(t *testing.T) {
 		t.Fatal("a response far over the cap was decoded")
 	}
 }
+
+// GitHub refuses a review whose `comments` is null -- "For
+// 'properties/comments', nil is not an array" -- so a review that says
+// something and places nothing has to leave the field out or send an empty
+// array. A nil slice marshals to null, which is how a re-run with nothing new to
+// add posted nothing and failed the job.
+func TestAction_RVW29_SummaryOnlyReviewHasNoNullComments(t *testing.T) {
+	body, err := json.Marshal(ReviewRequest{Body: "a summary", Event: "COMMENT"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(body), `"comments":null`) {
+		t.Fatalf("a review with no inline comments encodes null: %s", body)
+	}
+	if !strings.Contains(string(body), `"body":"a summary"`) {
+		t.Fatalf("body = %s", body)
+	}
+}

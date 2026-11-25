@@ -42,6 +42,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   command posted nothing, and it exited 0. Denying "everything else" now means everything the build
   did not register, which is what the action is for — and the first real review found it, because the
   tests drove the review with a policy that allowed everything (#139).
+- `nova action review` no longer skips a review it could have posted. The decision to run asked
+  whether an *OpenRouter* key was set, whatever model had been asked for, and it read only the
+  environment: an opencode-go review started on another provider's key and then authenticated with
+  nothing, and a key in `provider.opencode_go.api_key` or one `/login` saved skipped green. The
+  decision now follows the configured model — an unset `--model` is the config's model — and reads
+  the same three sources the request authenticates with, and looks the model up in the same catalog
+  the request resolves it against, so a model that live discovery learned still resolves its own
+  provider. It is made on the loaded config, before a server exists, so a skipped review never starts
+  the extension host or an MCP server it would not use (#144, #145, #146).
 - `nova action review` talks to the runner's GitHub, not the public one. The REST base URL was
   hardcoded to `api.github.com`, and `GITHUB_API_URL` — the value a GitHub Enterprise Server runner
   sets, and the only route it has — was ignored, so the action could not review there at all. The

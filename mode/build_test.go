@@ -1,10 +1,14 @@
 package mode
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/permission"
+	"github.com/AutumnsGrove/nova/provider/opencodego"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -75,32 +79,119 @@ func TestBuild_PERM05_DenyAllAllowsTheRegisteredTools(t *testing.T) {
 	}
 }
 
-// Whether a review can run is a property of the model it was asked for, not of
-// one environment variable: the action asked for an OpenRouter key and skipped
-// green on a repository whose working key was an opencode-go one.
+// Whether a review can run is a property of the model it was asked for, and the
+// key can come from any of the three places the request authenticates from: the
+// config, the environment, and the store /login writes. Asking the environment
+// alone skipped a review whose key was in the other two, and an unset --model is
+// the config's model, not "the default provider".
 func TestBuild_HasKeyForModel(t *testing.T) {
 	const goModel = "opencode-go/deepseek-v4.1-flash"
 	const orModel = "deepseek/deepseek-v4.1"
 	t.Setenv("OPENROUTER_API_KEY", "")
 	t.Setenv("OPENCODE_GO_API_KEY", "")
+
+	for _, tc := range []struct {
+		name  string
+		cfg   *config.Config
+		env   map[string]string
+		store string
+		want  bool
+	}{
+		{name: "nothing anywhere", cfg: &config.Config{Model: goModel}},
+		{name: "environment key", cfg: &config.Config{Model: goModel},
+			env: map[string]string{"OPENCODE_GO_API_KEY": "go-key"}, want: true},
+		{name: "config key", cfg: &config.Config{Model: goModel,
+			Provider: config.ProviderConfig{OpenCodeGo: config.OpenCodeGoConfig{APIKey: "cfg-key"}}}, want: true},
+		{name: "stored key", cfg: &config.Config{Model: goModel}, store: "stored-key", want: true},
+		{name: "an opencode-go key is not an OpenRouter key", cfg: &config.Config{Model: orModel},
+			env: map[string]string{"OPENCODE_GO_API_KEY": "go-key"}},
+		{name: "OpenRouter key for an OpenRouter model", cfg: &config.Config{Model: orModel},
+			env: map[string]string{"OPENROUTER_API_KEY": "or-key"}, want: true},
+		{name: "OpenRouter key for the default model", cfg: &config.Config{Model: ""},
+			env: map[string]string{"OPENROUTER_API_KEY": "or-key"}, want: true},
+		{name: "an opencode-go key does not run the default model", cfg: &config.Config{Model: ""},
+			env: map[string]string{"OPENCODE_GO_API_KEY": "go-key"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			if tc.store != "" {
+				if err := opencode.SaveKey(opencode.DefaultKeyPath(home), tc.store); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := HasKeyForModel(tc.cfg, home); got != tc.want {
+				t.Fatalf("HasKeyForModel = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
+// LoadConfig is the cheap half of Build: it settles the model the way a build
+// would -- the flag, then the config -- and hands back the home a stored key is
+// read from, so the caller can decide whether to build at all.
+func TestBuild_LoadConfigSettlesTheModelWithoutBuilding(t *testing.T) {
 	home := t.TempDir()
-	if HasKeyForModel(goModel, home) {
-		t.Fatal("an opencode-go model reported a key with none set")
+	dir := filepath.Join(home, ".config", "nova")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("model: from/config\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, gotHome, err := LoadConfig(BuildOptions{Home: home, CWD: t.TempDir()})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Model != "from/config" {
+		t.Errorf("Model = %q, want the config's model", cfg.Model)
+	}
+	if gotHome != home {
+		t.Errorf("home = %q, want %q", gotHome, home)
+	}
+	cfg, _, err = LoadConfig(BuildOptions{Home: home, CWD: t.TempDir(), Model: "from/flag"})
+	if err != nil {
+		t.Fatalf("LoadConfig with a flag: %v", err)
+	}
+	if cfg.Model != "from/flag" {
+		t.Errorf("Model = %q, want the flag to win", cfg.Model)
+	}
+}
 
-	t.Setenv("OPENCODE_GO_API_KEY", "go-key")
-	if !HasKeyForModel(goModel, home) {
-		t.Fatal("the opencode-go key did not count for an opencode-go model")
+// Live discovery registers OpenCode Go models the baseline catalog does not
+// carry, and the provider build loads that overlay before the request resolves
+// the model. A decision taken without it reads a discovered model as unknown,
+// falls through to the OpenRouter branch, and skips for lack of an OpenRouter
+// key -- the same false skip, one layer down (#146).
+func TestBuild_HasKeyForModelLiveDiscoveredModel(t *testing.T) {
+	const liveModel = "opencode-go/live-only"
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("OPENCODE_GO_API_KEY", "")
+	home := t.TempDir()
+	if err := opencode.SaveKey(opencode.DefaultKeyPath(home), "stored-go-key"); err != nil {
+		t.Fatal(err)
 	}
-	if HasKeyForModel(orModel, home) {
-		t.Fatal("the opencode-go key counted for an OpenRouter model")
+	dir := filepath.Join(home, ".config", "nova")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
 	}
+	cache := `{"checked_at":0,"models":[{"id":"` + liveModel + `","name":"Live Only","slug":"live-only","context_window":1000,"dialect":"chat_completions"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "opencode-go-models.json"), []byte(cache), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The catalog is process-wide, so put it back for every other test.
+	t.Cleanup(func() {
+		empty := filepath.Join(t.TempDir(), "models.json")
+		if err := os.WriteFile(empty, []byte(`{"models":[]}`), 0o644); err != nil {
+			t.Error(err)
+			return
+		}
+		_ = opencodego.LoadCache(empty)
+	})
 
-	t.Setenv("OPENROUTER_API_KEY", "or-key")
-	if !HasKeyForModel(orModel, home) {
-		t.Fatal("the OpenRouter key did not count for an OpenRouter model")
-	}
-	if !HasKeyForModel("", home) {
-		t.Fatal("the default model no longer resolves its key")
+	if got := HasKeyForModel(&config.Config{Model: liveModel}, home); !got {
+		t.Fatalf("HasKeyForModel(%q) = false with the OpenCode Go key stored", liveModel)
 	}
 }

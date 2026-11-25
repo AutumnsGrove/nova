@@ -114,6 +114,13 @@ func Refresh(ctx context.Context, cfg DiscoveryConfig) error {
 }
 
 // LoadCache loads the overlay from disk and re-registers the catalog.
+// CachePath is where the discovery overlay lives for a home directory. Both the
+// provider build and a caller deciding whether it has a key have to read the
+// same file, or one of them looks at a catalog the other does not.
+func CachePath(home string) string {
+	return filepath.Join(home, ".config", "nova", "opencode-go-models.json")
+}
+
 func LoadCache(path string) error {
 	cache, err := readCache(path)
 	if err != nil {

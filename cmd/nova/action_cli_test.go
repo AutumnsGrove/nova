@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/testkit"
 )
 
@@ -195,5 +196,123 @@ func TestCLI_ActionReviewAsksTheModelsProviderForKey(t *testing.T) {
 	}
 	if seen := gh.seen(); len(seen) != 0 {
 		t.Fatalf("the review ran with only another provider's key: %v", seen)
+	}
+}
+
+// The key the run will authenticate with is not always in the environment. The
+// request path resolves the opencode-go key from the config, then the
+// environment, then the store /login writes -- but the decision to run looked
+// only at the environment, so a config key skipped green on a review it could
+// have posted, and the config's own model was never consulted at all (#146).
+func TestCLI_ActionReviewFindsAKeyOutsideTheEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, home string)
+		args  []string
+	}{
+		{
+			name: "config key and config model",
+			setup: func(t *testing.T, home string) {
+				writeHomeConfig(t, home, "model: opencode-go/deepseek-v4.1-flash\nprovider:\n  opencode_go:\n    api_key: config-go-key\n")
+			},
+		},
+		{
+			name: "login store key and config model",
+			setup: func(t *testing.T, home string) {
+				writeHomeConfig(t, home, "model: opencode-go/deepseek-v4.1-flash\n")
+				if err := opencode.SaveKey(opencode.DefaultKeyPath(home), "stored-go-key"); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "login store key and an explicit model",
+			setup: func(t *testing.T, home string) {
+				if err := opencode.SaveKey(opencode.DefaultKeyPath(home), "stored-go-key"); err != nil {
+					t.Fatal(err)
+				}
+			},
+			args: []string{"--model", "opencode-go/deepseek-v4.1-flash"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := testkit.NewServer(t,
+				testkit.ServerTurn{Turn: testkit.Turn{ToolCalls: []testkit.Call{
+					{ID: "c1", Name: "review_summary", Args: `{"body":"Nothing to flag."}`},
+				}}},
+				testkit.ServerTurn{Turn: testkit.Turn{Text: "done"}},
+			)
+			gh := &fakeGitHubREST{}
+			ts := httptest.NewServer(http.HandlerFunc(gh.serve))
+			defer ts.Close()
+			actionEnv(t, ts.URL)
+			// The review authenticates against the opencode-go endpoint, so it
+			// has to be the fake provider, not the real one.
+			t.Setenv("NOVA_OPENCODE_GO_BASE_URL", srv.URL)
+			// No key in the environment at all: the config or the store has to
+			// be what the gate sees, or the test proves nothing.
+			t.Setenv("OPENCODE_GO_API_KEY", "")
+			t.Setenv("OPENROUTER_API_KEY", "")
+			home := os.Getenv("HOME")
+			tc.setup(t, home)
+
+			code, out, errOut := runCLI(t, append([]string{"action", "review", "--pr", "7"}, tc.args...)...)
+			if code != 0 {
+				t.Fatalf("exit = %d: %s%s", code, out, errOut)
+			}
+			if strings.Contains(out+errOut, "::notice::") {
+				t.Fatalf("the review skipped with a key it could have used: %q", out+errOut)
+			}
+			if posted := gh.posted(); len(posted) != 1 {
+				t.Fatalf("posted %d reviews, want 1 (paths: %v)", len(posted), gh.seen())
+			}
+			if reqs := srv.Requests(); len(reqs) == 0 {
+				t.Fatal("the model was never called")
+			}
+		})
+	}
+}
+
+// writeHomeConfig writes the user config beside the home directory the command
+// reads.
+func writeHomeConfig(t *testing.T, home, body string) {
+	t.Helper()
+	dir := filepath.Join(home, ".config", "nova")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A review that is going to skip green must not pay for what it will not use:
+// it answers on the loaded config, before a server exists. Building one starts
+// the extension host and every configured MCP server, and Close waits out their
+// handshakes, so settling the key after a build turns a notice into a minute of
+// process work. The base held this too, by deciding before the build; the test
+// holds the invariant, so an ordering that restores the decision to after the
+// build fails here rather than in a timed run.
+func TestCLI_ActionReviewSkipStartsNothing(t *testing.T) {
+	gh := &fakeGitHubREST{}
+	ts := httptest.NewServer(http.HandlerFunc(gh.recordOnly))
+	defer ts.Close()
+	actionEnv(t, ts.URL)
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("OPENCODE_GO_API_KEY", "")
+	home := os.Getenv("HOME")
+	marker := filepath.Join(home, "mcp-started")
+	writeHomeConfig(t, home, "mcp:\n  servers:\n    - name: marker\n      command: /bin/sh\n"+
+		"      args: [\"-c\", \"touch "+marker+"; sleep 30\"]\n      timeout_ms: 500\n")
+
+	code, out, errOut := runCLI(t, "action", "review", "--pr", "7")
+	if code != 0 {
+		t.Fatalf("exit = %d, want the green skip: %s%s", code, out, errOut)
+	}
+	if !strings.Contains(out+errOut, "::notice::") {
+		t.Fatalf("no skip notice: %q", out+errOut)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("the skip started a configured MCP server it never used")
 	}
 }

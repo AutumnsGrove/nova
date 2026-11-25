@@ -26,17 +26,29 @@ func actionReview(stdout io.Writer, exit *int) *cobra.Command {
 				Model: model, MaxComments: maxComments, MaxCostUSD: maxCost,
 				WallClock: wallClock, PR: pr,
 				DryRun: dryRun, JSON: jsonOut, Token: token,
-				HasKey: mode.HasKeyForModel(model, ""), Out: stdout, State: state,
+				Out: stdout, State: state,
 			}
+			// The key is settled on the loaded config, before a server exists: the
+			// config settles the model and the config key, the store settles the
+			// rest, and building a server first would start the extension host and
+			// every configured MCP server for a run that only prints a notice.
+			build := mode.BuildOptions{
+				Mode: "action", Version: version, Model: model, DenyAll: true,
+				ExtraTools: state.Tools(), SystemPrompt: action.Prompt,
+				Tools: []string{"read", "list", "glob", "grep", "review_comment", "review_summary"},
+			}
+			cfg, home, err := mode.LoadConfig(build)
+			if err != nil {
+				return err
+			}
+			opt.HasKey = mode.HasKeyForModel(cfg, home)
 			if !opt.HasKey {
 				*exit = action.Run(cmd.Context(), nil, opt)
 				return nil
 			}
-			s, err := mode.Build(mode.BuildOptions{
-				Mode: "action", Version: version, Model: model, DenyAll: true,
-				ExtraTools: state.Tools(), SystemPrompt: action.Prompt,
-				Tools: []string{"read", "list", "glob", "grep", "review_comment", "review_summary"},
-			})
+			// Build reads the config again, deliberately: it is the server's own
+			// load, and its reload, rather than a second opinion about this one.
+			s, err := mode.Build(build)
 			if err != nil {
 				return err
 			}

@@ -127,7 +127,10 @@ jobs:
         with:
           model: opencode-go/deepseek-v4.1-flash
           max-comments: "15"
-          max-cost: "0.75"
+          # A runaway guard, not a budget: a typical review costs about $0.014.
+          # Tunable from repository settings (a NOVA_REVIEW_MAX_COST variable) so
+          # the number can move without a commit to this file.
+          max-cost: ${{ vars.NOVA_REVIEW_MAX_COST || '0.5' }}
           wall-clock: 10m
           pr: ${{ env.PR }}
           dry-run: ${{ inputs.dry_run || 'false' }}

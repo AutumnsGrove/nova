@@ -400,3 +400,69 @@ func TestAction_ACT08_CostCapIsChecked(t *testing.T) {
 		})
 	}
 }
+
+// ACT09: the wall clock is the other limit typed into repository settings, and
+// it has the same trap: "0m" is no limit at all, so a value that looks like a
+// very tight clock deletes the bound. The step's own script refuses it and
+// refuses a string that is not a duration, so the job does not fail later on a
+// flag-parse error with nothing posted.
+func TestAction_ACT09_WallClockIsChecked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the step runs a shell script")
+	}
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no shell to run the step with")
+	}
+	var script string
+	for _, step := range loadSelfReview(t).Jobs["review"].Steps {
+		if strings.Contains(step.Run, "NOVA_REVIEW_WALL_CLOCK") {
+			script = step.Run
+		}
+	}
+	if script == "" {
+		t.Fatal("the workflow has no step that checks NOVA_REVIEW_WALL_CLOCK")
+	}
+
+	for _, tc := range []struct {
+		clock   string
+		want    int
+		wantMsg string
+	}{
+		{clock: "", want: 0},
+		{clock: "15m", want: 0},
+		{clock: "90s", want: 0},
+		{clock: "1h30m", want: 0},
+		{clock: "0.5m", want: 0},
+		{clock: "0", want: 1, wantMsg: "no limit at all"},
+		{clock: "0s", want: 1, wantMsg: "no limit at all"},
+		{clock: "0m0s", want: 1, wantMsg: "no limit at all"},
+		{clock: "00h", want: 1, wantMsg: "no limit at all"},
+		{clock: "15 min", want: 1, wantMsg: "must be a duration"},
+		{clock: "15", want: 1, wantMsg: "must be a duration"},
+		{clock: "soon", want: 1, wantMsg: "must be a duration"},
+	} {
+		t.Run("clock="+tc.clock, func(t *testing.T) {
+			cmd := exec.Command(sh, "-e", "-c", script)
+			// A valid cap, so only the clock can decide the outcome.
+			cmd.Env = append(os.Environ(), "CAP=0.5", "CLOCK="+tc.clock)
+			out, err := cmd.CombinedOutput()
+			code := 0
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
+				code = exit.ExitCode()
+			} else if err != nil {
+				t.Fatalf("run the step: %v", err)
+			}
+			if code != tc.want {
+				t.Fatalf("exit = %d, want %d: %s", code, tc.want, out)
+			}
+			if tc.wantMsg != "" && !strings.Contains(string(out), tc.wantMsg) {
+				t.Fatalf("the error does not name the problem: %s", out)
+			}
+			if tc.want == 0 && strings.Contains(string(out), "::error::") {
+				t.Fatalf("a valid clock was reported as an error: %s", out)
+			}
+		})
+	}
+}

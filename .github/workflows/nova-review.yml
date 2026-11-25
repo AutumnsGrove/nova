@@ -122,15 +122,16 @@ jobs:
       # `action.yml` is reviewed by its own action rather than this branch's. A
       # head older than the fallback in #134 fails its own `go install` outright
       # (that is what #136 hit), which is loud rather than silent.
-      - name: Check the cost cap
+      - name: Check the limits
         if: steps.head.outputs.fork == 'false'
-        # A number typed into repository settings reaches a float flag, and the
-        # two likely typos are both worse than the default: "$1.00" fails flag
-        # parsing and reddens the job with no review posted, and "0" means no
-        # cap at all, which deletes the guard while looking like a tight one.
-        # A typo is a loud, self-describing failure instead.
+        # Both limits are numbers typed into repository settings that reach a
+        # flag, and the value that looks tight but means *none at all* is the
+        # one worth refusing: "0" is no cost cap, and "0m" is no wall clock. A
+        # typo is then a loud, self-describing failure instead of an uncapped
+        # review or a red job with nothing posted.
         env:
           CAP: ${{ vars.NOVA_REVIEW_MAX_COST }}
+          CLOCK: ${{ vars.NOVA_REVIEW_WALL_CLOCK }}
         run: |
           if [ -z "${CAP}" ]; then
             exit 0
@@ -146,17 +147,29 @@ jobs:
             echo "::error::NOVA_REVIEW_MAX_COST must be more than 0; 0 means no cap at all. Delete the variable for the 0.5 default, or set a positive number"
             exit 1
           fi
+          if [ -z "${CLOCK}" ]; then
+            exit 0
+          fi
+          # Zero first: "0" is a duration the flag accepts, and it means no
+          # limit, so it is refused with that reason rather than as bad syntax.
+          if [ -z "$(printf '%s' "${CLOCK}" | tr -d '0.hms')" ]; then
+            echo "::error::NOVA_REVIEW_WALL_CLOCK is 0, and 0 means no limit at all; delete the variable for the 15m default, or set a positive duration"
+            exit 1
+          fi
+          if ! printf '%s' "${CLOCK}" | grep -Eq '^([0-9]+(\.[0-9]+)?(h|m|s))+$'; then
+            echo "::error::NOVA_REVIEW_WALL_CLOCK must be a duration such as 15m, 90s or 1h30m, not '${CLOCK}'"
+            exit 1
+          fi
       - uses: ./
         if: steps.head.outputs.fork == 'false'
         with:
           model: opencode-go/deepseek-v4.1-flash
           max-comments: "15"
           # A runaway guard, not a budget: a typical review costs about $0.014.
-          # Tunable from repository settings (a NOVA_REVIEW_MAX_COST variable) so
-          # the number can move without a commit to this file; the step above
-          # refuses a value that is not a positive number.
+          # Both limits are repository variables so they move without a commit
+          # to this file; the step above refuses a value that disables one.
           max-cost: ${{ vars.NOVA_REVIEW_MAX_COST || '0.5' }}
-          wall-clock: 10m
+          wall-clock: ${{ vars.NOVA_REVIEW_WALL_CLOCK || '15m' }}
           pr: ${{ env.PR }}
           dry-run: ${{ inputs.dry_run || 'false' }}
           opencode-go-api-key: ${{ secrets.PI_REVIEW_API_KEY }}

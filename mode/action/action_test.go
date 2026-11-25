@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -188,6 +189,7 @@ type selfReview struct {
 			Uses string            `yaml:"uses"`
 			Run  string            `yaml:"run"`
 			With map[string]string `yaml:"with"`
+			Env  map[string]string `yaml:"env"`
 		} `yaml:"steps"`
 	} `yaml:"jobs"`
 }
@@ -438,7 +440,8 @@ func TestAction_ACT09_WallClockIsChecked(t *testing.T) {
 		{clock: "", want: 0},
 		{clock: "15m", want: 0},
 		{clock: "90s", want: 0},
-		{clock: "1h30m", want: 0},
+		// A valid duration the job's 20m budget cannot honour.
+		{clock: "1h30m", want: 1, wantMsg: "at most 18m"},
 		{clock: "0.5m", want: 0},
 		{clock: "400ms", want: 0},
 		{clock: "1.5ms", want: 0},
@@ -452,6 +455,14 @@ func TestAction_ACT09_WallClockIsChecked(t *testing.T) {
 		// whole nanoseconds, so this is 0s and means no limit at all.
 		{clock: "0.5ns", want: 1, wantMsg: "no limit at all"},
 		{clock: "0.0000000001s", want: 1, wantMsg: "no limit at all"},
+		// time.ParseDuration truncates each part before adding them, so two
+		// halves of a nanosecond are still 0s, not 1ns.
+		{clock: "0.5ns0.5ns", want: 1, wantMsg: "no limit at all"},
+		{clock: "0.9ns0.9ns", want: 1, wantMsg: "no limit at all"},
+		// The job is 20m and the review needs two minutes of it for setup, so a
+		// clock the runner would cut short is refused rather than accepted.
+		{clock: "18m", want: 0},
+		{clock: "19m", want: 1, wantMsg: "at most 18m"},
 		{clock: "15 min", want: 1, wantMsg: "must be a duration"},
 		{clock: "15", want: 1, wantMsg: "must be a duration"},
 		{clock: "soon", want: 1, wantMsg: "must be a duration"},
@@ -465,7 +476,7 @@ func TestAction_ACT09_WallClockIsChecked(t *testing.T) {
 		for _, cap := range []string{"0.5", ""} {
 			t.Run("clock="+tc.clock+"/cap="+cap, func(t *testing.T) {
 				cmd := exec.Command(sh, "-e", "-c", script)
-				cmd.Env = append(os.Environ(), "CAP="+cap, "CLOCK="+tc.clock)
+				cmd.Env = append(os.Environ(), "CAP="+cap, "CLOCK="+tc.clock, "JOB_MINUTES=20")
 				out, err := cmd.CombinedOutput()
 				code := 0
 				var exit *exec.ExitError
@@ -521,6 +532,17 @@ func TestAction_ACT10_JobOutlivesTheReviewClock(t *testing.T) {
 	clock, err := time.ParseDuration(m[1])
 	if err != nil {
 		t.Fatalf("the default %q is not a duration: %v", m[1], err)
+	}
+	// The step cannot read timeout-minutes, so it carries the number, and this is
+	// what stops the two drifting into a clock the runner would cut short.
+	var jobMinutes string
+	for _, step := range job.Steps {
+		if v, ok := step.Env["JOB_MINUTES"]; ok {
+			jobMinutes = v
+		}
+	}
+	if jobMinutes != strconv.Itoa(job.TimeoutMinutes) {
+		t.Fatalf("the limit step checks JOB_MINUTES=%q but the job timeout is %d", jobMinutes, job.TimeoutMinutes)
 	}
 	// Two minutes covers checkout, setup-go and the action's install, which is
 	// what this job does before the review's clock starts.

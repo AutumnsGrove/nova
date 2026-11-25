@@ -136,6 +136,9 @@ jobs:
         env:
           CAP: ${{ vars.NOVA_REVIEW_MAX_COST }}
           CLOCK: ${{ vars.NOVA_REVIEW_WALL_CLOCK }}
+          # The job's own timeout-minutes, which GitHub does not offer as a
+          # context; ACT10 fails if the two drift apart.
+          JOB_MINUTES: 20
         run: |
           # Each limit is checked on its own: an early exit for an unset one
           # would leave the other unguarded, and unset is the default.
@@ -157,14 +160,16 @@ jobs:
             # means no limit, so it is admitted here and refused below.
             if ! printf '%s' "${CLOCK}" | grep -Eq \
               '^(([0-9]+(\.[0-9]+)?(ns|us|µs|ms|h|m|s))+|0+(\.[0-9]*)?)$'; then
-              echo "::error::NOVA_REVIEW_WALL_CLOCK must be a duration such as 15m, 90s or 1h30m, not '${CLOCK}'"
+              echo "::error::NOVA_REVIEW_WALL_CLOCK must be a duration such as 15m, 90s or 400ms, not '${CLOCK}'"
               exit 1
             fi
-            # The post-condition is the number Go arrives at, not a spelling:
-            # time.ParseDuration keeps whole nanoseconds, so "0.5ns" is 0s and
-            # means no limit at all, exactly like "0m". Sum the units in
-            # nanoseconds and refuse anything that truncates to zero.
-            if ! awk -v c="${CLOCK}" 'BEGIN {
+            # The post-conditions are the number Go arrives at, not a spelling.
+            # time.ParseDuration keeps whole nanoseconds and truncates each part
+            # before adding them, so "0.5ns" and "0.5ns0.5ns" are both 0s and
+            # mean no limit at all. And a clock longer than the job allows is
+            # killed by the runner before it can report, which is the reason
+            # timeout-minutes is above it in the first place.
+            if awk -v c="${CLOCK}" -v job="${JOB_MINUTES}" 'BEGIN {
               gsub(/µs/, "us", c)
               total = 0
               while (match(c, /[0-9.]+(ns|us|ms|s|m|h)/)) {
@@ -174,12 +179,19 @@ jobs:
                 mult = (unit == "h") ? 3600000000000 : (unit == "m") ? 60000000000 : \
                        (unit == "s") ? 1000000000 : (unit == "ms") ? 1000000 : \
                        (unit == "us") ? 1000 : 1
-                total += num * mult
+                total += int(num * mult)
                 c = substr(c, RSTART + RLENGTH)
               }
-              exit !(int(total) > 0)
+              if (total <= 0) exit 1
+              if (total > (job - 2) * 60000000000) exit 2
             }'; then
-              echo "::error::NOVA_REVIEW_WALL_CLOCK is 0, and 0 means no limit at all; delete the variable for the 15m default, or set a positive duration"
+              :
+            else
+              if [ "$?" = 2 ]; then
+                echo "::error::NOVA_REVIEW_WALL_CLOCK must be at most $((JOB_MINUTES - 2))m, which is the job's ${JOB_MINUTES}m timeout less two minutes for the checkout and install; raise timeout-minutes in this workflow to allow a longer review"
+              else
+                echo "::error::NOVA_REVIEW_WALL_CLOCK is 0, and 0 means no limit at all; delete the variable for the 15m default, or set a positive duration"
+              fi
               exit 1
             fi
           fi

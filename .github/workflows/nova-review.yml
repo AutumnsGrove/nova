@@ -139,8 +139,11 @@ jobs:
             echo "::error::NOVA_REVIEW_MAX_COST must be a plain number of US dollars such as 0.5, not '${CAP}'"
             exit 1
           fi
-          if printf '%s' "${CAP}" | grep -Eq '^0+(\.0+)?$'; then
-            echo "::error::NOVA_REVIEW_MAX_COST is 0, and 0 means no cap at all; delete the variable for the 0.5 default, or set a positive number"
+          # The post-condition is numeric, not a spelling: a long enough
+          # decimal underflows to 0.0 when it reaches the float flag, and 0 is
+          # no cap at all, so the value that parses to zero is the one refused.
+          if ! awk -v c="${CAP}" 'BEGIN { exit !(c + 0 > 0) }'; then
+            echo "::error::NOVA_REVIEW_MAX_COST must be more than 0; 0 means no cap at all. Delete the variable for the 0.5 default, or set a positive number"
             exit 1
           fi
       - uses: ./

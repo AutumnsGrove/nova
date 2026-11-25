@@ -346,6 +346,9 @@ func TestAction_ACT08_CostCapIsChecked(t *testing.T) {
 	if err != nil {
 		t.Skip("no shell to run the step with")
 	}
+	if _, err := exec.LookPath("awk"); err != nil {
+		t.Skip("no awk for the step's numeric check")
+	}
 	var script string
 	for _, step := range loadSelfReview(t).Jobs["review"].Steps {
 		if strings.Contains(step.Run, "NOVA_REVIEW_MAX_COST") {
@@ -367,6 +370,9 @@ func TestAction_ACT08_CostCapIsChecked(t *testing.T) {
 		{cap: "0.05", want: 0},
 		{cap: "0", want: 1, wantMsg: "no cap at all"},
 		{cap: "0.0", want: 1, wantMsg: "no cap at all"},
+		// Digit-only and shaped like a number, but it underflows to 0.0 on the
+		// way to the float flag: the cap would be gone with no parse error.
+		{cap: "0." + strings.Repeat("0", 330) + "1", want: 1, wantMsg: "no cap at all"},
 		{cap: "$1.00", want: 1, wantMsg: "plain number"},
 		{cap: "1.2.3", want: 1, wantMsg: "plain number"},
 		{cap: "half", want: 1, wantMsg: "plain number"},

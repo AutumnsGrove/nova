@@ -1,6 +1,7 @@
 package action
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -329,5 +330,67 @@ func TestAction_ACT07_SelfReviewWorkflow(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("no step runs this repository's own action")
+	}
+}
+
+// ACT08: the cost cap is a number typed into repository settings and handed to
+// a float flag, so the two likely typos fail in ways the default cannot: a
+// non-number reddens the job before a review exists, and "0" is accepted as no
+// cap at all, which deletes the guard while looking like a tight one. The step's
+// own script is what has to refuse them, so this runs it.
+func TestAction_ACT08_CostCapIsChecked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the step runs a shell script")
+	}
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no shell to run the step with")
+	}
+	var script string
+	for _, step := range loadSelfReview(t).Jobs["review"].Steps {
+		if strings.Contains(step.Run, "NOVA_REVIEW_MAX_COST") {
+			script = step.Run
+		}
+	}
+	if script == "" {
+		t.Fatal("the workflow has no step that checks NOVA_REVIEW_MAX_COST")
+	}
+
+	for _, tc := range []struct {
+		cap     string
+		want    int
+		wantMsg string
+	}{
+		{cap: "", want: 0},
+		{cap: "0.5", want: 0},
+		{cap: "2", want: 0},
+		{cap: "0.05", want: 0},
+		{cap: "0", want: 1, wantMsg: "no cap at all"},
+		{cap: "0.0", want: 1, wantMsg: "no cap at all"},
+		{cap: "$1.00", want: 1, wantMsg: "plain number"},
+		{cap: "1.2.3", want: 1, wantMsg: "plain number"},
+		{cap: "half", want: 1, wantMsg: "plain number"},
+	} {
+		t.Run("cap="+tc.cap, func(t *testing.T) {
+			cmd := exec.Command(sh, "-e", "-c", script)
+			cmd.Env = append(os.Environ(), "CAP="+tc.cap)
+			out, err := cmd.CombinedOutput()
+			code := 0
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
+				code = exit.ExitCode()
+			} else if err != nil {
+				t.Fatalf("run the step: %v", err)
+			}
+			if code != tc.want {
+				t.Fatalf("exit = %d, want %d: %s", code, tc.want, out)
+			}
+			if tc.wantMsg != "" && !strings.Contains(string(out), tc.wantMsg) {
+				t.Fatalf("the error does not name the problem: %s", out)
+			}
+			if tc.want == 0 && strings.Contains(string(out), "::error::") {
+				t.Fatalf("a valid cap was reported as an error: %s", out)
+			}
+		})
 	}
 }

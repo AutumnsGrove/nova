@@ -122,6 +122,27 @@ jobs:
       # `action.yml` is reviewed by its own action rather than this branch's. A
       # head older than the fallback in #134 fails its own `go install` outright
       # (that is what #136 hit), which is loud rather than silent.
+      - name: Check the cost cap
+        if: steps.head.outputs.fork == 'false'
+        # A number typed into repository settings reaches a float flag, and the
+        # two likely typos are both worse than the default: "$1.00" fails flag
+        # parsing and reddens the job with no review posted, and "0" means no
+        # cap at all, which deletes the guard while looking like a tight one.
+        # A typo is a loud, self-describing failure instead.
+        env:
+          CAP: ${{ vars.NOVA_REVIEW_MAX_COST }}
+        run: |
+          if [ -z "${CAP}" ]; then
+            exit 0
+          fi
+          if ! printf '%s' "${CAP}" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::NOVA_REVIEW_MAX_COST must be a plain number of US dollars such as 0.5, not '${CAP}'"
+            exit 1
+          fi
+          if printf '%s' "${CAP}" | grep -Eq '^0+(\.0+)?$'; then
+            echo "::error::NOVA_REVIEW_MAX_COST is 0, and 0 means no cap at all; delete the variable for the 0.5 default, or set a positive number"
+            exit 1
+          fi
       - uses: ./
         if: steps.head.outputs.fork == 'false'
         with:
@@ -129,7 +150,8 @@ jobs:
           max-comments: "15"
           # A runaway guard, not a budget: a typical review costs about $0.014.
           # Tunable from repository settings (a NOVA_REVIEW_MAX_COST variable) so
-          # the number can move without a commit to this file.
+          # the number can move without a commit to this file; the step above
+          # refuses a value that is not a positive number.
           max-cost: ${{ vars.NOVA_REVIEW_MAX_COST || '0.5' }}
           wall-clock: 10m
           pr: ${{ env.PR }}

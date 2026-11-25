@@ -83,7 +83,11 @@ jobs:
        github.event.comment.user.type != 'Bot') ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Above the review's own wall clock (15m by default) plus the checkout,
+    # setup-go and install that run before it starts: a review that is allowed
+    # 15m inside a 15m job is killed by the runner instead of reaching its limit,
+    # and a killed job posts no verdict at all.
+    timeout-minutes: 20
     env:
       PR: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
     steps:
@@ -149,14 +153,33 @@ jobs:
             fi
           fi
           if [ -n "${CLOCK}" ]; then
-            # Zero first: "0" is a duration the flag accepts, and it means no
-            # limit, so it is refused with that reason rather than as bad syntax.
-            if [ -z "$(printf '%s' "${CLOCK}" | tr -d '0.hmsnuµ')" ]; then
-              echo "::error::NOVA_REVIEW_WALL_CLOCK is 0, and 0 means no limit at all; delete the variable for the 15m default, or set a positive duration"
+            # A bare "0" is the one duration Go accepts without a unit, and it
+            # means no limit, so it is admitted here and refused below.
+            if ! printf '%s' "${CLOCK}" | grep -Eq \
+              '^(([0-9]+(\.[0-9]+)?(ns|us|µs|ms|h|m|s))+|0+(\.[0-9]*)?)$'; then
+              echo "::error::NOVA_REVIEW_WALL_CLOCK must be a duration such as 15m, 90s or 1h30m, not '${CLOCK}'"
               exit 1
             fi
-            if ! printf '%s' "${CLOCK}" | grep -Eq '^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|h|m|s))+$'; then
-              echo "::error::NOVA_REVIEW_WALL_CLOCK must be a duration such as 15m, 90s or 1h30m, not '${CLOCK}'"
+            # The post-condition is the number Go arrives at, not a spelling:
+            # time.ParseDuration keeps whole nanoseconds, so "0.5ns" is 0s and
+            # means no limit at all, exactly like "0m". Sum the units in
+            # nanoseconds and refuse anything that truncates to zero.
+            if ! awk -v c="${CLOCK}" 'BEGIN {
+              gsub(/µs/, "us", c)
+              total = 0
+              while (match(c, /[0-9.]+(ns|us|ms|s|m|h)/)) {
+                tok = substr(c, RSTART, RLENGTH)
+                unit = tok; sub(/^[0-9.]+/, "", unit)
+                num = substr(tok, 1, length(tok) - length(unit))
+                mult = (unit == "h") ? 3600000000000 : (unit == "m") ? 60000000000 : \
+                       (unit == "s") ? 1000000000 : (unit == "ms") ? 1000000 : \
+                       (unit == "us") ? 1000 : 1
+                total += num * mult
+                c = substr(c, RSTART + RLENGTH)
+              }
+              exit !(int(total) > 0)
+            }'; then
+              echo "::error::NOVA_REVIEW_WALL_CLOCK is 0, and 0 means no limit at all; delete the variable for the 15m default, or set a positive duration"
               exit 1
             fi
           fi

@@ -5,10 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -177,9 +179,10 @@ type selfReview struct {
 		CancelInProgress bool   `yaml:"cancel-in-progress"`
 	} `yaml:"concurrency"`
 	Jobs map[string]struct {
-		If    string            `yaml:"if"`
-		Perms map[string]string `yaml:"permissions"`
-		Steps []struct {
+		If             string            `yaml:"if"`
+		TimeoutMinutes int               `yaml:"timeout-minutes"`
+		Perms          map[string]string `yaml:"permissions"`
+		Steps          []struct {
 			ID   string            `yaml:"id"`
 			If   string            `yaml:"if"`
 			Uses string            `yaml:"uses"`
@@ -414,6 +417,9 @@ func TestAction_ACT09_WallClockIsChecked(t *testing.T) {
 	if err != nil {
 		t.Skip("no shell to run the step with")
 	}
+	if _, err := exec.LookPath("awk"); err != nil {
+		t.Skip("no awk for the step's cost check")
+	}
 	var script string
 	for _, step := range loadSelfReview(t).Jobs["review"].Steps {
 		if strings.Contains(step.Run, "NOVA_REVIEW_WALL_CLOCK") {
@@ -437,13 +443,21 @@ func TestAction_ACT09_WallClockIsChecked(t *testing.T) {
 		{clock: "400ms", want: 0},
 		{clock: "1.5ms", want: 0},
 		{clock: "2ns", want: 0},
+		{clock: "1ns", want: 0},
 		{clock: "0", want: 1, wantMsg: "no limit at all"},
 		{clock: "0s", want: 1, wantMsg: "no limit at all"},
 		{clock: "0m0s", want: 1, wantMsg: "no limit at all"},
 		{clock: "00h", want: 1, wantMsg: "no limit at all"},
+		// Valid syntax, smaller than a nanosecond: time.ParseDuration keeps
+		// whole nanoseconds, so this is 0s and means no limit at all.
+		{clock: "0.5ns", want: 1, wantMsg: "no limit at all"},
+		{clock: "0.0000000001s", want: 1, wantMsg: "no limit at all"},
 		{clock: "15 min", want: 1, wantMsg: "must be a duration"},
 		{clock: "15", want: 1, wantMsg: "must be a duration"},
 		{clock: "soon", want: 1, wantMsg: "must be a duration"},
+		// Only the letters of the zero test: not a duration, so it must be
+		// refused as syntax rather than reported as zero.
+		{clock: "ms", want: 1, wantMsg: "must be a duration"},
 	} {
 		// Both configurations: with a cap set, and with the cap variable unset,
 		// which is the default. An early exit for one limit must not leave the
@@ -473,3 +487,47 @@ func TestAction_ACT09_WallClockIsChecked(t *testing.T) {
 		}
 	}
 }
+
+// ACT10: the job's own timeout has to outlive the review's wall clock, because
+// the clock starts inside `nova` -- after the checkout, setup-go and install --
+// so a review allowed as long as the job is killed by the runner before it can
+// reach its own limit. A killed job reports nothing; a review that hits its
+// limit reports and posts whatever it had.
+func TestAction_ACT10_JobOutlivesTheReviewClock(t *testing.T) {
+	job, ok := loadSelfReview(t).Jobs["review"]
+	if !ok {
+		t.Fatal("no review job")
+	}
+	if job.TimeoutMinutes == 0 {
+		t.Fatal("the review job sets no timeout-minutes")
+	}
+	var with map[string]string
+	for _, step := range job.Steps {
+		if step.Uses == "./" {
+			with = step.With
+		}
+	}
+	expr, ok := with["wall-clock"]
+	if !ok {
+		t.Fatal("the action step passes no wall-clock")
+	}
+	if !strings.Contains(expr, "vars.NOVA_REVIEW_WALL_CLOCK") {
+		t.Fatalf("wall-clock = %q, want the repository variable", expr)
+	}
+	m := defaultInExpression.FindStringSubmatch(expr)
+	if m == nil {
+		t.Fatalf("wall-clock = %q, want a quoted default", expr)
+	}
+	clock, err := time.ParseDuration(m[1])
+	if err != nil {
+		t.Fatalf("the default %q is not a duration: %v", m[1], err)
+	}
+	// Two minutes covers checkout, setup-go and the action's install, which is
+	// what this job does before the review's clock starts.
+	if slack := time.Duration(job.TimeoutMinutes)*time.Minute - clock; slack < 2*time.Minute {
+		t.Fatalf("timeout-minutes: %d leaves only %v above the %v review clock", job.TimeoutMinutes, slack, clock)
+	}
+}
+
+// defaultInExpression finds the quoted fallback in `${{ vars.X || '15m' }}`.
+var defaultInExpression = regexp.MustCompile(`'([^']*)'\s*\}\}$`)

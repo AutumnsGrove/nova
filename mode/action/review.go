@@ -319,13 +319,43 @@ func Run(ctx context.Context, s *mode.Server, opt Options) int {
 	}
 	if opt.JSON {
 		_ = json.NewEncoder(opt.Out).Encode(report)
-		return 0
+		// The JSON is the report, so the verdict is the exit code and the
+		// report's own fields: a workflow-command line on stdout would corrupt it.
+		return cutOffExit(report, opt)
 	}
 	fmt.Fprintf(opt.Out, "Nova review: %d comment(s), $%.4f, partial=%t, posted=%t\n", len(report.Comments), report.CostUSD, report.Partial, report.Posted)
 	if report.Summary != "" {
 		fmt.Fprintln(opt.Out, "\n"+report.Summary)
 	}
-	return 0
+	cutOffNotice(opt.Out, report, opt)
+	return cutOffExit(report, opt)
+}
+
+// cutOffExit is the verdict for a run that finished. A review stopped before it
+// summarised posted nothing, and exiting 0 there is a green check for work that
+// never happened: that is how a six-minute wall clock "produced nothing at all"
+// while the job passed (#142). A run cut off after it summarised posted an
+// honest, marked-partial review, so it succeeds.
+func cutOffExit(report *Report, opt Options) int {
+	if !report.Partial || opt.DryRun || report.Posted {
+		return 0
+	}
+	return 1
+}
+
+// cutOffNotice says on the job's own output what the exit code means. A dry run
+// posts nothing by design, so it is never the failure, only a warning.
+func cutOffNotice(w io.Writer, report *Report, opt Options) {
+	switch {
+	case !report.Partial:
+		return
+	case opt.DryRun:
+		fmt.Fprintln(w, "::warning::Nova review was cut off; the review printed here is incomplete")
+	case report.Posted:
+		fmt.Fprintln(w, "::warning::Nova review was cut off; the posted review is incomplete")
+	default:
+		fmt.Fprintln(w, "::error::Nova review was cut off before it summarised, so nothing was posted")
+	}
 }
 
 // writeSummaryFile appends a Markdown summary to the GitHub step summary.

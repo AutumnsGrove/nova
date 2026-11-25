@@ -76,7 +76,7 @@ nova/
   mode/           server core, print, json, rpc                 ≤ 3120
     attach/       protocol attachments to content parts         ≤ 160
     serve/        the protocol over HTTP and SSE                ≤ 440
-    action/       the GitHub review action                      ≤ 750
+    action/       the GitHub review action                      ≤ 780
     providers/    build both providers, route by model          ≤ 320
   mcp/            Model Context Protocol client: stdio, tools    ≤ 890
   ext/            extension host, manifest, check, reload,

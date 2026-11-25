@@ -286,11 +286,13 @@ func writeHomeConfig(t *testing.T, home, body string) {
 	}
 }
 
-// A review that is going to skip green must not pay for what it will not use.
-// The decision is made on the loaded config, before a server exists, because
-// building one starts the extension host and every configured MCP server and
-// Close then waits out their handshakes -- so a notice cost a minute and left
-// subprocesses started and killed for nothing (#146).
+// A review that is going to skip green must not pay for what it will not use:
+// it answers on the loaded config, before a server exists. Building one starts
+// the extension host and every configured MCP server, and Close waits out their
+// handshakes, so settling the key after a build turns a notice into a minute of
+// process work. The base held this too, by deciding before the build; the test
+// holds the invariant, so an ordering that restores the decision to after the
+// build fails here rather than in a timed run.
 func TestCLI_ActionReviewSkipStartsNothing(t *testing.T) {
 	gh := &fakeGitHubREST{}
 	ts := httptest.NewServer(http.HandlerFunc(gh.recordOnly))

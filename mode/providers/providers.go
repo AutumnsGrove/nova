@@ -9,7 +9,6 @@ package providers
 import (
 	"cmp"
 	"context"
-	"path/filepath"
 	"time"
 
 	"github.com/AutumnsGrove/nova/auth"
@@ -77,7 +76,7 @@ func Build(opt Options) provider.Provider {
 	// it is stale. Discovery never blocks startup and never fails it.
 	cachePath := ""
 	if opt.Home != "" {
-		cachePath = filepath.Join(opt.Home, ".config", "nova", "opencode-go-models.json")
+		cachePath = opencodego.CachePath(opt.Home)
 		_ = opencodego.LoadCache(cachePath)
 	}
 	if starter, _ := goKeyFunc(context.Background()); starter != "" && cachePath != "" && !opencodego.CacheFresh(cachePath, 0) {

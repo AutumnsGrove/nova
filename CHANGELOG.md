@@ -47,11 +47,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   environment: an opencode-go review started on another provider's key and then authenticated with
   nothing, and a key in `provider.opencode_go.api_key` or one `/login` saved skipped green. The
   decision now follows the configured model — an unset `--model` is the config's model — and reads
-  the same three sources the request authenticates with. It is made on the loaded config, before a
-  server exists, so a skipped review still starts nothing. Two consequences worth knowing: a config
-  that will not load now fails the step instead of skipping it green, because the config is read
-  before the decision, and a skipped run no longer starts the extension host or an MCP server it
-  would never use (#144, #145, #146).
+  the same three sources the request authenticates with, and looks the model up in the same catalog
+  the request resolves it against, so a model that live discovery learned still resolves its own
+  provider. It is made on the loaded config, before a server exists, so a skipped review never starts
+  the extension host or an MCP server it would not use (#144, #145, #146).
 - `nova action review` talks to the runner's GitHub, not the public one. The REST base URL was
   hardcoded to `api.github.com`, and `GITHUB_API_URL` — the value a GitHub Enterprise Server runner
   sets, and the only route it has — was ignored, so the action could not review there at all. The

@@ -8,6 +8,7 @@ import (
 	"github.com/AutumnsGrove/nova/auth/opencode"
 	"github.com/AutumnsGrove/nova/config"
 	"github.com/AutumnsGrove/nova/permission"
+	"github.com/AutumnsGrove/nova/provider/opencodego"
 	"github.com/AutumnsGrove/nova/tool"
 )
 
@@ -156,5 +157,41 @@ func TestBuild_LoadConfigSettlesTheModelWithoutBuilding(t *testing.T) {
 	}
 	if cfg.Model != "from/flag" {
 		t.Errorf("Model = %q, want the flag to win", cfg.Model)
+	}
+}
+
+// Live discovery registers OpenCode Go models the baseline catalog does not
+// carry, and the provider build loads that overlay before the request resolves
+// the model. A decision taken without it reads a discovered model as unknown,
+// falls through to the OpenRouter branch, and skips for lack of an OpenRouter
+// key -- the same false skip, one layer down (#146).
+func TestBuild_HasKeyForModelLiveDiscoveredModel(t *testing.T) {
+	const liveModel = "opencode-go/live-only"
+	t.Setenv("OPENROUTER_API_KEY", "")
+	t.Setenv("OPENCODE_GO_API_KEY", "")
+	home := t.TempDir()
+	if err := opencode.SaveKey(opencode.DefaultKeyPath(home), "stored-go-key"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".config", "nova")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cache := `{"checked_at":0,"models":[{"id":"` + liveModel + `","name":"Live Only","slug":"live-only","context_window":1000,"dialect":"chat_completions"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "opencode-go-models.json"), []byte(cache), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The catalog is process-wide, so put it back for every other test.
+	t.Cleanup(func() {
+		empty := filepath.Join(t.TempDir(), "models.json")
+		if err := os.WriteFile(empty, []byte(`{"models":[]}`), 0o644); err != nil {
+			t.Error(err)
+			return
+		}
+		_ = opencodego.LoadCache(empty)
+	})
+
+	if got := HasKeyForModel(&config.Config{Model: liveModel}, home); !got {
+		t.Fatalf("HasKeyForModel(%q) = false with the OpenCode Go key stored", liveModel)
 	}
 }

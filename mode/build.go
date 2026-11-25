@@ -165,12 +165,18 @@ func HasKeyForModel(cfg *config.Config, home string) bool {
 	if cfg != nil {
 		model = cfg.Model
 	}
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	// Live discovery registers models the baseline catalog does not carry, and
+	// the provider build loads that overlay before a request resolves its model.
+	// Loading it here too keeps the decision and the request looking at the same
+	// catalog: without it a discovered opencode-go model is unknown, falls
+	// through to the OpenRouter branch, and skips for the wrong key.
+	_ = opencodego.LoadCache(opencodego.CachePath(home))
 	if m, ok := provider.GetModel(model); ok && m.Provider == opencodego.ProviderName {
 		if _, _, err := providers.ResolveOpenCodeGoKey(cfg, os.Getenv); err == nil {
 			return true
-		}
-		if home == "" {
-			home, _ = os.UserHomeDir()
 		}
 		stored, err := opencode.LoadKey(opencode.DefaultKeyPath(home))
 		return err == nil && stored != ""

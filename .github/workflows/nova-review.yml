@@ -83,7 +83,11 @@ jobs:
        github.event.comment.user.type != 'Bot') ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Above the review's own wall clock (15m by default) plus the checkout,
+    # setup-go and install that run before it starts: a review that is allowed
+    # 15m inside a 15m job is killed by the runner instead of reaching its limit,
+    # and a killed job posts no verdict at all.
+    timeout-minutes: 20
     env:
       PR: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
     steps:
@@ -122,13 +126,85 @@ jobs:
       # `action.yml` is reviewed by its own action rather than this branch's. A
       # head older than the fallback in #134 fails its own `go install` outright
       # (that is what #136 hit), which is loud rather than silent.
+      - name: Check the limits
+        if: steps.head.outputs.fork == 'false'
+        # Both limits are numbers typed into repository settings that reach a
+        # flag, and the value that looks tight but means *none at all* is the
+        # one worth refusing: "0" is no cost cap, and "0m" is no wall clock. A
+        # typo is then a loud, self-describing failure instead of an uncapped
+        # review or a red job with nothing posted.
+        env:
+          CAP: ${{ vars.NOVA_REVIEW_MAX_COST }}
+          CLOCK: ${{ vars.NOVA_REVIEW_WALL_CLOCK }}
+          # The job's own timeout-minutes, which GitHub does not offer as a
+          # context; ACT10 fails if the two drift apart.
+          JOB_MINUTES: 20
+        run: |
+          # Each limit is checked on its own: an early exit for an unset one
+          # would leave the other unguarded, and unset is the default.
+          if [ -n "${CAP}" ]; then
+            if ! printf '%s' "${CAP}" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+              echo "::error::NOVA_REVIEW_MAX_COST must be a plain number of US dollars such as 0.5, not '${CAP}'"
+              exit 1
+            fi
+            # The post-condition is numeric, not a spelling: a long enough
+            # decimal underflows to 0.0 when it reaches the float flag, and 0 is
+            # no cap at all, so the value that parses to zero is the one refused.
+            if ! awk -v c="${CAP}" 'BEGIN { exit !(c + 0 > 0) }'; then
+              echo "::error::NOVA_REVIEW_MAX_COST must be more than 0; 0 means no cap at all. Delete the variable for the 0.5 default, or set a positive number"
+              exit 1
+            fi
+          fi
+          if [ -n "${CLOCK}" ]; then
+            # A bare "0" is the one duration Go accepts without a unit, and it
+            # means no limit, so it is admitted here and refused below.
+            if ! printf '%s' "${CLOCK}" | grep -Eq \
+              '^(([0-9]+(\.[0-9]+)?(ns|us|µs|ms|h|m|s))+|0+(\.[0-9]*)?)$'; then
+              echo "::error::NOVA_REVIEW_WALL_CLOCK must be a duration such as 15m, 90s or 400ms, not '${CLOCK}'"
+              exit 1
+            fi
+            # The post-conditions are the number Go arrives at, not a spelling.
+            # time.ParseDuration keeps whole nanoseconds and truncates each part
+            # before adding them, so "0.5ns" and "0.5ns0.5ns" are both 0s and
+            # mean no limit at all. And a clock longer than the job allows is
+            # killed by the runner before it can report, which is the reason
+            # timeout-minutes is above it in the first place.
+            if awk -v c="${CLOCK}" -v job="${JOB_MINUTES}" 'BEGIN {
+              gsub(/µs/, "us", c)
+              total = 0
+              while (match(c, /[0-9.]+(ns|us|ms|s|m|h)/)) {
+                tok = substr(c, RSTART, RLENGTH)
+                unit = tok; sub(/^[0-9.]+/, "", unit)
+                num = substr(tok, 1, length(tok) - length(unit))
+                mult = (unit == "h") ? 3600000000000 : (unit == "m") ? 60000000000 : \
+                       (unit == "s") ? 1000000000 : (unit == "ms") ? 1000000 : \
+                       (unit == "us") ? 1000 : 1
+                total += int(num * mult)
+                c = substr(c, RSTART + RLENGTH)
+              }
+              if (total <= 0) exit 1
+              if (total > (job - 2) * 60000000000) exit 2
+            }'; then
+              :
+            else
+              if [ "$?" = 2 ]; then
+                echo "::error::NOVA_REVIEW_WALL_CLOCK must be at most $((JOB_MINUTES - 2))m, which is the job's ${JOB_MINUTES}m timeout less two minutes for the checkout and install; raise timeout-minutes in this workflow to allow a longer review"
+              else
+                echo "::error::NOVA_REVIEW_WALL_CLOCK is 0, and 0 means no limit at all; delete the variable for the 15m default, or set a positive duration"
+              fi
+              exit 1
+            fi
+          fi
       - uses: ./
         if: steps.head.outputs.fork == 'false'
         with:
           model: opencode-go/deepseek-v4.1-flash
           max-comments: "15"
-          max-cost: "0.75"
-          wall-clock: 10m
+          # A runaway guard, not a budget: a typical review costs about $0.014.
+          # Both limits are repository variables so they move without a commit
+          # to this file; the step above refuses a value that disables one.
+          max-cost: ${{ vars.NOVA_REVIEW_MAX_COST || '0.5' }}
+          wall-clock: ${{ vars.NOVA_REVIEW_WALL_CLOCK || '15m' }}
           pr: ${{ env.PR }}
           dry-run: ${{ inputs.dry_run || 'false' }}
           opencode-go-api-key: ${{ secrets.PI_REVIEW_API_KEY }}

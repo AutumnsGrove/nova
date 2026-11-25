@@ -1,13 +1,17 @@
 package action
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -176,14 +180,16 @@ type selfReview struct {
 		CancelInProgress bool   `yaml:"cancel-in-progress"`
 	} `yaml:"concurrency"`
 	Jobs map[string]struct {
-		If    string            `yaml:"if"`
-		Perms map[string]string `yaml:"permissions"`
-		Steps []struct {
+		If             string            `yaml:"if"`
+		TimeoutMinutes int               `yaml:"timeout-minutes"`
+		Perms          map[string]string `yaml:"permissions"`
+		Steps          []struct {
 			ID   string            `yaml:"id"`
 			If   string            `yaml:"if"`
 			Uses string            `yaml:"uses"`
 			Run  string            `yaml:"run"`
 			With map[string]string `yaml:"with"`
+			Env  map[string]string `yaml:"env"`
 		} `yaml:"steps"`
 	} `yaml:"jobs"`
 }
@@ -331,3 +337,219 @@ func TestAction_ACT07_SelfReviewWorkflow(t *testing.T) {
 		t.Fatal("no step runs this repository's own action")
 	}
 }
+
+// ACT08: the cost cap is a number typed into repository settings and handed to
+// a float flag, so the two likely typos fail in ways the default cannot: a
+// non-number reddens the job before a review exists, and "0" is accepted as no
+// cap at all, which deletes the guard while looking like a tight one. The step's
+// own script is what has to refuse them, so this runs it.
+func TestAction_ACT08_CostCapIsChecked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the step runs a shell script")
+	}
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no shell to run the step with")
+	}
+	if _, err := exec.LookPath("awk"); err != nil {
+		t.Skip("no awk for the step's numeric check")
+	}
+	var script string
+	for _, step := range loadSelfReview(t).Jobs["review"].Steps {
+		if strings.Contains(step.Run, "NOVA_REVIEW_MAX_COST") {
+			script = step.Run
+		}
+	}
+	if script == "" {
+		t.Fatal("the workflow has no step that checks NOVA_REVIEW_MAX_COST")
+	}
+
+	for _, tc := range []struct {
+		cap     string
+		want    int
+		wantMsg string
+	}{
+		{cap: "", want: 0},
+		{cap: "0.5", want: 0},
+		{cap: "2", want: 0},
+		{cap: "0.05", want: 0},
+		{cap: "0", want: 1, wantMsg: "no cap at all"},
+		{cap: "0.0", want: 1, wantMsg: "no cap at all"},
+		// Digit-only and shaped like a number, but it underflows to 0.0 on the
+		// way to the float flag: the cap would be gone with no parse error.
+		{cap: "0." + strings.Repeat("0", 330) + "1", want: 1, wantMsg: "no cap at all"},
+		{cap: "$1.00", want: 1, wantMsg: "plain number"},
+		{cap: "1.2.3", want: 1, wantMsg: "plain number"},
+		{cap: "half", want: 1, wantMsg: "plain number"},
+	} {
+		t.Run("cap="+tc.cap, func(t *testing.T) {
+			cmd := exec.Command(sh, "-e", "-c", script)
+			cmd.Env = append(os.Environ(), "CAP="+tc.cap)
+			out, err := cmd.CombinedOutput()
+			code := 0
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
+				code = exit.ExitCode()
+			} else if err != nil {
+				t.Fatalf("run the step: %v", err)
+			}
+			if code != tc.want {
+				t.Fatalf("exit = %d, want %d: %s", code, tc.want, out)
+			}
+			if tc.wantMsg != "" && !strings.Contains(string(out), tc.wantMsg) {
+				t.Fatalf("the error does not name the problem: %s", out)
+			}
+			if tc.want == 0 && strings.Contains(string(out), "::error::") {
+				t.Fatalf("a valid cap was reported as an error: %s", out)
+			}
+		})
+	}
+}
+
+// ACT09: the wall clock is the other limit typed into repository settings, and
+// it has the same trap: "0m" is no limit at all, so a value that looks like a
+// very tight clock deletes the bound. The step's own script refuses it and
+// refuses a string that is not a duration, so the job does not fail later on a
+// flag-parse error with nothing posted.
+func TestAction_ACT09_WallClockIsChecked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the step runs a shell script")
+	}
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no shell to run the step with")
+	}
+	if _, err := exec.LookPath("awk"); err != nil {
+		t.Skip("no awk for the step's cost check")
+	}
+	var script string
+	for _, step := range loadSelfReview(t).Jobs["review"].Steps {
+		if strings.Contains(step.Run, "NOVA_REVIEW_WALL_CLOCK") {
+			script = step.Run
+		}
+	}
+	if script == "" {
+		t.Fatal("the workflow has no step that checks NOVA_REVIEW_WALL_CLOCK")
+	}
+
+	for _, tc := range []struct {
+		clock   string
+		want    int
+		wantMsg string
+	}{
+		{clock: "", want: 0},
+		{clock: "15m", want: 0},
+		{clock: "90s", want: 0},
+		// A valid duration the job's 20m budget cannot honour.
+		{clock: "1h30m", want: 1, wantMsg: "at most 18m"},
+		{clock: "0.5m", want: 0},
+		{clock: "400ms", want: 0},
+		{clock: "1.5ms", want: 0},
+		{clock: "2ns", want: 0},
+		{clock: "1ns", want: 0},
+		{clock: "0", want: 1, wantMsg: "no limit at all"},
+		{clock: "0s", want: 1, wantMsg: "no limit at all"},
+		{clock: "0m0s", want: 1, wantMsg: "no limit at all"},
+		{clock: "00h", want: 1, wantMsg: "no limit at all"},
+		// Valid syntax, smaller than a nanosecond: time.ParseDuration keeps
+		// whole nanoseconds, so this is 0s and means no limit at all.
+		{clock: "0.5ns", want: 1, wantMsg: "no limit at all"},
+		{clock: "0.0000000001s", want: 1, wantMsg: "no limit at all"},
+		// time.ParseDuration truncates each part before adding them, so two
+		// halves of a nanosecond are still 0s, not 1ns.
+		{clock: "0.5ns0.5ns", want: 1, wantMsg: "no limit at all"},
+		{clock: "0.9ns0.9ns", want: 1, wantMsg: "no limit at all"},
+		// The job is 20m and the review needs two minutes of it for setup, so a
+		// clock the runner would cut short is refused rather than accepted.
+		{clock: "18m", want: 0},
+		{clock: "19m", want: 1, wantMsg: "at most 18m"},
+		{clock: "15 min", want: 1, wantMsg: "must be a duration"},
+		{clock: "15", want: 1, wantMsg: "must be a duration"},
+		{clock: "soon", want: 1, wantMsg: "must be a duration"},
+		// Only the letters of the zero test: not a duration, so it must be
+		// refused as syntax rather than reported as zero.
+		{clock: "ms", want: 1, wantMsg: "must be a duration"},
+	} {
+		// Both configurations: with a cap set, and with the cap variable unset,
+		// which is the default. An early exit for one limit must not leave the
+		// other unchecked, so every case runs with CAP unset as well.
+		for _, cap := range []string{"0.5", ""} {
+			t.Run("clock="+tc.clock+"/cap="+cap, func(t *testing.T) {
+				cmd := exec.Command(sh, "-e", "-c", script)
+				cmd.Env = append(os.Environ(), "CAP="+cap, "CLOCK="+tc.clock, "JOB_MINUTES=20")
+				out, err := cmd.CombinedOutput()
+				code := 0
+				var exit *exec.ExitError
+				if errors.As(err, &exit) {
+					code = exit.ExitCode()
+				} else if err != nil {
+					t.Fatalf("run the step: %v", err)
+				}
+				if code != tc.want {
+					t.Fatalf("exit = %d, want %d: %s", code, tc.want, out)
+				}
+				if tc.wantMsg != "" && !strings.Contains(string(out), tc.wantMsg) {
+					t.Fatalf("the error does not name the problem: %s", out)
+				}
+				if tc.want == 0 && strings.Contains(string(out), "::error::") {
+					t.Fatalf("a valid clock was reported as an error: %s", out)
+				}
+			})
+		}
+	}
+}
+
+// ACT10: the job's own timeout has to outlive the review's wall clock, because
+// the clock starts inside `nova` -- after the checkout, setup-go and install --
+// so a review allowed as long as the job is killed by the runner before it can
+// reach its own limit. A killed job reports nothing; a review that hits its
+// limit reports and posts whatever it had.
+func TestAction_ACT10_JobOutlivesTheReviewClock(t *testing.T) {
+	job, ok := loadSelfReview(t).Jobs["review"]
+	if !ok {
+		t.Fatal("no review job")
+	}
+	if job.TimeoutMinutes == 0 {
+		t.Fatal("the review job sets no timeout-minutes")
+	}
+	var with map[string]string
+	for _, step := range job.Steps {
+		if step.Uses == "./" {
+			with = step.With
+		}
+	}
+	expr, ok := with["wall-clock"]
+	if !ok {
+		t.Fatal("the action step passes no wall-clock")
+	}
+	if !strings.Contains(expr, "vars.NOVA_REVIEW_WALL_CLOCK") {
+		t.Fatalf("wall-clock = %q, want the repository variable", expr)
+	}
+	m := defaultInExpression.FindStringSubmatch(expr)
+	if m == nil {
+		t.Fatalf("wall-clock = %q, want a quoted default", expr)
+	}
+	clock, err := time.ParseDuration(m[1])
+	if err != nil {
+		t.Fatalf("the default %q is not a duration: %v", m[1], err)
+	}
+	// The step cannot read timeout-minutes, so it carries the number, and this is
+	// what stops the two drifting into a clock the runner would cut short.
+	var jobMinutes string
+	for _, step := range job.Steps {
+		if v, ok := step.Env["JOB_MINUTES"]; ok {
+			jobMinutes = v
+		}
+	}
+	if jobMinutes != strconv.Itoa(job.TimeoutMinutes) {
+		t.Fatalf("the limit step checks JOB_MINUTES=%q but the job timeout is %d", jobMinutes, job.TimeoutMinutes)
+	}
+	// Two minutes covers checkout, setup-go and the action's install, which is
+	// what this job does before the review's clock starts.
+	if slack := time.Duration(job.TimeoutMinutes)*time.Minute - clock; slack < 2*time.Minute {
+		t.Fatalf("timeout-minutes: %d leaves only %v above the %v review clock", job.TimeoutMinutes, slack, clock)
+	}
+}
+
+// defaultInExpression finds the quoted fallback in `${{ vars.X || '15m' }}`.
+var defaultInExpression = regexp.MustCompile(`'([^']*)'\s*\}\}$`)

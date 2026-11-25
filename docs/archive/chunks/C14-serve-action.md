@@ -333,7 +333,8 @@ Routes (`serve`): `POST /v1/commands`, `GET /v1/events`, `POST /v1/ui_response`,
 | RVW26 | exit codes | each outcome | as specified |
 | RVW30 | cut off before it summarised | the wall clock fires with no comment and no summary | nothing posted; `::error::`; exit 1 |
 | RVW31 | cut off after it summarised | the cost cap fires with a comment and a summary recorded | the review is posted with its partial note; `::warning::`; exit 0 |
-| RVW32 | dry run with nothing to say | `--dry-run`, no summary, a completed run | nothing posted, no `::error::`, exit 0 |
+| RVW32 | dry run cut off | `--dry-run` and the wall clock fires with nothing recorded | nothing posted; `::warning::` and no `::error::`; exit 0 |
+| RVW33 | `--json` cut off | the wall clock fires with nothing recorded | stdout is the report alone (`partial`, `posted`); no workflow-command line; exit 1 |
 | RVW27 | pull text cannot close its fence | a body containing the old fixed closing line | our closing fence, which carries the run secret, appears once, at the end; each run draws a new secret |
 | RVW28 | model text is length capped | a comment and a summary over the cap | both refused and neither recorded |
 | RVW29 | a review with no inline comments is accepted | a summary and no comments | `comments` is left out, never `null`, which GitHub refuses with 422 |
